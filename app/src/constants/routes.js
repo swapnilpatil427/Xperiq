@@ -11,6 +11,8 @@ export const ROUTES = {
   INSIGHTS:           '/app/insights',
   ADVANCED_INSIGHTS:  '/app/insights/advanced',
   RESPONDENTS:        '/app/respondents',
+  TEMPLATES:          '/app/templates',
+  TEMPLATE_EDITOR:    '/app/templates/new',
   WORKFLOWS:          '/app/workflows',
   SETTINGS:           '/app/settings',
 };

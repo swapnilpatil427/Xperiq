@@ -11,6 +11,8 @@ import { InsightsDashboardPage } from './pages/InsightsDashboardPage';
 import { AdvancedInsightsPage } from './pages/AdvancedInsightsPage';
 import { ResponseCollectionPage } from './pages/ResponseCollectionPage';
 import { BrandSettingsPage } from './pages/BrandSettingsPage';
+import { TemplateLibraryPage } from './pages/TemplateLibraryPage';
+import { TemplateEditorPage } from './pages/TemplateEditorPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
 import { SignInPage } from './pages/SignInPage';
 import { SurveyFillPage } from './pages/SurveyFillPage';
@@ -52,6 +54,8 @@ export default function App() {
         <Route path={ROUTES.INSIGHTS} element={<InsightsDashboardPage />} />
         <Route path={ROUTES.ADVANCED_INSIGHTS} element={<AdvancedInsightsPage />} />
         <Route path={ROUTES.RESPONDENTS} element={<ResponseCollectionPage />} />
+        <Route path={ROUTES.TEMPLATES} element={<TemplateLibraryPage />} />
+        <Route path={ROUTES.TEMPLATE_EDITOR} element={<TemplateEditorPage />} />
         <Route path={ROUTES.WORKFLOWS} element={<WorkflowsPage />} />
         <Route path={ROUTES.SETTINGS} element={<BrandSettingsPage />} />
       </Route>

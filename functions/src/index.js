@@ -19,6 +19,7 @@ app.use('/api/public',    require(`${dir}/public`));
 app.use('/api/surveys',   require(`${dir}/surveys`));
 app.use('/api/surveys',   require(`${dir}/responses`));
 app.use('/api/surveys',   require(`${dir}/insights`));
+app.use('/api/templates', require(`${dir}/templates`));
 app.use('/api/ai',        require(`${dir}/ai`));
 app.use('/api/workflows', require(`${dir}/workflows`));
 

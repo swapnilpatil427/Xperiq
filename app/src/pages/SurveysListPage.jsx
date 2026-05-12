@@ -158,6 +158,17 @@ export function SurveysListPage() {
             </div>
 
             <div className="flex items-center gap-3">
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="rounded-xl">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate(ROUTES.TEMPLATES)}
+                  className="rounded-xl font-headline text-on-surface-variant active:scale-100 gap-1.5"
+                >
+                  <Icon name="library_books" size={16} />
+                  {t('nav.templates')}
+                </Button>
+              </motion.div>
               <motion.div
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
