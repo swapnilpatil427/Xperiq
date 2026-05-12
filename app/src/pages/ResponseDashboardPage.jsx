@@ -6,6 +6,10 @@ import { useSurveys } from '../hooks/useSurveys';
 import { ROUTES } from '../constants/routes';
 import { INSIGHTS as INSIGHTS_THRESHOLDS } from '../constants/thresholds';
 import { useTranslation } from '../lib/i18n';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 
 const questions = [
   {
@@ -47,18 +51,17 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
       <SideNav currentPage={ROUTES.INSIGHTS} onNavigate={onNavigate} />
       <TopBar title={t('responseDashboard.pageTitle')} subtitle={t('responseDashboard.dateFilter')} onNavigate={onNavigate} />
 
-      <main className="flex-1 flex flex-col min-h-screen" style={{ marginLeft: '16rem' }}>
+      <main className="flex-1 flex flex-col min-h-screen md:ml-64">
         <div className="pt-24 pb-12 px-6 space-y-8 max-w-7xl mx-auto w-full">
 
           {/* Top Metrics */}
           <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
 
             {/* Total Responses */}
-            <div
-              className="p-8 relative overflow-hidden group bg-white"
+            <Card
+              className="p-8 relative overflow-hidden group bg-white border-muted/10"
               style={{
                 borderRadius: '1rem',
-                border: '1px solid rgba(171,173,175,0.1)',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
               }}
             >
@@ -75,14 +78,13 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
               <div className="absolute -right-4 -bottom-4 opacity-5 group-hover:scale-110 transition-transform duration-500 text-on-surface">
                 <Icon name="groups" fill={1} size={120} />
               </div>
-            </div>
+            </Card>
 
             {/* Completion Rate */}
-            <div
-              className="p-8 relative overflow-hidden bg-white"
+            <Card
+              className="p-8 relative overflow-hidden bg-white border-muted/10"
               style={{
                 borderRadius: '1rem',
-                border: '1px solid rgba(171,173,175,0.1)',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
               }}
             >
@@ -91,21 +93,15 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
                 <h3 className="text-4xl font-black mt-2 font-headline text-on-surface">
                   84.6%
                 </h3>
-                <div className="w-full h-2 rounded-full mt-6" style={{ background: '#f1f5f9' }}>
-                  <div
-                    className="h-full rounded-full bg-primary"
-                    style={{
-                      width: '84.6%',
-                      boxShadow: '0 0 12px rgba(42,75,217,0.4)',
-                    }}
-                  />
+                <div className="mt-6">
+                  <Progress value={84.6} className="h-2 [&>div]:bg-primary [&>div]:shadow-[0_0_12px_rgba(42,75,217,0.4)]" />
                 </div>
               </div>
-            </div>
+            </Card>
 
             {/* NPS Gauge */}
-            <div
-              className="p-8 relative overflow-hidden text-white flex flex-col justify-center items-center"
+            <Card
+              className="p-8 relative overflow-hidden text-white flex flex-col justify-center items-center border-0"
               style={{
                 background: 'linear-gradient(135deg, #1e2b7a, #0f172a)',
                 borderRadius: '1rem',
@@ -113,7 +109,7 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
               }}
             >
               <div className="relative z-10 text-center">
-                <p className="font-bold text-xs uppercase tracking-widest mb-2" style={{ color: '#a5b4fc' }}>
+                <p className="font-bold text-xs uppercase tracking-widest mb-2 text-indigo-300">
                   {t('responseDashboard.npsTitle')}
                 </p>
                 <div className="relative inline-block">
@@ -132,31 +128,27 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
                     74
                   </span>
                 </div>
-                <p className="mt-4 font-bold" style={{ color: '#82deff' }}>{t('responseDashboard.npsExcellent')}</p>
+                <p className="mt-4 font-bold text-[var(--color-secondary-fixed)]">{t('responseDashboard.npsExcellent')}</p>
               </div>
               <div
                 className="absolute top-0 right-0 w-32 h-32 rounded-full"
                 style={{ background: 'rgba(42,75,217,0.2)', filter: 'blur(60px)' }}
               />
-            </div>
+            </Card>
           </section>
 
           {/* AI Insights + Sentiment */}
           <section className="grid grid-cols-1 lg:grid-cols-5 gap-8">
             {/* AI Summary */}
-            <div
-              className="lg:col-span-3 p-8 relative overflow-hidden bg-white"
+            <Card
+              className="lg:col-span-3 p-8 relative overflow-hidden bg-white border-muted/10"
               style={{
                 borderRadius: '1rem',
-                border: '1px solid rgba(171,173,175,0.1)',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
               }}
             >
               <div className="flex items-center gap-3 mb-8">
-                <div
-                  className="p-2 rounded-xl text-tertiary"
-                  style={{ background: 'rgba(131,41,200,0.1)' }}
-                >
+                <div className="p-2 rounded-xl text-tertiary bg-tertiary/10">
                   <Icon name="auto_awesome" fill={1} size={20} />
                 </div>
                 <h4 className="text-xl font-bold font-headline text-on-surface">
@@ -191,10 +183,7 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
                 ))}
               </div>
 
-              <div
-                className="mt-10 pt-6 flex items-center justify-between"
-                style={{ borderTop: '1px solid #f1f5f9' }}
-              >
+              <div className="mt-10 pt-6 flex items-center justify-between border-t border-muted/20">
                 <div className="flex -space-x-2">
                   {['A', 'B', 'C'].map((l, i) => (
                     <div
@@ -214,11 +203,11 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
                   {t('responseDashboard.aiConfidence', { pct: INSIGHTS_THRESHOLDS.AI_CONFIDENCE })}
                 </div>
               </div>
-            </div>
+            </Card>
 
             {/* Sentiment Chart */}
-            <div
-              className="lg:col-span-2 p-8 relative flex flex-col justify-between overflow-hidden bg-surface-container-low"
+            <Card
+              className="lg:col-span-2 p-8 relative flex flex-col justify-between overflow-hidden bg-surface-container-low border-0"
               style={{ borderRadius: '1rem' }}
             >
               <div>
@@ -238,8 +227,7 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
                 ].map((bar) => (
                   <div key={bar.label} className="group relative flex-1">
                     <div
-                      className="absolute -top-10 left-1/2 -translate-x-1/2 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                      style={{ background: '#1e293b' }}
+                      className="absolute -top-10 left-1/2 -translate-x-1/2 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800"
                     >
                       {bar.pct}%
                     </div>
@@ -253,34 +241,30 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
                   </div>
                 ))}
               </div>
-            </div>
+            </Card>
           </section>
 
           {/* Questions Table */}
-          <section
-            className="overflow-hidden bg-white"
+          <Card
+            className="overflow-hidden bg-white border-muted/10"
             style={{
               borderRadius: '1rem',
-              border: '1px solid rgba(171,173,175,0.1)',
               boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
             }}
           >
-            <div
-              className="p-6 flex justify-between items-center"
-              style={{ borderBottom: '1px solid #f1f5f9' }}
-            >
+            <div className="p-6 flex justify-between items-center border-b border-muted/20">
               <h4 className="text-xl font-bold font-headline text-on-surface">
                 {t('responseDashboard.questionPerformance')}
               </h4>
-              <button className="flex items-center gap-2 text-sm font-bold hover:underline text-primary">
+              <Button variant="ghost" size="sm" className="flex items-center gap-2 text-sm font-bold text-primary hover:underline">
                 <Icon name="filter_list" size={18} />
                 {t('responseDashboard.filterQuestions')}
-              </button>
+              </Button>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left">
-                <thead style={{ background: 'rgba(248,250,252,0.5)' }}>
+                <thead className="bg-muted/5">
                   <tr>
                     {[t('responseDashboard.tableHeaders.questionTitle'), t('responseDashboard.tableHeaders.type'), t('responseDashboard.tableHeaders.avgTime'), t('responseDashboard.tableHeaders.action')].map((h, i) => (
                       <th
@@ -299,45 +283,40 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
                   {questions.map((q, i) => (
                     <tr
                       key={i}
-                      className="group transition-colors"
-                      style={{ borderTop: '1px solid #f8fafc' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(248,250,252,0.8)')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                      className="group transition-colors border-t border-muted/10 hover:bg-muted/5"
                     >
                       <td className="px-6 py-5">
                         <p className="font-semibold text-on-surface">{q.title}</p>
                         <span className="text-[10px] text-on-surface-variant">{q.responses}</span>
                       </td>
                       <td className="px-6 py-5">
-                        <span
+                        <Badge
+                          variant="secondary"
                           className="px-3 py-1 text-[11px] font-bold rounded-full"
                           style={{ color: q.typeColor, background: q.typeBg }}
                         >
                           {q.type}
-                        </span>
+                        </Badge>
                       </td>
                       <td className="px-6 py-5 text-center font-medium text-on-surface-variant">
                         {q.avgTime}
                       </td>
                       <td className="px-6 py-5 text-right">
-                        <button
-                          className="px-4 py-2 text-xs font-bold flex items-center gap-2 ml-auto transition-all hover:-translate-y-0.5 bg-white text-on-surface"
-                          style={{
-                            border: '1px solid #e2e8f0',
-                            borderRadius: '0.5rem',
-                            boxShadow: '0 2px 4px rgba(0,0,0,0.06)',
-                          }}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="flex items-center gap-2 ml-auto hover:-translate-y-0.5 bg-white text-on-surface border-border rounded-lg shadow-sm"
                         >
                           <Icon name="auto_awesome" fill={1} size={16} className="text-tertiary" />
                           {t('responseDashboard.viewAiExplanation')}
-                        </button>
+                        </Button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </section>
+          </Card>
         </div>
       </main>
 

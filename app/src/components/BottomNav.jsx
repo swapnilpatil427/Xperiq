@@ -1,6 +1,7 @@
 import { Icon } from './Icon';
 import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { Button } from '@/components/ui/button';
 
 export function BottomNav({ currentPage, onNavigate }) {
   const { t } = useTranslation();
@@ -20,27 +21,30 @@ export function BottomNav({ currentPage, onNavigate }) {
 
         if (isMid) {
           return (
-            <button
+            <Button
               key={item.page}
               onClick={() => onNavigate(item.page)}
               className="bottomnav-fab"
+              variant="ghost"
+              size="icon"
             >
               <Icon name={item.icon} fill={1} size={22} />
-            </button>
+            </Button>
           );
         }
 
         return (
-          <button
+          <Button
             key={item.page}
+            variant="ghost"
             onClick={() => onNavigate(item.page)}
-            className={`flex flex-col items-center justify-center transition-colors ${isActive ? 'text-primary' : 'text-inverse-on-surface'}`}
+            className={`flex flex-col h-auto gap-0 px-3 py-1 rounded-xl hover:bg-transparent ${isActive ? 'text-primary' : 'text-inverse-on-surface'}`}
           >
             <Icon name={item.icon} fill={isActive ? 1 : 0} size={22} />
             <span className="text-[10px] font-bold uppercase tracking-widest mt-1 font-headline">
               {t(item.labelKey)}
             </span>
-          </button>
+          </Button>
         );
       })}
     </nav>

@@ -1,0 +1,170 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   BRAND TOKENS — The only layer you need to touch for white-label theming.
+   These --brand-* variables are the single source of truth for brand colors,
+   fonts, and radii. Override them at runtime via applyBrandTheme() in
+   src/lib/brandTheme.js to swap an entire brand without a rebuild.
+
+   Cascade:
+     --brand-primary  →  --color-primary  (semantic alias, see :root below)
+     --color-primary  →  Tailwind @theme  (static copy; utilities like bg-primary)
+                      →  CSS var(--color-primary)  (live, picks up brand override)
+
+   The @theme block in index.css holds hardcoded defaults for Tailwind v4 utility
+   generation (those are build-time only). All CSS rules that must respond to
+   brand changes should use var(--color-primary) / var(--brand-primary), NOT the
+   Tailwind utility class.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Brand tokens (the ones users/brands can override at runtime) ────────── */
+:root {
+  /* Primary brand color */
+  --brand-primary: #2a4bd9;
+  --brand-primary-dim: #173dcd;
+  --brand-primary-container: #879aff;
+  --brand-on-primary: #f2f1ff;
+
+  /* Secondary brand color */
+  --brand-secondary: #00647c;
+  --brand-secondary-container: #82deff;
+  --brand-on-secondary: #e2f6ff;
+
+  /* Accent / tertiary brand color */
+  --brand-accent: #8329c8;
+  --brand-accent-container: #d299ff;
+  --brand-on-accent: #fceeff;
+
+  /* Brand typography */
+  --brand-font-heading: "Manrope", sans-serif;
+  --brand-font-body: "Inter", sans-serif;
+
+  /* Brand radius */
+  --brand-radius: 1rem;
+  --brand-radius-sm: 0.5rem;
+  --brand-radius-lg: 2rem;
+}
+
+/* ── Semantic color aliases (map brand tokens → semantic roles) ──────────── */
+/*
+   These are the vars used throughout CSS rules. They inherit from --brand-*
+   so that a single applyBrandTheme() call cascades everywhere.
+   Non-brand neutrals (surfaces, outlines, status colors) are defined directly
+   here and are NOT overridden by brand theming.
+*/
+:root {
+  /* Primary */
+  --color-primary: var(--brand-primary);
+  --color-primary-dim: var(--brand-primary-dim);
+  --color-primary-container: var(--brand-primary-container);
+  --color-on-primary: var(--brand-on-primary);
+  --color-on-primary-container: #00176b;
+  --color-on-primary-fixed: #000000;
+  --color-on-primary-fixed-variant: #001e82;
+  --color-primary-fixed: #879aff;
+  --color-primary-fixed-dim: #748bff;
+  --color-inverse-primary: #7087ff;
+
+  /* Secondary */
+  --color-secondary: var(--brand-secondary);
+  --color-secondary-dim: #00576c;
+  --color-secondary-container: var(--brand-secondary-container);
+  --color-on-secondary: var(--brand-on-secondary);
+  --color-on-secondary-container: #004e62;
+  --color-on-secondary-fixed: #003a48;
+  --color-on-secondary-fixed-variant: #00586e;
+  --color-secondary-fixed: #82deff;
+  --color-secondary-fixed-dim: #57d2f9;
+
+  /* Tertiary / accent */
+  --color-tertiary: var(--brand-accent);
+  --color-tertiary-dim: #7613bb;
+  --color-tertiary-container: var(--brand-accent-container);
+  --color-on-tertiary: var(--brand-on-accent);
+  --color-on-tertiary-container: #4c007d;
+  --color-on-tertiary-fixed: #280046;
+  --color-on-tertiary-fixed-variant: #580091;
+  --color-tertiary-fixed: #d299ff;
+  --color-tertiary-fixed-dim: #c986ff;
+
+  /* Surface — neutral, not brand-overridden */
+  --color-surface: #f5f7f9;
+  --color-surface-bright: #f5f7f9;
+  --color-surface-dim: #d0d5d8;
+  --color-surface-variant: #d9dde0;
+  --color-surface-tint: var(--brand-primary);
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #eef1f3;
+  --color-surface-container: #e5e9eb;
+  --color-surface-container-high: #dfe3e6;
+  --color-surface-container-highest: #d9dde0;
+
+  --color-on-surface: #2c2f31;
+  --color-on-surface-variant: #595c5e;
+  --color-on-background: #2c2f31;
+  --color-background: #f5f7f9;
+  --color-inverse-surface: #0b0f10;
+  --color-inverse-on-surface: #9a9d9f;
+
+  --color-outline: #747779;
+  --color-outline-variant: #abadaf;
+
+  /* Status — not brand-overridden */
+  --color-error: #b41340;
+  --color-error-dim: #a70138;
+  --color-error-container: #f74b6d;
+  --color-on-error: #ffefef;
+  --color-on-error-container: #510017;
+
+  --color-success: #059669;
+  --color-success-dim: #047857;
+  --color-success-light: #10b981;
+  --color-success-container: #d1fae5;
+  --color-on-success-container: #059669;
+
+  --color-warning: #d97706;
+  --color-warning-light: #f59e0b;
+  --color-warning-container: #fef3c7;
+  --color-on-warning-container: #d97706;
+
+  /* Typography — brand-overridable via --brand-font-* */
+  --font-headline: var(--brand-font-heading);
+  --font-body: var(--brand-font-body);
+  --font-label: var(--brand-font-body);
+
+  /* Border radius — brand-overridable via --brand-radius-* */
+  --radius-DEFAULT: var(--brand-radius);
+  --radius-sm: var(--brand-radius-sm);
+  --radius-lg: var(--brand-radius-lg);
+  --radius-xl: 3rem;
+  --radius-full: 9999px;
+
+  /* Shadows */
+  --shadow-card: 0 4px 24px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.8);
+  --shadow-card-hover: 0 20px 40px -8px rgba(42,75,217,0.14), inset 0 1px 0 rgba(255,255,255,0.8);
+  --shadow-primary: 0 10px 25px -5px rgba(42,75,217,0.35);
+  --shadow-primary-hover: 0 14px 30px -5px rgba(42,75,217,0.45);
+  --shadow-nav: 0 8px 32px 0 rgba(31,38,135,0.07);
+}
+
+/* ── shadcn/UI variable aliases (required by shadcn components) ──────────── */
+:root {
+  --background: var(--color-background);
+  --foreground: var(--color-on-surface);
+  --card: #ffffff;
+  --card-foreground: var(--color-on-surface);
+  --popover: #ffffff;
+  --popover-foreground: var(--color-on-surface);
+  --primary: var(--color-primary);
+  --primary-foreground: var(--color-on-primary);
+  --secondary: var(--color-surface-container-low);
+  --secondary-foreground: var(--color-on-surface);
+  --muted: var(--color-surface-container);
+  --muted-foreground: var(--color-on-surface-variant);
+  --accent: var(--color-surface-container-high);
+  --accent-foreground: var(--color-on-surface);
+  --destructive: var(--color-error);
+  --destructive-foreground: var(--color-on-error);
+  --border: var(--color-outline-variant);
+  --input: var(--color-surface-container);
+  --ring: var(--color-primary);
+  --radius: 0.75rem;
+}

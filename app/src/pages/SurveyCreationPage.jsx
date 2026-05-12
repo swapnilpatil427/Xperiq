@@ -8,6 +8,10 @@ import { ROUTES } from '../constants/routes';
 import { BADGES } from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
 import { SURVEY_TYPE_MAP } from '../constants/surveyTypes';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Separator } from '@/components/ui/separator';
 
 const QUESTION_TYPE_COLORS = {
   nps:             BADGES.primary,
@@ -122,16 +126,15 @@ export function SurveyCreationPage({ onNavigate }) {
       <nav className="fixed top-0 w-full z-50 glass-nav flex items-center justify-between h-16 px-6"
         style={{ boxShadow: '0 8px 32px rgba(31,38,135,0.07)' }}>
         <div className="flex items-center gap-4">
-          <button
+          <Button
+            variant="ghost"
             onClick={() => onNavigate(ROUTES.SURVEYS)}
-            className="flex items-center gap-2 text-sm font-semibold transition-colors text-on-surface-variant"
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#2a4bd9')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = '#595c5e')}
+            className="flex items-center gap-2 text-sm font-semibold text-on-surface-variant hover:text-[var(--color-primary)] px-0"
           >
             <Icon name="arrow_back" size={18} />
             {t('create.backToSurveys')}
-          </button>
-          <div className="w-px h-6" style={{ background: '#dfe3e6' }} />
+          </Button>
+          <Separator orientation="vertical" className="h-6" />
           <span className="text-sm font-bold font-headline text-on-surface">
             {t('create.pageTitle')}
           </span>
@@ -185,15 +188,17 @@ export function SurveyCreationPage({ onNavigate }) {
                     {selectedType.estimatedMinutes}m · {selectedType.questionCount} questions
                   </p>
                 </div>
-                <button
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => setStep(0)}
-                  className="text-xs font-bold px-3 py-1.5 rounded-full transition-all flex-shrink-0"
+                  className="text-xs font-bold rounded-full flex-shrink-0"
                   style={{ background: selectedType.color + '18', color: selectedType.color }}
                   onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.75')}
                   onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
                 >
                   {t('create.input.changeType')}
-                </button>
+                </Button>
               </div>
             )}
 
@@ -212,37 +217,29 @@ export function SurveyCreationPage({ onNavigate }) {
                 </p>
               </div>
 
-              <textarea
+              <Textarea
                 ref={textareaRef}
                 value={intent}
                 onChange={(e) => setIntent(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate(); }}
                 placeholder={PLACEHOLDER}
                 rows={5}
-                className="w-full resize-none text-sm leading-relaxed outline-none bg-surface-container-low font-body text-on-surface"
-                style={{
-                  borderRadius: '1rem',
-                  padding: '1.25rem',
-                  border: 'none',
-                  marginBottom: '1rem',
-                }}
+                className="w-full resize-none text-sm leading-relaxed bg-surface-container-low font-body text-on-surface rounded-2xl p-5 border-0 mb-4 focus-visible:ring-0 focus-visible:ring-offset-0 outline-none"
               />
 
-              <button
+              <Button
                 onClick={handleGenerate}
                 disabled={!intent.trim()}
-                className="w-full py-4 text-white font-bold text-base transition-all active:scale-95 cta-glow font-headline"
+                className="w-full py-4 h-auto text-white font-bold text-base cta-glow font-headline rounded-2xl mb-6"
                 style={{
                   background: intent.trim()
                     ? selectedType
                       ? `linear-gradient(135deg, ${selectedType.color}, #8329c8)`
                       : 'linear-gradient(135deg, #2a4bd9, #8329c8)'
                     : '#dfe3e6',
-                  borderRadius: '1rem',
                   color: intent.trim() ? '#ffffff' : '#9a9d9f',
                   cursor: intent.trim() ? 'pointer' : 'not-allowed',
                   boxShadow: intent.trim() ? '0 20px 40px -10px rgba(42,75,217,0.35)' : 'none',
-                  marginBottom: '1.5rem',
                 }}
               >
                 <span className="flex items-center justify-center gap-2">
@@ -252,7 +249,7 @@ export function SurveyCreationPage({ onNavigate }) {
                     : t('create.input.generateButton')}
                   <span className="text-xs opacity-70 font-normal">{t('create.input.keyboardHint')}</span>
                 </span>
-              </button>
+              </Button>
 
               <div>
                 <p className="text-xs font-bold tracking-widest uppercase mb-3 text-inverse-on-surface">
@@ -328,13 +325,15 @@ export function SurveyCreationPage({ onNavigate }) {
                     <h2 className="text-2xl font-extrabold tracking-tighter font-headline text-on-surface">
                       {t('create.review.heading')}
                     </h2>
-                    <button
+                    <Button
+                      variant="secondary"
+                      size="sm"
                       onClick={() => setStep(1)}
-                      className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-full transition-all bg-surface-container text-on-surface-variant"
+                      className="flex items-center gap-1.5 text-xs font-bold rounded-full"
                     >
                       <Icon name="refresh" size={14} />
                       {t('create.review.regenerate')}
-                    </button>
+                    </Button>
                   </div>
 
                   {selectedType && (
@@ -345,14 +344,12 @@ export function SurveyCreationPage({ onNavigate }) {
                         <span className="text-xs font-black" style={{ color: selectedType.color }}>{selectedType.label}</span>
                       </div>
                       {selectedType.metrics.slice(0, 3).map((m) => (
-                        <span key={m} className="text-xs font-bold px-2.5 py-1 rounded-full"
-                          style={{ background: '#eef1f3', color: '#595c5e' }}>{m}</span>
+                        <span key={m} className="text-xs font-bold px-2.5 py-1 rounded-full bg-[#eef1f3] text-[#595c5e]">{m}</span>
                       ))}
                     </div>
                   )}
 
-                  <div className="text-xs font-medium px-3 py-2 rounded-full inline-block text-primary"
-                    style={{ background: '#e0e7ff' }}>
+                  <div className="text-xs font-medium px-3 py-2 rounded-full inline-block text-primary bg-[#e0e7ff]">
                     {t('create.review.intentLabel')} &ldquo;{intent.slice(0, 60)}{intent.length > 60 ? '…' : ''}&rdquo;
                   </div>
                 </div>
@@ -377,26 +374,32 @@ export function SurveyCreationPage({ onNavigate }) {
                             )}
                           </div>
                           <div className="flex items-center gap-1">
-                            <button onClick={() => setEditingId(isEditing ? null : q.id)}
-                              className="p-1.5 rounded-lg transition-all text-on-surface-variant"
-                              onMouseEnter={(e) => { e.currentTarget.style.background = '#eef1f3'; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setEditingId(isEditing ? null : q.id)}
+                              className="w-8 h-8 rounded-lg text-on-surface-variant"
+                            >
                               <Icon name={isEditing ? 'check' : 'edit'} size={16} />
-                            </button>
-                            <button onClick={() => removeQuestion(q.id)}
-                              className="p-1.5 rounded-lg transition-all text-error"
-                              onMouseEnter={(e) => { e.currentTarget.style.background = '#fff0f0'; }}
-                              onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => removeQuestion(q.id)}
+                              className="w-8 h-8 rounded-lg text-error hover:bg-[#fff0f0]"
+                            >
                               <Icon name="delete" size={16} />
-                            </button>
+                            </Button>
                           </div>
                         </div>
 
                         {isEditing ? (
-                          <input value={q.question}
+                          <Input
+                            value={q.question}
                             onChange={(e) => updateQuestion(q.id, { question: e.target.value })}
-                            className="w-full text-base font-semibold outline-none px-3 py-2 rounded-lg font-headline text-on-surface bg-surface-container-low"
-                            style={{ border: 'none' }} autoFocus />
+                            className="w-full text-base font-semibold font-headline text-on-surface bg-surface-container-low border-0 focus-visible:ring-0 focus-visible:ring-offset-0 rounded-lg"
+                            autoFocus
+                          />
                         ) : (
                           <p className="text-base font-semibold font-headline text-on-surface">{q.question}</p>
                         )}
@@ -437,19 +440,20 @@ export function SurveyCreationPage({ onNavigate }) {
 
                 {questions.length > 0 && (
                   <div className="mt-8 flex gap-4">
-                    <button
+                    <Button
                       onClick={() => {
                         pageStore.setPendingBuilderData({ title: intent, questions, surveyTypeId: selectedTypeId });
                         onNavigate(ROUTES.BUILDER);
                       }}
-                      className="flex-1 py-4 text-white font-bold text-base transition-all active:scale-95 cta-glow font-headline"
-                      style={{ background: 'linear-gradient(135deg, #2a4bd9, #879aff)', borderRadius: '1rem', boxShadow: '0 20px 40px -10px rgba(42,75,217,0.35)' }}>
+                      className="flex-1 py-4 h-auto text-white font-bold text-base cta-glow font-headline rounded-2xl"
+                      style={{ background: 'linear-gradient(135deg, #2a4bd9, #879aff)', boxShadow: '0 20px 40px -10px rgba(42,75,217,0.35)' }}
+                    >
                       <span className="flex items-center justify-center gap-2">
                         <Icon name="edit_note" size={20} />
                         Open Full Builder
                       </span>
-                    </button>
-                    <button
+                    </Button>
+                    <Button
                       onClick={async () => {
                         // Save directly without opening builder
                         try {
@@ -457,13 +461,14 @@ export function SurveyCreationPage({ onNavigate }) {
                           onNavigate(ROUTES.BUILDER);
                         } catch { /* fallback */ }
                       }}
-                      className="px-6 py-4 font-bold text-sm transition-all font-headline text-white"
-                      style={{ background: 'linear-gradient(135deg, #059669, #047857)', borderRadius: '1rem' }}>
+                      className="px-6 py-4 h-auto font-bold text-sm font-headline text-white rounded-2xl"
+                      style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
+                    >
                       <span className="flex items-center gap-2">
                         <Icon name="rocket_launch" size={18} />
                         {t('create.review.launchButton')}
                       </span>
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>

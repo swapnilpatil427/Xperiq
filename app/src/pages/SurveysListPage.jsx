@@ -11,11 +11,14 @@ import { ROUTES } from '../constants/routes';
 import { NPS as NPS_THRESHOLDS } from '../constants/thresholds';
 import { SENTIMENT_COLORS } from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-const STATUS_CLASS = {
-  active: 'badge badge-success',
-  draft:  'badge badge-neutral',
-  paused: 'badge badge-warning',
+const STATUS_BADGE_VARIANT = {
+  active: 'live',
+  draft:  'draft',
+  paused: 'paused',
 };
 
 const fadeUp = {
@@ -156,63 +159,64 @@ export function SurveysListPage({ onNavigate, currentPage }) {
             </div>
 
             <div className="flex items-center gap-3">
-              <motion.button
-                onClick={() => onNavigate(ROUTES.CREATE)}
-                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-gradient-primary font-headline rounded-xl"
-                style={{
-                  boxShadow: '0 10px 25px -5px rgba(42,75,217,0.35)',
-                }}
-                whileHover={{ scale: 1.03, boxShadow: '0 14px 30px -5px rgba(42,75,217,0.45)' }}
+              <motion.div
+                whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.97 }}
+                style={{ boxShadow: '0 10px 25px -5px rgba(42,75,217,0.35)' }}
+                className="rounded-xl"
               >
-                <Icon name="auto_awesome" size={16} />
-                {t('surveys.createWithAI')}
-              </motion.button>
-              <motion.button
-                onClick={() => onNavigate(ROUTES.BUILDER)}
-                className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold font-headline text-on-surface rounded-xl"
-                style={{ background: 'rgba(255,255,255,0.8)', borderRadius: '0.75rem', border: '1px solid rgba(171,173,175,0.2)' }}
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <Icon name="add" size={16} />
-                {t('surveys.manual')}
-              </motion.button>
+                <Button
+                  variant="gradient"
+                  size="sm"
+                  onClick={() => onNavigate(ROUTES.CREATE)}
+                  className="rounded-xl font-headline active:scale-100"
+                >
+                  <Icon name="auto_awesome" size={16} />
+                  {t('surveys.createWithAI')}
+                </Button>
+              </motion.div>
+              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="rounded-xl">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onNavigate(ROUTES.BUILDER)}
+                  className="rounded-xl font-headline text-on-surface active:scale-100"
+                >
+                  <Icon name="add" size={16} />
+                  {t('surveys.manual')}
+                </Button>
+              </motion.div>
             </div>
           </motion.div>
 
           {/* Filter pills */}
           <motion.div
-            className="flex gap-2 mb-6 flex-wrap"
+            className="mb-6"
             variants={fadeUp}
             initial="hidden"
             animate="visible"
             custom={0.7}
           >
-            {['all', 'active', 'draft', 'paused'].map((f) => {
-              const STATUS_TAB = { active: 'Live', draft: 'Draft', paused: 'Paused' };
-              const label = f === 'all'
-                ? t('surveys.filterAll', { n: surveys.length })
-                : `${STATUS_TAB[f]} (${surveys.filter((s) => s.status === f).length})`;
-              const isActive = filter === f;
-              return (
-                <motion.button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className="px-4 py-1.5 text-xs font-bold capitalize rounded-full"
-                  style={{
-                    background: isActive ? 'linear-gradient(135deg, #2a4bd9, #8329c8)' : 'rgba(255,255,255,0.7)',
-                    color: isActive ? '#ffffff' : '#595c5e',
-                    border: isActive ? 'none' : '1px solid rgba(171,173,175,0.2)',
-                    boxShadow: isActive ? '0 4px 12px rgba(42,75,217,0.25)' : 'none',
-                  }}
-                  whileHover={{ scale: 1.04 }}
-                  whileTap={{ scale: 0.96 }}
-                >
-                  {label}
-                </motion.button>
-              );
-            })}
+            <Tabs value={filter} onValueChange={setFilter}>
+              <TabsList className="flex gap-2 flex-wrap h-auto bg-transparent p-0">
+                {['all', 'active', 'draft', 'paused'].map((f) => {
+                  const STATUS_TAB = { active: 'Live', draft: 'Draft', paused: 'Paused' };
+                  const label = f === 'all'
+                    ? t('surveys.filterAll', { n: surveys.length })
+                    : `${STATUS_TAB[f]} (${surveys.filter((s) => s.status === f).length})`;
+                  return (
+                    <motion.div key={f} whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}>
+                      <TabsTrigger
+                        value={f}
+                        className="px-4 py-1.5 text-xs font-bold capitalize rounded-full data-[state=active]:bg-gradient-to-br data-[state=active]:from-[var(--color-primary)] data-[state=active]:to-[var(--color-tertiary)] data-[state=active]:text-white data-[state=active]:shadow-md data-[state=inactive]:bg-white/70 data-[state=inactive]:text-[#595c5e] data-[state=inactive]:border data-[state=inactive]:border-[rgba(171,173,175,0.2)]"
+                      >
+                        {label}
+                      </TabsTrigger>
+                    </motion.div>
+                  );
+                })}
+              </TabsList>
+            </Tabs>
           </motion.div>
 
           {/* Loading */}
@@ -241,7 +245,7 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                 key={filter}
               >
                 {filtered.map((survey, i) => {
-                  const statusClass = STATUS_CLASS[survey.status] || STATUS_CLASS.draft;
+                  const badgeVariant = STATUS_BADGE_VARIANT[survey.status] || 'draft';
                   const responseCount = survey.responseCount ?? survey.responses ?? 0;
                   const npsScore = survey.npsScore ?? survey.nps ?? null;
                   const topics = survey.topics || [];
@@ -279,9 +283,9 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                       {/* Status + title */}
                       <div className="flex-1 min-w-0 relative">
                         <div className="flex items-center gap-3 mb-2">
-                          <span className={statusClass}>
+                          <Badge variant={badgeVariant}>
                             {statusLabel(survey.status)}
-                          </span>
+                          </Badge>
                           {sentiment && (
                             <div className="flex items-center gap-1">
                               <div className="w-1.5 h-1.5 rounded-full"
@@ -334,54 +338,59 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                       <div className="flex items-center gap-2 shrink-0 relative">
                         {/* Pause / Resume — open confirmation modals */}
                         {survey.status === 'active' && (
-                          <motion.button
-                            onClick={(e) => { e.stopPropagation(); setPauseTarget({ id: survey.id, title: survey.title, responseCount: responseCount }); }}
-                            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl"
-                            style={{ background: 'rgba(217,119,6,0.08)', color: '#d97706' }}
-                            whileHover={{ background: 'rgba(217,119,6,0.15)', scale: 1.03 }}
-                            whileTap={{ scale: 0.96 }}
-                          >
-                            <Icon name="pause" size={14} />Pause
-                          </motion.button>
+                          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+                            <Button
+                              variant="warning"
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); setPauseTarget({ id: survey.id, title: survey.title, responseCount: responseCount }); }}
+                              className="rounded-xl bg-[rgba(217,119,6,0.08)] text-[#d97706] hover:bg-[rgba(217,119,6,0.15)] shadow-none active:scale-100"
+                            >
+                              <Icon name="pause" size={14} />Pause
+                            </Button>
+                          </motion.div>
                         )}
                         {survey.status === 'paused' && (
-                          <motion.button
-                            onClick={(e) => { e.stopPropagation(); setResumeTarget({ id: survey.id, title: survey.title, responseCount: responseCount }); }}
-                            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl text-white"
-                            style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
-                            whileHover={{ scale: 1.03 }}
-                            whileTap={{ scale: 0.96 }}
-                          >
-                            <Icon name="play_arrow" size={14} />Resume
-                          </motion.button>
+                          <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+                            <Button
+                              variant="success"
+                              size="sm"
+                              onClick={(e) => { e.stopPropagation(); setResumeTarget({ id: survey.id, title: survey.title, responseCount: responseCount }); }}
+                              className="rounded-xl active:scale-100"
+                            >
+                              <Icon name="play_arrow" size={14} />Resume
+                            </Button>
+                          </motion.div>
                         )}
-                        <motion.button
-                          onClick={(e) => { e.stopPropagation(); onNavigate(ROUTES.INSIGHTS); }}
-                          className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl text-primary"
-                          style={{ background: 'rgba(42,75,217,0.08)' }}
-                          whileHover={{ background: 'rgba(42,75,217,0.14)', scale: 1.03 }}
-                          whileTap={{ scale: 0.96 }}
-                        >
-                          <Icon name="insights" size={14} />
-                          {t('surveys.actions.insights')}
-                        </motion.button>
-                        <motion.button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            pageStore.setPendingBuilderData({
-                              id:           survey.id,
-                              title:        survey.title,
-                              questions:    survey.questions || [],
-                              surveyTypeId: survey.survey_type_id || survey.surveyTypeId || null,
-                            });
-                            onNavigate(ROUTES.BUILDER);
-                          }}
-                          className="p-2 rounded-xl text-on-surface-variant"
-                          whileHover={{ background: 'rgba(171,173,175,0.15)', scale: 1.05 }}
-                          whileTap={{ scale: 0.95 }}
-                        >
-                          <Icon name="edit" size={16} />
-                        </motion.button>
+                        <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); onNavigate(ROUTES.INSIGHTS); }}
+                            className="rounded-xl bg-[rgba(42,75,217,0.08)] text-primary hover:bg-[rgba(42,75,217,0.14)] active:scale-100"
+                          >
+                            <Icon name="insights" size={14} />
+                            {t('surveys.actions.insights')}
+                          </Button>
+                        </motion.div>
+                        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              pageStore.setPendingBuilderData({
+                                id:           survey.id,
+                                title:        survey.title,
+                                questions:    survey.questions || [],
+                                surveyTypeId: survey.survey_type_id || survey.surveyTypeId || null,
+                              });
+                              onNavigate(ROUTES.BUILDER);
+                            }}
+                            className="rounded-xl text-on-surface-variant hover:bg-[rgba(171,173,175,0.15)] active:scale-100"
+                          >
+                            <Icon name="edit" size={16} />
+                          </Button>
+                        </motion.div>
                       </div>
                     </motion.div>
                   );
@@ -407,17 +416,20 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                     <p className="text-sm mb-6 max-w-xs mx-auto text-on-surface-variant">
                       {t('surveys.empty.description')}
                     </p>
-                    <motion.button
-                      onClick={() => onNavigate(ROUTES.CREATE)}
-                      className="px-6 py-3 text-white font-bold text-sm bg-gradient-primary font-headline rounded-xl"
-                      style={{
-                        boxShadow: '0 10px 25px -5px rgba(42,75,217,0.35)',
-                      }}
+                    <motion.div
                       whileHover={{ scale: 1.03 }}
                       whileTap={{ scale: 0.97 }}
+                      style={{ display: 'inline-block', boxShadow: '0 10px 25px -5px rgba(42,75,217,0.35)' }}
+                      className="rounded-xl"
                     >
-                      {t('surveys.empty.cta')}
-                    </motion.button>
+                      <Button
+                        variant="gradient"
+                        onClick={() => onNavigate(ROUTES.CREATE)}
+                        className="rounded-xl font-headline active:scale-100"
+                      >
+                        {t('surveys.empty.cta')}
+                      </Button>
+                    </motion.div>
                   </motion.div>
                 )}
               </motion.div>

@@ -2,6 +2,7 @@ import { SignIn, SignUp } from '@clerk/react';
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { useTranslation } from '../lib/i18n';
+import { Button } from '@/components/ui/button';
 
 export function SignInPage({ onNavigate }) {
   const { t } = useTranslation();
@@ -69,12 +70,13 @@ export function SignInPage({ onNavigate }) {
         </div>
 
         <div className="text-center mt-4">
-          <button
+          <Button
+            variant="link"
             onClick={() => setMode(mode === 'sign-in' ? 'sign-up' : 'sign-in')}
-            className="text-sm font-semibold text-primary"
+            className="text-sm font-semibold text-primary p-0 h-auto"
           >
             {mode === 'sign-in' ? t('signIn.switchToSignUp') : t('signIn.switchToSignIn')}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

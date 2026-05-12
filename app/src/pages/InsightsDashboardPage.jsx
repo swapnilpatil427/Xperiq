@@ -9,6 +9,10 @@ import { useSurveys } from '../hooks/useSurveys';
 import { ROUTES } from '../constants/routes';
 import { SENTIMENT } from '../constants/thresholds';
 import { useTranslation } from '../lib/i18n';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 20 },
@@ -158,12 +162,9 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
                   <h3 className="text-6xl font-extrabold font-headline text-on-surface">
                     {insights?.npsScore ?? 74}
                   </h3>
-                  <span
-                    className="text-sm font-bold px-2 py-0.5 rounded text-success"
-                    style={{ background: '#f0fdf4' }}
-                  >
+                  <Badge variant="success" className="text-xs font-bold px-2 py-0.5">
                     +4.2%
-                  </span>
+                  </Badge>
                 </div>
                 <div className="mt-4">
                   <svg className="w-32 h-8" viewBox="0 0 100 25">
@@ -218,13 +219,13 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
                   <h3 className="text-6xl font-extrabold font-headline text-on-surface">
                     4.8
                   </h3>
-                  <span className="text-xl font-bold" style={{ color: 'rgba(89,92,94,0.4)' }}>{t('insights.csatScale')}</span>
+                  <span className="text-xl font-bold text-muted-foreground/40">{t('insights.csatScale')}</span>
                 </div>
                 <div className="mt-4 flex items-center gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wide text-success">
                     {t('insights.csatStatus')}
                   </span>
-                  <div className="h-1.5 w-24 rounded-full overflow-hidden" style={{ background: 'rgba(171,173,175,0.25)' }}>
+                  <div className="h-1.5 w-24 rounded-full overflow-hidden bg-muted/25">
                     <div className="h-full rounded-full" style={{ width: '85%', background: 'linear-gradient(to right, #10b981, #059669)' }} />
                   </div>
                 </div>
@@ -247,8 +248,7 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
           {/* Topics */}
           <section className="space-y-6">
             <motion.div
-              className="flex justify-between items-end pb-4"
-              style={{ borderBottom: '1px solid rgba(171,173,175,0.15)' }}
+              className="flex justify-between items-end pb-4 border-b border-muted/15"
               variants={fadeUp}
               initial="hidden"
               whileInView="visible"
@@ -262,18 +262,19 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
                   {t('insights.topicDescription', { count: (insights?.totalResponses ?? 12482).toLocaleString() })}
                 </p>
               </div>
-              <motion.button
-                onClick={regenerate}
-                disabled={generating}
-                className="glass-card px-5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 text-on-surface"
-                style={{ border: '1px solid rgba(171,173,175,0.2)' }}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <Icon name={generating ? 'hourglass_top' : 'refresh'} size={16}
-                  style={{ animation: generating ? 'spin 1s linear infinite' : 'none' }} />
-                {generating ? t('common.regenerating') : t('insights.refreshButton')}
-              </motion.button>
+              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={regenerate}
+                  disabled={generating}
+                  className="glass-card px-5 py-2 rounded-xl font-bold text-xs flex items-center gap-2 text-on-surface border border-muted/20 bg-background"
+                >
+                  <Icon name={generating ? 'hourglass_top' : 'refresh'} size={16}
+                    style={{ animation: generating ? 'spin 1s linear infinite' : 'none' }} />
+                  {generating ? t('common.regenerating') : t('insights.refreshButton')}
+                </Button>
+              </motion.div>
             </motion.div>
 
             <motion.div
@@ -366,162 +367,142 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
             viewport={{ once: true, margin: '-80px' }}
           >
             <motion.div custom={0} variants={fadeUp} className="lg:col-span-2 space-y-6">
-              <div
-                className="glass-card-premium rounded-2xl overflow-hidden"
+              <Card
+                className="glass-card-premium rounded-2xl overflow-hidden border-white/60"
                 style={{
                   boxShadow: '0 4px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8)',
-                  border: '1px solid rgba(255,255,255,0.6)',
                 }}
               >
                 {/* Tabs */}
-                <div
-                  className="flex"
-                  style={{ borderBottom: '1px solid rgba(171,173,175,0.15)', background: 'rgba(245,247,249,0.7)' }}
-                >
-                  {[
-                    { id: 'analysis', label: t('insights.tabs.signalAnalysis'), icon: 'analytics' },
-                    { id: 'raw', label: t('insights.tabs.rawData'), icon: 'chat_bubble_outline' },
-                    { id: 'velocity', label: t('insights.tabs.velocity'), icon: 'trending_up' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className="px-8 py-4 font-bold text-xs tracking-wide flex items-center gap-2 transition-all"
-                      style={{
-                        background: activeTab === tab.id ? '#ffffff' : 'transparent',
-                        color: activeTab === tab.id ? '#2a4bd9' : 'rgba(89,92,94,0.6)',
-                        borderBottom: activeTab === tab.id ? '2px solid #2a4bd9' : '2px solid transparent',
-                      }}
-                    >
-                      <Icon name={tab.icon} size={18} />
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                  <div className="border-b border-muted/15 bg-background/70">
+                    <TabsList className="h-auto bg-transparent rounded-none p-0 gap-0">
+                      {[
+                        { id: 'analysis', label: t('insights.tabs.signalAnalysis'), icon: 'analytics' },
+                        { id: 'raw', label: t('insights.tabs.rawData'), icon: 'chat_bubble_outline' },
+                        { id: 'velocity', label: t('insights.tabs.velocity'), icon: 'trending_up' },
+                      ].map((tab) => (
+                        <TabsTrigger
+                          key={tab.id}
+                          value={tab.id}
+                          className="px-8 py-4 font-bold text-xs tracking-wide flex items-center gap-2 rounded-none data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=inactive]:text-muted-foreground/60 border-b-2 border-transparent"
+                        >
+                          <Icon name={tab.icon} size={18} />
+                          {tab.label}
+                        </TabsTrigger>
+                      ))}
+                    </TabsList>
+                  </div>
 
-                <div className="p-8 space-y-12">
-                  <div className="flex flex-col md:flex-row gap-16">
-                    {/* Sentiment bars */}
-                    <div className="flex-1 space-y-6">
-                      <h6
-                        className="text-[10px] font-extrabold uppercase tracking-[0.2em]"
-                        style={{ color: 'rgba(75,85,99,0.5)' }}
-                      >
-                        {t('insights.sentimentMap')}
-                      </h6>
-                      <div className="flex items-end justify-between h-48 gap-6">
-                        {(() => {
-                          const bd = insights?.sentimentBreakdown || SENTIMENT.DEFAULT;
-                          return [
-                            { pct: bd.positive, label: `${bd.positive}% POSITIVE`, color: '#10b981', textColor: '#059669' },
-                            { pct: bd.neutral, label: `${bd.neutral}% NEUTRAL`, color: '#6b7280', textColor: '#4b5563' },
-                            { pct: bd.negative, label: `${bd.negative}% FRICTION`, color: '#be123c', textColor: '#be123c' },
-                          ];
-                        })().map((bar) => (
-                          <div key={bar.label} className="flex-1 flex flex-col items-center gap-4">
-                            <div
-                              className="w-full transition-all duration-1000"
-                              style={{
-                                height: `${bar.pct}%`,
-                                background: `${bar.color}10`,
-                                borderTop: `2px solid ${bar.color}`,
-                              }}
-                            />
-                            <span
-                              className="text-[10px] font-bold"
-                              style={{ color: bar.textColor }}
+                  <CardContent className="p-8 space-y-12">
+                    <div className="flex flex-col md:flex-row gap-16">
+                      {/* Sentiment bars */}
+                      <div className="flex-1 space-y-6">
+                        <h6 className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-muted-foreground/50">
+                          {t('insights.sentimentMap')}
+                        </h6>
+                        <div className="flex items-end justify-between h-48 gap-6">
+                          {(() => {
+                            const bd = insights?.sentimentBreakdown || SENTIMENT.DEFAULT;
+                            return [
+                              { pct: bd.positive, label: `${bd.positive}% POSITIVE`, color: '#10b981', textColor: '#059669' },
+                              { pct: bd.neutral, label: `${bd.neutral}% NEUTRAL`, color: '#6b7280', textColor: '#4b5563' },
+                              { pct: bd.negative, label: `${bd.negative}% FRICTION`, color: '#be123c', textColor: '#be123c' },
+                            ];
+                          })().map((bar) => (
+                            <div key={bar.label} className="flex-1 flex flex-col items-center gap-4">
+                              <div
+                                className="w-full transition-all duration-1000"
+                                style={{
+                                  height: `${bar.pct}%`,
+                                  background: `${bar.color}10`,
+                                  borderTop: `2px solid ${bar.color}`,
+                                }}
+                              />
+                              <span
+                                className="text-[10px] font-bold"
+                                style={{ color: bar.textColor }}
+                              >
+                                {bar.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Friction Points */}
+                      <div className="flex-1 space-y-6">
+                        <h6 className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-muted-foreground/50">
+                          {t('insights.frictionHeading')}
+                        </h6>
+                        <div className="space-y-3">
+                          {(insights?.topPhrases || frictionPoints.map((f) => f.phrase)).map((phrase, i) => (
+                            <motion.div
+                              key={i}
+                              className="flex justify-between items-center p-4 rounded-xl transition-all bg-background/80 border border-muted/15"
+                              whileHover={{ borderColor: 'rgba(42,75,217,0.25)', x: 2 }}
                             >
-                              {bar.label}
-                            </span>
-                          </div>
-                        ))}
+                              <span className="text-sm font-semibold text-on-surface">
+                                {typeof phrase === 'string' ? phrase : phrase.phrase}
+                              </span>
+                              <Badge variant="secondary" className="text-[10px] font-extrabold text-[#4338ca] bg-[rgba(67,56,202,0.1)]">
+                                {typeof phrase === 'string' ? `${42 - i * 9}x` : phrase.count}
+                              </Badge>
+                            </motion.div>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Friction Points */}
-                    <div className="flex-1 space-y-6">
-                      <h6
-                        className="text-[10px] font-extrabold uppercase tracking-[0.2em]"
-                        style={{ color: 'rgba(75,85,99,0.5)' }}
-                      >
-                        {t('insights.frictionHeading')}
+                    {/* Sample Responses */}
+                    <div className="space-y-6">
+                      <h6 className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-muted-foreground/50">
+                        {t('insights.samplesHeading')}
                       </h6>
-                      <div className="space-y-3">
-                        {(insights?.topPhrases || frictionPoints.map((f) => f.phrase)).map((phrase, i) => (
+                      <div className="space-y-4">
+                        {sampleResponses.map((r) => (
                           <motion.div
-                            key={i}
-                            className="flex justify-between items-center p-4 rounded-xl transition-all"
-                            style={{ background: 'rgba(245,247,249,0.8)', border: '1px solid rgba(171,173,175,0.15)' }}
-                            whileHover={{ borderColor: 'rgba(42,75,217,0.25)', x: 2 }}
+                            key={r.id}
+                            className="p-6 rounded-2xl"
+                            style={{
+                              background: 'rgba(255,255,255,0.75)',
+                              backdropFilter: 'blur(12px)',
+                              border: '1px solid rgba(255,255,255,0.6)',
+                              boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+                            }}
+                            whileHover={{ y: -2 }}
                           >
-                            <span className="text-sm font-semibold text-on-surface">
-                              {typeof phrase === 'string' ? phrase : phrase.phrase}
-                            </span>
-                            <span className="text-[10px] font-extrabold px-2 py-1 rounded-full"
-                              style={{ color: '#4338ca', background: 'rgba(67,56,202,0.1)' }}>
-                              {typeof phrase === 'string' ? `${42 - i * 9}x` : phrase.count}
-                            </span>
+                            <div className="flex justify-between items-center mb-3">
+                              <div className="flex items-center gap-2">
+                                <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-primary bg-primary/8">
+                                  R
+                                </div>
+                                <span className="text-[10px] font-bold text-on-surface-variant">
+                                  {t('insights.participantLabel', { id: r.id })}
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-bold text-muted-foreground">
+                                {r.time}
+                              </span>
+                            </div>
+                            <p className="text-sm leading-relaxed text-on-surface-variant">
+                              {r.text}
+                            </p>
                           </motion.div>
                         ))}
                       </div>
                     </div>
-                  </div>
-
-                  {/* Sample Responses */}
-                  <div className="space-y-6">
-                    <h6
-                      className="text-[10px] font-extrabold uppercase tracking-[0.2em]"
-                      style={{ color: 'rgba(75,85,99,0.5)' }}
-                    >
-                      {t('insights.samplesHeading')}
-                    </h6>
-                    <div className="space-y-4">
-                      {sampleResponses.map((r) => (
-                        <motion.div
-                          key={r.id}
-                          className="p-6 rounded-2xl"
-                          style={{
-                            background: 'rgba(255,255,255,0.75)',
-                            backdropFilter: 'blur(12px)',
-                            border: '1px solid rgba(255,255,255,0.6)',
-                            boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
-                          }}
-                          whileHover={{ y: -2 }}
-                        >
-                          <div className="flex justify-between items-center mb-3">
-                            <div className="flex items-center gap-2">
-                              <div
-                                className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-primary"
-                                style={{ background: 'rgba(42,75,217,0.08)' }}
-                              >
-                                R
-                              </div>
-                              <span className="text-[10px] font-bold text-on-surface-variant">
-                                {t('insights.participantLabel', { id: r.id })}
-                              </span>
-                            </div>
-                            <span className="text-[10px] font-bold text-inverse-on-surface">
-                              {r.time}
-                            </span>
-                          </div>
-                          <p className="text-sm leading-relaxed text-on-surface-variant">
-                            {r.text}
-                          </p>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
+                  </CardContent>
+                </Tabs>
+              </Card>
             </motion.div>
 
             {/* Topic Management */}
             <motion.div custom={1} variants={fadeUp} className="lg:col-span-1">
-              <div
-                className="glass-card-premium rounded-2xl p-8 flex flex-col h-full"
+              <Card
+                className="glass-card-premium rounded-2xl p-8 flex flex-col h-full border-white/60"
                 style={{
                   boxShadow: '0 4px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8)',
-                  border: '1px solid rgba(255,255,255,0.6)',
                 }}
               >
                 <div className="flex items-center gap-3 mb-8">
@@ -539,14 +520,12 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
                       {t('insights.activeSelection')}
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <div
-                        className="px-3 py-1.5 text-[10px] font-bold flex items-center gap-2 rounded-full text-white"
-                        style={{ background: 'linear-gradient(135deg, #2c2f31, #1a1f36)' }}
-                      >
+                      <div className="px-3 py-1.5 text-[10px] font-bold flex items-center gap-2 rounded-full text-white"
+                        style={{ background: 'linear-gradient(135deg, #2c2f31, #1a1f36)' }}>
                         Onboarding Velocity
-                        <button className="text-white/70">
+                        <Button variant="ghost" size="icon" className="h-auto w-auto p-0 text-white/70 hover:text-white hover:bg-transparent">
                           <Icon name="close" size={14} />
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </div>
@@ -558,38 +537,35 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
                         { icon: 'merge', label: t('insights.globalActionConsolidate') },
                         { icon: 'edit_square', label: t('insights.globalActionRefine') },
                       ].map((a) => (
-                        <motion.button
-                          key={a.label}
-                          className="w-full text-left py-3 px-4 rounded-xl flex items-center gap-3 font-bold text-xs text-on-surface"
-                          style={{ border: '1px solid rgba(171,173,175,0.2)', background: 'rgba(245,247,249,0.7)' }}
-                          whileHover={{ borderColor: 'rgba(42,75,217,0.3)', x: 2 }}
-                        >
-                          <Icon name={a.icon} size={18} className="text-on-surface-variant" />
-                          {a.label}
-                        </motion.button>
+                        <motion.div key={a.label} whileHover={{ borderColor: 'rgba(42,75,217,0.3)', x: 2 }}>
+                          <Button
+                            variant="outline"
+                            className="w-full text-left py-3 px-4 rounded-xl flex items-center gap-3 font-bold text-xs text-on-surface justify-start border-muted/20 bg-background/70"
+                          >
+                            <Icon name={a.icon} size={18} className="text-on-surface-variant" />
+                            {a.label}
+                          </Button>
+                        </motion.div>
                       ))}
-                      <motion.button
-                        className="w-full py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 font-bold text-xs text-white mt-1 relative overflow-hidden bg-gradient-primary"
-                        style={{
-                          boxShadow: '0 8px 20px -6px rgba(42,75,217,0.4)',
-                        }}
-                        whileHover={{ scale: 1.02 }}
-                        whileTap={{ scale: 0.97 }}
-                      >
-                        <Icon name="account_tree" size={18} />
-                        {t('insights.globalActionMapTheme')}
-                      </motion.button>
+                      <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }}>
+                        <Button
+                          className="w-full py-3.5 px-4 rounded-xl flex items-center justify-center gap-2 font-bold text-xs text-white mt-1 relative overflow-hidden bg-gradient-primary"
+                          style={{ boxShadow: '0 8px 20px -6px rgba(42,75,217,0.4)' }}
+                        >
+                          <Icon name="account_tree" size={18} />
+                          {t('insights.globalActionMapTheme')}
+                        </Button>
+                      </motion.div>
                     </div>
                   </div>
 
-                  <div className="pt-8" style={{ borderTop: '1px solid rgba(171,173,175,0.15)' }}>
+                  <div className="pt-8 border-t border-muted/15">
                     <p className="label-caps mb-4">{t('insights.recommendedThemes')}</p>
                     <div className="space-y-2">
                       {recommendedThemes.map((theme) => (
                         <motion.div
                           key={theme.label}
-                          className="flex items-center justify-between p-3 rounded-xl cursor-pointer"
-                          style={{ background: 'rgba(245,247,249,0.7)', border: '1px solid rgba(171,173,175,0.1)' }}
+                          className="flex items-center justify-between p-3 rounded-xl cursor-pointer bg-background/70 border border-muted/10"
                           whileHover={{ x: 3, borderColor: 'rgba(42,75,217,0.2)' }}
                         >
                           <div className="flex items-center gap-3">
@@ -603,19 +579,19 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
                               {theme.label}
                             </span>
                           </div>
-                          <Icon name="arrow_forward" size={18} className="text-inverse-on-surface" />
+                          <Icon name="arrow_forward" size={18} className="text-muted-foreground" />
                         </motion.div>
                       ))}
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-8 pt-6" style={{ borderTop: '1px solid rgba(171,173,175,0.15)' }}>
-                  <p className="text-[9px] font-bold italic text-center text-inverse-on-surface">
+                <div className="mt-8 pt-6 border-t border-muted/15">
+                  <p className="text-[9px] font-bold italic text-center text-muted-foreground">
                     {t('brand.poweredByCore')}
                   </p>
                 </div>
-              </div>
+              </Card>
             </motion.div>
           </motion.section>
         </div>

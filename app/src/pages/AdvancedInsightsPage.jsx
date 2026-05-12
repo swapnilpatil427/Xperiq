@@ -5,8 +5,13 @@ import { Icon } from '../components/Icon';
 import { useInsights } from '../hooks/useInsights';
 import { useSurveys } from '../hooks/useSurveys';
 import { ROUTES } from '../constants/routes';
-import { SENTIMENT } from '../constants/thresholds';
 import { useTranslation } from '../lib/i18n';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 
 const topicCards = [
   {
@@ -106,13 +111,11 @@ export function AdvancedInsightsPage({ onNavigate }) {
     <div className="flex min-h-screen bg-surface font-body">
       <SideNav currentPage={ROUTES.INSIGHTS} onNavigate={onNavigate} />
 
-      <main className="flex-1 flex flex-col min-h-screen" style={{ marginLeft: '16rem' }}>
+      <main className="flex-1 flex flex-col min-h-screen md:ml-64">
         {/* Top Bar */}
         <header
-          className="fixed top-0 z-50 glass-nav flex justify-between items-center h-16 px-6"
+          className="topbar-fixed fixed top-0 z-50 glass-nav flex justify-between items-center h-16 px-6"
           style={{
-            width: 'calc(100% - 16rem)',
-            left: '16rem',
             boxShadow: '0 8px 32px 0 rgba(31,38,135,0.07)',
           }}
         >
@@ -120,11 +123,8 @@ export function AdvancedInsightsPage({ onNavigate }) {
             <h2 className="text-2xl font-bold tracking-tight font-headline text-on-surface">
               {t('advancedInsights.pageTitle')}
             </h2>
-            <div className="h-6 w-px" style={{ background: 'rgba(203,213,225,0.5)' }} />
-            <div
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full"
-              style={{ background: 'rgba(203,213,225,0.3)' }}
-            >
+            <Separator orientation="vertical" className="h-6 opacity-50" />
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/30">
               <Icon name="calendar_today" size={16} className="text-primary" />
               <span className="text-xs font-semibold text-on-surface-variant">{t('advancedInsights.dateFilter')}</span>
             </div>
@@ -132,19 +132,18 @@ export function AdvancedInsightsPage({ onNavigate }) {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               {['notifications', 'help'].map((icon) => (
-                <button
+                <Button
                   key={icon}
-                  className="w-10 h-10 rounded-full flex items-center justify-center transition-all text-on-surface-variant"
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(203,213,225,0.5)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  variant="ghost"
+                  size="icon"
+                  className="w-10 h-10 rounded-full text-on-surface-variant hover:bg-muted/50"
                 >
                   <Icon name={icon} size={20} />
-                </button>
+                </Button>
               ))}
             </div>
             <div
-              className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white font-headline bg-gradient-primary"
-              style={{ border: '2px solid #ffffff' }}
+              className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white font-headline bg-gradient-primary border-2 border-white"
             >
               AR
             </div>
@@ -181,7 +180,7 @@ export function AdvancedInsightsPage({ onNavigate }) {
                       strokeWidth="2"
                     />
                   </svg>
-                  <span className="text-[10px] font-bold" style={{ color: '#6ee7b7' }}>+4 pts</span>
+                  <span className="text-[10px] font-bold text-emerald-300">+4 pts</span>
                 </div>
               </div>
               <div className="relative z-10 ml-auto">
@@ -216,11 +215,10 @@ export function AdvancedInsightsPage({ onNavigate }) {
             </div>
 
             {/* CSAT */}
-            <div
-              className="p-8 relative overflow-hidden flex items-center gap-8 bg-white"
+            <Card
+              className="p-8 relative overflow-hidden flex items-center gap-8 bg-white border-muted/10"
               style={{
                 borderRadius: '0.75rem',
-                border: '1px solid rgba(171,173,175,0.1)',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
               }}
             >
@@ -232,7 +230,7 @@ export function AdvancedInsightsPage({ onNavigate }) {
                   <h3 className="text-5xl font-black font-headline text-on-surface">
                     4.8
                   </h3>
-                  <span className="text-xl font-bold" style={{ color: 'rgba(89,92,94,0.5)' }}>{t('insights.csatScale')}</span>
+                  <span className="text-xl font-bold text-muted-foreground/50">{t('insights.csatScale')}</span>
                 </div>
                 <div className="flex items-end gap-1 h-6">
                   <svg className="w-24 h-6" viewBox="0 0 100 25">
@@ -268,7 +266,7 @@ export function AdvancedInsightsPage({ onNavigate }) {
                   />
                 ))}
               </div>
-            </div>
+            </Card>
           </section>
 
           {/* Topics */}
@@ -282,15 +280,14 @@ export function AdvancedInsightsPage({ onNavigate }) {
                   {t('advancedInsights.topicsDescription', { count: (insights?.totalResponses ?? 12482).toLocaleString() })}
                 </p>
               </div>
-              <button
-                className="px-6 py-2 rounded-full border text-sm font-bold flex items-center gap-2 transition-colors bg-white text-on-surface"
-                style={{ borderColor: '#e2e8f0' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = '#f8fafc')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = '#ffffff')}
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-full border-border text-on-surface bg-white hover:bg-muted/10 font-bold"
               >
                 <Icon name="settings_suggest" size={16} />
                 {t('advancedInsights.recalculateButton')}
-              </button>
+              </Button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -324,15 +321,16 @@ export function AdvancedInsightsPage({ onNavigate }) {
                     >
                       <Icon name={card.icon} size={20} />
                     </div>
-                    <span
-                      className="px-2 py-1 rounded-xl text-[10px] font-bold uppercase"
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] font-bold uppercase px-2 py-1 rounded-xl"
                       style={{
                         background: card.active ? '#4f46e5' : '#f1f5f9',
                         color: card.active ? '#ffffff' : '#475569',
                       }}
                     >
                       {card.mentions}
-                    </span>
+                    </Badge>
                   </div>
                   <h5 className="font-bold mb-1 font-headline text-on-surface">
                     {card.title}
@@ -363,126 +361,123 @@ export function AdvancedInsightsPage({ onNavigate }) {
           {/* Analytics Detail */}
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
-              <div
-                className="overflow-hidden bg-white"
+              <Card
+                className="overflow-hidden bg-white border-muted/10"
                 style={{
                   borderRadius: '1rem',
-                  border: '1px solid rgba(171,173,175,0.1)',
                   boxShadow: '0 4px 12px rgba(0,0,0,0.04)',
                 }}
               >
                 {/* Tabs */}
-                <div
-                  className="flex p-2 gap-2"
-                  style={{ borderBottom: '1px solid #f1f5f9', background: 'rgba(248,250,252,0.5)' }}
-                >
-                  {[
-                    { id: 'analysis', label: t('advancedInsights.tabs.analysis'), icon: 'analytics' },
-                    { id: 'sample', label: t('advancedInsights.tabs.sampleData'), icon: 'chat_bubble' },
-                    { id: 'trends', label: t('advancedInsights.tabs.trends'), icon: 'history' },
-                  ].map((tab) => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className="px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 transition-all"
-                      style={{
-                        background: activeTab === tab.id ? '#ffffff' : 'transparent',
-                        color: activeTab === tab.id ? '#4f46e5' : '#94a3b8',
-                        boxShadow: activeTab === tab.id ? '0 2px 8px rgba(0,0,0,0.06)' : 'none',
-                      }}
-                    >
-                      <Icon name={tab.icon} size={16} />
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="p-8 space-y-10">
-                  <div className="flex flex-col md:flex-row gap-12">
-                    {/* Sentiment */}
-                    <div className="flex-1 space-y-4">
-                      <h6 className="text-sm font-bold uppercase tracking-widest text-inverse-on-surface">
-                        {t('advancedInsights.sentimentBreakdown')}
-                      </h6>
-                      <div className="flex items-end justify-between h-40 gap-4">
-                        {sentimentBars.map((bar) => (
-                          <div key={bar.label} className="flex-1 flex flex-col items-center gap-3">
-                            <div
-                              className="w-full rounded-t-xl soft-extrusion"
-                              style={{ height: `${bar.pct}%`, background: bar.color }}
-                            />
-                            <span
-                              className="text-[10px] font-bold"
-                              style={{ color: bar.labelColor }}
-                            >
-                              {bar.label}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Phrases */}
-                    <div className="flex-1 space-y-4">
-                      <h6 className="text-sm font-bold uppercase tracking-widest text-inverse-on-surface">
-                        {t('advancedInsights.topPhrases')}
-                      </h6>
-                      <div className="space-y-3">
-                        {phrases.map((p) => (
-                          <div
-                            key={p.text}
-                            className="flex justify-between items-center p-3 rounded-xl border"
-                            style={{ background: '#f8fafc', borderColor: '#f1f5f9' }}
-                          >
-                            <span className="text-sm font-semibold text-on-surface">{p.text}</span>
-                            <span
-                              className="text-xs font-bold px-2 py-0.5 rounded-xl"
-                              style={{ color: '#4f46e5', background: '#eef2ff' }}
-                            >
-                              {p.count}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Responses */}
-                  <div className="space-y-4">
-                    <h6 className="text-sm font-bold uppercase tracking-widest text-inverse-on-surface">
-                      {t('advancedInsights.sampleResponses')}
-                    </h6>
-                    <div className="max-h-64 overflow-y-auto space-y-4 pr-2">
-                      {responses.map((r) => (
-                        <div
-                          key={r.id}
-                          className="p-4 border rounded-xl bg-white"
-                          style={{ borderColor: '#f1f5f9', boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}
+                <Tabs value={activeTab} onValueChange={setActiveTab}>
+                  <div className="border-b border-muted/20 bg-muted/5 p-2 flex gap-2">
+                    <TabsList className="h-auto bg-transparent rounded-none p-0 gap-2">
+                      {[
+                        { id: 'analysis', label: t('advancedInsights.tabs.analysis'), icon: 'analytics' },
+                        { id: 'sample', label: t('advancedInsights.tabs.sampleData'), icon: 'chat_bubble' },
+                        { id: 'trends', label: t('advancedInsights.tabs.trends'), icon: 'history' },
+                      ].map((tab) => (
+                        <TabsTrigger
+                          key={tab.id}
+                          value={tab.id}
+                          className="px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 data-[state=active]:bg-white data-[state=active]:text-[#4f46e5] data-[state=active]:shadow-sm data-[state=inactive]:text-muted-foreground"
                         >
-                          <div className="flex justify-between mb-2">
-                            <span className="text-xs font-bold text-inverse-on-surface">
-                              {t('advancedInsights.respondentLabel', { id: r.id, time: r.time })}
-                            </span>
-                            <span className="flex gap-0.5" style={{ color: '#f59e0b' }}>
-                              {Array.from({ length: r.stars }, (_, i) => (
-                                <Icon key={i} name="star" fill={1} size={12} />
-                              ))}
-                            </span>
-                          </div>
-                          <p className="text-sm italic leading-relaxed text-on-surface-variant">
-                            {r.text}
-                          </p>
-                        </div>
+                          <Icon name={tab.icon} size={16} />
+                          {tab.label}
+                        </TabsTrigger>
                       ))}
-                    </div>
+                    </TabsList>
                   </div>
-                </div>
-              </div>
+
+                  <CardContent className="p-8 space-y-10">
+                    <div className="flex flex-col md:flex-row gap-12">
+                      {/* Sentiment */}
+                      <div className="flex-1 space-y-4">
+                        <h6 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
+                          {t('advancedInsights.sentimentBreakdown')}
+                        </h6>
+                        <div className="flex items-end justify-between h-40 gap-4">
+                          {sentimentBars.map((bar) => (
+                            <div key={bar.label} className="flex-1 flex flex-col items-center gap-3">
+                              <div
+                                className="w-full rounded-t-xl soft-extrusion"
+                                style={{ height: `${bar.pct}%`, background: bar.color }}
+                              />
+                              <span
+                                className="text-[10px] font-bold"
+                                style={{ color: bar.labelColor }}
+                              >
+                                {bar.label}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Phrases */}
+                      <div className="flex-1 space-y-4">
+                        <h6 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
+                          {t('advancedInsights.topPhrases')}
+                        </h6>
+                        <div className="space-y-3">
+                          {phrases.map((p) => (
+                            <div
+                              key={p.text}
+                              className="flex justify-between items-center p-3 rounded-xl border bg-muted/5 border-muted/20"
+                            >
+                              <span className="text-sm font-semibold text-on-surface">{p.text}</span>
+                              <Badge
+                                variant="secondary"
+                                className="text-xs font-bold px-2 py-0.5 rounded-xl"
+                                style={{ color: '#4f46e5', background: '#eef2ff' }}
+                              >
+                                {p.count}
+                              </Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Responses */}
+                    <div className="space-y-4">
+                      <h6 className="text-sm font-bold uppercase tracking-widest text-muted-foreground">
+                        {t('advancedInsights.sampleResponses')}
+                      </h6>
+                      <ScrollArea className="h-64 pr-2">
+                        <div className="space-y-4">
+                          {responses.map((r) => (
+                            <Card
+                              key={r.id}
+                              className="p-4 border-muted/20 bg-white"
+                              style={{ boxShadow: '0 2px 6px rgba(0,0,0,0.04)' }}
+                            >
+                              <div className="flex justify-between mb-2">
+                                <span className="text-xs font-bold text-muted-foreground">
+                                  {t('advancedInsights.respondentLabel', { id: r.id, time: r.time })}
+                                </span>
+                                <span className="flex gap-0.5 text-amber-400">
+                                  {Array.from({ length: r.stars }, (_, i) => (
+                                    <Icon key={i} name="star" fill={1} size={12} />
+                                  ))}
+                                </span>
+                              </div>
+                              <p className="text-sm italic leading-relaxed text-on-surface-variant">
+                                {r.text}
+                              </p>
+                            </Card>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </div>
+                  </CardContent>
+                </Tabs>
+              </Card>
             </div>
 
             {/* Topic Management */}
             <div className="lg:col-span-1 space-y-6">
-              <div
+              <Card
                 className="rounded-2xl border p-8 h-full flex flex-col"
                 style={{
                   background: 'rgba(255,255,255,0.6)',
@@ -492,10 +487,7 @@ export function AdvancedInsightsPage({ onNavigate }) {
                 }}
               >
                 <div className="flex items-center gap-3 mb-6">
-                  <div
-                    className="w-10 h-10 rounded-full flex items-center justify-center text-primary"
-                    style={{ background: 'rgba(42,75,217,0.1)' }}
-                  >
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center text-primary bg-primary/10">
                     <Icon name="manage_accounts" size={20} />
                   </div>
                   <h4 className="text-lg font-black font-headline text-on-surface">
@@ -505,7 +497,7 @@ export function AdvancedInsightsPage({ onNavigate }) {
 
                 <div className="space-y-6 flex-1">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-widest mb-3 text-inverse-on-surface">
+                    <p className="text-xs font-bold uppercase tracking-widest mb-3 text-muted-foreground">
                       {t('advancedInsights.activeSelection')}
                     </p>
                     <div className="flex flex-wrap gap-2">
@@ -517,15 +509,15 @@ export function AdvancedInsightsPage({ onNavigate }) {
                         }}
                       >
                         Onboarding Experience
-                        <button style={{ color: 'rgba(255,255,255,0.8)' }}>
+                        <Button variant="ghost" size="icon" className="h-auto w-auto p-0 text-white/80 hover:text-white hover:bg-transparent">
                           <Icon name="close" size={12} />
-                        </button>
+                        </Button>
                       </div>
                     </div>
                   </div>
 
                   <div className="space-y-4">
-                    <p className="text-xs font-bold uppercase tracking-widest text-inverse-on-surface">
+                    <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
                       {t('advancedInsights.globalActions')}
                     </p>
                     <div className="grid gap-3">
@@ -533,16 +525,16 @@ export function AdvancedInsightsPage({ onNavigate }) {
                         { icon: 'merge', label: t('advancedInsights.globalActionMerge') },
                         { icon: 'edit', label: t('advancedInsights.globalActionRename') },
                       ].map((a) => (
-                        <button
+                        <Button
                           key={a.label}
-                          className="w-full vr-button border py-3 px-4 rounded-xl flex items-center gap-3 font-bold text-sm bg-white"
-                          style={{ borderColor: '#e2e8f0', color: '#334155' }}
+                          variant="outline"
+                          className="w-full vr-button border py-3 px-4 rounded-xl flex items-center gap-3 font-bold text-sm bg-white justify-start border-border text-foreground"
                         >
                           <Icon name={a.icon} size={18} style={{ color: '#4f46e5' }} />
                           {a.label}
-                        </button>
+                        </Button>
                       ))}
-                      <button
+                      <Button
                         className="w-full vr-button py-4 px-4 rounded-xl flex items-center justify-center gap-3 font-bold text-sm text-white"
                         style={{
                           background: '#4f46e5',
@@ -551,25 +543,19 @@ export function AdvancedInsightsPage({ onNavigate }) {
                       >
                         <Icon name="folder_shared" size={18} />
                         {t('advancedInsights.globalActionGroup')}
-                      </button>
+                      </Button>
                     </div>
                   </div>
 
-                  <div
-                    className="pt-6"
-                    style={{ borderTop: '1px solid rgba(203,213,225,0.5)' }}
-                  >
-                    <p className="text-xs font-bold uppercase tracking-widest mb-4 text-inverse-on-surface">
+                  <div className="pt-6 border-t border-muted/50">
+                    <p className="text-xs font-bold uppercase tracking-widest mb-4 text-muted-foreground">
                       {t('advancedInsights.recommendedThemes')}
                     </p>
                     <div className="space-y-3">
                       {themes.map((theme) => (
                         <div
                           key={theme.label}
-                          className="flex items-center justify-between p-3 rounded-xl cursor-pointer transition-colors group"
-                          style={{ background: 'rgba(241,245,249,0.5)' }}
-                          onMouseEnter={(e) => (e.currentTarget.style.background = '#f1f5f9')}
-                          onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(241,245,249,0.5)')}
+                          className="flex items-center justify-between p-3 rounded-xl cursor-pointer transition-colors group bg-muted/50 hover:bg-muted"
                         >
                           <div className="flex items-center gap-3">
                             <div
@@ -583,15 +569,14 @@ export function AdvancedInsightsPage({ onNavigate }) {
                           <Icon
                             name="chevron_right"
                             size={18}
-                            className="group-hover:translate-x-1 transition-transform"
-                            style={{ color: '#cbd5e1' }}
+                            className="group-hover:translate-x-1 transition-transform text-muted-foreground"
                           />
                         </div>
                       ))}
                     </div>
                   </div>
                 </div>
-              </div>
+              </Card>
             </div>
           </section>
         </div>

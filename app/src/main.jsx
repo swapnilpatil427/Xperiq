@@ -5,6 +5,10 @@ import { BrowserRouter } from 'react-router-dom';
 import './index.css';
 import App from './App.jsx';
 import { AppAuthProvider } from './lib/auth.jsx';
+import { loadBrandTheme } from './lib/brandTheme';
+
+// Restore persisted brand theme before first render so there's no flash
+loadBrandTheme();
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 

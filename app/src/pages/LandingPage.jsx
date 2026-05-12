@@ -6,6 +6,7 @@ import { LogoMark } from '../components/Logo';
 import { HeroCanvas } from '../components/three/HeroCanvas';
 import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { Button } from '@/components/ui/button';
 
 // Animation variants
 const fadeUp = {
@@ -96,8 +97,7 @@ export function LandingPage({ onNavigate }) {
                 {t('landing.heroHeadingMiddle')}
               </motion.h1>
               <motion.p
-                className="text-xl leading-relaxed max-w-xl"
-                style={{ color: '#47527a' }}
+                className="text-xl leading-relaxed max-w-xl text-[#47527a]"
                 variants={fadeUp}
                 custom={2}
               >
@@ -107,9 +107,10 @@ export function LandingPage({ onNavigate }) {
 
             {/* CTAs */}
             <motion.div className="flex flex-wrap gap-4" variants={fadeUp} custom={3}>
-              <button
+              <Button
                 onClick={() => onNavigate(ROUTES.ONBOARDING)}
-                className="cta-glow relative overflow-hidden px-8 py-4 text-white font-bold active:scale-95 transition-all font-headline rounded-xl"
+                size="lg"
+                className="cta-glow relative overflow-hidden text-white font-bold active:scale-95 font-headline rounded-xl"
                 style={{
                   background: 'linear-gradient(135deg, #2a4bd9, #6d28d9)',
                   boxShadow: '0 20px 40px -10px rgba(42,75,217,0.4)',
@@ -121,9 +122,11 @@ export function LandingPage({ onNavigate }) {
                   {t('landing.ctaButton')}
                   <Icon name="arrow_forward" size={18} />
                 </span>
-              </button>
-              <button
-                className="px-8 py-4 font-semibold transition-all card-3d font-headline text-on-surface rounded-xl"
+              </Button>
+              <Button
+                variant="outline"
+                size="lg"
+                className="font-semibold font-headline text-on-surface rounded-xl card-3d"
                 style={{
                   background: 'rgba(255,255,255,0.8)',
                   border: '1px solid rgba(42,75,217,0.2)',
@@ -133,7 +136,7 @@ export function LandingPage({ onNavigate }) {
                 onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,0.8)')}
               >
                 {t('landing.secondaryButton')}
-              </button>
+              </Button>
             </motion.div>
 
             {/* Feature list */}
@@ -416,7 +419,7 @@ export function LandingPage({ onNavigate }) {
                 <h3 className="relative z-10 text-xl font-bold mb-3 font-headline text-on-surface">
                   {f.title}
                 </h3>
-                <p className="relative z-10 text-sm leading-relaxed" style={{ color: '#47527a' }}>
+                <p className="relative z-10 text-sm leading-relaxed text-[#47527a]">
                   {f.desc}
                 </p>
                 <div
@@ -431,10 +434,7 @@ export function LandingPage({ onNavigate }) {
       </main>
 
       {/* ── Footer ──────────────────────────────────────────── */}
-      <footer
-        className="w-full border-t font-body"
-        style={{ background: '#f8fafc', borderColor: '#e2e8f0' }}
-      >
+      <footer className="w-full border-t font-body bg-[#f8fafc] border-[#e2e8f0]">
         <div className="flex flex-col md:flex-row justify-between items-center px-8 py-12 gap-6 max-w-screen-2xl mx-auto">
           <div className="flex items-center gap-3">
             <LogoMark size={28} />
@@ -451,9 +451,7 @@ export function LandingPage({ onNavigate }) {
               <a
                 key={l}
                 href="#"
-                className="text-xs tracking-wide uppercase transition-colors text-inverse-on-surface"
-                onMouseEnter={(e) => (e.target.style.color = '#2a4bd9')}
-                onMouseLeave={(e) => (e.target.style.color = '#9a9d9f')}
+                className="text-xs tracking-wide uppercase transition-colors text-inverse-on-surface hover:text-[var(--color-primary)]"
               >
                 {l}
               </a>

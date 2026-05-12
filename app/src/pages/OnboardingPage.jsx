@@ -6,6 +6,7 @@ import { GRADIENTS } from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
 import { useAppAuth } from '../lib/auth.jsx';
 import { SignInPage } from './SignInPage';
+import { Button } from '@/components/ui/button';
 
 // Top-level: branch between Clerk-backed and demo mode
 export function OnboardingPage({ onNavigate }) {
@@ -76,13 +77,15 @@ function ClerkOnboarding({ onNavigate }) {
           onClick={(e) => { if (e.target === e.currentTarget) setShowCreate(false); }}
         >
           <div className="relative">
-            <button
+            <Button
               onClick={() => setShowCreate(false)}
-              className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full flex items-center justify-center text-white"
+              variant="ghost"
+              size="icon"
+              className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full text-white"
               style={{ background: 'rgba(0,0,0,0.6)' }}
             >
               <Icon name="close" size={16} />
-            </button>
+            </Button>
             <CreateOrganization afterCreateOrganizationUrl="/" skipInvitationScreen={false} />
           </div>
         </div>
@@ -195,13 +198,11 @@ function ClerkOnboarding({ onNavigate }) {
             )}
 
             {/* Create org CTA */}
-            <div
-              className="pt-6 flex flex-col items-center gap-4"
-              style={{ borderTop: '1px solid rgba(171,173,175,0.1)' }}
-            >
-              <button
+            <div className="pt-6 flex flex-col items-center gap-4 border-t border-[rgba(171,173,175,0.1)]">
+              <Button
                 onClick={() => setShowCreate(true)}
-                className="w-full md:w-auto px-10 py-4 text-base font-bold flex items-center justify-center gap-3 active:scale-95 transition-all duration-300 font-headline text-white rounded-xl"
+                size="lg"
+                className="w-full md:w-auto px-10 font-bold flex items-center justify-center gap-3 active:scale-95 font-headline text-white rounded-xl"
                 style={{
                   background: GRADIENTS.primaryDim,
                   boxShadow: '0 20px 40px -10px rgba(42,75,217,0.2)',
@@ -209,18 +210,19 @@ function ClerkOnboarding({ onNavigate }) {
               >
                 <Icon name="add_circle" size={22} />
                 {t('onboarding.createNewBrand')}
-              </button>
+              </Button>
               {userEmail && (
                 <p className="text-sm text-on-surface-variant">
                   {t('onboarding.loggedInAs')}{' '}
                   <span className="font-bold text-on-surface">{userEmail}</span>
                   {' • '}
-                  <button
+                  <Button
+                    variant="link"
                     onClick={handleSignOut}
-                    className="hover:underline text-primary font-semibold"
+                    className="text-primary font-semibold p-0 h-auto text-sm"
                   >
                     {t('onboarding.logout')}
-                  </button>
+                  </Button>
                 </p>
               )}
             </div>
@@ -235,10 +237,7 @@ function ClerkOnboarding({ onNavigate }) {
           </div>
         </div>
 
-        <div
-          className="mt-12 text-center text-xs font-medium tracking-widest uppercase"
-          style={{ color: 'rgba(89,92,94,0.5)' }}
-        >
+        <div className="mt-12 text-center text-xs font-medium tracking-widest uppercase text-[rgba(89,92,94,0.5)]">
           {t('brand.footer')}
         </div>
       </main>
@@ -323,9 +322,9 @@ function DemoOnboarding({ onNavigate }) {
               <h2 className="text-2xl font-bold font-headline text-on-surface">
                 {t('onboarding.selectWorkspace')}
               </h2>
-              <span className="font-semibold text-sm cursor-pointer hover:underline text-primary">
+              <Button variant="link" className="font-semibold text-sm text-primary p-0 h-auto">
                 {t('onboarding.support')}
-              </span>
+              </Button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -382,12 +381,10 @@ function DemoOnboarding({ onNavigate }) {
               ))}
             </div>
 
-            <div
-              className="pt-8 flex flex-col items-center"
-              style={{ borderTop: '1px solid rgba(171,173,175,0.1)' }}
-            >
-              <button
-                className="cta-glow group relative w-full md:w-auto px-10 py-5 text-lg font-bold flex items-center justify-center gap-3 active:scale-95 transition-all duration-300 font-headline text-white rounded-xl"
+            <div className="pt-8 flex flex-col items-center border-t border-[rgba(171,173,175,0.1)]">
+              <Button
+                size="lg"
+                className="cta-glow group w-full md:w-auto px-10 text-lg font-bold flex items-center justify-center gap-3 active:scale-95 font-headline text-white rounded-xl"
                 style={{
                   background: GRADIENTS.primaryDim,
                   boxShadow: '0 20px 40px -10px rgba(42,75,217,0.2)',
@@ -395,14 +392,18 @@ function DemoOnboarding({ onNavigate }) {
               >
                 <Icon name="add_circle" size={22} />
                 {t('onboarding.createNewBrand')}
-              </button>
+              </Button>
               <p className="mt-6 text-sm font-medium text-on-surface-variant">
                 {t('onboarding.loggedInAs')}{' '}
                 <span className="font-bold text-on-surface">{userId}</span>
                 {' • '}
-                <button onClick={handleSignOut} className="hover:underline text-primary">
+                <Button
+                  variant="link"
+                  onClick={handleSignOut}
+                  className="text-primary p-0 h-auto text-sm"
+                >
                   {t('onboarding.logout')}
-                </button>
+                </Button>
               </p>
             </div>
           </div>
@@ -415,10 +416,7 @@ function DemoOnboarding({ onNavigate }) {
           </div>
         </div>
 
-        <div
-          className="mt-12 text-center text-xs font-medium tracking-widest uppercase"
-          style={{ color: 'rgba(89,92,94,0.5)' }}
-        >
+        <div className="mt-12 text-center text-xs font-medium tracking-widest uppercase text-[rgba(89,92,94,0.5)]">
           {t('brand.footer')}
         </div>
       </main>

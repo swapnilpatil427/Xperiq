@@ -7,6 +7,14 @@ import { Icon } from '../components/Icon';
 import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
 import { useAppAuth } from '../lib/auth.jsx';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Card } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
+import { applyBrandTheme, saveBrandTheme, DEFAULT_BRAND_THEME } from '../lib/brandTheme';
 
 const DEMO_TEAM_MEMBERS = [
   {
@@ -44,6 +52,27 @@ export function BrandSettingsPage({ onNavigate, currentPage }) {
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
   const [activeTab, setActiveTab] = useState('General');
   const [brandName, setBrandName] = useState('InsightSense Global');
+  const [brandSaved, setBrandSaved] = useState(false);
+  const [primaryColor, setPrimaryColor] = useState(DEFAULT_BRAND_THEME.primary);
+  const [accentColor, setAccentColor] = useState(DEFAULT_BRAND_THEME.accent);
+  const [secondaryColor, setSecondaryColor] = useState(DEFAULT_BRAND_THEME.secondary);
+  const [fontHeading, setFontHeading] = useState(DEFAULT_BRAND_THEME.fontHeading);
+  const [fontBody, setFontBody] = useState(DEFAULT_BRAND_THEME.fontBody);
+
+  function handleSaveBrand() {
+    const theme = {
+      ...DEFAULT_BRAND_THEME,
+      primary: primaryColor,
+      accent: accentColor,
+      secondary: secondaryColor,
+      fontHeading,
+      fontBody,
+    };
+    applyBrandTheme(theme);
+    saveBrandTheme(theme);
+    setBrandSaved(true);
+    setTimeout(() => setBrandSaved(false), 2000);
+  }
 
   const tabs = [
     { key: 'General',      label: t('settings.tabs.general') },
@@ -71,327 +100,377 @@ export function BrandSettingsPage({ onNavigate, currentPage }) {
         <div className="pt-20 pb-12 px-8 max-w-7xl mx-auto w-full space-y-8">
 
           {/* Tabs */}
-          <div className="flex gap-8 border-b" style={{ borderColor: 'rgba(171,173,175,0.15)' }}>
-            {tabs.map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setActiveTab(tab.key)}
-                className="font-bold pb-3 text-sm uppercase tracking-widest transition-colors font-headline"
-                style={{
-                  color: activeTab === tab.key ? '#2a4bd9' : '#595c5e',
-                  borderBottom: activeTab === tab.key ? '2px solid #2a4bd9' : '2px solid transparent',
-                  marginBottom: '-1px',
-                }}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* ── General Tab ── */}
-          {activeTab === 'General' && (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-
-              {/* Brand Identity */}
-              <div
-                className="lg:col-span-8 p-8 relative overflow-hidden bg-white rounded-2xl"
-                style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}
-              >
-                <div className="relative z-10 space-y-10">
-                  <div>
-                    <h3 className="text-xl font-bold mb-2 font-headline text-on-surface">
-                      {t('settings.general.heading')}
-                    </h3>
-                    <p className="text-sm text-on-surface-variant">
-                      {t('settings.general.description')}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                    <div className="space-y-6">
-                      <div>
-                        <label className="block text-xs font-bold uppercase tracking-widest mb-2 px-1 text-on-surface-variant">
-                          {t('settings.general.brandNameLabel')}
-                        </label>
-                        <input
-                          className="w-full px-4 py-4 font-medium outline-none transition-all bg-surface-container text-on-surface rounded-xl"
-                          type="text"
-                          value={brandName}
-                          onChange={(e) => setBrandName(e.target.value)}
-                          onFocus={(e) => { e.target.style.boxShadow = '0 0 0 2px #2a4bd9'; }}
-                          onBlur={(e) => { e.target.style.boxShadow = 'none'; }}
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold uppercase tracking-widest mb-2 px-1 text-on-surface-variant">
-                          {t('settings.general.themeLabel')}
-                        </label>
-                        <div className="flex items-center gap-4 p-4 rounded-xl bg-surface-container">
-                          <div
-                            className="h-12 w-12 rounded-full cursor-pointer active:scale-90 transition-transform"
-                            style={{ background: 'linear-gradient(135deg, #2a4bd9, #879aff, #d299ff)',
-                              boxShadow: '0 8px 20px rgba(42,75,217,0.2)' }}
-                          />
-                          <div className="flex-1">
-                            <div className="text-sm font-bold font-headline text-on-surface">
-                              {t('settings.general.themeName')}
-                            </div>
-                            <div className="text-xs text-on-surface-variant">
-                              {t('settings.general.themeDescription')}
-                            </div>
-                          </div>
-                          <Icon name="palette" size={20} className="text-primary" />
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Logo Preview */}
-                    <div
-                      className="relative flex flex-col items-center justify-center p-8 rounded-xl border bg-surface-container-low"
-                      style={{ borderColor: 'rgba(171,173,175,0.15)', perspective: '1000px' }}
-                    >
-                      <label className="absolute top-4 left-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
-                        {t('settings.general.logoLabel')}
-                      </label>
-                      <div
-                        className="relative w-32 h-32 bg-white rounded-2xl flex items-center justify-center cursor-pointer transition-transform duration-500 hover:[transform:rotateX(0deg)]"
-                        style={{ boxShadow: '0 40px 60px -10px rgba(0,0,0,0.2)', transform: 'rotateX(5deg)' }}
-                      >
-                        <Icon name="token" fill={1} size={48} className="text-primary" />
-                        <div
-                          className="absolute -bottom-6 rounded-full"
-                          style={{ width: 96, height: 16, background: 'rgba(44,47,49,0.05)', filter: 'blur(16px)' }}
-                        />
-                      </div>
-                      <button className="mt-10 text-xs font-bold flex items-center gap-2 transition-opacity hover:opacity-80 text-primary font-headline">
-                        <Icon name="upload" size={16} />
-                        {t('settings.general.replaceAsset').toUpperCase()}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full pointer-events-none"
-                  style={{ background: 'rgba(42,75,217,0.05)', filter: 'blur(48px)' }} />
-              </div>
-
-              {/* Side Stats */}
-              <div className="lg:col-span-4 space-y-8">
-                <div
-                  className="p-8 text-white rounded-2xl"
-                  style={{ background: 'linear-gradient(135deg, #00647c, #00576c)',
-                    boxShadow: '0 20px 40px -10px rgba(0,100,124,0.3)' }}
-                >
-                  <h4 className="font-bold text-lg mb-4 font-headline">
-                    {t('settings.brandHealth.heading')}
-                  </h4>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-end">
-                      <span className="text-sm opacity-80">{t('settings.brandHealth.consistencyScore')}</span>
-                      <span className="text-2xl font-bold font-headline">94%</span>
-                    </div>
-                    <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.2)' }}>
-                      <div className="h-full rounded-full bg-white" style={{ width: '94%' }} />
-                    </div>
-                    <p className="text-xs opacity-70 leading-relaxed mt-4">
-                      {t('settings.brandHealth.description', { count: 12 })}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="p-6 space-y-4 rounded-xl bg-surface-container">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
-                    {t('settings.quickActions.heading')}
-                  </h4>
-                  <div className="space-y-2">
-                    {quickActions.map((action) => (
-                      <button
-                        key={action.label}
-                        className="w-full flex items-center justify-between p-3 rounded-xl transition-all hover:translate-x-1 bg-white"
-                      >
-                        <span className="text-sm font-semibold text-on-surface">{action.label}</span>
-                        <Icon name={action.icon} size={16} className="text-primary" />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <div className="border-b border-muted/15">
+              <TabsList className="h-auto bg-transparent rounded-none p-0 gap-8">
+                {tabs.map((tab) => (
+                  <TabsTrigger
+                    key={tab.key}
+                    value={tab.key}
+                    className="font-bold pb-3 text-sm uppercase tracking-widest transition-colors font-headline rounded-none data-[state=active]:text-primary data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=inactive]:text-muted-foreground border-b-2 border-transparent -mb-px bg-transparent shadow-none"
+                  >
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
             </div>
-          )}
 
-          {/* ── Organization Tab ── */}
-          {activeTab === 'Organization' && (
-            <div className="space-y-6">
-              {clerkKey && orgId ? (
-                <div className="flex justify-center">
-                  <OrganizationProfile
-                    appearance={{
-                      elements: {
-                        rootBox: 'w-full max-w-4xl',
-                        card: 'shadow-none border rounded-2xl',
-                      },
-                    }}
-                  />
-                </div>
-              ) : clerkKey && !orgId ? (
-                <div
-                  className="text-center py-16 rounded-2xl"
-                  style={{ border: '2px dashed rgba(42,75,217,0.15)', background: 'rgba(42,75,217,0.02)' }}
-                >
-                  <div
-                    className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-                    style={{ background: 'rgba(42,75,217,0.08)' }}
-                  >
-                    <Icon name="business" size={28} className="text-primary" />
-                  </div>
-                  <p className="text-base font-bold mb-2 text-on-surface">No organization selected</p>
-                  <p className="text-sm mb-6 text-on-surface-variant">
-                    Select a workspace from the onboarding screen to manage your organization.
-                  </p>
-                  <button
-                    onClick={() => onNavigate(ROUTES.ONBOARDING)}
-                    className="px-6 py-3 text-white font-bold text-sm bg-gradient-primary font-headline rounded-xl"
-                    style={{ boxShadow: '0 10px 25px -5px rgba(42,75,217,0.35)' }}
-                  >
-                    Select Workspace
-                  </button>
-                </div>
-              ) : (
-                /* Demo mode: show static team table */
-                <div
-                  className="overflow-hidden bg-white rounded-2xl"
+            {/* ── General Tab ── */}
+            {activeTab === 'General' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-8">
+
+                {/* Brand Identity */}
+                <Card
+                  className="lg:col-span-8 p-8 relative overflow-hidden bg-white rounded-2xl border-0"
                   style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}
                 >
-                  <div className="p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                  <div className="relative z-10 space-y-10">
                     <div>
-                      <h3 className="text-xl font-bold font-headline text-on-surface">
-                        {t('settings.team.heading')}
+                      <h3 className="text-xl font-bold mb-2 font-headline text-on-surface">
+                        {t('settings.general.heading')}
                       </h3>
                       <p className="text-sm text-on-surface-variant">
-                        {t('settings.team.description')}
+                        {t('settings.general.description')}
                       </p>
                     </div>
-                    <button
-                      className="px-8 py-4 font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] text-white font-headline rounded-xl bg-primary"
-                      style={{ boxShadow: '0 20px 40px -10px rgba(42,75,217,0.2)' }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = '#173dcd')}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = '#2a4bd9')}
-                    >
-                      <Icon name="person_add" size={20} />
-                      {t('settings.team.inviteButton')}
-                    </button>
-                  </div>
 
-                  <div className="px-8 pb-8 overflow-x-auto">
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr style={{ borderBottom: '1px solid #dfe3e6' }}>
-                          {[
-                            t('settings.team.tableHeaders.user'),
-                            t('settings.team.tableHeaders.role'),
-                            t('settings.team.tableHeaders.status'),
-                            t('settings.team.tableHeaders.actions'),
-                          ].map((h, i) => (
-                            <th
-                              key={h}
-                              className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant"
-                              style={{ textAlign: i === 3 ? 'right' : 'left' }}
-                            >
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {DEMO_TEAM_MEMBERS.map((member) => (
-                          <tr
-                            key={member.email}
-                            className="transition-colors"
-                            style={{ borderBottom: '1px solid #eef1f3' }}
-                            onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(245,247,249,0.5)')}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                          >
-                            <td className="py-5">
-                              <div className="flex items-center gap-3">
-                                <div
-                                  className="h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm"
-                                  style={{ background: member.bg, color: member.color }}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                      <div className="space-y-6">
+                        <div>
+                          <Label className="block text-xs font-bold uppercase tracking-widest mb-2 px-1 text-on-surface-variant">
+                            {t('settings.general.brandNameLabel')}
+                          </Label>
+                          <Input
+                            className="w-full px-4 py-4 font-medium bg-surface-container text-on-surface rounded-xl border-0 focus-visible:ring-2 focus-visible:ring-primary"
+                            type="text"
+                            value={brandName}
+                            onChange={(e) => setBrandName(e.target.value)}
+                          />
+                        </div>
+
+                        {/* Brand Colors */}
+                        <div>
+                          <Label className="block text-xs font-bold uppercase tracking-widest mb-3 px-1 text-on-surface-variant">
+                            Brand Colors
+                          </Label>
+                          <div className="space-y-3">
+                            {[
+                              { label: 'Primary', value: primaryColor, onChange: setPrimaryColor },
+                              { label: 'Accent', value: accentColor, onChange: setAccentColor },
+                              { label: 'Secondary', value: secondaryColor, onChange: setSecondaryColor },
+                            ].map(({ label, value, onChange }) => (
+                              <div key={label} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-container">
+                                <label className="flex items-center gap-2 cursor-pointer flex-1">
+                                  <div className="relative w-8 h-8 rounded-lg overflow-hidden flex-shrink-0 border border-muted/20"
+                                    style={{ background: value }}>
+                                    <input
+                                      type="color"
+                                      value={value}
+                                      onChange={(e) => onChange(e.target.value)}
+                                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                    />
+                                  </div>
+                                  <span className="text-sm font-semibold text-on-surface">{label}</span>
+                                </label>
+                                <span className="text-xs font-mono text-muted-foreground uppercase">{value}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Brand Fonts */}
+                        <div>
+                          <Label className="block text-xs font-bold uppercase tracking-widest mb-3 px-1 text-on-surface-variant">
+                            Typography
+                          </Label>
+                          <div className="space-y-3">
+                            {[
+                              { label: 'Heading font', value: fontHeading, onChange: setFontHeading, options: ['"Manrope", sans-serif', '"Inter", sans-serif', '"DM Sans", sans-serif', '"Plus Jakarta Sans", sans-serif', '"Outfit", sans-serif'] },
+                              { label: 'Body font',    value: fontBody,    onChange: setFontBody,    options: ['"Inter", sans-serif', '"DM Sans", sans-serif', '"Manrope", sans-serif', '"Plus Jakarta Sans", sans-serif', '"Source Sans 3", sans-serif'] },
+                            ].map(({ label, value, onChange, options }) => (
+                              <div key={label} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-surface-container">
+                                <span className="text-sm font-semibold text-on-surface flex-shrink-0 w-28">{label}</span>
+                                <select
+                                  value={value}
+                                  onChange={(e) => onChange(e.target.value)}
+                                  className="flex-1 text-xs bg-transparent text-muted-foreground outline-none cursor-pointer"
+                                  style={{ fontFamily: value }}
                                 >
-                                  {member.initials}
-                                </div>
-                                <div>
-                                  <div className="font-bold text-sm text-on-surface">{member.name}</div>
-                                  <div className="text-xs text-on-surface-variant">{member.email}</div>
-                                </div>
+                                  {options.map((o) => (
+                                    <option key={o} value={o} style={{ fontFamily: o }}>
+                                      {o.replace(/['"]/g, '').split(',')[0]}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
-                            </td>
-                            <td className="py-5">
-                              <span className="text-sm font-medium text-on-surface">{member.role}</span>
-                            </td>
-                            <td className="py-5">
-                              <div
-                                className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full w-fit"
-                                style={{
-                                  color: member.statusActive ? '#00647c' : '#595c5e',
-                                  background: member.statusActive ? 'rgba(0,100,124,0.1)' : '#e5e9eb',
-                                }}
-                              >
-                                <span
-                                  className="w-1.5 h-1.5 rounded-full"
-                                  style={{ background: member.statusActive ? '#00647c' : 'rgba(89,92,94,0.4)' }}
-                                />
-                                {member.statusActive
-                                  ? t('settings.team.statusActive')
-                                  : t('settings.team.statusPending')}
-                              </div>
-                            </td>
-                            <td className="py-5 text-right">
-                              <button
-                                className="p-2 transition-colors text-on-surface-variant"
-                                onMouseEnter={(e) => (e.currentTarget.style.color = '#2a4bd9')}
-                                onMouseLeave={(e) => (e.currentTarget.style.color = '#595c5e')}
-                              >
-                                <Icon name="more_vert" size={20} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+                            ))}
+                          </div>
+                        </div>
 
-          {/* ── API Keys Tab ── */}
-          {activeTab === 'API Keys' && (
-            <div
-              className="p-8 bg-white rounded-2xl"
-              style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}
-            >
-              <h3 className="text-xl font-bold mb-2 font-headline text-on-surface">API Keys</h3>
-              <p className="text-sm mb-8 text-on-surface-variant">
-                Use these keys to authenticate requests to the Experient API.
-              </p>
-              <div
-                className="flex items-center justify-between p-4 rounded-xl"
-                style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.12)' }}
-              >
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest mb-1 text-on-surface-variant">
-                    Secret Key
-                  </p>
-                  <p className="font-mono text-sm text-on-surface">sk_live_••••••••••••••••••••••••••••••</p>
+                        {/* Save brand settings */}
+                        <Button
+                          onClick={handleSaveBrand}
+                          className="w-full font-bold font-headline text-sm text-white rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                          style={{
+                            background: 'linear-gradient(135deg, var(--brand-primary), var(--brand-accent))',
+                            boxShadow: 'var(--shadow-primary)',
+                          }}
+                        >
+                          {brandSaved ? (
+                            <span className="flex items-center gap-2">
+                              <Icon name="check_circle" size={16} />
+                              Saved
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-2">
+                              <Icon name="save" size={16} />
+                              Save Brand Settings
+                            </span>
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Logo Preview */}
+                      <div
+                        className="relative flex flex-col items-center justify-center p-8 rounded-xl border bg-surface-container-low border-muted/15"
+                        style={{ perspective: '1000px' }}
+                      >
+                        <Label className="absolute top-4 left-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                          {t('settings.general.logoLabel')}
+                        </Label>
+                        <div
+                          className="relative w-32 h-32 bg-white rounded-2xl flex items-center justify-center cursor-pointer transition-transform duration-500 hover:[transform:rotateX(0deg)]"
+                          style={{ boxShadow: '0 40px 60px -10px rgba(0,0,0,0.2)', transform: 'rotateX(5deg)' }}
+                        >
+                          <Icon name="token" fill={1} size={48} className="text-primary" />
+                          <div
+                            className="absolute -bottom-6 rounded-full"
+                            style={{ width: 96, height: 16, background: 'rgba(44,47,49,0.05)', filter: 'blur(16px)' }}
+                          />
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="mt-10 text-xs font-bold flex items-center gap-2 transition-opacity hover:opacity-80 text-primary font-headline"
+                        >
+                          <Icon name="upload" size={16} />
+                          {t('settings.general.replaceAsset').toUpperCase()}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full pointer-events-none"
+                    style={{ background: 'rgba(42,75,217,0.05)', filter: 'blur(48px)' }} />
+                </Card>
+
+                {/* Side Stats */}
+                <div className="lg:col-span-4 space-y-8">
+                  <Card
+                    className="p-8 text-white rounded-2xl border-0"
+                    style={{ background: 'linear-gradient(135deg, #00647c, #00576c)',
+                      boxShadow: '0 20px 40px -10px rgba(0,100,124,0.3)' }}
+                  >
+                    <h4 className="font-bold text-lg mb-4 font-headline">
+                      {t('settings.brandHealth.heading')}
+                    </h4>
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-end">
+                        <span className="text-sm opacity-80">{t('settings.brandHealth.consistencyScore')}</span>
+                        <span className="text-2xl font-bold font-headline">94%</span>
+                      </div>
+                      <Progress value={94} className="h-2 bg-white/20 [&>div]:bg-white" />
+                      <p className="text-xs opacity-70 leading-relaxed mt-4">
+                        {t('settings.brandHealth.description', { count: 12 })}
+                      </p>
+                    </div>
+                  </Card>
+
+                  <Card className="p-6 space-y-4 rounded-xl bg-surface-container border-0">
+                    <h4 className="text-xs font-bold uppercase tracking-widest text-on-surface-variant">
+                      {t('settings.quickActions.heading')}
+                    </h4>
+                    <div className="space-y-2">
+                      {quickActions.map((action) => (
+                        <Button
+                          key={action.label}
+                          variant="ghost"
+                          className="w-full flex items-center justify-between p-3 rounded-xl transition-all hover:translate-x-1 bg-white text-on-surface font-semibold text-sm"
+                        >
+                          <span>{action.label}</span>
+                          <Icon name={action.icon} size={16} className="text-primary" />
+                        </Button>
+                      ))}
+                    </div>
+                  </Card>
                 </div>
-                <button className="flex items-center gap-1.5 text-xs font-bold text-primary">
-                  <Icon name="visibility" size={14} />
-                  Reveal
-                </button>
               </div>
-            </div>
-          )}
+            )}
+
+            {/* ── Organization Tab ── */}
+            {activeTab === 'Organization' && (
+              <div className="space-y-6 mt-8">
+                {clerkKey && orgId ? (
+                  <div className="flex justify-center">
+                    <OrganizationProfile
+                      appearance={{
+                        elements: {
+                          rootBox: 'w-full max-w-4xl',
+                          card: 'shadow-none border rounded-2xl',
+                        },
+                      }}
+                    />
+                  </div>
+                ) : clerkKey && !orgId ? (
+                  <div className="text-center py-16 rounded-2xl border-2 border-dashed border-primary/15 bg-primary/2">
+                    <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-primary/8">
+                      <Icon name="business" size={28} className="text-primary" />
+                    </div>
+                    <p className="text-base font-bold mb-2 text-on-surface">No organization selected</p>
+                    <p className="text-sm mb-6 text-on-surface-variant">
+                      Select a workspace from the onboarding screen to manage your organization.
+                    </p>
+                    <Button
+                      onClick={() => onNavigate(ROUTES.ONBOARDING)}
+                      variant="gradient"
+                      className="px-6 py-3 text-white font-bold text-sm font-headline rounded-xl"
+                      style={{ boxShadow: '0 10px 25px -5px rgba(42,75,217,0.35)' }}
+                    >
+                      Select Workspace
+                    </Button>
+                  </div>
+                ) : (
+                  /* Demo mode: show static team table */
+                  <Card
+                    className="overflow-hidden bg-white rounded-2xl border-0"
+                    style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}
+                  >
+                    <div className="p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                      <div>
+                        <h3 className="text-xl font-bold font-headline text-on-surface">
+                          {t('settings.team.heading')}
+                        </h3>
+                        <p className="text-sm text-on-surface-variant">
+                          {t('settings.team.description')}
+                        </p>
+                      </div>
+                      <Button
+                        variant="default"
+                        className="px-8 py-4 font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.02] active:scale-[0.98] text-white font-headline rounded-xl bg-primary"
+                        style={{ boxShadow: '0 20px 40px -10px rgba(42,75,217,0.2)' }}
+                      >
+                        <Icon name="person_add" size={20} />
+                        {t('settings.team.inviteButton')}
+                      </Button>
+                    </div>
+
+                    <div className="px-8 pb-8 overflow-x-auto">
+                      <table className="w-full text-left">
+                        <thead>
+                          <tr className="border-b border-border">
+                            {[
+                              t('settings.team.tableHeaders.user'),
+                              t('settings.team.tableHeaders.role'),
+                              t('settings.team.tableHeaders.status'),
+                              t('settings.team.tableHeaders.actions'),
+                            ].map((h, i) => (
+                              <th
+                                key={h}
+                                className="py-4 text-xs font-bold uppercase tracking-widest text-on-surface-variant"
+                                style={{ textAlign: i === 3 ? 'right' : 'left' }}
+                              >
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {DEMO_TEAM_MEMBERS.map((member) => (
+                            <tr
+                              key={member.email}
+                              className="transition-colors border-b border-muted/20 hover:bg-muted/5"
+                            >
+                              <td className="py-5">
+                                <div className="flex items-center gap-3">
+                                  <div
+                                    className="h-10 w-10 rounded-full flex items-center justify-center font-bold text-sm"
+                                    style={{ background: member.bg, color: member.color }}
+                                  >
+                                    {member.initials}
+                                  </div>
+                                  <div>
+                                    <div className="font-bold text-sm text-on-surface">{member.name}</div>
+                                    <div className="text-xs text-on-surface-variant">{member.email}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="py-5">
+                                <span className="text-sm font-medium text-on-surface">{member.role}</span>
+                              </td>
+                              <td className="py-5">
+                                <Badge
+                                  variant={member.statusActive ? 'success' : 'secondary'}
+                                  className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider px-3 py-1 rounded-full w-fit"
+                                  style={{
+                                    color: member.statusActive ? '#00647c' : '#595c5e',
+                                    background: member.statusActive ? 'rgba(0,100,124,0.1)' : '#e5e9eb',
+                                  }}
+                                >
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full"
+                                    style={{ background: member.statusActive ? '#00647c' : 'rgba(89,92,94,0.4)' }}
+                                  />
+                                  {member.statusActive
+                                    ? t('settings.team.statusActive')
+                                    : t('settings.team.statusPending')}
+                                </Badge>
+                              </td>
+                              <td className="py-5 text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="p-2 text-on-surface-variant hover:text-primary"
+                                >
+                                  <Icon name="more_vert" size={20} />
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </Card>
+                )}
+              </div>
+            )}
+
+            {/* ── API Keys Tab ── */}
+            {activeTab === 'API Keys' && (
+              <Card
+                className="p-8 bg-white rounded-2xl border-0 mt-8"
+                style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}
+              >
+                <h3 className="text-xl font-bold mb-2 font-headline text-on-surface">API Keys</h3>
+                <p className="text-sm mb-8 text-on-surface-variant">
+                  Use these keys to authenticate requests to the Experient API.
+                </p>
+                <div
+                  className="flex items-center justify-between p-4 rounded-xl bg-primary/4 border border-primary/12"
+                >
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest mb-1 text-on-surface-variant">
+                      Secret Key
+                    </p>
+                    <p className="font-mono text-sm text-on-surface">sk_live_••••••••••••••••••••••••••••••</p>
+                  </div>
+                  <Button variant="ghost" size="sm" className="flex items-center gap-1.5 text-xs font-bold text-primary">
+                    <Icon name="visibility" size={14} />
+                    Reveal
+                  </Button>
+                </div>
+              </Card>
+            )}
+          </Tabs>
         </div>
       </main>
     </div>

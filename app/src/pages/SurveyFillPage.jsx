@@ -2,6 +2,11 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { useTranslation } from '../lib/i18n';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/experient-prod/us-central1/api';
 
@@ -50,10 +55,11 @@ function NpsQuestion({ value, onChange }) {
     <div className="mt-4">
       <div className="flex gap-1">
         {Array.from({ length: 11 }, (_, i) => (
-          <button
+          <Button
             key={i}
             onClick={() => onChange(i)}
-            className="flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95"
+            variant="secondary"
+            className="flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 border-0"
             style={{
               background:
                 value === i
@@ -69,7 +75,7 @@ function NpsQuestion({ value, onChange }) {
             }}
           >
             {i}
-          </button>
+          </Button>
         ))}
       </div>
       <div className="flex justify-between mt-2 px-1">
@@ -84,10 +90,11 @@ function RatingQuestion({ value, onChange }) {
   return (
     <div className="flex gap-3 mt-4">
       {[1, 2, 3, 4, 5].map((star) => (
-        <button
+        <Button
           key={star}
           onClick={() => onChange(star)}
-          className="flex-1 py-4 rounded-xl font-black text-xl transition-all active:scale-95"
+          variant="secondary"
+          className="flex-1 py-4 rounded-xl font-black text-xl transition-all active:scale-95 border-0"
           style={{
             background: value >= star ? '#2a4bd9' : '#eef1f3',
             color: value >= star ? '#ffffff' : '#c4c4c4',
@@ -96,7 +103,7 @@ function RatingQuestion({ value, onChange }) {
           }}
         >
           {star}
-        </button>
+        </Button>
       ))}
     </div>
   );
@@ -137,17 +144,12 @@ function MultipleChoiceQuestion({ question, value, onChange }) {
 function OpenTextQuestion({ value, onChange }) {
   const { t } = useTranslation();
   return (
-    <textarea
+    <Textarea
       value={value || ''}
       onChange={(e) => onChange(e.target.value)}
       placeholder={t('fill.textareaPlaceholder')}
       rows={4}
-      className="w-full mt-4 resize-none outline-none text-sm leading-relaxed bg-surface-container-low font-body text-on-surface"
-      style={{
-        borderRadius: '0.75rem',
-        padding: '1rem',
-        border: 'none',
-      }}
+      className="w-full mt-4 resize-none text-sm leading-relaxed bg-surface-container-low font-body text-on-surface rounded-xl border-0 focus-visible:ring-2 focus-visible:ring-primary"
     />
   );
 }
@@ -232,10 +234,7 @@ export function SurveyFillPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-surface">
-        <div
-          className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin"
-          style={{ borderColor: '#2a4bd9', borderTopColor: 'transparent' }}
-        />
+        <div className="w-10 h-10 rounded-full border-2 border-t-transparent animate-spin border-primary" />
       </div>
     );
   }
@@ -259,14 +258,16 @@ export function SurveyFillPage() {
           <p className="text-lg leading-relaxed mb-8 text-on-surface-variant">
             {t('fill.thankYou.message')}
           </p>
-          <div className="p-6 rounded-2xl text-left bg-white"
-            style={{ boxShadow: '0 20px 40px rgba(0,0,0,0.06)' }}>
+          <Card
+            className="p-6 rounded-2xl text-left bg-white border-0"
+            style={{ boxShadow: '0 20px 40px rgba(0,0,0,0.06)' }}
+          >
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-primary">
                 <Icon name="psychology" fill={1} size={20} className="text-white" />
               </div>
               <div>
-                <p className="text-xs font-bold tracking-widest uppercase text-inverse-on-surface">
+                <p className="text-xs font-bold tracking-widest uppercase text-muted-foreground">
                   {t('fill.poweredBy')}
                 </p>
                 <p className="font-black text-lg tracking-tighter font-headline text-primary">
@@ -274,7 +275,7 @@ export function SurveyFillPage() {
                 </p>
               </div>
             </div>
-          </div>
+          </Card>
         </div>
       </div>
     );
@@ -298,13 +299,10 @@ export function SurveyFillPage() {
       </div>
 
       {/* Progress bar */}
-      <div className="fixed top-0 left-0 w-full z-50 h-1 bg-surface-container">
-        <div
-          className="h-full transition-all duration-500"
-          style={{
-            width: `${progress}%`,
-            background: 'linear-gradient(to right, #2a4bd9, #8329c8)',
-          }}
+      <div className="fixed top-0 left-0 w-full z-50">
+        <Progress
+          value={progress}
+          className="h-1 rounded-none bg-surface-container [&>div]:bg-gradient-to-r [&>div]:from-primary [&>div]:to-[#8329c8] [&>div]:transition-all [&>div]:duration-500"
         />
       </div>
 
@@ -319,7 +317,7 @@ export function SurveyFillPage() {
             {t('brand.name')}
           </span>
         </div>
-        <span className="text-xs font-semibold text-inverse-on-surface">
+        <span className="text-xs font-semibold text-muted-foreground">
           {t('fill.progress', { current: currentQ + 1, total: questions.length })}
         </span>
       </header>
@@ -342,22 +340,19 @@ export function SurveyFillPage() {
 
           {/* Question card */}
           {q && (
-            <div
+            <Card
               key={q.id}
-              className="glass-card p-8 rounded-2xl"
-              style={{
-                boxShadow: '0 40px 100px -20px rgba(42,75,217,0.10)',
-                border: '1px solid rgba(255,255,255,0.4)',
-              }}
+              className="glass-card p-8 rounded-2xl border-white/40"
+              style={{ boxShadow: '0 40px 100px -20px rgba(42,75,217,0.10)' }}
             >
               <div className="mb-6">
-                <span
-                  className="inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full mb-4 text-primary"
-                  style={{ background: '#e0e7ff' }}
+                <Badge
+                  variant="secondary"
+                  className="inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full mb-4 text-primary bg-[#e0e7ff]"
                 >
                   {t(`fill.questionTypes.${q.type}`) || q.type}
                   {q.required && t('fill.requiredIndicator')}
-                </span>
+                </Badge>
                 <h2 className="text-xl font-bold leading-tight font-headline text-on-surface">
                   {q.question}
                 </h2>
@@ -392,17 +387,18 @@ export function SurveyFillPage() {
               {/* Navigation */}
               <div className="flex gap-3 mt-8">
                 {currentQ > 0 && (
-                  <button
+                  <Button
                     onClick={handleBack}
-                    className="px-5 py-3 font-bold text-sm transition-all active:scale-95 font-headline bg-surface-container-low text-on-surface-variant rounded-xl"
+                    variant="secondary"
+                    className="px-5 py-3 font-bold text-sm active:scale-95 font-headline bg-surface-container-low text-on-surface-variant rounded-xl border-0"
                   >
                     {t('fill.backButton')}
-                  </button>
+                  </Button>
                 )}
-                <button
+                <Button
                   onClick={isLast ? handleSubmit : handleNext}
                   disabled={!canContinue || submitting}
-                  className="flex-1 py-3 font-bold text-base transition-all active:scale-95 flex items-center justify-center gap-2 font-headline rounded-xl"
+                  className="flex-1 py-3 font-bold text-base transition-all active:scale-95 flex items-center justify-center gap-2 font-headline rounded-xl border-0"
                   style={{
                     background: canContinue
                       ? 'linear-gradient(135deg, #2a4bd9, #8329c8)'
@@ -413,10 +409,7 @@ export function SurveyFillPage() {
                   }}
                 >
                   {submitting ? (
-                    <div
-                      className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin"
-                      style={{ borderColor: '#ffffff', borderTopColor: 'transparent' }}
-                    />
+                    <div className="w-5 h-5 rounded-full border-2 border-t-transparent animate-spin border-white" />
                   ) : isLast ? (
                     <>
                       <Icon name="send" size={18} />
@@ -428,9 +421,9 @@ export function SurveyFillPage() {
                       <Icon name="arrow_forward" size={18} />
                     </>
                   )}
-                </button>
+                </Button>
               </div>
-            </div>
+            </Card>
           )}
 
           {error && (

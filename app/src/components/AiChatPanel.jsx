@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Icon } from './Icon';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const QUICK_COMMANDS = [
   'Add skip logic: if NPS < 7, skip to last question',
@@ -45,14 +48,10 @@ export function AiChatPanel({ questionCount, surveyTypeLabel, onRefine, disabled
 
   return (
     <div
-      className="flex flex-col rounded-2xl overflow-hidden"
+      className="flex flex-col rounded-2xl overflow-hidden bg-white h-fit max-h-[600px] min-h-[420px]"
       style={{
-        background: 'white',
         border: '1px solid rgba(171,173,175,0.15)',
         boxShadow: '0 20px 60px rgba(42,75,217,0.08)',
-        height: 'fit-content',
-        maxHeight: '600px',
-        minHeight: '420px',
       }}
     >
       {/* Header */}
@@ -74,45 +73,47 @@ export function AiChatPanel({ questionCount, surveyTypeLabel, onRefine, disabled
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3" style={{ minHeight: 200, maxHeight: 360 }}>
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            {msg.role === 'ai' && (
-              <div className="w-6 h-6 rounded-full flex-shrink-0 mr-2 mt-0.5 flex items-center justify-center"
+      <ScrollArea className="px-4 py-4 h-[360px]">
+        <div className="space-y-3">
+          {messages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              {msg.role === 'ai' && (
+                <div className="w-6 h-6 rounded-full flex-shrink-0 mr-2 mt-0.5 flex items-center justify-center"
+                  style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                  <Icon name="auto_awesome" size={12} style={{ color: 'white' }} />
+                </div>
+              )}
+              <div
+                className="max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed"
+                style={
+                  msg.role === 'user'
+                    ? { background: '#2a4bd9', color: 'white', borderBottomRightRadius: 6 }
+                    : { background: '#f0f4ff', color: '#2c2f31', borderBottomLeftRadius: 6 }
+                }
+              >
+                {msg.text}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="w-6 h-6 rounded-full mr-2 mt-0.5 flex-shrink-0 flex items-center justify-center"
                 style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
                 <Icon name="auto_awesome" size={12} style={{ color: 'white' }} />
               </div>
-            )}
-            <div
-              className="max-w-[80%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed"
-              style={
-                msg.role === 'user'
-                  ? { background: '#2a4bd9', color: 'white', borderBottomRightRadius: 6 }
-                  : { background: '#f0f4ff', color: '#2c2f31', borderBottomLeftRadius: 6 }
-              }
-            >
-              {msg.text}
-            </div>
-          </div>
-        ))}
-        {loading && (
-          <div className="flex justify-start">
-            <div className="w-6 h-6 rounded-full mr-2 mt-0.5 flex-shrink-0 flex items-center justify-center"
-              style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
-              <Icon name="auto_awesome" size={12} style={{ color: 'white' }} />
-            </div>
-            <div className="px-4 py-3 rounded-2xl" style={{ background: '#f0f4ff', borderBottomLeftRadius: 6 }}>
-              <div className="flex gap-1 items-center">
-                {[0, 1, 2].map((i) => (
-                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"
-                    style={{ animationDelay: `${i * 0.15}s` }} />
-                ))}
+              <div className="px-4 py-3 rounded-2xl" style={{ background: '#f0f4ff', borderBottomLeftRadius: 6 }}>
+                <div className="flex gap-1 items-center">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className="w-1.5 h-1.5 rounded-full bg-primary animate-bounce"
+                      style={{ animationDelay: `${i * 0.15}s` }} />
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+      </ScrollArea>
 
       {/* Quick commands */}
       {messages.length <= 1 && (
@@ -120,15 +121,16 @@ export function AiChatPanel({ questionCount, surveyTypeLabel, onRefine, disabled
           <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant mb-2">Try asking</p>
           <div className="flex flex-wrap gap-1.5">
             {QUICK_COMMANDS.slice(0, 3).map((cmd) => (
-              <button
+              <Button
                 key={cmd}
                 onClick={() => send(cmd)}
                 disabled={loading || disabled}
-                className="px-3 py-1.5 text-xs font-semibold rounded-full transition-all hover:scale-105"
-                style={{ background: '#e0e7ff', color: '#2a4bd9' }}
+                variant="secondary"
+                size="sm"
+                className="px-3 py-1.5 text-xs font-semibold rounded-full transition-all hover:scale-105 bg-[#e0e7ff] text-[var(--color-primary)]"
               >
                 {cmd}
-              </button>
+              </Button>
             ))}
           </div>
         </div>
@@ -137,10 +139,10 @@ export function AiChatPanel({ questionCount, surveyTypeLabel, onRefine, disabled
       {/* Input */}
       <div className="px-4 pb-4">
         <div
-          className="flex items-end gap-2 rounded-xl p-3"
-          style={{ background: '#f5f7f9', border: '1px solid rgba(171,173,175,0.2)' }}
+          className="flex items-end gap-2 rounded-xl p-3 bg-muted"
+          style={{ border: '1px solid rgba(171,173,175,0.2)' }}
         >
-          <textarea
+          <Textarea
             ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -150,20 +152,20 @@ export function AiChatPanel({ questionCount, surveyTypeLabel, onRefine, disabled
             placeholder="Describe a change… (Enter to send)"
             rows={2}
             disabled={loading || disabled}
-            className="flex-1 resize-none text-sm bg-transparent outline-none text-on-surface placeholder:text-on-surface-variant/50"
-            style={{ border: 'none' }}
+            className="flex-1 resize-none text-sm bg-transparent border-none outline-none text-on-surface placeholder:text-on-surface-variant/50 focus-visible:ring-0 focus-visible:ring-offset-0 p-0"
           />
-          <button
+          <Button
             onClick={() => send()}
             disabled={!input.trim() || loading || disabled}
-            className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-all hover:scale-110 active:scale-95"
+            size="icon"
+            className="w-8 h-8 rounded-full flex-shrink-0 transition-all hover:scale-110 active:scale-95"
             style={{
               background: input.trim() && !loading ? 'linear-gradient(135deg, #2a4bd9, #8329c8)' : '#dfe3e6',
-              color:      input.trim() && !loading ? 'white' : '#9a9d9f',
+              color:      input.trim() && !loading ? 'white' : 'var(--color-inverse-on-surface)',
             }}
           >
             <Icon name="send" size={16} />
-          </button>
+          </Button>
         </div>
       </div>
     </div>

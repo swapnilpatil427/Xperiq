@@ -3,6 +3,8 @@ import { Icon } from './Icon';
 import { LogoFull } from './Logo';
 import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 
 export function SideNav({ currentPage, onNavigate }) {
   const { t } = useTranslation();
@@ -70,23 +72,22 @@ export function SideNav({ currentPage, onNavigate }) {
         <div className="sidenav-credit-widget">
           <p className="font-bold mb-0.5 text-on-surface">AI Credits</p>
           <div className="flex items-center justify-between mt-2">
-            <div className="sidenav-progress-track">
-              <div className="sidenav-progress-fill" style={{ width: '68%' }} />
-            </div>
+            <Progress value={68} className="flex-1 mr-3 h-1.5" />
             <span className="text-[10px] font-bold text-primary">680 / 1k</span>
           </div>
         </div>
 
-        <button
+        <Button
           onClick={() => onNavigate(ROUTES.BUILDER)}
-          className="sidenav-cta w-full relative overflow-hidden text-white font-bold py-3.5 px-4 text-sm transition-all active:scale-95 group bg-gradient-primary font-headline rounded-xl"
+          variant="gradient"
+          className="sidenav-cta w-full relative overflow-hidden font-bold py-3.5 px-4 text-sm group font-headline rounded-xl"
         >
           <span className="shimmer absolute inset-0 rounded-[0.75rem] opacity-0 group-hover:opacity-100 transition-opacity" />
           <span className="relative flex items-center justify-center gap-2">
             <Icon name="add_circle" size={18} />
             {t('nav.createNewSurvey')}
           </span>
-        </button>
+        </Button>
       </div>
     </aside>
   );
