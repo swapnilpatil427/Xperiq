@@ -4,7 +4,9 @@ import { SideNav } from '../components/SideNav';
 import { TopBar } from '../components/TopBar';
 import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
+import { PauseModal, ResumeModal } from '../components/SurveyActionModal';
 import { useSurveys } from '../hooks/useSurveys';
+import { pageStore } from '../lib/pageStore';
 import { ROUTES } from '../constants/routes';
 import { NPS as NPS_THRESHOLDS } from '../constants/thresholds';
 import { SENTIMENT_COLORS } from '../constants/colors';
@@ -32,7 +34,10 @@ const stagger = {
 export function SurveysListPage({ onNavigate, currentPage }) {
   const { t } = useTranslation();
   const [filter, setFilter] = useState('all');
-  const { surveys, loading, error } = useSurveys();
+  const { surveys, loading, error, updateSurvey } = useSurveys();
+  const [statusChanging, setStatusChanging] = useState(null);
+  const [pauseTarget,    setPauseTarget]    = useState(null); // { id, title, responseCount }
+  const [resumeTarget,   setResumeTarget]   = useState(null);
 
   const filtered = filter === 'all' ? surveys : surveys.filter((s) => s.status === filter);
   const activeCount = surveys.filter((s) => s.status === 'active').length;
@@ -164,6 +169,7 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                 {t('surveys.createWithAI')}
               </motion.button>
               <motion.button
+                onClick={() => onNavigate(ROUTES.BUILDER)}
                 className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold font-headline text-on-surface rounded-xl"
                 style={{ background: 'rgba(255,255,255,0.8)', borderRadius: '0.75rem', border: '1px solid rgba(171,173,175,0.2)' }}
                 whileHover={{ scale: 1.02 }}
@@ -184,12 +190,10 @@ export function SurveysListPage({ onNavigate, currentPage }) {
             custom={0.7}
           >
             {['all', 'active', 'draft', 'paused'].map((f) => {
+              const STATUS_TAB = { active: 'Live', draft: 'Draft', paused: 'Paused' };
               const label = f === 'all'
                 ? t('surveys.filterAll', { n: surveys.length })
-                : t('surveys.filterCapitalized', {
-                    label: f.charAt(0).toUpperCase() + f.slice(1),
-                    n: surveys.filter((s) => s.status === f).length,
-                  });
+                : `${STATUS_TAB[f]} (${surveys.filter((s) => s.status === f).length})`;
               const isActive = filter === f;
               return (
                 <motion.button
@@ -328,6 +332,29 @@ export function SurveysListPage({ onNavigate, currentPage }) {
 
                       {/* Actions */}
                       <div className="flex items-center gap-2 shrink-0 relative">
+                        {/* Pause / Resume — open confirmation modals */}
+                        {survey.status === 'active' && (
+                          <motion.button
+                            onClick={(e) => { e.stopPropagation(); setPauseTarget({ id: survey.id, title: survey.title, responseCount: responseCount }); }}
+                            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl"
+                            style={{ background: 'rgba(217,119,6,0.08)', color: '#d97706' }}
+                            whileHover={{ background: 'rgba(217,119,6,0.15)', scale: 1.03 }}
+                            whileTap={{ scale: 0.96 }}
+                          >
+                            <Icon name="pause" size={14} />Pause
+                          </motion.button>
+                        )}
+                        {survey.status === 'paused' && (
+                          <motion.button
+                            onClick={(e) => { e.stopPropagation(); setResumeTarget({ id: survey.id, title: survey.title, responseCount: responseCount }); }}
+                            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl text-white"
+                            style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
+                            whileHover={{ scale: 1.03 }}
+                            whileTap={{ scale: 0.96 }}
+                          >
+                            <Icon name="play_arrow" size={14} />Resume
+                          </motion.button>
+                        )}
                         <motion.button
                           onClick={(e) => { e.stopPropagation(); onNavigate(ROUTES.INSIGHTS); }}
                           className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-xl text-primary"
@@ -339,7 +366,16 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                           {t('surveys.actions.insights')}
                         </motion.button>
                         <motion.button
-                          onClick={(e) => { e.stopPropagation(); onNavigate(ROUTES.BUILDER); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            pageStore.setPendingBuilderData({
+                              id:           survey.id,
+                              title:        survey.title,
+                              questions:    survey.questions || [],
+                              surveyTypeId: survey.survey_type_id || survey.surveyTypeId || null,
+                            });
+                            onNavigate(ROUTES.BUILDER);
+                          }}
                           className="p-2 rounded-xl text-on-surface-variant"
                           whileHover={{ background: 'rgba(171,173,175,0.15)', scale: 1.05 }}
                           whileTap={{ scale: 0.95 }}
@@ -389,6 +425,36 @@ export function SurveysListPage({ onNavigate, currentPage }) {
           )}
         </div>
       </main>
+
+      {/* Pause confirmation */}
+      <PauseModal
+        open={!!pauseTarget}
+        onClose={() => setPauseTarget(null)}
+        surveyTitle={pauseTarget?.title}
+        responseCount={pauseTarget?.responseCount ?? 0}
+        busy={statusChanging === pauseTarget?.id}
+        onConfirm={async () => {
+          setStatusChanging(pauseTarget.id);
+          await updateSurvey(pauseTarget.id, { status: 'paused' });
+          setStatusChanging(null);
+          setPauseTarget(null);
+        }}
+      />
+
+      {/* Resume confirmation */}
+      <ResumeModal
+        open={!!resumeTarget}
+        onClose={() => setResumeTarget(null)}
+        surveyTitle={resumeTarget?.title}
+        responseCount={resumeTarget?.responseCount ?? 0}
+        busy={statusChanging === resumeTarget?.id}
+        onConfirm={async () => {
+          setStatusChanging(resumeTarget.id);
+          await updateSurvey(resumeTarget.id, { status: 'active' });
+          setStatusChanging(null);
+          setResumeTarget(null);
+        }}
+      />
     </div>
   );
 }

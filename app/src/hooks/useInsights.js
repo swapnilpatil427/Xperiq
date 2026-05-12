@@ -1,86 +1,42 @@
 import { useState, useEffect, useCallback } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
-import { useAppAuth } from '../lib/auth.jsx';
-import { getDb, isConfigured } from '../lib/firebase';
 import { useApi } from './useApi';
 
 const MOCK_INSIGHTS = {
-  npsScore: 74,
-  summary:
-    'Users experience friction primarily during onboarding. Navigation clarity and documentation gaps are top themes.',
+  nps_score: 74,
+  summary: 'Users experience friction primarily during onboarding. Navigation clarity and documentation gaps are top themes.',
   topics: [
-    {
-      name: 'Interface Efficiency',
-      sentiment: 'positive',
-      volume: 342,
-      phrases: ['clean design', 'fast loading', 'intuitive'],
-    },
-    {
-      name: 'Revenue Value Gap',
-      sentiment: 'neutral',
-      volume: 204,
-      phrases: ['pricing unclear', 'feature parity'],
-    },
-    {
-      name: 'Onboarding Velocity',
-      sentiment: 'negative',
-      volume: 892,
-      phrases: ['too many steps', 'email loop', 'confusing nav'],
-    },
-    {
-      name: 'Support Resonance',
-      sentiment: 'positive',
-      volume: 215,
-      phrases: ['responsive', 'helpful team'],
-    },
+    { name: 'Interface Efficiency', sentiment: 'positive', volume: 342, phrases: ['clean design', 'fast loading', 'intuitive'] },
+    { name: 'Revenue Value Gap',    sentiment: 'neutral',  volume: 204, phrases: ['pricing unclear', 'feature parity'] },
+    { name: 'Onboarding Velocity',  sentiment: 'negative', volume: 892, phrases: ['too many steps', 'email loop', 'confusing nav'] },
+    { name: 'Support Resonance',    sentiment: 'positive', volume: 215, phrases: ['responsive', 'helpful team'] },
   ],
-  sentimentBreakdown: { positive: 28, neutral: 31, negative: 41 },
-  topPhrases: [
-    '"Too many steps to create project"',
-    '"Confusing interface navigation"',
-    '"Email verification loop"',
-  ],
+  sentiment_breakdown: { positive: 28, neutral: 31, negative: 41 },
+  top_phrases: ['"Too many steps to create project"', '"Confusing interface navigation"', '"Email verification loop"'],
 };
 
 export function useInsights(surveyId) {
-  const [insights, setInsights] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [insights,   setInsights]   = useState(null);
+  const [loading,    setLoading]    = useState(true);
   const [generating, setGenerating] = useState(false);
   const api = useApi();
-  const { userId, orgId } = useAppAuth();
-  const effectiveOrgId = orgId || userId;
 
-  useEffect(() => {
-    if (!surveyId || !effectiveOrgId) {
+  const load = useCallback(async () => {
+    if (!surveyId) { setInsights(MOCK_INSIGHTS); setLoading(false); return; }
+    setLoading(true);
+    try {
+      const { insights } = await api.getInsights(surveyId);
+      setInsights(insights);
+    } catch {
       setInsights(MOCK_INSIGHTS);
+    } finally {
       setLoading(false);
-      return;
     }
+  }, [surveyId, api]);
 
-    if (!isConfigured()) {
-      setInsights(MOCK_INSIGHTS);
-      setLoading(false);
-      return;
-    }
-
-    const db = getDb();
-    const q = query(
-      collection(db, 'orgs', effectiveOrgId, 'surveys', surveyId, 'insights'),
-      orderBy('generatedAt', 'desc'),
-      limit(1)
-    );
-
-    const unsub = onSnapshot(q, (snap) => {
-      if (!snap.empty) setInsights({ id: snap.docs[0].id, ...snap.docs[0].data() });
-      else setInsights(MOCK_INSIGHTS);
-      setLoading(false);
-    });
-
-    return unsub;
-  }, [surveyId, effectiveOrgId]);
+  useEffect(() => { load(); }, [load]);
 
   const regenerate = useCallback(async () => {
-    if (!surveyId || !isConfigured()) return;
+    if (!surveyId) return;
     setGenerating(true);
     try {
       const result = await api.analyzeInsights(surveyId);

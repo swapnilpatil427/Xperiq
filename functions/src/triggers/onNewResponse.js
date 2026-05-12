@@ -7,7 +7,6 @@ exports.onNewResponse = functions.firestore.onDocumentCreated(
   async (event) => {
     const { orgId, surveyId } = event.params;
 
-    // Count responses
     const countSnap = await db
       .collection('orgs').doc(orgId)
       .collection('surveys').doc(surveyId)
@@ -16,7 +15,6 @@ exports.onNewResponse = functions.firestore.onDocumentCreated(
       .get();
     const count = countSnap.data().count;
 
-    // Auto-analyze at 10, 50, 100, 500 responses
     const thresholds = [10, 50, 100, 500];
     if (!thresholds.includes(count)) return;
 
@@ -49,7 +47,6 @@ exports.onNewResponse = functions.firestore.onDocumentCreated(
           generatedAt: new Date(),
           triggeredBy: 'auto',
         });
-
       console.log(`Auto-generated insights for survey ${surveyId} at ${count} responses`);
     } catch (err) {
       console.error('Auto-insights failed:', err.message);

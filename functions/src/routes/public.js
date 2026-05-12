@@ -18,20 +18,19 @@ router.get('/surveys/:token', async (req, res) => {
       return res.status(404).json({ error: 'Survey not found or not active' });
     }
 
-    const doc = snap.docs[0];
+    const doc  = snap.docs[0];
     const data = doc.data();
 
-    // Only expose public fields — never expose internal metadata
     res.json({
       survey: {
-        id: doc.id,
-        title: data.title,
+        id:          doc.id,
+        title:       data.title,
         description: data.description || null,
         questions: (data.questions || []).map((q) => ({
-          id: q.id,
-          type: q.type,
+          id:       q.id,
+          type:     q.type,
           question: q.question,
-          options: q.options || undefined,
+          options:  q.options || undefined,
           required: q.required ?? true,
         })),
       },

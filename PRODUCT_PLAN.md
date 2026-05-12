@@ -64,6 +64,77 @@ All four skills are designed by PMs before any code is written. Each PM spec ans
 
 ---
 
+## Cloud & Infrastructure Strategy
+
+**Decision: Google Cloud Platform (GCP). No revisiting.**
+
+We are already on GCP via Firebase. All scaling paths stay in GCP. This keeps one billing account, one IAM model, and zero re-learning of cloud primitives.
+
+---
+
+### Scale Slowly — Four Stages
+
+#### Stage 1: Now → 10,000 users — Firebase (free)
+```
+Firebase Functions  ←  Express API (BACKEND=firebase)
+Firestore           ←  primary database
+Firebase Hosting    ←  static frontend (CDN-backed)
+Cost: ~$0/month
+```
+No ops. Scales to zero. Already deployed. Do not over-engineer this stage.
+
+#### Stage 2: 10,000 → 100,000 users — Cloud Run + Cloud SQL
+```
+Cloud Run           ←  Express API (BACKEND=local, same Docker image)
+Cloud SQL Postgres  ←  primary database (replaces Firestore)
+Firebase Hosting    ←  stays (static frontend, no reason to move)
+Cost: ~$10–65/month
+```
+Migration trigger: Firestore read/write costs become meaningful (typically ~$10K MRR).
+We already have the Dockerfile and the full Postgres schema. Migration is a deploy + data migration script, not a rewrite.
+
+#### Stage 3: 100,000+ users — Cloud Run + Cloudflare
+```
+Cloud Run (multi-region)  ←  API in us-central1, europe-west1, asia-northeast1
+Cloud SQL + read replicas  ←  per-region replicas for read latency
+Cloudflare (in front)      ←  CDN, DDoS, edge caching, anycast routing
+Cost: ~$100–500/month
+```
+Cloudflare sits in front of GCP as a routing layer. Cloud Run handles compute. No new cloud account.
+
+#### Stage 4: Future — Cloudflare Workers + Hyperdrive (optional)
+Hot paths (survey fill, response submit) can be migrated to Workers for true edge execution (~0ms cold start, 300+ PoPs). Hyperdrive proxies the Postgres connection. Only worth doing if latency from Stage 3 is measurably impacting survey completion rates.
+
+---
+
+### ICP (Internet Computer Protocol) — Watchlist, Not Yet
+DFINITY's blockchain compute network. Tamperproof, decentralized, no single cloud dependency. Not production-ready for a traditional SaaS data model — no SQL, different execution model, immature ecosystem.
+
+**When to revisit:** If verifiable, tamperproof survey results become a real enterprise buying signal (i.e. "prove Experient can't manipulate your NPS data"). That's a Stage 3+ conversation, not now.
+
+**What to watch:** ICP canister support for Postgres-compatible storage, adoption of Azle (JS canisters), and whether enterprise buyers start asking for trustless compute guarantees.
+
+---
+
+### Migration Portability Principles
+These are enforced as code patterns, not aspirations. Every decision made today must follow these:
+
+1. **Two-backend adapter pattern** — `BACKEND=local` (Postgres) and `BACKEND=firebase` (Firestore) coexist. All route logic lives in `routes/local/` or `routes/`. Switching is an env var, not a rewrite.
+
+2. **SQL as source of truth** — all schema lives in `supabase/migrations/`. When we move to Cloud SQL, we run the same migration files. Zero schema translation.
+
+3. **No vendor-specific queries** — use standard ANSI SQL in `routes/local/`. No Postgres-only features that don't also exist in Cloud SQL.
+
+4. **AI via OpenRouter** — never call a model provider directly. OpenRouter lets us swap models (Llama → Claude → Gemini) with a one-line config change. No model lock-in.
+
+5. **Auth via Clerk** — Clerk is portable across hosting environments. Never bake Firebase Auth or GCP Identity Platform in.
+
+6. **Observability via push** — `pino-loki` pushes logs; `/api/metrics` is a pull endpoint. Both work on Firebase, Cloud Run, and any future platform.
+
+7. **Data export before migration** — any migration between storage backends starts with a full export script tested in staging. Never migrate production data without a dry-run rollback.
+
+---
+
 ## Credit-Based Pricing Model
 
 ### How Credits Work
@@ -454,15 +525,25 @@ This is the most differentiated feature. "Ask your data a question in plain Engl
 
 #### Sprint 17 — Multi-Region & Global Scale (Weeks 35–36)
 
-- [ ] **17-1** Cloud Functions multi-region: deploy to `us-central1` + `europe-west1` + `asia-northeast1` (Tokyo)
-- [ ] **17-2** Firestore: provision multi-region instance (`nam5` for US, `eur3` for EU) — org-level data residency routing
-- [ ] **17-3** Firebase Hosting: verify global CDN configuration — static assets served from 150+ edge locations
-- [ ] **17-4** Custom domain setup: `app.experient.ai`, `api.experient.ai`, `surveys.experient.ai`
-- [ ] **17-5** DDOS protection: Cloud Armor rules on Cloud Functions
-- [ ] **17-6** Backend: circuit breaker pattern for OpenRouter AI calls — degrade gracefully when AI is down
-- [ ] **17-7** Uptime monitoring: set up Google Cloud Monitoring + PagerDuty for on-call alerts
-- [ ] **17-8** Disaster recovery runbook: documented recovery procedures for data loss, function outage, Firestore incident
-- [ ] **17-9** Status page: `status.experient.ai` via Atlassian Statuspage or BetterUptime
+**Stage trigger:** Run this sprint when MRR crosses ~$10K or Firestore costs become meaningful. Not before.
+
+**Stage 2 — Migrate to Cloud Run + Cloud SQL:**
+- [ ] **17-1** Provision Cloud SQL Postgres (db-g1-small, us-central1) — run existing `supabase/migrations/` against it to create schema
+- [ ] **17-2** Write and test data migration script: Firestore → Cloud SQL (surveys, responses, insights, workflows per org)
+- [ ] **17-3** Deploy Express API as Cloud Run service (`BACKEND=local`) — same Dockerfile already in repo
+- [ ] **17-4** Cutover: point `api.experient.ai` at Cloud Run, run migration script, validate, sunset Firebase Functions
+
+**Stage 3 — Global distribution:**
+- [ ] **17-5** Add Cloud Run deployments in `europe-west1` + `asia-northeast1` — Cloud SQL read replicas per region
+- [ ] **17-6** Cloudflare in front of all regions — anycast routing, DDoS protection (Cloud Armor optional, Cloudflare covers this)
+- [ ] **17-7** Custom domains: `app.experient.ai`, `api.experient.ai`, `surveys.experient.ai`
+- [ ] **17-8** Firebase Hosting: verify global CDN config — static assets from 150+ PoPs (no change needed)
+
+**Reliability (both stages):**
+- [ ] **17-9** Backend: circuit breaker for OpenRouter AI calls — degrade gracefully when AI is unavailable
+- [ ] **17-10** Uptime monitoring: Google Cloud Monitoring + PagerDuty on-call
+- [ ] **17-11** Disaster recovery runbook: Postgres backup restore, Cloud Run rollback, Cloudflare failover
+- [ ] **17-12** Status page: `status.experient.ai` (BetterUptime or Atlassian)
 
 ---
 
@@ -586,25 +667,28 @@ This is the most differentiated feature. "Ask your data a question in plain Engl
 
 ## Technology Choices for Scale
 
-| Layer | Technology | Rationale |
-|---|---|---|
-| Frontend | React 19 + Vite + Tailwind v4 | Fast, modern, component-driven |
-| Type safety | TypeScript (migrate incrementally) | Catch bugs before they reach prod |
-| State management | React Query (TanStack) | Server-state caching, background refresh, offline support |
-| Backend | Cloud Functions v2 + Express | Serverless, auto-scales to 0, global regions |
-| Database | Firestore | Real-time, globally distributed, no ops |
-| Cache | Upstash Redis (serverless) | Sub-1ms cache for org settings, survey schemas |
-| Queue | Cloud Tasks | Async AI processing, webhook delivery |
-| Auth | Clerk | SSO, SCIM, MFA without building infra |
-| Billing | Stripe | Industry standard, Checkout, Portal, webhooks |
-| Email | Resend | Developer-friendly, high deliverability |
-| SMS | Twilio | Global SMS, programmable |
-| AI | OpenRouter (multi-model routing) | Route to best model per tier/use case |
-| Monitoring | Sentry (errors) + Cloud Monitoring (infra) | Full observability |
-| Analytics | PostHog (product analytics) | Understand feature usage, funnel |
-| CDN | Firebase Hosting (Fastly-backed) | 150+ PoPs globally |
-| CI/CD | GitHub Actions | Automated test + deploy on merge |
-| Docs | Mintlify | Beautiful developer docs, auto-syncs with OpenAPI |
+| Layer | Now (Stage 1) | Stage 2+ | Rationale |
+|---|---|---|---|
+| Frontend | React 19 + Vite + Tailwind v4 | same | Fast, modern, component-driven |
+| Type safety | TypeScript (incremental) | same | Catch bugs before prod |
+| State mgmt | React Query (TanStack) | same | Server-state caching, background refresh |
+| Backend | Firebase Functions v2 + Express | Cloud Run + Express (same code) | Same Docker image, env var switches runtime |
+| Database | Firestore | Cloud SQL Postgres | SQL schema already exists, migration is a script |
+| Cache | — | Upstash Redis (serverless) | Sub-1ms for org settings, survey schemas |
+| Queue | Cloud Tasks | Cloud Tasks (same) | Async AI, webhook delivery |
+| Auth | Clerk | Clerk (same) | Portable, SSO + SCIM + MFA without infra |
+| Billing | Stripe | Stripe (same) | Industry standard |
+| Email | Resend | Resend (same) | Developer-friendly, high deliverability |
+| SMS | Twilio | Twilio (same) | Global SMS |
+| AI | OpenRouter (multi-model) | OpenRouter (same) | Swap models with one config line, no lock-in |
+| Logging | Pino → Cloud Logging | Pino → Loki → Grafana Cloud | Push-based, works everywhere |
+| Metrics | prom-client → /api/metrics | Cloud Run + Grafana Cloud agent | Prometheus pull, no vendor lock-in |
+| Errors | Sentry | Sentry (same) | Frontend + backend |
+| CDN | Firebase Hosting (Fastly) | Firebase Hosting + Cloudflare | Cloudflare added in front at Stage 3 |
+| CI/CD | GitHub Actions | GitHub Actions (same) | Test + deploy on merge |
+| Docs | Mintlify | Mintlify (same) | Auto-syncs with OpenAPI spec |
+| **Future** | — | Cloudflare Workers (edge hot paths) | Only if Stage 3 latency is a bottleneck |
+| **Watchlist** | — | ICP (tamperproof compute) | Revisit when enterprise buyers ask for verifiable data |
 
 ---
 

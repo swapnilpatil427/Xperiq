@@ -57,13 +57,14 @@ router.get('/:id', requireAuth, async (req, res) => {
 // Create survey
 router.post('/', requireAuth, async (req, res) => {
   try {
-    const { title, questions = [] } = req.body;
+    const { title, questions = [], survey_type_id } = req.body;
     if (!title) return res.status(400).json({ error: 'title is required' });
 
     const survey = {
       title,
       status: 'draft',
       questions,
+      surveyTypeId: survey_type_id || null,
       orgId: req.orgId,
       createdBy: req.userId,
       publishToken: uuidv4(),
@@ -85,11 +86,12 @@ router.post('/', requireAuth, async (req, res) => {
 // Update survey
 router.put('/:id', requireAuth, async (req, res) => {
   try {
-    const { title, status, questions } = req.body;
+    const { title, status, questions, description } = req.body;
     const update = { updatedAt: new Date() };
-    if (title !== undefined) update.title = title;
-    if (status !== undefined) update.status = status;
-    if (questions !== undefined) update.questions = questions;
+    if (title       !== undefined) update.title       = title;
+    if (status      !== undefined) update.status      = status;
+    if (description !== undefined) update.description = description;
+    if (questions   !== undefined) update.questions   = questions;
 
     await db
       .collection('orgs').doc(req.orgId)
@@ -115,7 +117,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
   }
 });
 
-// Publish survey (set status to active, return public URL token)
+// Publish survey
 router.post('/:id/publish', requireAuth, async (req, res) => {
   try {
     await db

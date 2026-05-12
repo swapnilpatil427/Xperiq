@@ -1,10 +1,10 @@
 const express = require('express');
-const { requireAuth } = require('../middleware/auth');
-const { generateSurveyQuestions, analyzeInsights, refineSurveyQuestions } = require('../lib/openrouter');
-const { db } = require('../lib/admin');
+const { requireAuth } = require('../../middleware/auth');
+const { generateSurveyQuestions, analyzeInsights, refineSurveyQuestions } = require('../../lib/openrouter');
+const db = require('../../lib/db');
+const { insightsGenerated } = require('../../lib/metrics');
 const router = express.Router();
 
-// Generate survey from natural language intent
 router.post('/generate-survey', requireAuth, async (req, res) => {
   try {
     const { intent, surveyTypeId } = req.body;
@@ -14,53 +14,44 @@ router.post('/generate-survey', requireAuth, async (req, res) => {
     res.json({ questions });
   } catch (err) {
     console.error('AI generate-survey error:', err.message);
-    res.json({
-      questions: getMockQuestions(intent),
-      note: 'Generated from template (AI unavailable)',
-    });
+    res.json({ questions: getMockQuestions(intent), note: 'Generated from template (AI unavailable)' });
   }
 });
 
-// Analyze responses and generate insights
 router.post('/analyze-insights', requireAuth, async (req, res) => {
   try {
     const { surveyId } = req.body;
     if (!surveyId) return res.status(400).json({ error: 'surveyId is required' });
 
-    const surveyDoc = await db
-      .collection('orgs').doc(req.orgId)
-      .collection('surveys').doc(surveyId)
-      .get();
+    const { rows: [survey] } = await db.query(
+      'SELECT * FROM surveys WHERE id = $1 AND org_id = $2',
+      [surveyId, req.orgId]
+    );
+    if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
-    if (!surveyDoc.exists) return res.status(404).json({ error: 'Survey not found' });
+    const { rows: responses } = await db.query(
+      `SELECT answers, nps_score FROM responses
+       WHERE survey_id = $1 ORDER BY submitted_at DESC LIMIT 200`,
+      [surveyId]
+    );
+    if (!responses.length) return res.status(400).json({ error: 'No responses to analyze' });
 
-    const snap = await db
-      .collection('orgs').doc(req.orgId)
-      .collection('surveys').doc(surveyId)
-      .collection('responses')
-      .orderBy('submittedAt', 'desc')
-      .limit(200)
-      .get();
+    const insights = await analyzeInsights(survey.title, responses);
 
-    const responses = snap.docs.map((d) => d.data());
-    if (!responses.length) {
-      return res.status(400).json({ error: 'No responses to analyze' });
+    const { rows: [saved] } = await db.query(
+      `INSERT INTO insights (survey_id, org_id, summary, nps_score, topics, sentiment_breakdown, top_phrases, response_count, triggered_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'manual') RETURNING *`,
+      [surveyId, req.orgId, insights.summary, insights.npsScore,
+       JSON.stringify(insights.topics), JSON.stringify(insights.sentimentBreakdown),
+       JSON.stringify(insights.topPhrases), responses.length]
+    );
+
+    insightsGenerated.inc({ trigger: 'manual' });
+    if (insights.npsScore != null) {
+      await db.query('UPDATE surveys SET nps_score = $1 WHERE id = $2', [insights.npsScore, surveyId]);
     }
 
-    const insights = await analyzeInsights(surveyDoc.data().title, responses);
-
-    await db
-      .collection('orgs').doc(req.orgId)
-      .collection('surveys').doc(surveyId)
-      .collection('insights')
-      .add({
-        ...insights,
-        surveyId,
-        responseCount: responses.length,
-        generatedAt: new Date(),
-      });
-
-    res.json({ insights });
+    res.json({ insights: saved });
   } catch (err) {
     console.error('AI analyze-insights error:', err.message);
     res.status(500).json({ error: err.message });

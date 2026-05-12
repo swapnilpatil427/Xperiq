@@ -1,0 +1,12 @@
+apiVersion: 1
+
+providers:
+  - name: "Experient"
+    orgId: 1
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      # Baked into docker/grafana image (not under /var/lib/grafana volume)
+      path: /etc/grafana/dashboards

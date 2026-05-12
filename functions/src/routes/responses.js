@@ -28,9 +28,8 @@ router.post('/', async (req, res) => {
     const surveyDoc = surveysQuery.docs[0];
     const orgId = surveyDoc.data().orgId;
 
-    // Extract NPS score if present
     const npsAnswer = answers.find((a) => a.type === 'nps');
-    const npsScore = npsAnswer ? parseInt(npsAnswer.value, 10) : null;
+    const npsScore  = npsAnswer ? parseInt(npsAnswer.value, 10) : null;
 
     const response = {
       surveyId,

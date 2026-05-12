@@ -16,11 +16,11 @@
 | Phase 3 — Billing | 18 | 0 | 0 | 0% |
 | Phase 4 — Enterprise | 38 | 0 | 0 | 0% |
 | Phase 5 — Integrations | 16 | 0 | 0 | 0% |
-| Phase 6 — Scale | 18 | 0 | 0 | 0% |
+| Phase 6 — Scale | 21 | 0 | 0 | 0% |
 | Phase 7 — Go-to-Market | 20 | 0 | 0 | 0% |
 | Phase 2A — Agentic Skills Foundation | 16 | 0 | 0 | 0% |
 | Phase 5A — MCP & Skill Publishing | 12 | 0 | 0 | 0% |
-| **Total** | **217** | **7** | **0** | **3%** |
+| **Total** | **220** | **7** | **0** | **3%** |
 
 ---
 
@@ -361,6 +361,7 @@ Estimated time to complete Sprint 0: **3–5 days**
 
 ## Phase 6 — Scale & Global Infrastructure
 **Sprints 16–17 · Weeks 33–36**
+**Cloud: GCP only. Fly.io not used. See PRODUCT_PLAN.md → Cloud & Infrastructure Strategy.**
 
 ### Sprint 16 — Performance & Reliability (Weeks 33–34)
 
@@ -376,18 +377,37 @@ Estimated time to complete Sprint 0: **3–5 days**
 | 16-8 | Frontend: Lighthouse CI in GitHub Actions (score ≥ 90) | ⬜ | |
 
 ### Sprint 17 — Multi-Region & Global Scale (Weeks 35–36)
+**Trigger: run when MRR ~$10K or Firestore costs become meaningful. Do not run early.**
 
+#### Stage 2 — Migrate to Cloud Run + Cloud SQL (~$10K MRR)
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| 17-1 | Cloud Functions deploy to 3 regions (US, EU, APAC) | ⬜ | |
-| 17-2 | Firestore multi-region provisioning | ⬜ | |
-| 17-3 | Firebase Hosting global CDN verification | ⬜ | |
-| 17-4 | Custom domains: `app.experient.ai`, `api.experient.ai` | ⬜ | |
-| 17-5 | DDOS protection: Cloud Armor rules | ⬜ | |
-| 17-6 | Circuit breaker for OpenRouter AI calls | ⬜ | |
-| 17-7 | Uptime monitoring + PagerDuty on-call | ⬜ | |
-| 17-8 | Disaster recovery runbook | ⬜ | |
-| 17-9 | Status page (`status.experient.ai`) | ⬜ | |
+| 17-1 | Provision Cloud SQL Postgres (db-g1-small, us-central1) | ⬜ | Run existing supabase/migrations/ to create schema |
+| 17-2 | Write + test Firestore → Cloud SQL migration script | ⬜ | Per-org, dry-run in staging first |
+| 17-3 | Deploy Express API as Cloud Run service (BACKEND=local) | ⬜ | Same Dockerfile already in repo |
+| 17-4 | Cutover: point api.experient.ai at Cloud Run, run migration, sunset Firebase Functions | ⬜ | Reversible: keep Firebase Functions 2 weeks post-cutover |
+
+#### Stage 3 — Global Distribution (~100K users)
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| 17-5 | Cloud Run in europe-west1 + asia-northeast1 + Cloud SQL read replicas | ⬜ | |
+| 17-6 | Cloudflare in front of all regions (anycast routing + DDoS) | ⬜ | Replaces need for Cloud Armor |
+| 17-7 | Custom domains: app.experient.ai, api.experient.ai, surveys.experient.ai | ⬜ | |
+| 17-8 | Firebase Hosting global CDN verification (frontend stays here) | ⬜ | No move needed, already on Fastly CDN |
+
+#### Reliability (both stages)
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| 17-9 | Circuit breaker for OpenRouter AI calls | ⬜ | Degrade gracefully when AI is unavailable |
+| 17-10 | Uptime monitoring: Google Cloud Monitoring + PagerDuty | ⬜ | |
+| 17-11 | Disaster recovery runbook (Postgres backup restore, Cloud Run rollback) | ⬜ | |
+| 17-12 | Status page: status.experient.ai | ⬜ | BetterUptime or Atlassian |
+
+#### Future Watchlist (not tasked yet)
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| 17-W1 | Evaluate Cloudflare Workers + Hyperdrive for edge hot paths | ⬜ | Only if Stage 3 latency is a bottleneck |
+| 17-W2 | ICP (DFINITY Internet Computer) — monitor readiness for tamperproof compute | ⬜ | Revisit if enterprise buyers request verifiable data guarantees |
 
 ---
 
@@ -472,3 +492,5 @@ Estimated time to complete Sprint 0: **3–5 days**
 | 2026-05-11 | Sprint 2 expanded with enterprise role model: 3 roles (admin/analyst/viewer), 15 tasks covering Clerk Dashboard config, usePermissions hook, role gates, backend middleware. |
 | 2026-05-11 | Agentic Skills strategy added: Sprint 7A (16 tasks — 4 PM specs + skill executor layer + credit metering + Cmd+K routing), Sprint 15A (12 tasks — MCP server, 5 MCP tools, Claude skill marketplace, GTM demo). PRODUCT_PLAN.md updated with agentic vision, four-skill architecture, PM-first design principle, and competitive table. |
 | 2026-05-11 | Survey Data Model (Sprint 2B): researched 15 survey types, 30+ question types, all contextual enrichment fields (IP/geo/device/session/UTM/quality signals) across Qualtrics/Medallia/InMoment/Typeform. Designed 3-tier storage architecture (Firestore + BigQuery + Firebase Storage). Wrote SURVEY_DATA_MODEL.md with full TypeScript interfaces (Survey, Question, Block, Response, Answer, Distribution, LogicRule, EmbeddedDataField), collection hierarchy, compound indexes, and migration guide from current minimal schema. |
+| 2026-05-11 | Local dev stack simplified: single docker-compose.yml (Postgres + Prometheus + Loki + Grafana), removed Supabase CLI dependency, Pino structured logging with optional Loki push, prom-client metrics with /api/metrics endpoint, Dockerfile + fly.toml added. |
+| 2026-05-11 | Cloud strategy decided: GCP only. Fly.toml kept as reference but GCP is the path. Scaling stages documented: Firebase (now) → Cloud Run + Cloud SQL (~$10K MRR) → Cloudflare + Cloud Run (global). ICP added as watchlist item. 7 migration portability principles enforced as code patterns. PRODUCT_PLAN.md and TRACKER.md updated with full strategy. |

@@ -24,6 +24,7 @@ router.get('/', requireAuth, async (req, res) => {
 router.post('/', requireAuth, async (req, res) => {
   try {
     const { condition, action, name } = req.body;
+    if (!name) return res.status(400).json({ error: 'name is required' });
     const wf = {
       name,
       condition,
@@ -35,7 +36,10 @@ router.post('/', requireAuth, async (req, res) => {
       createdAt: new Date(),
       updatedAt: new Date(),
     };
-    const ref = await db.collection('orgs').doc(req.orgId).collection('workflows').add(wf);
+    const ref = await db
+      .collection('orgs').doc(req.orgId)
+      .collection('workflows')
+      .add(wf);
     res.status(201).json({ workflow: { id: ref.id, ...wf } });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -46,10 +50,10 @@ router.put('/:id', requireAuth, async (req, res) => {
   try {
     const { condition, action, name, status } = req.body;
     const update = { updatedAt: new Date() };
-    if (name) update.name = name;
+    if (name)      update.name      = name;
     if (condition) update.condition = condition;
-    if (action) update.action = action;
-    if (status) update.status = status;
+    if (action)    update.action    = action;
+    if (status)    update.status    = status;
     await db
       .collection('orgs').doc(req.orgId)
       .collection('workflows').doc(req.params.id)
@@ -74,12 +78,11 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
 router.post('/:id/toggle', requireAuth, async (req, res) => {
   try {
-    const doc = await db
+    const doc  = await db
       .collection('orgs').doc(req.orgId)
       .collection('workflows').doc(req.params.id)
       .get();
-    const current = doc.data().status;
-    const next = current === 'active' ? 'paused' : 'active';
+    const next = doc.data().status === 'active' ? 'paused' : 'active';
     await doc.ref.update({ status: next, updatedAt: new Date() });
     res.json({ status: next });
   } catch (err) {

@@ -1,0 +1,37 @@
+app = "experient-api"
+primary_region = "ord"   # Chicago — change to your closest: lax, iad, lhr, fra, sin, nrt
+
+[build]
+  dockerfile = "functions/Dockerfile"
+
+[env]
+  NODE_ENV  = "production"
+  BACKEND   = "local"
+  PORT      = "3001"
+  LOG_LEVEL = "info"
+
+# Secrets (never in fly.toml) — set via: fly secrets set KEY=value
+# Required: DATABASE_URL, CLERK_SECRET_KEY, OPENROUTER_API_KEY
+# Optional: LOKI_URL, LOKI_USER, LOKI_PASSWORD
+
+[http_service]
+  internal_port = 3001
+  force_https   = true
+  auto_stop_machines  = true   # scale to zero when idle (saves cost)
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type       = "requests"
+    hard_limit = 250
+    soft_limit = 200
+
+[[vm]]
+  size   = "shared-cpu-1x"   # cheapest — 256 MB RAM, enough for this app
+  memory = "256mb"
+
+# Prometheus metrics — Fly's built-in agent scrapes /api/metrics automatically
+# when this block is present (no external Prometheus needed)
+[[metrics]]
+  port = 3001
+  path = "/api/metrics"
