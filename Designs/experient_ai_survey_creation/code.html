@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Survey Creation | Experient</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-surface": "#2c2f31",
+                        "secondary-container": "#82deff",
+                        "surface": "#f5f7f9",
+                        "on-surface-variant": "#595c5e",
+                        "primary-fixed": "#879aff",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-bright": "#f5f7f9",
+                        "on-tertiary-fixed": "#280046",
+                        "surface-container-highest": "#d9dde0",
+                        "tertiary": "#8329c8",
+                        "secondary-fixed": "#82deff",
+                        "tertiary-fixed-dim": "#c986ff",
+                        "error-container": "#f74b6d",
+                        "surface-dim": "#d0d5d8",
+                        "inverse-primary": "#7087ff",
+                        "primary-fixed-dim": "#748bff",
+                        "surface-tint": "#2a4bd9",
+                        "on-background": "#2c2f31",
+                        "on-primary": "#f2f1ff",
+                        "on-tertiary-fixed-variant": "#580091",
+                        "on-tertiary-container": "#4c007d",
+                        "on-secondary-container": "#004e62",
+                        "secondary-fixed-dim": "#57d2f9",
+                        "background": "#f5f7f9",
+                        "primary-container": "#879aff",
+                        "surface-container-high": "#dfe3e6",
+                        "primary": "#2a4bd9",
+                        "inverse-surface": "#0b0f10",
+                        "surface-container": "#e5e9eb",
+                        "outline": "#747779",
+                        "on-secondary-fixed-variant": "#00586e",
+                        "primary-dim": "#173dcd",
+                        "on-secondary-fixed": "#003a48",
+                        "error": "#b41340",
+                        "secondary": "#00647c",
+                        "on-primary-container": "#00176b",
+                        "on-error": "#ffefef",
+                        "on-error-container": "#510017",
+                        "on-secondary": "#e2f6ff",
+                        "tertiary-container": "#d299ff",
+                        "on-tertiary": "#fceeff",
+                        "outline-variant": "#abadaf",
+                        "tertiary-fixed": "#d299ff",
+                        "secondary-dim": "#00576c",
+                        "inverse-on-surface": "#9a9d9f",
+                        "surface-container-low": "#eef1f3",
+                        "on-primary-fixed-variant": "#001e82",
+                        "tertiary-dim": "#7613bb",
+                        "on-primary-fixed": "#000000",
+                        "error-dim": "#a70138",
+                        "surface-variant": "#d9dde0"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+        .rotate-x-5:hover {
+            transform: rotateX(5deg) rotateY(-2deg) scale(1.02);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar Navigation Shell -->
+<header class="fixed top-0 w-full z-50 bg-slate-50/70 dark:bg-slate-900/70 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]">
+<div class="flex justify-between items-center h-16 px-6 w-full">
+<div class="flex items-center gap-8">
+<span class="text-2xl font-extrabold tracking-tighter text-indigo-600 dark:text-indigo-400 drop-shadow-sm font-headline">Experient</span>
+<nav class="hidden md:flex items-center gap-6">
+<a class="text-indigo-600 dark:text-indigo-400 font-bold border-b-2 border-indigo-600 text-sm font-medium Inter" href="#">Surveys</a>
+<a class="text-slate-500 dark:text-slate-400 font-medium hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all duration-300 px-3 py-1 rounded-lg text-sm Inter" href="#">Insights</a>
+<a class="text-slate-500 dark:text-slate-400 font-medium hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all duration-300 px-3 py-1 rounded-lg text-sm Inter" href="#">Respondents</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-full hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all duration-300">
+<span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+</button>
+<button class="p-2 rounded-full hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all duration-300">
+<span class="material-symbols-outlined text-on-surface-variant">help</span>
+</button>
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-white shadow-sm ml-2">
+<img alt="User profile menu with glassmorphism" class="w-full h-full object-cover" data-alt="Close-up portrait of a professional woman with a friendly expression, soft natural office lighting, blurred modern background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBUkPis1iBjDSbrZ2bsuH7h8OGJgTyIv4b8DH0_gMgwF5lv1MgvA0-fBGeFUPxqdZfdps8I-VcapelfYguT_RGl_XBx8H2h_b90eiWUgUnElqgUO-a4qYcrqC1ppvxSsGM6qCaG7Yxr2m_1x91TgTF4KFEqvu7NtolkrtQ2zHK_DZKypAFiFT0SzOpfJeC_fPlHfGIOz6vZsm7LB6yFBZt_IBfXl6NxrKmKz3HxiMMbFJFOmd4z-k0WruJVCFkHPO2VPm5CsMW9Hac"/>
+</div>
+</div>
+</div>
+<div class="bg-slate-200/50 dark:bg-slate-800/50 h-[1px] w-full"></div>
+</header>
+<!-- Main Content Area: AI Survey Creation Flow -->
+<main class="pt-24 pb-20 px-6 md:px-12 lg:px-20 min-h-screen">
+<div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-12 items-start">
+<!-- Left: Create Survey with AI form -->
+<section class="flex flex-col gap-10">
+<div class="space-y-4">
+<h1 class="text-4xl md:text-5xl font-black font-headline tracking-tighter text-on-surface">
+                        Dimensional <br/><span class="text-primary bg-clip-text">Intelligence.</span>
+</h1>
+<p class="text-lg text-on-surface-variant max-w-md font-medium leading-relaxed">
+                        Transform your intent into high-fidelity surveys. Just describe what you need to know.
+                    </p>
+</div>
+<div class="bg-surface-container-low rounded-lg p-8 space-y-8 relative overflow-hidden group">
+<!-- Subtle AI decorative background element -->
+<div class="absolute -top-20 -right-20 w-64 h-64 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-500"></div>
+<div class="space-y-6 relative z-10">
+<!-- AI Input -->
+<div class="space-y-3">
+<label class="font-headline font-bold text-sm tracking-wide text-primary uppercase">Prompt the AI</label>
+<div class="relative">
+<textarea class="w-full bg-surface-container-lowest border-none focus:ring-2 focus:ring-primary/20 rounded-lg p-5 text-on-surface font-body text-base placeholder:text-outline-variant transition-all shadow-sm" placeholder="How do customers feel about our new UI?" rows="4"></textarea>
+<div class="absolute bottom-4 right-4 flex items-center gap-2 pointer-events-none text-outline-variant">
+<span class="text-xs font-semibold">EXPERIENT AI ACTIVE</span>
+<span class="material-symbols-outlined text-sm" style="font-variation-settings: 'FILL' 1;">psychology</span>
+</div>
+</div>
+</div>
+<!-- Dropdowns -->
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-2">
+<label class="font-headline font-bold text-xs tracking-wide text-on-surface-variant uppercase">Industry</label>
+<select class="w-full bg-surface-container-lowest border-none focus:ring-2 focus:ring-primary/20 rounded-lg h-12 px-4 text-sm font-medium Inter appearance-none shadow-sm">
+<option>Tech</option>
+<option>E-commerce</option>
+<option>Healthcare</option>
+<option>Finance</option>
+</select>
+</div>
+<div class="space-y-2">
+<label class="font-headline font-bold text-xs tracking-wide text-on-surface-variant uppercase">Tone</label>
+<select class="w-full bg-surface-container-lowest border-none focus:ring-2 focus:ring-primary/20 rounded-lg h-12 px-4 text-sm font-medium Inter appearance-none shadow-sm">
+<option>Professional</option>
+<option>Casual</option>
+<option>Empathetic</option>
+</select>
+</div>
+</div>
+<!-- Actions -->
+<div class="pt-4 flex flex-col sm:flex-row gap-4">
+<button class="flex-1 bg-gradient-to-br from-primary to-primary-container text-white h-14 rounded-full font-headline font-bold tracking-tight shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all duration-300 flex items-center justify-center gap-2 group">
+<span class="material-symbols-outlined group-hover:rotate-12 transition-transform">auto_awesome</span>
+                                Generate Draft
+                            </button>
+<button class="flex-1 bg-surface-container-high text-on-surface-variant h-14 rounded-full font-headline font-bold tracking-tight hover:bg-surface-container-highest active:scale-95 transition-all duration-300">
+                                Start from Scratch
+                            </button>
+</div>
+</div>
+</div>
+<!-- Featured Badge -->
+<div class="flex items-center gap-4 p-4 rounded-xl bg-secondary-container/10 border border-secondary-container/20">
+<div class="w-12 h-12 rounded-full bg-secondary-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-secondary-container">tips_and_updates</span>
+</div>
+<div>
+<p class="text-sm font-bold font-headline text-on-secondary-container">Pro Tip</p>
+<p class="text-xs text-secondary-dim font-medium">Be specific about your audience for better AI results.</p>
+</div>
+</div>
+</section>
+<!-- Right: Survey Preview inside a glassmorphic card -->
+<section class="perspective-1000 lg:sticky lg:top-32">
+<div class="glass-card rounded-lg p-8 shadow-[0_20px_50px_rgba(0,0,0,0.08)] border border-white/40 overflow-hidden relative">
+<!-- Glass glare effect -->
+<div class="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-white/20 to-transparent pointer-events-none"></div>
+<div class="flex justify-between items-center mb-10 relative z-10">
+<div>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest text-primary mb-1 block">Live Preview</span>
+<h2 class="text-2xl font-black font-headline text-on-surface">Customer Sentiment 2.0</h2>
+</div>
+<div class="flex gap-2">
+<div class="w-2 h-2 rounded-full bg-error animate-pulse"></div>
+<span class="text-xs font-bold text-on-surface-variant">DRAFTING</span>
+</div>
+</div>
+<!-- AI Generated Question Cards -->
+<div class="space-y-6 relative z-10">
+<!-- Card 1: Rating -->
+<div class="bg-surface-container-lowest rounded-lg p-6 shadow-sm border border-outline-variant/10 rotate-x-5 transition-all duration-500 cursor-default group">
+<div class="flex items-start justify-between mb-4">
+<span class="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-black">01</span>
+<span class="material-symbols-outlined text-outline-variant group-hover:text-primary transition-colors">star</span>
+</div>
+<h3 class="text-base font-bold text-on-surface mb-6">How intuitive do you find our new navigation system?</h3>
+<div class="flex justify-between gap-2">
+<div class="flex-1 h-10 rounded-lg bg-surface-container flex items-center justify-center font-bold text-sm text-on-surface-variant hover:bg-primary hover:text-white transition-all">1</div>
+<div class="flex-1 h-10 rounded-lg bg-surface-container flex items-center justify-center font-bold text-sm text-on-surface-variant hover:bg-primary hover:text-white transition-all">2</div>
+<div class="flex-1 h-10 rounded-lg bg-primary text-white flex items-center justify-center font-bold text-sm shadow-md shadow-primary/30">3</div>
+<div class="flex-1 h-10 rounded-lg bg-surface-container flex items-center justify-center font-bold text-sm text-on-surface-variant hover:bg-primary hover:text-white transition-all">4</div>
+<div class="flex-1 h-10 rounded-lg bg-surface-container flex items-center justify-center font-bold text-sm text-on-surface-variant hover:bg-primary hover:text-white transition-all">5</div>
+</div>
+</div>
+<!-- Card 2: Multiple Choice -->
+<div class="bg-surface-container-lowest rounded-lg p-6 shadow-sm border border-outline-variant/10 rotate-x-5 transition-all duration-500 delay-75 cursor-default group">
+<div class="flex items-start justify-between mb-4">
+<span class="w-8 h-8 rounded-full bg-secondary-container/20 text-secondary flex items-center justify-center text-xs font-black">02</span>
+<span class="material-symbols-outlined text-outline-variant group-hover:text-secondary transition-colors">checklist</span>
+</div>
+<h3 class="text-base font-bold text-on-surface mb-4">Which feature has impacted your workflow the most?</h3>
+<div class="space-y-2">
+<div class="p-3 rounded-lg border border-outline-variant/20 flex items-center gap-3 bg-surface-container-low/50">
+<div class="w-4 h-4 rounded-full border-2 border-secondary"></div>
+<span class="text-sm font-medium">Real-time Data Sync</span>
+</div>
+<div class="p-3 rounded-lg border border-secondary bg-secondary/5 flex items-center gap-3">
+<div class="w-4 h-4 rounded-full bg-secondary flex items-center justify-center">
+<div class="w-1.5 h-1.5 rounded-full bg-white"></div>
+</div>
+<span class="text-sm font-bold text-secondary">AI Automated Insights</span>
+</div>
+</div>
+</div>
+<!-- Card 3: Qualitative -->
+<div class="bg-surface-container-lowest rounded-lg p-6 shadow-sm border border-outline-variant/10 rotate-x-5 transition-all duration-500 delay-150 cursor-default group opacity-60 scale-95 blur-[1px]">
+<div class="flex items-start justify-between mb-4">
+<span class="w-8 h-8 rounded-full bg-tertiary-container/20 text-tertiary flex items-center justify-center text-xs font-black">03</span>
+<span class="material-symbols-outlined text-outline-variant">notes</span>
+</div>
+<h3 class="text-base font-bold text-on-surface mb-4">Tell us about your biggest challenge today...</h3>
+<div class="h-12 bg-surface-container rounded-lg w-full"></div>
+</div>
+</div>
+<!-- Floating Preview Footer -->
+<div class="mt-10 flex items-center justify-between pt-8 border-t border-white/20 relative z-10">
+<button class="flex items-center gap-2 text-on-surface-variant font-bold text-sm hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-lg">refresh</span>
+                            Regenerate
+                        </button>
+<button class="bg-primary text-white px-8 h-12 rounded-full font-headline font-black text-sm shadow-xl shadow-primary/20 hover:scale-110 active:scale-95 transition-all flex items-center gap-2">
+                            Accept Draft
+                            <span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</div>
+</div>
+<!-- Decoration: Floating 3D Graph -->
+<div class="absolute -bottom-10 -right-10 w-48 h-48 bg-gradient-to-tr from-tertiary to-tertiary-container rounded-3xl rotate-12 -z-10 shadow-2xl opacity-20 blur-xl"></div>
+</section>
+</div>
+</main>
+<!-- Bottom Navigation Shell (Mobile only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-6 pb-8 pt-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] rounded-t-[3rem]">
+<div class="flex flex-col items-center justify-center bg-indigo-600 text-white rounded-full w-14 h-14 -mt-8 shadow-indigo-500/40 shadow-xl scale-110 transition-all">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">poll</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+<span class="material-symbols-outlined">psychology</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Insights</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+<span class="material-symbols-outlined">groups</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Users</span>
+</div>
+<div class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Config</span>
+</div>
+</nav>
+</body></html>

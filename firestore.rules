@@ -1,0 +1,19 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Public survey responses — anyone can submit
+    match /orgs/{orgId}/surveys/{surveyId}/responses/{responseId} {
+      allow create: if true;
+      allow read, update, delete: if false; // only via Cloud Functions
+    }
+    // Public survey read (for response collection page)
+    match /orgs/{orgId}/surveys/{surveyId} {
+      allow read: if resource.data.status == 'active';
+      allow write: if false; // only via Cloud Functions (Clerk JWT verified)
+    }
+    // Everything else locked down — only Cloud Functions (admin SDK) can access
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

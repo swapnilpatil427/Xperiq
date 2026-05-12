@@ -1,0 +1,298 @@
+import { useState } from 'react';
+import { SideNav } from '../components/SideNav';
+import { TopBar } from '../components/TopBar';
+import { BottomNav } from '../components/BottomNav';
+import { Icon } from '../components/Icon';
+import { useSurveys } from '../hooks/useSurveys';
+import { useTranslation } from '../lib/i18n';
+
+const DEMO_TOKEN = 'demo-survey-2024';
+
+export function ResponseCollectionPage({ onNavigate, currentPage }) {
+  const { t } = useTranslation();
+  const { surveys } = useSurveys();
+  const [copied, setCopied] = useState(false);
+  const [selectedSurveyId, setSelectedSurveyId] = useState(null);
+
+  const activeSurveys = surveys.filter((s) => s.status === 'active');
+  const survey = selectedSurveyId
+    ? surveys.find((s) => s.id === selectedSurveyId)
+    : activeSurveys[0];
+
+  const token = survey?.publishToken || DEMO_TOKEN;
+  const surveyUrl = `${window.location.origin}/s/${token}`;
+  const totalResponses = survey?.responseCount ?? 2482;
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(surveyUrl).catch(() => {});
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const cards = [
+    {
+      icon: 'mark_email_read',
+      iconBg: 'rgba(0,100,124,0.1)',
+      iconColor: '#00647c',
+      title: t('collection.cards.emailTitle'),
+      desc: t('collection.cards.emailDesc'),
+    },
+    {
+      icon: 'spatial_tracking',
+      iconBg: 'rgba(131,41,200,0.1)',
+      iconColor: '#8329c8',
+      title: t('collection.cards.kioskTitle'),
+      desc: t('collection.cards.kioskDesc'),
+    },
+  ];
+
+  return (
+    <div className="flex min-h-screen bg-surface font-body">
+      <SideNav currentPage={currentPage} onNavigate={onNavigate} />
+      <BottomNav currentPage={currentPage} onNavigate={onNavigate} />
+
+      <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
+        <TopBar
+          title={t('collection.pageTitle')}
+          subtitle={t('collection.pageSubtitle')}
+          currentPage={currentPage}
+          onNavigate={onNavigate}
+        />
+
+        <div className="pt-24 pb-32 px-4 md:px-8 max-w-6xl mx-auto w-full flex flex-col items-center">
+
+          {/* Survey selector */}
+          {activeSurveys.length > 1 && (
+            <div className="w-full max-w-4xl mb-6">
+              <select
+                value={selectedSurveyId || ''}
+                onChange={(e) => setSelectedSurveyId(e.target.value || null)}
+                className="px-4 py-2.5 text-sm font-semibold rounded-xl outline-none bg-white text-on-surface"
+                style={{ border: '1px solid #dfe3e6', width: '100%' }}
+              >
+                {activeSurveys.map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Hero Stat */}
+          <div className="mb-12 text-center">
+            <div
+              className="inline-flex items-center gap-4 px-8 py-4 rounded-full bg-white"
+              style={{
+                boxShadow: '0 20px 40px -10px rgba(42,75,217,0.15)',
+                border: '1px solid rgba(255,255,255,0.4)',
+                transform: 'rotate(-1deg)',
+              }}
+            >
+              <Icon name="analytics" fill={1} size={32} className="text-primary" />
+              <div className="flex flex-col items-start">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant font-headline">
+                  {t('collection.responsesCollected')}
+                </span>
+                <span
+                  className="text-4xl font-black font-headline text-primary"
+                  style={{ textShadow: '0 0 20px rgba(42,75,217,0.3)' }}
+                >
+                  {totalResponses.toLocaleString()}
+                </span>
+              </div>
+              <div className="ml-4 w-12 h-12 rounded-full flex items-center justify-center"
+                style={{ background: 'rgba(42,75,217,0.1)' }}>
+                <Icon name="trending_up" size={24} className="text-primary" />
+              </div>
+            </div>
+          </div>
+
+          {/* Central Share Card */}
+          <div
+            className="w-full max-w-4xl glass-card p-8 md:p-12 relative overflow-hidden"
+            style={{
+              borderRadius: '1rem',
+              boxShadow: '0 40px 100px -20px rgba(0,0,0,0.05)',
+              border: '1px solid rgba(255,255,255,0.6)',
+            }}
+          >
+            <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full"
+              style={{ background: 'rgba(42,75,217,0.05)', filter: 'blur(48px)' }} />
+
+            <header className="relative z-10 mb-10 text-center md:text-left">
+              <h1 className="text-4xl md:text-5xl font-black tracking-tighter mb-2 font-headline text-on-surface">
+                {t('collection.shareHeading')}
+              </h1>
+              {survey && (
+                <p className="text-sm font-semibold mb-2 text-primary">
+                  {survey.title}
+                </p>
+              )}
+              <p className="max-w-lg font-medium text-on-surface-variant">
+                {t('collection.shareDescription')}
+              </p>
+            </header>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
+              {/* Survey Link */}
+              <div className="lg:col-span-2 flex flex-col gap-6">
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-bold ml-2 uppercase tracking-wider text-on-surface-variant font-headline">
+                    {t('collection.surveyLinkLabel')}
+                  </label>
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <div
+                      className="flex-grow px-5 py-4 flex items-center rounded-xl overflow-hidden bg-surface-container-low"
+                      style={{ border: '1px solid rgba(171,173,175,0.1)', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.05)' }}
+                    >
+                      <span className="font-semibold text-sm shrink-0 mr-1 text-primary">
+                        {window.location.origin}/s/
+                      </span>
+                      <span className="font-medium text-sm truncate text-on-surface">
+                        {token}
+                      </span>
+                    </div>
+                    <button
+                      onClick={copyLink}
+                      className="flex items-center justify-center gap-2 font-bold px-8 py-4 transition-all duration-300 hover:-translate-y-1 active:scale-95 shrink-0 font-headline text-white rounded-xl"
+                      style={{
+                        background: copied ? '#059669' : 'linear-gradient(135deg, #2a4bd9, #879aff)',
+                        color: '#f2f1ff',
+                        boxShadow: '0 10px 20px -5px rgba(42,75,217,0.4)',
+                      }}
+                    >
+                      <Icon name={copied ? 'check' : 'content_copy'} size={18} />
+                      {copied ? t('collection.copiedButton') : t('collection.copyButton')}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Preview button */}
+                <a
+                  href={`/s/${token}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 font-bold text-sm px-5 py-3 rounded-xl transition-all hover:-translate-y-1 active:scale-95 w-fit text-primary font-headline"
+                  style={{ background: '#e0e7ff' }}
+                >
+                  <Icon name="open_in_new" size={16} />
+                  {t('collection.previewButton')}
+                </a>
+
+                {/* Embed Code */}
+                <div
+                  className="p-6 relative rounded-xl bg-surface-container"
+                  style={{ border: '1px solid rgba(255,255,255,0.2)' }}
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-sm font-bold uppercase tracking-wider flex items-center gap-2 text-on-surface-variant font-headline">
+                      <Icon name="code" size={18} />
+                      {t('collection.embedLabel')}
+                    </span>
+                    <span className="text-[10px] font-bold px-2 py-1 rounded text-primary"
+                      style={{ background: 'rgba(42,75,217,0.1)' }}>
+                      {t('collection.embedType')}
+                    </span>
+                  </div>
+                  <div
+                    className="p-4 font-mono text-xs leading-relaxed overflow-x-auto whitespace-nowrap rounded-md select-all text-on-surface-variant"
+                    style={{ background: '#d9dde0', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.05)' }}
+                  >
+                    {`<iframe src="${surveyUrl}" width="100%" height="700px" frameborder="0"></iframe>`}
+                  </div>
+                </div>
+              </div>
+
+              {/* QR Column */}
+              <div className="flex flex-col gap-6">
+                <div
+                  className="p-6 flex flex-col items-center rounded-xl bg-white"
+                  style={{ boxShadow: '0 20px 40px -10px rgba(0,0,0,0.05)', border: '1px solid rgba(171,173,175,0.1)' }}
+                >
+                  <span className="text-xs font-bold uppercase tracking-widest mb-4 text-on-surface-variant font-headline">
+                    {t('collection.qrLabel')}
+                  </span>
+                  <div
+                    className="w-full aspect-square rounded-xl flex items-center justify-center relative overflow-hidden bg-surface-container-low"
+                    style={{ border: '2px dashed rgba(171,173,175,0.3)' }}
+                  >
+                    <div className="w-36 h-36 p-3 rounded-lg" style={{ background: '#2c2f31' }}>
+                      <div className="grid gap-1" style={{ gridTemplateColumns: 'repeat(5,1fr)', gridTemplateRows: 'repeat(5,1fr)', display: 'grid', height: '100%' }}>
+                        {[
+                          1,1,1,0,1,
+                          1,0,1,0,0,
+                          1,1,1,1,0,
+                          0,0,0,1,1,
+                          1,0,1,0,1,
+                        ].map((v, i) => (
+                          <div key={i} className="rounded-sm" style={{ background: v ? '#879aff' : '#2c2f31' }} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    className="mt-6 w-full py-4 font-bold flex items-center justify-center gap-2 active:scale-95 transition-all rounded-full text-primary font-headline"
+                    style={{ border: '2px solid #2a4bd9' }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(42,75,217,0.05)')}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  >
+                    <Icon name="download" size={20} />
+                    {t('collection.downloadQR')}
+                  </button>
+                </div>
+
+                <div className="p-6 rounded-xl"
+                  style={{ background: 'rgba(131,41,200,0.05)', border: '1px solid rgba(131,41,200,0.1)' }}>
+                  <span className="text-xs font-bold uppercase tracking-widest mb-3 block text-tertiary font-headline">
+                    {t('collection.integrationsLabel')}
+                  </span>
+                  <div className="flex gap-3">
+                    {[
+                      { label: 'Slack', icon: 'chat' },
+                      { label: 'Email', icon: 'mail' },
+                      { label: 'API', icon: 'api' },
+                    ].map((s) => (
+                      <button
+                        key={s.label}
+                        title={s.label}
+                        className="w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-transform hover:scale-110 text-on-surface-variant bg-white"
+                        style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.06)', border: '1px solid rgba(171,173,175,0.2)' }}
+                      >
+                        <Icon name={s.icon} size={18} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Secondary Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl mt-6">
+            {cards.map((card) => (
+              <div
+                key={card.title}
+                className="p-8 flex items-center gap-6 group cursor-pointer transition-all duration-500 rounded-2xl bg-surface-container-low"
+                style={{ border: '1px solid rgba(255,255,255,0.4)', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#ffffff'; e.currentTarget.style.boxShadow = '0 20px 40px -10px rgba(0,0,0,0.1)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#eef1f3'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)'; }}
+              >
+                <div
+                  className="h-16 w-16 flex items-center justify-center shrink-0 transition-transform group-hover:scale-110 rounded-2xl"
+                  style={{ background: card.iconBg, color: card.iconColor }}
+                >
+                  <Icon name={card.icon} size={32} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg font-headline text-on-surface">
+                    {card.title}
+                  </h3>
+                  <p className="text-sm mt-1 text-on-surface-variant">{card.desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}

@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Experient - Brand Dashboard</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface": "#2c2f31",
+              "secondary-container": "#82deff",
+              "surface": "#f5f7f9",
+              "on-surface-variant": "#595c5e",
+              "primary-fixed": "#879aff",
+              "surface-container-lowest": "#ffffff",
+              "surface-bright": "#f5f7f9",
+              "on-tertiary-fixed": "#280046",
+              "surface-container-highest": "#d9dde0",
+              "tertiary": "#8329c8",
+              "secondary-fixed": "#82deff",
+              "tertiary-fixed-dim": "#c986ff",
+              "error-container": "#f74b6d",
+              "surface-dim": "#d0d5d8",
+              "inverse-primary": "#7087ff",
+              "primary-fixed-dim": "#748bff",
+              "surface-tint": "#2a4bd9",
+              "on-background": "#2c2f31",
+              "on-primary": "#f2f1ff",
+              "on-tertiary-fixed-variant": "#580091",
+              "on-tertiary-container": "#4c007d",
+              "on-secondary-container": "#004e62",
+              "secondary-fixed-dim": "#57d2f9",
+              "background": "#f5f7f9",
+              "primary-container": "#879aff",
+              "surface-container-high": "#dfe3e6",
+              "primary": "#2a4bd9",
+              "inverse-surface": "#0b0f10",
+              "surface-container": "#e5e9eb",
+              "outline": "#747779",
+              "on-secondary-fixed-variant": "#00586e",
+              "primary-dim": "#173dcd",
+              "on-secondary-fixed": "#003a48",
+              "error": "#b41340",
+              "secondary": "#00647c",
+              "on-primary-container": "#00176b",
+              "on-error": "#ffefef",
+              "on-error-container": "#510017",
+              "on-secondary": "#e2f6ff",
+              "tertiary-container": "#d299ff",
+              "on-tertiary": "#fceeff",
+              "outline-variant": "#abadaf",
+              "tertiary-fixed": "#d299ff",
+              "secondary-dim": "#00576c",
+              "inverse-on-surface": "#9a9d9f",
+              "surface-container-low": "#eef1f3",
+              "on-primary-fixed-variant": "#001e82",
+              "tertiary-dim": "#7613bb",
+              "on-primary-fixed": "#000000",
+              "error-dim": "#a70138",
+              "surface-variant": "#d9dde0"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-nav {
+        background: rgba(245, 247, 249, 0.7);
+        backdrop-filter: blur(24px);
+      }
+      .perspective-card {
+        perspective: 1000px;
+      }
+      .hover-lift:hover {
+        transform: translateY(-8px) rotateX(2deg);
+        box-shadow: 0 20px 40px rgba(42, 75, 217, 0.08);
+      }
+      .soft-3d-bevel {
+        box-shadow: 
+          inset 0 1px 1px rgba(255, 255, 255, 0.8),
+          0 4px 6px -1px rgba(0, 0, 0, 0.05),
+          0 2px 4px -1px rgba(0, 0, 0, 0.03);
+      }
+      .fab-3d:hover {
+        transform: scale(1.1) translateY(-4px);
+        box-shadow: 0 12px 24px rgba(42, 75, 217, 0.4);
+      }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface">
+<!-- Sidebar Navigation -->
+<aside class="fixed left-0 top-0 h-screen w-64 bg-slate-50 dark:bg-slate-950 flex flex-col py-8 px-4 gap-y-4 border-r-0 z-40 hidden md:flex">
+<div class="px-4 mb-8">
+<h1 class="text-xl font-black text-indigo-600 dark:text-indigo-400 font-manrope">Experient</h1>
+<p class="text-[10px] font-manrope font-semibold tracking-widest text-slate-400 uppercase">Dimensional Intelligence</p>
+</div>
+<nav class="flex-1 space-y-2">
+<!-- Active State: Surveys -->
+<a class="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-300 shadow-[0_10px_20px_-5px_rgba(79,70,229,0.2)] rounded-xl translate-z-10 scale-105 font-manrope font-semibold text-sm tracking-wide" href="#">
+<span class="material-symbols-outlined" data-icon="poll">poll</span>
+<span>Surveys</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:text-indigo-500 hover:translate-x-1 transition-all duration-300 font-manrope font-semibold text-sm tracking-wide" href="#">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<span>Insights</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:text-indigo-500 hover:translate-x-1 transition-all duration-300 font-manrope font-semibold text-sm tracking-wide" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span>Respondents</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:text-indigo-500 hover:translate-x-1 transition-all duration-300 font-manrope font-semibold text-sm tracking-wide" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+<span>Workflows</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 hover:text-indigo-500 hover:translate-x-1 transition-all duration-300 font-manrope font-semibold text-sm tracking-wide" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span>Settings</span>
+</a>
+</nav>
+<div class="mt-auto px-4">
+<button class="w-full py-4 px-6 rounded-xl bg-gradient-to-br from-primary to-primary-container text-white font-bold text-sm shadow-lg hover:rotate-x-5 transition-transform duration-200">
+                Create New Survey
+            </button>
+</div>
+</aside>
+<!-- Top App Bar (Mobile & Search) -->
+<header class="fixed top-0 w-full z-50 bg-slate-50/70 dark:bg-slate-900/70 backdrop-blur-xl md:pl-64 h-16 flex items-center justify-between px-6 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]">
+<div class="flex items-center gap-4 flex-1">
+<div class="relative w-full max-w-md">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg" data-icon="search">search</span>
+<input class="w-full bg-surface-container-low border-none rounded-full py-2 pl-10 pr-4 text-sm focus:ring-2 focus:ring-primary/20 placeholder:text-on-surface-variant/50" placeholder="Search surveys..." type="text"/>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-full hover:bg-slate-100/50 transition-all">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="notifications">notifications</span>
+</button>
+<button class="p-2 rounded-full hover:bg-slate-100/50 transition-all">
+<span class="material-symbols-outlined text-on-surface-variant" data-icon="help">help</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container-highest overflow-hidden border-2 border-white shadow-sm">
+<img alt="Profile" class="w-full h-full object-cover" data-alt="close-up portrait of a professional man with a friendly expression in a modern office setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuChJFmyEBGBmpx9O5S_2ptaGq5Hbc0N-05WVJ-cvfAzh3HHxL2NNj0wNC7Hn3zLKi3XB8qdcZLjPccJSBGPC-fDk2M8uEKtzQbSvCUTxT0yER5UdwICmo71G_pwc3sAkeWkun6JCfjNESIMOR_qUCSeUwBn-G94oXdHCSeJUGQ4iusMAD7q7TFs5avLgKMNQAd_LJtlSUhXYU_3PEgc1zaYDt1Gsrwfza0z0eON1_A_qZ0IADjj8wH_G2hnIaZ5be6eH__XsZlIWt8"/>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-24 pb-20 md:pl-72 md:pr-12 px-6 min-h-screen">
+<!-- Header Section -->
+<section class="mb-12">
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
+<div>
+<h2 class="text-4xl font-extrabold font-headline tracking-tight text-on-surface mb-2">Surveys</h2>
+<p class="text-on-surface-variant max-w-lg">Manage your dimensional intelligence gathering tools and track real-time qualitative metrics.</p>
+</div>
+<div class="flex gap-3">
+<button class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-surface-container-lowest border border-outline-variant/15 text-sm font-semibold text-on-surface-variant hover:bg-white transition-all soft-3d-bevel">
+<span class="material-symbols-outlined text-sm" data-icon="filter_list">filter_list</span>
+                        Filters
+                    </button>
+<button class="flex items-center gap-2 px-5 py-2.5 rounded-full bg-surface-container-lowest border border-outline-variant/15 text-sm font-semibold text-on-surface-variant hover:bg-white transition-all soft-3d-bevel">
+<span class="material-symbols-outlined text-sm" data-icon="sort">sort</span>
+                        Sort by Date
+                    </button>
+</div>
+</div>
+</section>
+<!-- Survey Grid (Bento Style Layout) -->
+<section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+<!-- Card 1: Customer Feedback -->
+<div class="group relative bg-surface-container-lowest rounded-lg p-6 border border-outline-variant/10 soft-3d-bevel hover-lift transition-all duration-500 perspective-card">
+<div class="flex justify-between items-start mb-6">
+<div class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-[10px] font-bold uppercase tracking-widest">Live</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+<h3 class="text-xl font-bold font-headline mb-2 text-on-surface group-hover:text-primary transition-colors">Customer Feedback</h3>
+<p class="text-sm text-on-surface-variant mb-8 line-clamp-2">Quarterly satisfaction survey focusing on the new interface release and feature adoption rates.</p>
+<div class="flex items-center gap-4 mb-6">
+<div class="flex -space-x-2">
+<img alt="Avatar" class="w-8 h-8 rounded-full border-2 border-white" data-alt="professional headshot of a woman smiling against a neutral studio background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAMWhETUbw7SXGWq0OpAVFTnWMwvTzlu5QHGi3SgRmgdo2Sq6f235BUCC88CDwGVZ3Ya3f5T5A-jCy4aAlQ-qABwBq1eC5lHohbByiAmpM79QS-Q7Qsh2aen71W0ieglTpOL6uv9qK90sFDT4CTn7teIluSkKyfQVQiggrHpxGYdxdaIuqYGMKzREtlIfoDzBQUq8RCWXZto9JDvKT4-PiRpAfu7icohBnQrkv2m_7nH00ekplx_7MERyBZGps0HnSfMrt0S7O2xrE"/>
+<img alt="Avatar" class="w-8 h-8 rounded-full border-2 border-white" data-alt="close up headshot of a smiling man with professional attire" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDbTXEbQEOct51ednvw0iU7tK78cYx17wXIvSpPYCmDj3lhjjKwc38IoxGMAKnf5-loLTJ7i31pHBg6yL2WZuJyrg8UrOBMtNE7SORu43ujK_DPNKzw4JRgrxP5H20TVmwwE84uG9RrouF17UQMgZV_ReCY0lpRjLtD1Nop-I5xWrFjSXoFPTPZyNPdYdMWV8e7XbjpTpGWbtMyPRyfxB_Xh8QD0R6b_K1GB5jB8l8I0d6GroBxxZ9j1x5khm996egPLRNJaF1PQUI"/>
+<div class="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-[10px] font-bold text-on-primary-container border-2 border-white">+84</div>
+</div>
+<div class="text-xs font-semibold text-on-surface-variant">1,248 Responses</div>
+</div>
+<div class="pt-6 border-t border-surface-container flex items-center justify-between">
+<div class="flex gap-2">
+<button class="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline">
+<span class="material-symbols-outlined text-sm" data-icon="edit">edit</span>
+                            Edit
+                        </button>
+</div>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold hover:bg-indigo-100 transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="psychology">psychology</span>
+                        Insights
+                    </button>
+</div>
+</div>
+<!-- Card 2: Q4 Product Survey -->
+<div class="group relative bg-surface-container-lowest rounded-lg p-6 border border-outline-variant/10 soft-3d-bevel hover-lift transition-all duration-500 perspective-card">
+<div class="flex justify-between items-start mb-6">
+<div class="px-3 py-1 rounded-full bg-slate-100 text-slate-600 text-[10px] font-bold uppercase tracking-widest">Draft</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+<h3 class="text-xl font-bold font-headline mb-2 text-on-surface group-hover:text-primary transition-colors">Q4 Product Survey</h3>
+<p class="text-sm text-on-surface-variant mb-8 line-clamp-2">Product market fit analysis for the upcoming enterprise workspace modules and collaborative tools.</p>
+<div class="flex items-center gap-4 mb-6">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center">
+<span class="material-symbols-outlined text-on-surface-variant text-sm" data-icon="person">person</span>
+</div>
+<div class="text-xs font-semibold text-on-surface-variant italic">Waiting for launch</div>
+</div>
+<div class="pt-6 border-t border-surface-container flex items-center justify-between">
+<div class="flex gap-2">
+<button class="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline">
+<span class="material-symbols-outlined text-sm" data-icon="edit">edit</span>
+                            Edit
+                        </button>
+</div>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-full bg-slate-100 text-slate-400 text-xs font-bold cursor-not-allowed">
+<span class="material-symbols-outlined text-sm" data-icon="lock">lock</span>
+                        Insights
+                    </button>
+</div>
+</div>
+<!-- Card 3: Brand Sentiment -->
+<div class="group relative bg-surface-container-lowest rounded-lg p-6 border border-outline-variant/10 soft-3d-bevel hover-lift transition-all duration-500 perspective-card">
+<div class="flex justify-between items-start mb-6">
+<div class="px-3 py-1 rounded-full bg-green-100 text-green-700 text-[10px] font-bold uppercase tracking-widest">Live</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+<h3 class="text-xl font-bold font-headline mb-2 text-on-surface group-hover:text-primary transition-colors">Brand Sentiment</h3>
+<p class="text-sm text-on-surface-variant mb-8 line-clamp-2">Annual brand perception study across core demographics in the North American region.</p>
+<div class="flex items-center gap-4 mb-6">
+<div class="flex -space-x-2">
+<img alt="Avatar" class="w-8 h-8 rounded-full border-2 border-white" data-alt="professional portrait of a business woman smiling in a bright office" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBqiSeHRdXBwEwcfPB6LY3gvcHjTLDxtmsyGXxXpqYmv9gBMhaD0i3eX5Gueh57vAVl5j00lywl9gWKrafanwaJDnl1IdxcYOZad5p-keTKxNn9YOliX32hirZoPrEwUFcT576BCuOyq-KtApqPm3jMHhiCKRqF1ijVAuaoH-a73FzeTvAm2V8GO6r4YjZcjmBzA8FM3nxnOTBhWNPthwS5aO1SkSyco5E0bnADp0IEbmK45ugkBkSlqqiMJVlSW5zibEdwFAfODWo"/>
+<img alt="Avatar" class="w-8 h-8 rounded-full border-2 border-white" data-alt="close-up headshot of a man with a beard smiling against a plain background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCyxphwQxa628gF2ZWaYlHDA7oZc-KcZ477oOtXWgKxgXjnqxHhKOXbbXfvD-NS5SErw5wrF4hxJ71F2eZ46iDP1BzZOlvUmOJLc_jJ5uXn4HzQSmYSRXu2WkpD9phxRt_iFUHozLXAyZUYoUErIljMMif1nDfW0Dne5onm2s_NHnOuEYFXjilCMWgmTIVmz8O1DeGN2ONPkjHVOPmo7_afyy2Gs9jXL1Wqz768X53eKUtj-ejRzBBDaiu-aFwr_zTL5N0AxRRUlNg"/>
+<div class="w-8 h-8 rounded-full bg-tertiary-container flex items-center justify-center text-[10px] font-bold text-on-tertiary-container border-2 border-white">+12</div>
+</div>
+<div class="text-xs font-semibold text-on-surface-variant">420 Responses</div>
+</div>
+<div class="pt-6 border-t border-surface-container flex items-center justify-between">
+<div class="flex gap-2">
+<button class="flex items-center gap-1.5 text-xs font-bold text-primary hover:underline">
+<span class="material-symbols-outlined text-sm" data-icon="edit">edit</span>
+                            Edit
+                        </button>
+</div>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold hover:bg-indigo-100 transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="psychology">psychology</span>
+                        Insights
+                    </button>
+</div>
+</div>
+<!-- Card 4: New Feature Onboarding -->
+<div class="group relative bg-surface-container-lowest rounded-lg p-6 border border-outline-variant/10 soft-3d-bevel hover-lift transition-all duration-500 perspective-card">
+<div class="flex justify-between items-start mb-6">
+<div class="px-3 py-1 rounded-full bg-red-100 text-red-700 text-[10px] font-bold uppercase tracking-widest">Closed</div>
+<button class="text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_horiz">more_horiz</span>
+</button>
+</div>
+<h3 class="text-xl font-bold font-headline mb-2 text-on-surface group-hover:text-primary transition-colors">Onboarding Flow</h3>
+<p class="text-sm text-on-surface-variant mb-8 line-clamp-2">Testing friction points in the initial 5 minutes of user experience during v2.4 rollout.</p>
+<div class="flex items-center gap-4 mb-6">
+<div class="flex -space-x-2">
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-[10px] font-bold border-2 border-white">KM</div>
+<div class="w-8 h-8 rounded-full bg-surface-container flex items-center justify-center text-[10px] font-bold border-2 border-white">AJ</div>
+</div>
+<div class="text-xs font-semibold text-on-surface-variant">Complete</div>
+</div>
+<div class="pt-6 border-t border-surface-container flex items-center justify-between">
+<div class="flex gap-2">
+<button class="flex items-center gap-1.5 text-xs font-bold text-slate-400 cursor-not-allowed">
+<span class="material-symbols-outlined text-sm" data-icon="visibility">visibility</span>
+                            View Only
+                        </button>
+</div>
+<button class="flex items-center gap-1.5 px-4 py-2 rounded-full bg-indigo-50 text-indigo-600 text-xs font-bold hover:bg-indigo-100 transition-colors">
+<span class="material-symbols-outlined text-sm" data-icon="psychology">psychology</span>
+                        Final Report
+                    </button>
+</div>
+</div>
+<!-- Placeholder Card for Energy -->
+<div class="hidden lg:flex flex-col items-center justify-center border-2 border-dashed border-outline-variant/30 rounded-lg p-6 bg-surface-container-low/50 text-on-surface-variant/40 hover:border-primary/50 hover:bg-white hover:text-primary transition-all group cursor-pointer">
+<span class="material-symbols-outlined text-4xl mb-2 group-hover:scale-110 transition-transform" data-icon="add_circle">add_circle</span>
+<span class="text-sm font-bold font-manrope">Start from Scratch</span>
+</div>
+</section>
+</main>
+<!-- Floating Action Button -->
+<button class="fixed bottom-8 right-8 z-50 flex items-center gap-3 bg-gradient-to-br from-primary to-primary-container text-white px-8 py-5 rounded-full shadow-2xl fab-3d transition-all active:scale-95 group">
+<span class="material-symbols-outlined text-2xl" data-icon="add">add</span>
+<span class="font-bold font-manrope text-sm tracking-wide">Create Survey</span>
+</button>
+<!-- Mobile Bottom Navigation -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-6 pb-8 pt-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] rounded-t-[3rem]">
+<a class="flex flex-col items-center justify-center bg-indigo-600 text-white rounded-full w-14 h-14 -mt-8 shadow-indigo-500/40 shadow-xl transition-all scale-110" href="#">
+<span class="material-symbols-outlined" data-icon="poll">poll</span>
+<span class="text-[8px] font-bold font-manrope uppercase tracking-widest mt-0.5">Surveys</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Insights</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">People</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Config</span>
+</a>
+</nav>
+</body></html>

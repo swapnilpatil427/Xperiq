@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>InsightSense | Insights Actions &amp; Workflows</title>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface": "#2c2f31",
+              "secondary-container": "#82deff",
+              "surface": "#f5f7f9",
+              "on-surface-variant": "#595c5e",
+              "primary-fixed": "#879aff",
+              "surface-container-lowest": "#ffffff",
+              "surface-bright": "#f5f7f9",
+              "on-tertiary-fixed": "#280046",
+              "surface-container-highest": "#d9dde0",
+              "tertiary": "#8329c8",
+              "secondary-fixed": "#82deff",
+              "tertiary-fixed-dim": "#c986ff",
+              "error-container": "#f74b6d",
+              "surface-dim": "#d0d5d8",
+              "inverse-primary": "#7087ff",
+              "primary-fixed-dim": "#748bff",
+              "surface-tint": "#2a4bd9",
+              "on-background": "#2c2f31",
+              "on-primary": "#f2f1ff",
+              "on-tertiary-fixed-variant": "#580091",
+              "on-tertiary-container": "#4c007d",
+              "on-secondary-container": "#004e62",
+              "secondary-fixed-dim": "#57d2f9",
+              "background": "#f5f7f9",
+              "primary-container": "#879aff",
+              "surface-container-high": "#dfe3e6",
+              "primary": "#2a4bd9",
+              "inverse-surface": "#0b0f10",
+              "surface-container": "#e5e9eb",
+              "outline": "#747779",
+              "on-secondary-fixed-variant": "#00586e",
+              "primary-dim": "#173dcd",
+              "on-secondary-fixed": "#003a48",
+              "error": "#b41340",
+              "secondary": "#00647c",
+              "on-primary-container": "#00176b",
+              "on-error": "#ffefef",
+              "on-error-container": "#510017",
+              "on-secondary": "#e2f6ff",
+              "tertiary-container": "#d299ff",
+              "on-tertiary": "#fceeff",
+              "outline-variant": "#abadaf",
+              "tertiary-fixed": "#d299ff",
+              "secondary-dim": "#00576c",
+              "inverse-on-surface": "#9a9d9f",
+              "surface-container-low": "#eef1f3",
+              "on-primary-fixed-variant": "#001e82",
+              "tertiary-dim": "#7613bb",
+              "on-primary-fixed": "#000000",
+              "error-dim": "#a70138",
+              "surface-variant": "#d9dde0"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-effect {
+        backdrop-filter: blur(24px);
+        -webkit-backdrop-filter: blur(24px);
+      }
+      .perspective-text {
+        perspective: 1000px;
+      }
+      .active-nav-glow {
+        box-shadow: 0 10px 20px -5px rgba(79, 70, 229, 0.2);
+      }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased overflow-x-hidden">
+<!-- Top Navigation Bar -->
+<header class="fixed top-0 w-full z-50 bg-slate-50/70 dark:bg-slate-900/70 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]">
+<div class="flex justify-between items-center h-16 px-6 w-full">
+<div class="flex items-center gap-8">
+<span class="text-2xl font-extrabold tracking-tighter text-indigo-600 dark:text-indigo-400 drop-shadow-sm font-headline">InsightSense</span>
+<nav class="hidden md:flex gap-6 items-center">
+<a class="text-slate-500 dark:text-slate-400 font-medium hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all duration-300 px-3 py-1 rounded-lg" href="#">Surveys</a>
+<a class="text-slate-500 dark:text-slate-400 font-medium hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all duration-300 px-3 py-1 rounded-lg" href="#">Insights</a>
+<a class="text-indigo-600 dark:text-indigo-400 font-bold border-b-2 border-indigo-600 px-3 py-1" href="#">Workflows</a>
+</nav>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 rounded-full hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all active:scale-95">
+<span class="material-symbols-outlined text-on-surface-variant">notifications</span>
+</button>
+<button class="p-2 rounded-full hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all active:scale-95">
+<span class="material-symbols-outlined text-on-surface-variant">help</span>
+</button>
+<div class="h-10 w-10 rounded-full bg-primary-container p-[2px]">
+<img alt="User profile menu with glassmorphism" class="rounded-full bg-white" data-alt="close up professional portrait of a tech executive with glasses and a friendly smile in a minimalist studio setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCCmoa4DVrbP9ZFIC7hIAedaCc5GB0P-AK3uZxBfBO1nVeEpaJLYbF3S8Q_y7HUXUbvBtyU4u1AiGnYh_skmhJtV2oj-hzqbaDOlJ_d8K8v2IXIkX8L7VcfAzdCI0u94ZYMQa4wqze4GUxfM7k6bthdq02lhLWL5gaIRo-y7UQUscHxD41vNXa8Jy6GqLTcpdCigZ5QjvC9R6_yJDnFsfTixCwh0kivCYSnFI5w74ru8kU2sMlPBm1GRDbdAEoj1G3cyit0UwG1HNs"/>
+</div>
+</div>
+</div>
+<div class="bg-slate-200/50 dark:bg-slate-800/50 h-[1px] w-full"></div>
+</header>
+<div class="flex pt-16 min-h-screen">
+<!-- Sidebar Navigation -->
+<aside class="hidden md:flex h-screen w-64 flex-col py-8 px-4 gap-y-4 bg-slate-50 dark:bg-slate-950 sticky top-16">
+<div class="mb-6 px-2">
+<h2 class="font-headline font-bold text-xl text-indigo-600 dark:text-indigo-400">InsightSense</h2>
+<p class="text-xs font-medium text-slate-500 tracking-wider">Dimensional Intelligence</p>
+</div>
+<nav class="flex flex-col gap-2">
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 font-manrope font-semibold text-sm tracking-wide hover:translate-x-1 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">poll</span> Surveys
+                </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 font-manrope font-semibold text-sm tracking-wide hover:translate-x-1 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">psychology</span> Insights
+                </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 font-manrope font-semibold text-sm tracking-wide hover:translate-x-1 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">groups</span> Respondents
+                </a>
+<a class="flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-300 active-nav-glow rounded-xl translate-z-10 scale-105 font-manrope font-semibold text-sm tracking-wide" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">account_tree</span> Workflows
+                </a>
+<a class="flex items-center gap-3 px-4 py-3 text-slate-500 dark:text-slate-400 font-manrope font-semibold text-sm tracking-wide hover:translate-x-1 transition-all duration-300" href="#">
+<span class="material-symbols-outlined">settings</span> Settings
+                </a>
+</nav>
+<div class="mt-auto p-4 bg-primary-container/10 rounded-2xl border border-primary/10">
+<p class="text-xs font-bold text-primary mb-2">PRO PLAN</p>
+<p class="text-xs text-on-surface-variant mb-4">You have 12 active AI agents running.</p>
+<button class="w-full py-2 bg-primary text-white rounded-xl text-xs font-bold hover:shadow-lg active:scale-95 transition-all">
+                    Upgrade Now
+                </button>
+</div>
+</aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 p-6 md:p-12 bg-surface">
+<!-- Header Section -->
+<div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 mb-12">
+<div class="space-y-2">
+<span class="text-primary font-bold tracking-widest text-xs uppercase">Automated Operations</span>
+<h1 class="text-4xl md:text-5xl font-headline font-black tracking-tight text-on-surface">Workflows &amp; Triggers</h1>
+<p class="text-on-surface-variant max-w-xl">Orchestrate your intelligence response. Connect AI-detected patterns directly to team actions and system events.</p>
+</div>
+<div class="flex gap-4">
+<div class="flex -space-x-3 overflow-hidden">
+<img alt="Team member" class="inline-block h-10 w-10 rounded-full ring-4 ring-surface" data-alt="close up profile photo of a diverse young professional woman in a bright office" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCB15KWOrNntHRKUuJo5R7Mtsa_1V9LTGXO5U9spxBd8NSlbCsYGA3ejT2j8alp7spB11ZLr6y7mu8FbxRXVpvQarXbAH8kpuKpvPPq8_N_9kkwm2KH-ekSIyZLbA1E2NCuZAC6C3d2ehhZGa9j22FiQ6uMyOIgynJhHLtkfXgkTBqnfd-cFKbERLyKKjS6f2uFRsamGP31IJTwyBV-IOimx050wtJFLD_Zrus2oPjXIcwqu6rIIRFNRi0_K6AX1fbWgTR1FdVPUY0"/>
+<img alt="Team member" class="inline-block h-10 w-10 rounded-full ring-4 ring-surface" data-alt="portrait of a focused software engineer with glasses in a modern studio environment" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAIypIX6b1OEF9fm1fKFO69SgZ5ftqZhrEmdqIWlcoQwko2Gd0IeUYJ3JQ5-rmoLZuJWaNhnEy64V_72Lf8EV7yJq0zF_-jPbGe3nkv9M3BF7ayP2eehUU8WdtCJdCuteOqx6LEh3QXeUCcq2DAYFLXBBMBMXsHgsPTYg4V75jHPv8Xvhkpf6rEL3G0d08jxxFkgU99taY_lpS3ICXh_P5MgFZ7P6kau5TQK0AcwE3mCXiyu1JKIGlz0tscamvWzQ4uIxoHt9ldRUk"/>
+<div class="flex items-center justify-center h-10 w-10 rounded-full bg-surface-container-highest ring-4 ring-surface text-xs font-bold text-on-surface-variant">+4</div>
+</div>
+</div>
+</div>
+<!-- Bento-style Workflow Grid -->
+<div class="flex flex-col gap-6">
+<!-- Workflow Card 1 -->
+<div class="group relative overflow-hidden bg-surface-container-lowest rounded-lg p-1 transition-all duration-500 hover:shadow-[0_40px_60px_-10px_rgba(44,47,49,0.06)] hover:translate-y-[-4px]">
+<div class="flex flex-col md:flex-row items-center gap-6 p-6 md:p-8 rounded-[1.5rem] bg-white">
+<!-- 3D AI-Flow Icon -->
+<div class="relative w-24 h-24 flex items-center justify-center flex-shrink-0">
+<div class="absolute inset-0 bg-primary/10 rounded-3xl rotate-6 transition-transform group-hover:rotate-12 duration-500"></div>
+<div class="absolute inset-0 bg-primary/20 rounded-3xl -rotate-3 transition-transform group-hover:-rotate-6 duration-500"></div>
+<div class="relative z-10 flex items-center justify-center w-16 h-16 bg-gradient-to-br from-primary to-primary-container rounded-2xl shadow-xl">
+<span class="material-symbols-outlined text-white text-3xl" style="font-variation-settings: 'FILL' 1;">bolt</span>
+</div>
+</div>
+<!-- Logic Description -->
+<div class="flex-1 space-y-2 text-center md:text-left">
+<div class="flex items-center justify-center md:justify-start gap-3">
+<span class="px-2 py-1 bg-error-container/20 text-error text-[10px] font-bold rounded-md uppercase tracking-tighter">Critical Alert</span>
+<span class="text-on-surface-variant text-sm font-medium">Last active: 2 mins ago</span>
+</div>
+<div class="flex flex-wrap items-center justify-center md:justify-start gap-3 text-xl md:text-2xl font-headline font-bold">
+<span class="text-on-surface-variant opacity-60">IF</span>
+<span class="text-primary">Sentiment</span>
+<span class="text-on-surface-variant">&lt;</span>
+<span class="text-error">Negative</span>
+<span class="text-on-surface-variant opacity-60">THEN</span>
+<span class="text-secondary">Send Email to Support</span>
+</div>
+</div>
+<!-- Action Controls -->
+<div class="flex items-center gap-3">
+<button class="flex items-center justify-center gap-2 px-5 py-3 bg-surface-container-high text-on-surface font-bold text-sm rounded-xl transition-all hover:bg-surface-container-highest active:scale-95 shadow-sm border-b-4 border-slate-300">
+<span class="material-symbols-outlined text-lg">edit</span>
+<span>Edit</span>
+</button>
+<button class="flex items-center justify-center gap-2 px-5 py-3 bg-surface-container-high text-on-surface font-bold text-sm rounded-xl transition-all hover:bg-surface-container-highest active:scale-95 shadow-sm border-b-4 border-slate-300">
+<span class="material-symbols-outlined text-lg">pause_circle</span>
+<span>Pause</span>
+</button>
+<button class="p-3 text-error bg-error-container/10 rounded-xl hover:bg-error-container/20 transition-all active:scale-95 shadow-sm border-b-4 border-error/20">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Workflow Card 2 -->
+<div class="group relative overflow-hidden bg-surface-container-lowest rounded-lg p-1 transition-all duration-500 hover:shadow-[0_40px_60px_-10px_rgba(44,47,49,0.06)] hover:translate-y-[-4px]">
+<div class="flex flex-col md:flex-row items-center gap-6 p-6 md:p-8 rounded-[1.5rem] bg-white">
+<div class="relative w-24 h-24 flex items-center justify-center flex-shrink-0">
+<div class="absolute inset-0 bg-tertiary/10 rounded-3xl rotate-12 group-hover:rotate-6 duration-500"></div>
+<div class="relative z-10 flex items-center justify-center w-16 h-16 bg-gradient-to-br from-tertiary to-tertiary-container rounded-2xl shadow-xl">
+<span class="material-symbols-outlined text-white text-3xl" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</div>
+</div>
+<div class="flex-1 space-y-2 text-center md:text-left">
+<div class="flex items-center justify-center md:justify-start gap-3">
+<span class="px-2 py-1 bg-tertiary-container/20 text-tertiary text-[10px] font-bold rounded-md uppercase tracking-tighter">Engagement Engine</span>
+<span class="text-on-surface-variant text-sm font-medium">Last active: 1 hour ago</span>
+</div>
+<div class="flex flex-wrap items-center justify-center md:justify-start gap-3 text-xl md:text-2xl font-headline font-bold">
+<span class="text-on-surface-variant opacity-60">IF</span>
+<span class="text-primary">Feature Mention</span>
+<span class="text-on-surface-variant">=</span>
+<span class="text-secondary">"Dark Mode"</span>
+<span class="text-on-surface-variant opacity-60">THEN</span>
+<span class="text-tertiary">Tag User: "Beta Group"</span>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button class="flex items-center justify-center gap-2 px-5 py-3 bg-surface-container-high text-on-surface font-bold text-sm rounded-xl transition-all hover:bg-surface-container-highest active:scale-95 shadow-sm border-b-4 border-slate-300">
+<span class="material-symbols-outlined text-lg">edit</span>
+<span>Edit</span>
+</button>
+<button class="flex items-center justify-center gap-2 px-5 py-3 bg-tertiary text-white font-bold text-sm rounded-xl transition-all hover:shadow-tertiary/20 shadow-lg active:scale-95 border-b-4 border-tertiary-dim">
+<span class="material-symbols-outlined text-lg">play_circle</span>
+<span>Resume</span>
+</button>
+<button class="p-3 text-error bg-error-container/10 rounded-xl hover:bg-error-container/20 transition-all active:scale-95 shadow-sm border-b-4 border-error/20">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Workflow Card 3 -->
+<div class="group relative overflow-hidden bg-surface-container-lowest rounded-lg p-1 transition-all duration-500 hover:shadow-[0_40px_60px_-10px_rgba(44,47,49,0.06)] hover:translate-y-[-4px]">
+<div class="flex flex-col md:flex-row items-center gap-6 p-6 md:p-8 rounded-[1.5rem] bg-white">
+<div class="relative w-24 h-24 flex items-center justify-center flex-shrink-0">
+<div class="absolute inset-0 bg-secondary/10 rounded-3xl -rotate-6 group-hover:rotate-3 duration-500"></div>
+<div class="relative z-10 flex items-center justify-center w-16 h-16 bg-gradient-to-br from-secondary to-secondary-fixed rounded-2xl shadow-xl">
+<span class="material-symbols-outlined text-white text-3xl" style="font-variation-settings: 'FILL' 1;">analytics</span>
+</div>
+</div>
+<div class="flex-1 space-y-2 text-center md:text-left">
+<div class="flex items-center justify-center md:justify-start gap-3">
+<span class="px-2 py-1 bg-secondary-container/20 text-secondary text-[10px] font-bold rounded-md uppercase tracking-tighter">Weekly Digest</span>
+<span class="text-on-surface-variant text-sm font-medium">Inactive</span>
+</div>
+<div class="flex flex-wrap items-center justify-center md:justify-start gap-3 text-xl md:text-2xl font-headline font-bold">
+<span class="text-on-surface-variant opacity-60">IF</span>
+<span class="text-primary">Response Count</span>
+<span class="text-on-surface-variant">&gt;</span>
+<span class="text-secondary">500/week</span>
+<span class="text-on-surface-variant opacity-60">THEN</span>
+<span class="text-secondary">Export CSV to S3</span>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button class="flex items-center justify-center gap-2 px-5 py-3 bg-surface-container-high text-on-surface font-bold text-sm rounded-xl transition-all hover:bg-surface-container-highest active:scale-95 shadow-sm border-b-4 border-slate-300">
+<span class="material-symbols-outlined text-lg">edit</span>
+<span>Edit</span>
+</button>
+<button class="flex items-center justify-center gap-2 px-5 py-3 bg-surface-container-high text-on-surface font-bold text-sm rounded-xl transition-all hover:bg-surface-container-highest active:scale-95 shadow-sm border-b-4 border-slate-300">
+<span class="material-symbols-outlined text-lg">pause_circle</span>
+<span>Pause</span>
+</button>
+<button class="p-3 text-error bg-error-container/10 rounded-xl hover:bg-error-container/20 transition-all active:scale-95 shadow-sm border-b-4 border-error/20">
+<span class="material-symbols-outlined">delete</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Margin for Floating CTA -->
+<div class="h-32"></div>
+</main>
+</div>
+<!-- Floating Action Button (CTA) -->
+<button class="fixed bottom-8 right-8 z-[60] flex items-center gap-3 px-8 py-5 bg-gradient-to-r from-primary to-primary-container text-white rounded-full shadow-[0_20px_40px_rgba(42,75,217,0.4)] hover:shadow-[0_25px_50px_rgba(42,75,217,0.5)] transition-all active:scale-95 group overflow-hidden">
+<div class="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+<span class="material-symbols-outlined relative z-10 text-2xl" style="font-variation-settings: 'FILL' 1;">add_circle</span>
+<span class="font-headline font-bold relative z-10 tracking-wide">Create New Workflow</span>
+</button>
+<!-- Mobile Bottom Navigation (Hidden on Web) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-6 pb-8 pt-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] rounded-t-[3rem]">
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined">poll</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Surveys</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined">psychology</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Insights</span>
+</a>
+<div class="flex flex-col items-center justify-center bg-indigo-600 text-white rounded-full w-14 h-14 -mt-10 shadow-indigo-500/40 shadow-xl scale-110">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">account_tree</span>
+</div>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined">groups</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">People</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Config</span>
+</a>
+</nav>
+<!-- Background Decoration (Atmospheric Layering) -->
+<div class="fixed top-0 right-0 -z-10 w-1/2 h-1/2 bg-gradient-to-bl from-primary/5 via-tertiary/5 to-transparent blur-[120px] pointer-events-none"></div>
+<div class="fixed bottom-0 left-0 -z-10 w-1/3 h-1/3 bg-gradient-to-tr from-secondary/5 to-transparent blur-[100px] pointer-events-none"></div>
+</body></html>

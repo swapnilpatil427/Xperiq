@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>InsightSense - Response Collection</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-surface": "#2c2f31",
+                        "secondary-container": "#82deff",
+                        "surface": "#f5f7f9",
+                        "on-surface-variant": "#595c5e",
+                        "primary-fixed": "#879aff",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-bright": "#f5f7f9",
+                        "on-tertiary-fixed": "#280046",
+                        "surface-container-highest": "#d9dde0",
+                        "tertiary": "#8329c8",
+                        "secondary-fixed": "#82deff",
+                        "tertiary-fixed-dim": "#c986ff",
+                        "error-container": "#f74b6d",
+                        "surface-dim": "#d0d5d8",
+                        "inverse-primary": "#7087ff",
+                        "primary-fixed-dim": "#748bff",
+                        "surface-tint": "#2a4bd9",
+                        "on-background": "#2c2f31",
+                        "on-primary": "#f2f1ff",
+                        "on-tertiary-fixed-variant": "#580091",
+                        "on-tertiary-container": "#4c007d",
+                        "on-secondary-container": "#004e62",
+                        "secondary-fixed-dim": "#57d2f9",
+                        "background": "#f5f7f9",
+                        "primary-container": "#879aff",
+                        "surface-container-high": "#dfe3e6",
+                        "primary": "#2a4bd9",
+                        "inverse-surface": "#0b0f10",
+                        "surface-container": "#e5e9eb",
+                        "outline": "#747779",
+                        "on-secondary-fixed-variant": "#00586e",
+                        "primary-dim": "#173dcd",
+                        "on-secondary-fixed": "#003a48",
+                        "error": "#b41340",
+                        "secondary": "#00647c",
+                        "on-primary-container": "#00176b",
+                        "on-error": "#ffefef",
+                        "on-error-container": "#510017",
+                        "on-secondary": "#e2f6ff",
+                        "tertiary-container": "#d299ff",
+                        "on-tertiary": "#fceeff",
+                        "outline-variant": "#abadaf",
+                        "tertiary-fixed": "#d299ff",
+                        "secondary-dim": "#00576c",
+                        "inverse-on-surface": "#9a9d9f",
+                        "surface-container-low": "#eef1f3",
+                        "on-primary-fixed-variant": "#001e82",
+                        "tertiary-dim": "#7613bb",
+                        "on-primary-fixed": "#000000",
+                        "error-dim": "#a70138",
+                        "surface-variant": "#d9dde0"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+        .text-glow-primary {
+            text-shadow: 0 0 20px rgba(42, 75, 217, 0.3);
+        }
+        .button-3d-press:active {
+            transform: scale(0.98);
+        }
+        .recessed-container {
+            box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface selection:bg-primary-container selection:text-on-primary-container">
+<!-- Top Navigation Shell -->
+<nav class="fixed top-0 w-full z-50 bg-slate-50/70 dark:bg-slate-900/70 backdrop-blur-xl shadow-[0_8px_32px_0_rgba(31,38,135,0.07)]">
+<div class="flex justify-between items-center h-16 px-6 w-full">
+<div class="flex items-center gap-4">
+<span class="text-2xl font-extrabold tracking-tighter text-indigo-600 dark:text-indigo-400 drop-shadow-sm font-headline">InsightSense</span>
+<div class="hidden md:flex gap-6 ml-8">
+<a class="text-slate-500 dark:text-slate-400 font-medium hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all duration-300 px-3 py-1 rounded-lg" href="#">Surveys</a>
+<a class="text-indigo-600 dark:text-indigo-400 font-bold border-b-2 border-indigo-600 px-3 py-1" href="#">Insights</a>
+<a class="text-slate-500 dark:text-slate-400 font-medium hover:bg-slate-100/50 dark:hover:bg-slate-800/50 transition-all duration-300 px-3 py-1 rounded-lg" href="#">Respondents</a>
+</div>
+</div>
+<div class="flex items-center gap-3">
+<button class="material-symbols-outlined p-2 text-on-surface-variant hover:bg-slate-100/50 rounded-full transition-all">notifications</button>
+<button class="material-symbols-outlined p-2 text-on-surface-variant hover:bg-slate-100/50 rounded-full transition-all">help</button>
+<div class="w-10 h-10 rounded-full bg-surface-container-highest overflow-hidden border border-outline-variant/20">
+<img class="w-full h-full object-cover" data-alt="Close-up portrait of a professional woman with a minimalist aesthetic, soft studio lighting, high-end editorial feel" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB8iuPmnznKnhhXyA5iPk7JFqFt1z8lm6Z1mjtHjo8FMXmpA0MJAQ7GKkPPTAc0iGvGSegOd27Cwh9OPU_PtO9lfCQsnBsyOLnW4i8uLBeHCzFIZ5y7tINs0GC5459Kt-LsxZtfL8zTQx0lYV_HqRXhXDIX2oTdJzHTAur3DNe-8L0lEP38hmocDQFhs0DuVBak-C5gZvBKKrEs1bZQKH3lVY1uTOvZjab9ZOFy6WzA-Y3UFoG0hwvMfcb-UTn4oxwmff19RuEc464"/>
+</div>
+</div>
+</div>
+<div class="bg-slate-200/50 dark:bg-slate-800/50 h-[1px] w-full"></div>
+</nav>
+<!-- Main Content Canvas -->
+<main class="pt-24 pb-32 px-4 md:px-8 max-w-6xl mx-auto flex flex-col items-center">
+<!-- Hero Stat: Responses Collected -->
+<div class="mb-12 text-center">
+<div class="inline-flex items-center gap-4 px-8 py-4 bg-surface-container-lowest rounded-full shadow-[0_20px_40px_-10px_rgba(42,75,217,0.15)] border border-white/40 transform -rotate-1">
+<span class="material-symbols-outlined text-primary text-3xl" style="font-variation-settings: 'FILL' 1;">analytics</span>
+<div class="flex flex-col items-start">
+<span class="text-[10px] font-bold font-headline uppercase tracking-widest text-on-surface-variant">Responses Collected</span>
+<span class="text-4xl font-black font-headline text-primary text-glow-primary">2,482</span>
+</div>
+<div class="ml-4 h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-2xl">trending_up</span>
+</div>
+</div>
+</div>
+<!-- Central Share Card -->
+<div class="w-full max-w-4xl glass-card rounded-lg p-8 md:p-12 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.05)] border border-white/60 relative overflow-hidden">
+<!-- Asymmetric Background Accent -->
+<div class="absolute -top-24 -right-24 w-64 h-64 bg-primary/5 rounded-full blur-3xl"></div>
+<header class="relative z-10 mb-10 text-center md:text-left">
+<h1 class="text-4xl md:text-5xl font-black font-headline tracking-tighter text-on-surface mb-2">Share Survey</h1>
+<p class="text-on-surface-variant max-w-lg font-medium">Distribute your insights engine across the web. Use the dedicated link or the spatial QR code to start gathering intelligence.</p>
+</header>
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 relative z-10">
+<!-- Survey Link & 3D Copy Column -->
+<div class="lg:col-span-2 flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<label class="text-sm font-bold font-headline text-on-surface-variant ml-2 uppercase tracking-wider">Survey Link</label>
+<div class="flex flex-col md:flex-row gap-4">
+<div class="flex-grow bg-surface-container-low rounded-xl px-6 py-5 border border-outline-variant/10 recessed-container flex items-center">
+<span class="text-primary font-semibold mr-2 select-none">insightsense.ai/s/</span>
+<span class="text-on-surface font-medium truncate">dimensional-intelligence-2024-report</span>
+</div>
+<button class="bg-gradient-to-br from-primary to-primary-container text-on-primary font-headline font-bold px-10 py-5 rounded-xl shadow-[0_10px_20px_-5px_rgba(42,75,217,0.4)] hover:shadow-[0_15px_30px_-5px_rgba(42,75,217,0.5)] transition-all duration-300 hover:-translate-y-1 active:scale-95 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-xl">content_copy</span>
+<span>Copy Link</span>
+</button>
+</div>
+</div>
+<!-- Embed Code Section -->
+<div class="bg-surface-container rounded-lg p-6 border border-white/20 relative">
+<div class="flex justify-between items-center mb-4">
+<span class="text-sm font-bold font-headline text-on-surface-variant uppercase tracking-wider flex items-center gap-2">
+<span class="material-symbols-outlined text-lg">code</span>
+                                Embed Code
+                            </span>
+<span class="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded">IFRAME</span>
+</div>
+<div class="bg-surface-container-highest rounded-md p-4 font-mono text-xs text-on-surface-variant leading-relaxed recessed-container border border-outline-variant/10 overflow-x-auto whitespace-nowrap">
+                            &lt;iframe src="https://insightsense.ai/embed/v1/dim-intel-24" width="100%" height="600px" frameborder="0"&gt;&lt;/iframe&gt;
+                        </div>
+</div>
+</div>
+<!-- QR Code & Quick Actions Column -->
+<div class="flex flex-col gap-6">
+<div class="bg-white rounded-lg p-6 shadow-[0_20px_40px_-10px_rgba(0,0,0,0.05)] border border-outline-variant/10 flex flex-col items-center">
+<span class="text-xs font-bold font-headline text-on-surface-variant mb-4 uppercase tracking-widest">QR Access</span>
+<div class="w-full aspect-square bg-surface-container-low rounded-lg flex items-center justify-center relative group overflow-hidden border-2 border-dashed border-outline-variant/30">
+<!-- Mock QR Code with Design System Flair -->
+<div class="w-32 h-32 relative bg-on-surface rounded-sm grid grid-cols-4 grid-rows-4 p-2 gap-1">
+<div class="bg-white"></div><div class="bg-white"></div><div class="bg-primary"></div><div class="bg-white"></div>
+<div class="bg-white"></div><div class="bg-primary"></div><div class="bg-white"></div><div class="bg-white"></div>
+<div class="bg-primary"></div><div class="bg-white"></div><div class="bg-primary"></div><div class="bg-primary"></div>
+<div class="bg-white"></div><div class="bg-primary"></div><div class="bg-white"></div><div class="bg-white"></div>
+<!-- Subtle extrusion effect on QR -->
+<div class="absolute inset-0 border-b-4 border-r-4 border-black/20 rounded-sm"></div>
+</div>
+</div>
+<button class="mt-6 w-full py-4 border-2 border-primary text-primary font-bold font-headline rounded-full hover:bg-primary/5 transition-all flex items-center justify-center gap-2 active:scale-95">
+<span class="material-symbols-outlined">download</span>
+                            Download PNG
+                        </button>
+</div>
+<div class="bg-tertiary/5 rounded-lg p-6 border border-tertiary/10">
+<span class="text-xs font-bold font-headline text-tertiary mb-3 block uppercase tracking-widest">Integrations</span>
+<div class="flex gap-3">
+<div class="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-sm border border-outline-variant/20 hover:scale-110 transition-transform cursor-pointer">
+<img class="w-6 h-6 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all" data-alt="Spotify social icon brand color circle" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC7iUNFzB13mHQTwcywIDTOKM2OHY55hexs70vURi7xLkc5tBckHeDHhNvCLzWQqehJh8g9UZFRad2N5-fqvvfGHtj1IVF38yc3FHjtSgJe21btO_VJwysb1JBnQnWIbOkSrmkfsf9cRLoLGMsyULNKNxU1IJyobfUQLvFz4x8cTaQAYZfMyQ3MOVPuhz40DKpzJA5FFC4rVQIqs03Zb4_22bCyvPAWGkQ4CkswMCR2OueOBB7jHGDk8IQGTdcyaqPlGari8waoOq4"/>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-sm border border-outline-variant/20 hover:scale-110 transition-transform cursor-pointer">
+<img class="w-6 h-6 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all" data-alt="Slack social icon brand color circle" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDX24dH3v5R--iPQ3_nXSsm0UvAonv7weMNOBoR7nLH8L4We7gcti8B_gCb51VYLZEE37VfoZe_HEBPUT5Pw3BK87hlGQvmbq7bEeUvuJ_zzdx5f6eWIMi2Xy58LaoVCBaFHsXIhUDKjjv44yeR5mkKI0SjzTTsM2V3GT6TED6DZTNjTGyar_Lj_lTraYUGQH6V_uxtidHhuqN2rkCgge77BVT-hu5LqL2lYaHfP7t1tv-mt2IuYzCFZQ_9gX5cO6Z7R3uc-bzWJS0"/>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-lowest flex items-center justify-center shadow-sm border border-outline-variant/20 hover:scale-110 transition-transform cursor-pointer">
+<img class="w-6 h-6 grayscale opacity-60 hover:grayscale-0 hover:opacity-100 transition-all" data-alt="Discord social icon brand color circle" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnACJFbu2KsoQCfNI-BWxp_Ct2QL0AtC3opHRJtYRMW0lCZWd4uZxcl-ajEIsUF6borS81AYMLzkROtSGaeK7Iif9R7oxIEfG0D2LOqJiESc0Gyiap6nFNHKCaCdHZ349XABYBJ2JG6nKmmAgnxVk60HVrdQs9sPEvs2M3MqN-ph35VEEKk0RQq3oTybj8qEgUFa0fp3gIQqUKoKldlbfG0-Mc1WUmES1lJHfAS4TCFb8-4sMMpV3dYZbug-RXcVvqpLIvq4qw8Gs"/>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Secondary Focus Area: Bento Style Extras -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl mt-6">
+<div class="bg-surface-container-low rounded-lg p-8 border border-white/40 flex items-center gap-6 group hover:bg-white transition-all duration-500 shadow-sm hover:shadow-xl">
+<div class="h-16 w-16 rounded-2xl bg-secondary/10 flex items-center justify-center text-secondary shrink-0 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-3xl">mark_email_read</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-lg text-on-surface">Email Invitations</h3>
+<p class="text-on-surface-variant text-sm mt-1">Send personalized survey links to your contact list with AI-optimized subject lines.</p>
+</div>
+</div>
+<div class="bg-surface-container-low rounded-lg p-8 border border-white/40 flex items-center gap-6 group hover:bg-white transition-all duration-500 shadow-sm hover:shadow-xl">
+<div class="h-16 w-16 rounded-2xl bg-tertiary/10 flex items-center justify-center text-tertiary shrink-0 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-3xl">spatial_tracking</span>
+</div>
+<div>
+<h3 class="font-headline font-bold text-lg text-on-surface">Kiosk Mode</h3>
+<p class="text-on-surface-variant text-sm mt-1">Generate a high-performance VR-ready web portal for live event data collection.</p>
+</div>
+</div>
+</div>
+</main>
+<!-- Bottom Navigation Shell (Mobile) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-6 pb-8 pt-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] rounded-t-[3rem]">
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+<span class="material-symbols-outlined">poll</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Surveys</span>
+</button>
+<button class="flex flex-col items-center justify-center bg-indigo-600 text-white rounded-full w-14 h-14 -mt-8 shadow-indigo-500/40 shadow-xl active:scale-110 transition-all">
+<span class="material-symbols-outlined">psychology</span>
+<span class="sr-only">Insights</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+<span class="material-symbols-outlined">groups</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">People</span>
+</button>
+<button class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Settings</span>
+</button>
+</nav>
+<!-- FAB Suppression: On Detail/Share pages, we don't show the main CTA FAB as per design rules -->
+</body></html>

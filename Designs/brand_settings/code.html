@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Brand Settings - InsightSense</title>
+<!-- Fonts -->
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Icons -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<!-- Tailwind -->
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "on-surface": "#2c2f31",
+              "secondary-container": "#82deff",
+              "surface": "#f5f7f9",
+              "on-surface-variant": "#595c5e",
+              "primary-fixed": "#879aff",
+              "surface-container-lowest": "#ffffff",
+              "surface-bright": "#f5f7f9",
+              "on-tertiary-fixed": "#280046",
+              "surface-container-highest": "#d9dde0",
+              "tertiary": "#8329c8",
+              "secondary-fixed": "#82deff",
+              "tertiary-fixed-dim": "#c986ff",
+              "error-container": "#f74b6d",
+              "surface-dim": "#d0d5d8",
+              "inverse-primary": "#7087ff",
+              "primary-fixed-dim": "#748bff",
+              "surface-tint": "#2a4bd9",
+              "on-background": "#2c2f31",
+              "on-primary": "#f2f1ff",
+              "on-tertiary-fixed-variant": "#580091",
+              "on-tertiary-container": "#4c007d",
+              "on-secondary-container": "#004e62",
+              "secondary-fixed-dim": "#57d2f9",
+              "background": "#f5f7f9",
+              "primary-container": "#879aff",
+              "surface-container-high": "#dfe3e6",
+              "primary": "#2a4bd9",
+              "inverse-surface": "#0b0f10",
+              "surface-container": "#e5e9eb",
+              "outline": "#747779",
+              "on-secondary-fixed-variant": "#00586e",
+              "primary-dim": "#173dcd",
+              "on-secondary-fixed": "#003a48",
+              "error": "#b41340",
+              "secondary": "#00647c",
+              "on-primary-container": "#00176b",
+              "on-error": "#ffefef",
+              "on-error-container": "#510017",
+              "on-secondary": "#e2f6ff",
+              "tertiary-container": "#d299ff",
+              "on-tertiary": "#fceeff",
+              "outline-variant": "#abadaf",
+              "tertiary-fixed": "#d299ff",
+              "secondary-dim": "#00576c",
+              "inverse-on-surface": "#9a9d9f",
+              "surface-container-low": "#eef1f3",
+              "on-primary-fixed-variant": "#001e82",
+              "tertiary-dim": "#7613bb",
+              "on-primary-fixed": "#000000",
+              "error-dim": "#a70138",
+              "surface-variant": "#d9dde0"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "1rem", "lg": "2rem", "xl": "3rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .perspective-1000 {
+            perspective: 1000px;
+        }
+        .rotate-x-5 {
+            transform: rotateX(5deg);
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(24px);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased overflow-hidden">
+<div class="flex h-screen overflow-hidden">
+<!-- SideNavBar (Execution from JSON) -->
+<aside class="hidden md:flex flex-col py-8 px-4 gap-y-4 bg-slate-50 dark:bg-slate-950 h-screen w-64 border-r-0 relative z-20">
+<div class="mb-8 px-2">
+<div class="text-xl font-black text-indigo-600 dark:text-indigo-400 font-manrope">InsightSense</div>
+<div class="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-400">Dimensional Intelligence</div>
+</div>
+<nav class="flex-1 space-y-2">
+<a class="flex items-center gap-3 p-3 text-slate-500 dark:text-slate-400 font-manrope font-semibold text-sm tracking-wide hover:translate-x-1 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="poll">poll</span>
+                    Surveys
+                </a>
+<a class="flex items-center gap-3 p-3 text-slate-500 dark:text-slate-400 font-manrope font-semibold text-sm tracking-wide hover:translate-x-1 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+                    Insights
+                </a>
+<a class="flex items-center gap-3 p-3 text-slate-500 dark:text-slate-400 font-manrope font-semibold text-sm tracking-wide hover:translate-x-1 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+                    Respondents
+                </a>
+<a class="flex items-center gap-3 p-3 text-slate-500 dark:text-slate-400 font-manrope font-semibold text-sm tracking-wide hover:translate-x-1 transition-all duration-300" href="#">
+<span class="material-symbols-outlined" data-icon="account_tree">account_tree</span>
+                    Workflows
+                </a>
+<a class="flex items-center gap-3 p-3 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-300 shadow-[0_10px_20px_-5px_rgba(79,70,229,0.2)] rounded-xl translate-z-10 scale-105 font-manrope font-semibold text-sm tracking-wide" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+                    Settings
+                </a>
+</nav>
+<div class="pt-4 mt-auto">
+<button class="w-full bg-gradient-to-br from-primary to-primary-container text-white py-4 px-6 rounded-xl font-bold shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all">
+                    Create New Survey
+                </button>
+</div>
+<div class="absolute right-0 top-0 h-full bg-gradient-to-r from-slate-200 to-transparent dark:from-slate-800 w-[2px]"></div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto relative bg-surface-container-low">
+<!-- TopAppBar (Execution from JSON) -->
+<header class="fixed top-0 w-full z-50 bg-slate-50/70 dark:bg-slate-900/70 backdrop-blur-xl flex justify-between items-center h-16 px-6 shadow-[0_8px_32px_0_rgba(31,38,135,0.07)] md:left-64 md:w-[calc(100%-16rem)]">
+<div class="flex items-center gap-4">
+<h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white font-headline">Brand Settings</h1>
+</div>
+<div class="flex items-center gap-6">
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:bg-slate-100/50 p-2 rounded-full transition-all" data-icon="notifications">notifications</span>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer hover:bg-slate-100/50 p-2 rounded-full transition-all" data-icon="help">help</span>
+</div>
+<div class="h-10 w-10 rounded-full overflow-hidden border-2 border-primary-container shadow-sm">
+<img alt="User profile menu with glassmorphism" class="h-full w-full object-cover" data-alt="Close up portrait of a professional woman with a soft blurred architectural background, high-end photography style" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDux-DcUvGoHpkZEOr9hYdNMtoKKNrbu8FhN-argi2QkzN0ndvLDs_XmlpFC8U-8omq6kE_Jb22iRqK65NxTQTHPLZKBKNhZEzW_QW9aFqBnjIeSZUYxPLR7UEgOBNStYLixjgWbPyGUnJKcoo2xIFANJrm1eNIeW8TbU0Qj9KIEuYdyqmOcH7UMwuQNHe_Gd-kPLmUTftQka9sEwKdk3m-3oLlG6xfs39sHElr6U6bfCCCVCfIiytJf45vjMsduzO1ehVO5xK-gDo"/>
+</div>
+</div>
+</header>
+<!-- Settings Canvas -->
+<div class="pt-24 pb-12 px-8 max-w-7xl mx-auto space-y-12">
+<!-- Internal Navigation Tabs -->
+<div class="flex gap-8 border-b-0">
+<button class="text-indigo-600 font-bold border-b-2 border-indigo-600 pb-2 text-sm font-manrope uppercase tracking-widest">General</button>
+<button class="text-slate-500 font-medium pb-2 text-sm font-manrope uppercase tracking-widest hover:text-indigo-400 transition-colors">Users</button>
+<button class="text-slate-500 font-medium pb-2 text-sm font-manrope uppercase tracking-widest hover:text-indigo-400 transition-colors">API Keys</button>
+</div>
+<!-- Bento Grid Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+<!-- Brand Identity Card -->
+<div class="lg:col-span-8 bg-surface-container-lowest rounded-lg p-8 shadow-[0_40px_60px_-10px_rgba(44,47,49,0.06)] relative overflow-hidden">
+<div class="relative z-10 space-y-10">
+<div>
+<h3 class="text-xl font-headline font-bold text-on-surface mb-2">Visual Identity</h3>
+<p class="text-on-surface-variant text-sm">Define how your brand appears across automated reports and insights.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+<div class="space-y-6">
+<div class="group">
+<label class="block text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 px-1">Brand Name</label>
+<input class="w-full bg-surface-container border-none rounded-xl px-4 py-4 focus:ring-2 focus:ring-primary transition-all text-on-surface font-medium" type="text" value="InsightSense Global"/>
+</div>
+<div class="group">
+<label class="block text-xs font-bold text-on-surface-variant uppercase tracking-widest mb-2 px-1">Theme Palette</label>
+<div class="flex items-center gap-4 bg-surface-container p-4 rounded-xl">
+<div class="h-12 w-12 rounded-full bg-gradient-to-br from-primary via-primary-container to-tertiary-container shadow-lg shadow-primary/20 cursor-pointer active:scale-90 transition-transform"></div>
+<div class="flex-1">
+<div class="text-sm font-bold">Dimensional Blue</div>
+<div class="text-xs text-on-surface-variant">Active Theme Gradient</div>
+</div>
+<span class="material-symbols-outlined text-primary" data-icon="palette">palette</span>
+</div>
+</div>
+</div>
+<!-- 3D Logo Preview -->
+<div class="relative flex flex-col items-center justify-center p-8 bg-surface-container-low rounded-xl border border-outline-variant/15 perspective-1000">
+<label class="absolute top-4 left-4 text-xs font-bold text-on-surface-variant uppercase tracking-widest">Logo 3D Preview</label>
+<div class="relative w-32 h-32 bg-white rounded-2xl shadow-2xl flex items-center justify-center rotate-x-5 transition-transform hover:rotate-x-0 duration-500 cursor-pointer">
+<span class="material-symbols-outlined text-5xl text-primary" data-icon="token" style="font-variation-settings: 'FILL' 1;">token</span>
+<!-- Ambient Shadow -->
+<div class="absolute -bottom-6 w-24 h-4 bg-on-surface/5 blur-xl rounded-full"></div>
+</div>
+<button class="mt-10 text-xs font-bold text-primary flex items-center gap-2 hover:opacity-80 transition-opacity">
+<span class="material-symbols-outlined text-sm" data-icon="upload">upload</span>
+                                        REPLACE ASSET
+                                    </button>
+</div>
+</div>
+</div>
+<!-- Background Accent -->
+<div class="absolute -top-24 -right-24 w-64 h-64 bg-primary/5 rounded-full blur-3xl"></div>
+</div>
+<!-- Side Stats / Info -->
+<div class="lg:col-span-4 space-y-8">
+<div class="bg-gradient-to-br from-secondary to-secondary-dim p-8 rounded-lg text-white shadow-xl">
+<h4 class="font-headline font-bold text-lg mb-4">Brand Health</h4>
+<div class="space-y-4">
+<div class="flex justify-between items-end">
+<span class="text-sm opacity-80">Consistency Score</span>
+<span class="text-2xl font-bold">94%</span>
+</div>
+<div class="w-full h-2 bg-white/20 rounded-full overflow-hidden">
+<div class="w-[94%] h-full bg-white rounded-full"></div>
+</div>
+<p class="text-xs opacity-70 leading-relaxed mt-4">Your brand assets are being applied correctly across 12 active workflow streams.</p>
+</div>
+</div>
+<div class="bg-surface-container rounded-lg p-6 space-y-4">
+<h4 class="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Quick Actions</h4>
+<div class="space-y-2">
+<button class="w-full flex items-center justify-between p-3 bg-surface-container-lowest rounded-xl hover:translate-x-1 transition-all">
+<span class="text-sm font-semibold">Download Brand Kit</span>
+<span class="material-symbols-outlined text-primary text-sm" data-icon="download">download</span>
+</button>
+<button class="w-full flex items-center justify-between p-3 bg-surface-container-lowest rounded-xl hover:translate-x-1 transition-all">
+<span class="text-sm font-semibold">View Public Profile</span>
+<span class="material-symbols-outlined text-primary text-sm" data-icon="open_in_new">open_in_new</span>
+</button>
+</div>
+</div>
+</div>
+<!-- User Management Section -->
+<div class="lg:col-span-12 bg-surface-container-lowest rounded-lg overflow-hidden shadow-[0_40px_60px_-10px_rgba(44,47,49,0.06)]">
+<div class="p-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
+<div>
+<h3 class="text-xl font-headline font-bold text-on-surface">Team Management</h3>
+<p class="text-on-surface-variant text-sm">Control who can access and edit brand intelligence.</p>
+</div>
+<button class="bg-primary hover:bg-primary-dim text-on-primary px-8 py-4 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all">
+<span class="material-symbols-outlined" data-icon="person_add">person_add</span>
+                                Invite User
+                            </button>
+</div>
+<!-- Table Area -->
+<div class="px-8 pb-8 overflow-x-auto">
+<table class="w-full text-left">
+<thead>
+<tr class="border-b border-surface-container-high">
+<th class="py-4 text-xs font-bold text-on-surface-variant uppercase tracking-widest">User</th>
+<th class="py-4 text-xs font-bold text-on-surface-variant uppercase tracking-widest">Role</th>
+<th class="py-4 text-xs font-bold text-on-surface-variant uppercase tracking-widest">Status</th>
+<th class="py-4 text-xs font-bold text-on-surface-variant uppercase tracking-widest text-right">Actions</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-surface-container-low">
+<tr class="group hover:bg-surface/50 transition-colors">
+<td class="py-5">
+<div class="flex items-center gap-3">
+<div class="h-10 w-10 rounded-full bg-tertiary-container flex items-center justify-center text-on-tertiary-container font-bold text-sm">EM</div>
+<div>
+<div class="font-bold text-sm">Elena Marquet</div>
+<div class="text-xs text-on-surface-variant">elena@insightsense.ai</div>
+</div>
+</div>
+</td>
+<td class="py-5">
+<span class="text-sm font-medium">Administrator</span>
+</td>
+<td class="py-5">
+<div class="flex items-center gap-1.5 text-xs font-bold text-secondary uppercase tracking-wider bg-secondary/10 px-3 py-1 rounded-full w-fit">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                                Active
+                                            </div>
+</td>
+<td class="py-5 text-right">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<tr class="group hover:bg-surface/50 transition-colors">
+<td class="py-5">
+<div class="flex items-center gap-3">
+<div class="h-10 w-10 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-sm">JS</div>
+<div>
+<div class="font-bold text-sm">Julian Schmidt</div>
+<div class="text-xs text-on-surface-variant">julian.s@insightsense.ai</div>
+</div>
+</div>
+</td>
+<td class="py-5">
+<span class="text-sm font-medium">Data Scientist</span>
+</td>
+<td class="py-5">
+<div class="flex items-center gap-1.5 text-xs font-bold text-secondary uppercase tracking-wider bg-secondary/10 px-3 py-1 rounded-full w-fit">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+                                                Active
+                                            </div>
+</td>
+<td class="py-5 text-right">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+<tr class="group hover:bg-surface/50 transition-colors">
+<td class="py-5">
+<div class="flex items-center gap-3">
+<div class="h-10 w-10 rounded-full bg-surface-container-highest flex items-center justify-center text-on-surface-variant font-bold text-sm">MB</div>
+<div>
+<div class="font-bold text-sm">Marcus Bell</div>
+<div class="text-xs text-on-surface-variant">m.bell@brand.com</div>
+</div>
+</div>
+</td>
+<td class="py-5">
+<span class="text-sm font-medium">Viewer</span>
+</td>
+<td class="py-5">
+<div class="flex items-center gap-1.5 text-xs font-bold text-on-surface-variant uppercase tracking-wider bg-surface-container px-3 py-1 rounded-full w-fit">
+<span class="w-1.5 h-1.5 rounded-full bg-on-surface-variant/40"></span>
+                                                Pending
+                                            </div>
+</td>
+<td class="py-5 text-right">
+<button class="p-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+</main>
+</div>
+<!-- BottomNavBar (Execution from JSON - Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-6 pb-8 pt-4 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl shadow-[0_-10px_40px_rgba(0,0,0,0.1)] rounded-t-[3rem]">
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined" data-icon="poll">poll</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Surveys</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined" data-icon="psychology">psychology</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Insights</span>
+</a>
+<a class="flex flex-col items-center justify-center text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined" data-icon="groups">groups</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-1">Respondents</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-indigo-600 text-white rounded-full w-14 h-14 -mt-8 shadow-indigo-500/40 shadow-xl scale-110 transition-all" href="#">
+<span class="material-symbols-outlined" data-icon="settings">settings</span>
+<span class="text-[10px] font-bold font-manrope uppercase tracking-widest mt-0.5">Settings</span>
+</a>
+</nav>
+</body></html>

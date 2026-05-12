@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-primary-fixed": "#100069",
+                        "error": "#ba1a1a",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "surface-bright": "#f7f9fb",
+                        "secondary-container": "#d0e1fb",
+                        "on-background": "#191c1e",
+                        "on-tertiary": "#ffffff",
+                        "surface": "#f7f9fb",
+                        "on-primary-fixed-variant": "#372abf",
+                        "on-secondary-fixed": "#0b1c30",
+                        "surface-container-highest": "#e0e3e5",
+                        "primary-fixed": "#e3dfff",
+                        "on-surface": "#191c1e",
+                        "surface-container-low": "#f2f4f6",
+                        "on-tertiary-container": "#84cdff",
+                        "primary": "#2a14b4",
+                        "surface-container-high": "#e6e8ea",
+                        "secondary": "#505f76",
+                        "on-secondary-container": "#54647a",
+                        "tertiary": "#003f5c",
+                        "surface-dim": "#d8dadc",
+                        "outline-variant": "#c7c4d7",
+                        "primary-container": "#4338ca",
+                        "tertiary-fixed": "#c9e6ff",
+                        "background": "#f7f9fb",
+                        "outline": "#777586",
+                        "on-tertiary-fixed-variant": "#004c6e",
+                        "on-tertiary-fixed": "#001e2f",
+                        "on-surface-variant": "#464554",
+                        "surface-container-lowest": "#ffffff",
+                        "on-error": "#ffffff",
+                        "secondary-fixed-dim": "#b7c8e1",
+                        "error-container": "#ffdad6",
+                        "tertiary-fixed-dim": "#89ceff",
+                        "inverse-primary": "#c3c0ff",
+                        "on-secondary-fixed-variant": "#38485d",
+                        "secondary-fixed": "#d3e4fe",
+                        "surface-variant": "#e0e3e5",
+                        "inverse-surface": "#2d3133",
+                        "on-secondary": "#ffffff",
+                        "on-primary-container": "#c1beff",
+                        "tertiary-container": "#00577e",
+                        "surface-tint": "#5148d7",
+                        "on-primary": "#ffffff",
+                        "inverse-on-surface": "#eff1f3",
+                        "surface-container": "#eceef0",
+                        "on-error-container": "#93000a"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.125rem", "lg": "0.25rem", "xl": "0.5rem", "full": "0.75rem"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bg-glass {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+        }
+        .hero-gradient {
+            background: radial-gradient(circle at 50% -20%, #e3dfff 0%, #f7f9fb 70%);
+        }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface antialiased">
+<nav class="fixed top-0 w-full z-50 bg-slate-50/70 backdrop-blur-xl shadow-sm font-manrope antialiased tracking-tight">
+<div class="flex justify-between items-center w-full px-6 py-3 max-w-screen-2xl mx-auto">
+<div class="text-xl font-bold tracking-tighter text-indigo-900">Experient</div>
+<div class="hidden md:flex items-center gap-8">
+<a class="text-indigo-700 font-semibold border-b-2 border-indigo-600 pb-1" href="#">Surveys</a>
+<a class="text-slate-600 hover:text-indigo-600 transition-colors" href="#">Insights</a>
+<a class="text-slate-600 hover:text-indigo-600 transition-colors" href="#">Respondents</a>
+<a class="text-slate-600 hover:text-indigo-600 transition-colors" href="#">Workflows</a>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95">
+<span class="material-symbols-outlined text-slate-600">notifications</span>
+</button>
+<button class="p-2 hover:bg-slate-100 rounded-lg transition-all active:scale-95">
+<span class="material-symbols-outlined text-slate-600">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-slate-200 overflow-hidden">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="Close-up professional portrait of a tech executive in a brightly lit modern office setting with soft bokeh background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6rpcXcXjlMqiKBdhi7VmTsUwSxppKPSbuFHIVeIkPbpZMr5j9jlLkvgNA1PlXrz6o90B5Hw3JeXzp4sk4Pop_uBFvxyG_egqZTlxVhcgfa7cr5CQWvcuu4m0bAv-qoYc-xadJVWejcm164gboo9tPrCRMI6CPkEcRBIOUME91r7NHX6rNW8qO_32AWtPPo__A6szotBoYjY4pyLlNb63DHowzxtZP81pBhJKmVYU5qyJBx5V2SI3rPI8InOiWvL3mDVENhHJ4G5E"/>
+</div>
+</div>
+</div>
+<div class="bg-slate-200/50 h-[1px] w-full"></div>
+</nav>
+<main class="relative pt-24 min-h-screen overflow-hidden hero-gradient">
+<section class="max-w-screen-2xl mx-auto px-6 py-20 grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+<div class="lg:col-span-7 space-y-10">
+<div class="space-y-6">
+<h1 class="font-headline text-5xl lg:text-6xl font-extrabold text-on-surface tracking-tighter leading-tight">
+                        The <span class="text-primary">AI-aware</span> experience layer for every product, marketing, and support team.
+                    </h1>
+<p class="text-xl text-secondary leading-relaxed max-w-2xl">
+                        Turn customer feedback and behavioral signals into actionable intelligence. Experient is the next-generation experience platform that ingests VoC signals to surface AI-curated insights, topics, and triggers.
+                    </p>
+</div>
+<div class="flex flex-wrap gap-4">
+<button class="px-8 py-4 bg-gradient-to-br from-primary to-primary-container text-white font-semibold rounded-xl shadow-lg hover:shadow-primary/20 transition-all active:scale-95">
+                        Request Early Access
+                    </button>
+<button class="px-8 py-4 bg-surface-container-highest text-on-surface font-semibold rounded-xl hover:bg-surface-container-high transition-all">
+                        View Demo
+                    </button>
+</div>
+<div class="pt-4 space-y-4">
+<div class="flex items-center gap-3 text-on-surface-variant">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-medium">AI-generated insights from every response</span>
+</div>
+<div class="flex items-center gap-3 text-on-surface-variant">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-medium">Real-time NPS &amp; CSAT dashboards</span>
+</div>
+<div class="flex items-center gap-3 text-on-surface-variant">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span class="font-medium">Topic-based analytics with user-editable themes</span>
+</div>
+</div>
+</div>
+<div class="lg:col-span-5 relative">
+<div class="relative w-full aspect-square max-w-md mx-auto">
+<div class="absolute top-0 right-0 w-64 p-6 rounded-xl bg-glass border border-white/20 shadow-xl translate-x-4 -translate-y-4 z-20">
+<div class="flex items-center justify-between mb-4">
+<span class="text-xs font-bold text-primary tracking-widest uppercase">Sentiment Drift</span>
+<span class="material-symbols-outlined text-primary text-sm">trending_up</span>
+</div>
+<div class="text-3xl font-bold text-on-surface mb-1">+12.4%</div>
+<div class="text-xs text-secondary">Positive trajectory in Checkout Flow</div>
+<div class="mt-4 h-1 w-full bg-surface-container-high rounded-full overflow-hidden">
+<div class="h-full bg-primary w-3/4"></div>
+</div>
+</div>
+<div class="absolute bottom-10 left-0 w-72 p-6 rounded-xl bg-surface-container-lowest shadow-2xl z-30 border-t border-white/10">
+<div class="flex items-center gap-3 mb-4">
+<div class="w-8 h-8 rounded-full bg-primary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-lg" style="font-variation-settings: 'FILL' 1;">psychology</span>
+</div>
+<span class="text-sm font-bold text-on-surface">AI Observation</span>
+</div>
+<p class="text-sm text-on-surface-variant leading-relaxed mb-4 italic">
+                            "Users are reporting friction in the onboarding stage. High correlation with 'Documentation' mentions."
+                        </p>
+<div class="flex gap-2">
+<span class="px-2 py-1 bg-surface-container-high rounded text-[10px] font-bold text-secondary uppercase">Friction</span>
+<span class="px-2 py-1 bg-surface-container-high rounded text-[10px] font-bold text-secondary uppercase">Onboarding</span>
+</div>
+</div>
+<div class="absolute inset-0 bg-gradient-to-tr from-indigo-100/50 to-white/10 rounded-full blur-3xl -z-10"></div>
+<div class="w-full h-full rounded-2xl bg-surface-container-low overflow-hidden shadow-inner relative group border border-white/40">
+<img alt="AI Intelligence Layer Visualization" class="w-full h-full object-cover opacity-80 mix-blend-luminosity grayscale group-hover:grayscale-0 transition-all duration-700" data-alt="Abstract 3D visualization of data clusters and neural pathways in a soft palette of indigo, silver, and slate with crystalline textures" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBRPiXmIs39hBiqdrPzwDHISZ6BQnVYZQsgQ4otv4Tzd5bmrcgOLPDbgV_lRrhp3AfeWBMgdxdSmwbV8zGBm-srfBIm91iHDV6_wdqRPuSw_NQP5Cs3izfxTjb3xk9LUnKrXDtFA9i1UeL-427kpWC2FPpxQXzw4VdK6NUcPK8EtqeRsrXebUOc3OQHgCvY7hLF3cTBfsYW7_AEOgQnev1sSPEUlAfwpH01dRl2LJt-BCzX3VuRv140oxJ0bsuGZjfWWeCNjetI1-w"/>
+</div>
+</div>
+</div>
+</section>
+<section class="max-w-screen-2xl mx-auto px-6 py-20">
+<div class="text-center mb-16">
+<span class="text-sm font-bold text-primary tracking-[0.2em] uppercase">The Prism Effect</span>
+<h2 class="font-headline text-4xl font-bold mt-4 text-on-surface">Experience, understood.</h2>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+<div class="p-8 rounded-2xl bg-surface-container-lowest hover:bg-white transition-colors group">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary">analytics</span>
+</div>
+<h3 class="font-headline text-xl font-bold mb-3">Refracted Clarity</h3>
+<p class="text-secondary text-sm leading-relaxed">
+                        Move beyond flat data. Our prism engine breaks down complex customer sentiment into clear, actionable themes.
+                    </p>
+</div>
+<div class="p-8 rounded-2xl bg-surface-container-lowest hover:bg-white transition-colors group">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary">auto_awesome</span>
+</div>
+<h3 class="font-headline text-xl font-bold mb-3">Cognitive Layer</h3>
+<p class="text-secondary text-sm leading-relaxed">
+                        An AI-aware interface that learns your product's nuances and surfaces triggers before they become trends.
+                    </p>
+</div>
+<div class="p-8 rounded-2xl bg-surface-container-lowest hover:bg-white transition-colors group">
+<div class="w-12 h-12 rounded-xl bg-surface-container-low flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
+<span class="material-symbols-outlined text-primary">bolt</span>
+</div>
+<h3 class="font-headline text-xl font-bold mb-3">Instant Resonance</h3>
+<p class="text-secondary text-sm leading-relaxed">
+                        Empowering product teams to act with confidence. Real-time NPS and CSAT signals integrated into your workflow.
+                    </p>
+</div>
+</div>
+</section>
+</main>
+<footer class="w-full border-t border-slate-200 bg-slate-50 font-inter text-xs tracking-wide uppercase">
+<div class="flex flex-col md:flex-row justify-between items-center px-8 py-12 gap-4 max-w-screen-2xl mx-auto">
+<div class="text-slate-400">© 2024 Experient. The experience layer that learns.</div>
+<div class="flex gap-8">
+<a class="text-slate-400 hover:text-indigo-500 transition-colors" href="#">Privacy</a>
+<a class="text-slate-400 hover:text-indigo-500 transition-colors" href="#">Terms</a>
+<a class="text-slate-400 hover:text-indigo-500 transition-colors" href="#">API Docs</a>
+</div>
+</div>
+</footer>
+</body></html>

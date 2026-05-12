@@ -1,0 +1,41 @@
+# Environment variables — NEVER commit these
+.env
+.env.*
+!.env.example
+
+# Claude Code local settings and AI memory (machine-specific)
+.claude/
+
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+dist-ssr
+lib/
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+database-debug.log
+pubsub-debug.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea
+.vscode/*
+!.vscode/extensions.json
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Misc
+*.local
+*.log

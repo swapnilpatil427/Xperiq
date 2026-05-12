@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Experient - The AI-Aware Experience Layer</title>
+<!-- Google Fonts: Manrope (Primary for Brand & UI) -->
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "primary": "#4338CA",
+              "on-surface": "#1F2937",
+              "on-surface-variant": "#4B5563",
+              "surface": "#F9FAFB",
+              "surface-container": "#F3F4F6",
+              "surface-container-low": "#F9FAFB",
+              "surface-container-lowest": "#FFFFFF",
+              "outline": "#D1D5DB",
+              "outline-variant": "#E5E7EB",
+              "error": "#BE123C",
+              "secondary": "#0D9488"
+            },
+            fontFamily: {
+              "headline": ["Manrope", "sans-serif"],
+              "body": ["Manrope", "sans-serif"],
+              "label": ["Manrope", "sans-serif"]
+            },
+            borderRadius: {
+              "DEFAULT": "0.25rem", 
+              "md": "0.375rem",
+              "lg": "0.5rem", 
+              "xl": "0.75rem",
+              "full": "9999px"
+            },
+          },
+        },
+      }
+    </script>
+<style>
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      .glass-effect {
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        background: rgba(255, 255, 255, 0.7);
+      }
+      .brand-border {
+        border-left: 4px solid #4338CA;
+      }
+      .modern-shadow {
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+      }
+      .sparkline-svg {
+        stroke-dasharray: 100;
+        stroke-dashoffset: 100;
+        animation: dash 1.5s ease-out forwards;
+      }
+      @keyframes dash {
+        to { stroke-dashoffset: 0; }
+      }
+      .transition-brand {
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+    </style>
+</head>
+<body class="bg-surface font-body text-on-surface flex min-h-screen">
+<!-- SIDE NAV BAR (Left Sidebar) -->
+<aside class="hidden md:flex h-screen w-72 flex-col py-8 px-6 gap-y-6 bg-white border-r border-outline-variant fixed left-0 top-0 z-40">
+<div class="flex flex-col gap-1 mb-8">
+<div class="flex items-center gap-2">
+<div class="w-8 h-8 bg-primary flex items-center justify-center rounded-sm">
+<span class="material-symbols-outlined text-white text-xl" style="font-variation-settings: 'wght' 600;">scatter_plot</span>
+</div>
+<h1 class="text-2xl font-extrabold tracking-tight text-on-surface font-headline">Experient</h1>
+</div>
+<p class="text-[10px] font-bold tracking-wider text-on-surface-variant/70 uppercase">Experience, understood.</p>
+</div>
+<nav class="flex-1 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container rounded-md transition-brand font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">poll</span>
+            Surveys
+        </a>
+<a class="flex items-center gap-3 px-4 py-3 bg-primary/5 text-primary border-r-4 border-primary rounded-l-md font-bold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">insights</span>
+            Insights
+        </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container rounded-md transition-brand font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">groups</span>
+            Respondents
+        </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container rounded-md transition-brand font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">hub</span>
+            Workflows
+        </a>
+<a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container rounded-md transition-brand font-semibold text-sm" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+            Settings
+        </a>
+</nav>
+<div class="mt-auto pt-6 border-t border-outline-variant">
+<p class="text-[11px] text-on-surface-variant mb-4 px-2 italic">The AI-aware experience layer for modern enterprises</p>
+<button class="w-full bg-primary hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md transition-brand text-sm flex items-center justify-center gap-2 shadow-sm">
+<span class="material-symbols-outlined text-sm">add_circle</span>
+            New Survey
+        </button>
+</div>
+</aside>
+<!-- MAIN CONTENT AREA -->
+<main class="flex-1 md:ml-72 flex flex-col min-h-screen">
+<!-- TOP APP BAR -->
+<header class="fixed top-0 w-full md:w-[calc(100%-18rem)] z-50 bg-white/90 backdrop-blur-md flex justify-between items-center h-16 px-8 border-b border-outline-variant">
+<div class="flex items-center gap-6">
+<h2 class="text-xl font-bold tracking-tight text-on-surface font-headline">Topic Analysis</h2>
+<div class="flex items-center gap-2 bg-surface-container px-3 py-1 rounded-md border border-outline-variant">
+<span class="material-symbols-outlined text-[16px] text-on-surface-variant">calendar_today</span>
+<span class="text-xs font-semibold text-on-surface-variant">Last 30 Days</span>
+</div>
+</div>
+<div class="flex items-center gap-5">
+<div class="flex items-center gap-1">
+<button class="w-9 h-9 rounded-md flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-brand">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+</button>
+<button class="w-9 h-9 rounded-md flex items-center justify-center text-on-surface-variant hover:bg-surface-container transition-brand">
+<span class="material-symbols-outlined text-[20px]">help_outline</span>
+</button>
+</div>
+<div class="h-8 w-[1px] bg-outline-variant"></div>
+<div class="flex items-center gap-3">
+<div class="text-right hidden sm:block">
+<p class="text-xs font-bold leading-none">Alex Rivers</p>
+<p class="text-[10px] text-on-surface-variant mt-0.5">Enterprise Admin</p>
+</div>
+<img alt="User Profile" class="w-9 h-9 rounded-md object-cover border border-outline-variant" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBD10c0GRbeVrC4ftrv6sck2t0vkDaRDzXgtZb4_UTeG6RDXQlcw9z-4d5hp3SZyL-00Cosd-z6awUllcZx_I5HgsQvS6A-EKrP-FA8NqpHtQ-waDh6OGrqHkqVwrslIye3iOfjoJHIsklA15UNw9SUxbuDNuPuulbIp1aeQ_EdASvAm2CGcNU4hOYW_9AcZmRc-YKWRLXUduU2nzmYXG4xEH0AMhz7kPtZNYSBd6OTgKjL1EexnTRhzGbPiKooRuAibKL1oC_LplA"/>
+</div>
+</div>
+</header>
+<!-- DASHBOARD CANVAS -->
+<div class="pt-24 pb-12 px-8 space-y-8 max-w-7xl mx-auto w-full">
+<!-- 1. METRICS HEADER -->
+<section class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+<!-- NPS Card -->
+<div class="bg-white p-8 rounded-lg border border-outline-variant shadow-sm relative overflow-hidden flex items-center gap-8 group hover:border-primary transition-brand">
+<div class="relative z-10 flex flex-col justify-center">
+<p class="text-on-surface-variant font-bold text-[10px] uppercase tracking-widest mb-2">Net Promoter Score</p>
+<div class="flex items-baseline gap-2">
+<h3 class="text-6xl font-extrabold font-headline">74</h3>
+<span class="text-sm font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">+4.2%</span>
+</div>
+<div class="mt-4">
+<svg class="w-32 h-8" viewbox="0 0 100 25">
+<path class="sparkline-svg" d="M0,20 Q10,5 20,18 T40,10 T60,22 T80,5 T100,15" fill="none" stroke="#4338CA" stroke-width="2.5"></path>
+</svg>
+</div>
+</div>
+<div class="relative z-10 ml-auto">
+<div class="relative w-32 h-32 flex items-center justify-center">
+<svg class="w-full h-full transform -rotate-90">
+<circle class="text-surface-container" cx="64" cy="64" fill="transparent" r="56" stroke="currentColor" stroke-width="8"></circle>
+<circle class="text-primary" cx="64" cy="64" fill="transparent" r="56" stroke="currentColor" stroke-dasharray="351.85" stroke-dashoffset="87.96" stroke-linecap="butt" stroke-width="8"></circle>
+</svg>
+<div class="absolute inset-0 flex flex-col items-center justify-center">
+<span class="text-2xl font-black text-on-surface">74%</span>
+<span class="text-[9px] uppercase font-bold tracking-tighter text-on-surface-variant">Excellent</span>
+</div>
+</div>
+</div>
+<!-- Subtle brand accent -->
+<div class="absolute top-0 right-0 w-1 h-full bg-primary opacity-0 group-hover:opacity-100 transition-brand"></div>
+</div>
+<!-- CSAT Card -->
+<div class="bg-white p-8 rounded-lg border border-outline-variant shadow-sm relative overflow-hidden flex items-center gap-8 group hover:border-primary transition-brand">
+<div class="relative z-10 flex flex-col justify-center">
+<p class="text-on-surface-variant font-bold text-[10px] uppercase tracking-widest mb-2">Customer Satisfaction</p>
+<div class="flex items-baseline gap-2">
+<h3 class="text-6xl font-extrabold font-headline">4.8</h3>
+<span class="text-xl font-bold text-on-surface-variant/40">/ 5</span>
+</div>
+<div class="mt-4 flex items-center gap-2">
+<span class="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Growing Stability</span>
+<div class="h-1 w-20 bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-emerald-500 w-[85%]"></div>
+</div>
+</div>
+</div>
+<div class="relative z-10 ml-auto flex gap-1.5 items-end h-24">
+<div class="w-3 bg-surface-container rounded-sm h-[40%]"></div>
+<div class="w-3 bg-surface-container rounded-sm h-[60%]"></div>
+<div class="w-3 bg-surface-container rounded-sm h-[55%]"></div>
+<div class="w-3 bg-surface-container rounded-sm h-[80%]"></div>
+<div class="w-3 bg-primary rounded-sm h-[95%]"></div>
+</div>
+<div class="absolute top-0 right-0 w-1 h-full bg-primary opacity-0 group-hover:opacity-100 transition-brand"></div>
+</div>
+</section>
+<!-- 2. AI-GENERATED TOPICS SECTION -->
+<section class="space-y-6">
+<div class="flex justify-between items-end border-b border-outline-variant pb-4">
+<div>
+<h4 class="text-xl font-bold font-headline text-on-surface">Identified Intelligence Layers</h4>
+<p class="text-sm text-on-surface-variant">Experient AI mapped 12,482 customer data points to these core themes</p>
+</div>
+<button class="bg-white px-5 py-2 rounded-md border border-outline font-bold text-xs flex items-center gap-2 hover:bg-surface-container transition-brand">
+<span class="material-symbols-outlined text-[16px]">refresh</span>
+                    Refresh AI Mapping
+                </button>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- Topic Card -->
+<button class="group bg-white p-5 rounded-lg border border-outline-variant hover:border-primary transition-brand text-left relative overflow-hidden flex flex-col h-full">
+<div class="flex justify-between items-start mb-6">
+<div class="w-10 h-10 rounded-md bg-surface-container text-on-surface-variant flex items-center justify-center transition-brand group-hover:bg-primary/10 group-hover:text-primary">
+<span class="material-symbols-outlined">space_dashboard</span>
+</div>
+<span class="text-[9px] font-extrabold text-on-surface-variant bg-surface-container px-2 py-1 rounded">342 VOL</span>
+</div>
+<h5 class="font-bold text-on-surface text-base mb-1">Interface Efficiency</h5>
+<div class="flex items-center gap-1.5 mt-auto">
+<div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+<span class="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Strong Positive</span>
+</div>
+</button>
+<!-- Topic Card -->
+<button class="group bg-white p-5 rounded-lg border border-outline-variant hover:border-primary transition-brand text-left relative overflow-hidden flex flex-col h-full">
+<div class="flex justify-between items-start mb-6">
+<div class="w-10 h-10 rounded-md bg-surface-container text-on-surface-variant flex items-center justify-center transition-brand group-hover:bg-primary/10 group-hover:text-primary">
+<span class="material-symbols-outlined">payments</span>
+</div>
+<span class="text-[9px] font-extrabold text-on-surface-variant bg-surface-container px-2 py-1 rounded">1,204 VOL</span>
+</div>
+<h5 class="font-bold text-on-surface text-base mb-1">Revenue Value Gap</h5>
+<div class="flex items-center gap-1.5 mt-auto">
+<div class="w-1.5 h-1.5 rounded-full bg-amber-500"></div>
+<span class="text-[10px] font-bold text-amber-600 uppercase tracking-wide">Neutral Signal</span>
+</div>
+</button>
+<!-- Topic Card: Active -->
+<button class="group bg-primary border-2 border-primary p-5 rounded-lg shadow-md text-left relative overflow-hidden flex flex-col h-full">
+<div class="flex justify-between items-start mb-6">
+<div class="w-10 h-10 rounded-md bg-white/20 text-white flex items-center justify-center">
+<span class="material-symbols-outlined">rocket_launch</span>
+</div>
+<span class="text-[9px] font-extrabold text-white bg-white/20 px-2 py-1 rounded">892 VOL</span>
+</div>
+<h5 class="font-bold text-white text-base mb-1">Onboarding Velocity</h5>
+<div class="flex items-center gap-1.5 mt-auto">
+<div class="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></div>
+<span class="text-[10px] font-bold text-white uppercase tracking-wide">Critical Attention</span>
+</div>
+</button>
+<!-- Topic Card -->
+<button class="group bg-white p-5 rounded-lg border border-outline-variant hover:border-primary transition-brand text-left relative overflow-hidden flex flex-col h-full">
+<div class="flex justify-between items-start mb-6">
+<div class="w-10 h-10 rounded-md bg-surface-container text-on-surface-variant flex items-center justify-center transition-brand group-hover:bg-primary/10 group-hover:text-primary">
+<span class="material-symbols-outlined">support_agent</span>
+</div>
+<span class="text-[9px] font-extrabold text-on-surface-variant bg-surface-container px-2 py-1 rounded">215 VOL</span>
+</div>
+<h5 class="font-bold text-on-surface text-base mb-1">Support Resonance</h5>
+<div class="flex items-center gap-1.5 mt-auto">
+<div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+<span class="text-[10px] font-bold text-emerald-600 uppercase tracking-wide">Strong Positive</span>
+</div>
+</button>
+</div>
+</section>
+<!-- 3. PER-TOPIC ANALYTICS DETAIL -->
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+<div class="lg:col-span-2 space-y-6">
+<!-- Tabbed Container -->
+<div class="bg-white rounded-lg border border-outline-variant shadow-sm overflow-hidden">
+<div class="border-b border-outline-variant flex bg-surface-container-low">
+<button class="px-8 py-4 bg-white border-b-2 border-primary font-bold text-primary text-xs tracking-wide flex items-center gap-2">
+<span class="material-symbols-outlined text-[18px]">analytics</span> SIGNAL ANALYSIS
+                        </button>
+<button class="px-8 py-4 hover:bg-white/50 font-bold text-on-surface-variant/60 text-xs tracking-wide flex items-center gap-2 transition-brand">
+<span class="material-symbols-outlined text-[18px]">chat_bubble_outline</span> RAW DATA
+                        </button>
+<button class="px-8 py-4 hover:bg-white/50 font-bold text-on-surface-variant/60 text-xs tracking-wide flex items-center gap-2 transition-brand">
+<span class="material-symbols-outlined text-[18px]">trending_up</span> VELOCITY
+                        </button>
+</div>
+<div class="p-8 space-y-12">
+<div class="flex flex-col md:flex-row gap-16">
+<!-- Sentiment breakdown -->
+<div class="flex-1 space-y-6">
+<h6 class="text-[10px] font-extrabold uppercase tracking-[0.2em] text-on-surface-variant/50">Experient Sentiment Map</h6>
+<div class="flex items-end justify-between h-48 gap-6">
+<div class="flex-1 flex flex-col items-center gap-4">
+<div class="w-full bg-emerald-500/10 border-t-2 border-emerald-500 h-[15%] transition-all duration-1000"></div>
+<span class="text-[10px] font-bold text-on-surface-variant">15% POSITIVE</span>
+</div>
+<div class="flex-1 flex flex-col items-center gap-4">
+<div class="w-full bg-on-surface-variant/10 border-t-2 border-on-surface-variant h-[25%] transition-all duration-1000"></div>
+<span class="text-[10px] font-bold text-on-surface-variant">25% NEUTRAL</span>
+</div>
+<div class="flex-1 flex flex-col items-center gap-4">
+<div class="w-full bg-error/10 border-t-2 border-error h-[60%] transition-all duration-1000 shadow-[0_-8px_16px_-4px_rgba(190,18,60,0.1)]"></div>
+<span class="text-[10px] font-bold text-error">60% FRICTION</span>
+</div>
+</div>
+</div>
+<!-- Top Phrases -->
+<div class="flex-1 space-y-6">
+<h6 class="text-[10px] font-extrabold uppercase tracking-[0.2em] text-on-surface-variant/50">Primary Friction Points</h6>
+<div class="space-y-3">
+<div class="flex justify-between items-center p-4 bg-surface-container-low border border-outline-variant rounded-md hover:border-primary/30 transition-brand">
+<span class="text-sm font-semibold text-on-surface">"Too many steps to create project"</span>
+<span class="text-[10px] font-extrabold text-primary bg-primary/10 px-2 py-1 rounded">42 INSTANCES</span>
+</div>
+<div class="flex justify-between items-center p-4 bg-surface-container-low border border-outline-variant rounded-md hover:border-primary/30 transition-brand">
+<span class="text-sm font-semibold text-on-surface">"Confusing interface navigation"</span>
+<span class="text-[10px] font-extrabold text-primary bg-primary/10 px-2 py-1 rounded">38 INSTANCES</span>
+</div>
+<div class="flex justify-between items-center p-4 bg-surface-container-low border border-outline-variant rounded-md hover:border-primary/30 transition-brand">
+<span class="text-sm font-semibold text-on-surface">"Email verification loop"</span>
+<span class="text-[10px] font-extrabold text-primary bg-primary/10 px-2 py-1 rounded">24 INSTANCES</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Sample Responses -->
+<div class="space-y-6">
+<h6 class="text-[10px] font-extrabold uppercase tracking-[0.2em] text-on-surface-variant/50">High-Fidelity Sample Data</h6>
+<div class="space-y-4">
+<div class="p-6 bg-white border border-outline-variant rounded-md">
+<div class="flex justify-between items-center mb-3">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-[10px] font-bold">R</div>
+<span class="text-[10px] font-bold text-on-surface-variant">PARTICIPANT #1204</span>
+</div>
+<span class="text-[10px] font-bold text-on-surface-variant/60">48H AGO</span>
+</div>
+<p class="text-sm leading-relaxed text-on-surface-variant">"I spent 15 minutes just trying to find where to upload my data. The onboarding tutorial skips over the most important part of project setup, causing immediate friction for our enterprise team."</p>
+</div>
+<div class="p-6 bg-white border border-outline-variant rounded-md">
+<div class="flex justify-between items-center mb-3">
+<div class="flex items-center gap-2">
+<div class="w-6 h-6 rounded-full bg-surface-container flex items-center justify-center text-[10px] font-bold">R</div>
+<span class="text-[10px] font-bold text-on-surface-variant">PARTICIPANT #883</span>
+</div>
+<span class="text-[10px] font-bold text-on-surface-variant/60">72H AGO</span>
+</div>
+<p class="text-sm leading-relaxed text-on-surface-variant">"The onboarding is way too long. We need tool proficiency in minutes, not hours. I just want to use the tool, not watch 5 minutes of videos before I can even click a button."</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- 4. TOPIC MANAGEMENT UI -->
+<div class="lg:col-span-1">
+<div class="bg-white rounded-lg border border-outline-variant shadow-sm p-8 flex flex-col h-full">
+<div class="flex items-center gap-3 mb-8">
+<div class="w-10 h-10 rounded-md bg-primary text-white flex items-center justify-center">
+<span class="material-symbols-outlined">architecture</span>
+</div>
+<h4 class="text-lg font-bold font-headline text-on-surface">Experience Governance</h4>
+</div>
+<div class="space-y-8 flex-1">
+<div>
+<p class="text-[10px] font-extrabold text-on-surface-variant/50 uppercase tracking-widest mb-4">Active Signal Selection</p>
+<div class="flex flex-wrap gap-2">
+<div class="px-3 py-1.5 bg-on-surface text-white rounded-md text-[10px] font-bold flex items-center gap-2 transition-brand hover:bg-primary">
+                                    Onboarding Velocity
+                                    <button class="hover:text-white/70 transition-brand"><span class="material-symbols-outlined text-[14px]">close</span></button>
+</div>
+</div>
+</div>
+<div class="space-y-4">
+<p class="text-[10px] font-extrabold text-on-surface-variant/50 uppercase tracking-widest">Global Intelligence Actions</p>
+<div class="grid grid-cols-1 gap-2">
+<button class="w-full text-left bg-white border border-outline hover:border-primary py-3 px-4 rounded-md flex items-center gap-3 font-bold text-xs text-on-surface transition-brand group">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-primary">merge</span>
+                                    Consolidate Signals
+                                </button>
+<button class="w-full text-left bg-white border border-outline hover:border-primary py-3 px-4 rounded-md flex items-center gap-3 font-bold text-xs text-on-surface transition-brand group">
+<span class="material-symbols-outlined text-[18px] text-on-surface-variant group-hover:text-primary">edit_square</span>
+                                    Refine Definition
+                                </button>
+<button class="w-full bg-primary hover:bg-indigo-700 py-4 px-4 rounded-md flex items-center justify-center gap-3 font-bold text-xs text-white transition-brand shadow-sm mt-2">
+<span class="material-symbols-outlined text-[18px]">account_tree</span>
+                                    Map to Strategic Theme
+                                </button>
+</div>
+</div>
+<div class="pt-8 border-t border-outline-variant">
+<p class="text-[10px] font-extrabold text-on-surface-variant/50 uppercase tracking-widest mb-4">Recommended Themes</p>
+<div class="space-y-2">
+<div class="flex items-center justify-between p-3 rounded-md bg-surface-container-low border border-transparent hover:border-outline-variant hover:bg-surface-container cursor-pointer transition-brand group">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-sm bg-emerald-50 text-emerald-600 flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">verified_user</span>
+</div>
+<span class="text-xs font-bold text-on-surface">Product Experience</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/40 group-hover:text-primary transition-brand text-[18px]">arrow_forward</span>
+</div>
+<div class="flex items-center justify-between p-3 rounded-md bg-surface-container-low border border-transparent hover:border-outline-variant hover:bg-surface-container cursor-pointer transition-brand group">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-sm bg-amber-50 text-amber-600 flex items-center justify-center">
+<span class="material-symbols-outlined text-[18px]">payments</span>
+</div>
+<span class="text-xs font-bold text-on-surface">Revenue &amp; Value</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant/40 group-hover:text-primary transition-brand text-[18px]">arrow_forward</span>
+</div>
+</div>
+</div>
+</div>
+<div class="mt-8 pt-6 border-t border-outline-variant">
+<p class="text-[9px] font-bold text-on-surface-variant/40 italic text-center">Powered by Experient Core Intelligence v4.2</p>
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- BOTTOM NAV BAR (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 bg-white border-t border-outline-variant">
+<a class="flex flex-col items-center justify-center text-on-surface-variant" href="#">
+<span class="material-symbols-outlined text-[20px]">poll</span>
+<span class="text-[9px] font-bold uppercase mt-0.5">Surveys</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">insights</span>
+<span class="text-[9px] font-bold uppercase mt-0.5">Insights</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant" href="#">
+<span class="material-symbols-outlined text-[20px]">groups</span>
+<span class="text-[9px] font-bold uppercase mt-0.5">Users</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant" href="#">
+<span class="material-symbols-outlined text-[20px]">settings</span>
+<span class="text-[9px] font-bold uppercase mt-0.5">Settings</span>
+</a>
+</nav>
+</body></html>
