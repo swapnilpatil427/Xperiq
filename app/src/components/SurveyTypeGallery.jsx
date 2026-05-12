@@ -10,7 +10,7 @@ function TypeCard({ type, selected, onSelect }) {
   const isSelected = selected === type.id;
   return (
     <button
-      onClick={() => onSelect(type.id)}
+      onClick={() => onSelect(isSelected ? null : type.id)}
       className="relative flex flex-col items-start text-left rounded-2xl p-5 transition-all duration-200 active:scale-95"
       style={{
         background: isSelected ? type.bg : '#ffffff',
@@ -88,7 +88,7 @@ function TypeCard({ type, selected, onSelect }) {
   );
 }
 
-export function SurveyTypeGallery({ selectedTypeId, onSelect, onContinue, onSkip }) {
+export function SurveyTypeGallery({ selectedTypeId, onSelect, onContinue, onSkip, continueLabel }) {
   const { t } = useTranslation();
   const [activeCategory, setActiveCategory] = useState('all');
   const [search, setSearch] = useState('');
@@ -207,6 +207,57 @@ export function SurveyTypeGallery({ selectedTypeId, onSelect, onContinue, onSkip
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '12px' }}>
+          {/* Blank / custom survey — always first */}
+          <button
+            onClick={onSkip}
+            className="relative flex flex-col items-start text-left rounded-2xl p-5 transition-all duration-200 active:scale-95"
+            style={{
+              background: '#ffffff',
+              border: '1.5px solid #eef1f3',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.04)',
+              cursor: 'pointer',
+              outline: 'none',
+              minHeight: '200px',
+            }}
+          >
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3 flex-shrink-0"
+              style={{ background: '#f0f2f4', color: '#747779' }}>
+              <Icon name="grid_view" fill={1} size={22} />
+            </div>
+            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+              <span className="text-sm font-extrabold font-headline leading-tight text-on-surface">
+                {t('create.typeGallery.blankCard.title')}
+              </span>
+              <span className="text-[10px] font-black px-2 py-0.5 rounded-full flex-shrink-0"
+                style={{ background: '#e5e9eb', color: '#747779' }}>
+                {t('create.typeGallery.blankCard.badge')}
+              </span>
+            </div>
+            <p className="text-xs leading-relaxed mb-3 flex-1 text-on-surface-variant"
+              style={{
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 2,
+                overflow: 'hidden',
+              }}>
+              {t('create.typeGallery.blankCard.description')}
+            </p>
+            <div className="flex items-center justify-between w-full mt-auto">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                  {t('create.typeGallery.blankCard.fullyCustom')}
+                </span>
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                  {t('create.typeGallery.blankCard.anyMetrics')}
+                </span>
+              </div>
+              <span className="text-[10px] font-semibold flex items-center gap-1 flex-shrink-0 text-muted-foreground">
+                <Icon name="schedule" size={12} />
+                0m
+              </span>
+            </div>
+          </button>
+
           {filtered.map((type) => (
             <TypeCard
               key={type.id}
@@ -217,17 +268,6 @@ export function SurveyTypeGallery({ selectedTypeId, onSelect, onContinue, onSkip
           ))}
         </div>
       )}
-
-      {/* Skip link */}
-      <div className="text-center mt-6">
-        <Button
-          onClick={onSkip}
-          variant="link"
-          className="text-xs font-semibold text-on-surface-variant hover:text-primary"
-        >
-          {t('create.typeGallery.skipLink')}
-        </Button>
-      </div>
 
       {/* Sticky action bar — slides up when a type is selected */}
       <div
@@ -281,7 +321,7 @@ export function SurveyTypeGallery({ selectedTypeId, onSelect, onContinue, onSkip
                   style={{ background: selectedType.color, boxShadow: `0 12px 28px -6px ${selectedType.color}55` }}
                 >
                   <Icon name="arrow_forward" size={18} />
-                  {t('create.typeGallery.continueButton')}
+                  {continueLabel ?? t('create.typeGallery.continueButton')}
                 </Button>
               </>
             )}

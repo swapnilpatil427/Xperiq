@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SideNav } from '../components/SideNav';
 import { TopBar } from '../components/TopBar';
@@ -6,8 +7,7 @@ import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
 import { PauseModal, ResumeModal } from '../components/SurveyActionModal';
 import { useSurveys } from '../hooks/useSurveys';
-import { pageStore } from '../lib/pageStore';
-import { ROUTES } from '../constants/routes';
+import { ROUTES, toPath } from '../constants/routes';
 import { NPS as NPS_THRESHOLDS } from '../constants/thresholds';
 import { SENTIMENT_COLORS } from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
@@ -34,8 +34,9 @@ const stagger = {
   visible: { transition: { staggerChildren: 0.07, delayChildren: 0.1 } },
 };
 
-export function SurveysListPage({ onNavigate, currentPage }) {
+export function SurveysListPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [filter, setFilter] = useState('all');
   const { surveys, loading, error, updateSurvey } = useSurveys();
   const [statusChanging, setStatusChanging] = useState(null);
@@ -92,15 +93,13 @@ export function SurveysListPage({ onNavigate, currentPage }) {
 
   return (
     <div className="flex min-h-screen bg-surface">
-      <SideNav currentPage={currentPage} onNavigate={onNavigate} />
-      <BottomNav currentPage={currentPage} onNavigate={onNavigate} />
+      <SideNav />
+      <BottomNav />
 
       <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
         <TopBar
           title={t('surveys.pageTitle')}
           subtitle={t('surveys.activeSurveysSubtitle', { n: activeCount })}
-          currentPage={currentPage}
-          onNavigate={onNavigate}
         />
 
         <div className="pt-20 pb-12 px-6 md:px-8 max-w-6xl mx-auto w-full">
@@ -168,7 +167,7 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                 <Button
                   variant="gradient"
                   size="sm"
-                  onClick={() => onNavigate(ROUTES.CREATE)}
+                  onClick={() => navigate(ROUTES.CREATE)}
                   className="rounded-xl font-headline active:scale-100"
                 >
                   <Icon name="auto_awesome" size={16} />
@@ -179,7 +178,7 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => onNavigate(ROUTES.BUILDER)}
+                  onClick={() => navigate(ROUTES.CREATE, { state: { mode: 'manual' } })}
                   className="rounded-xl font-headline text-on-surface active:scale-100"
                 >
                   <Icon name="add" size={16} />
@@ -365,7 +364,7 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={(e) => { e.stopPropagation(); onNavigate(ROUTES.INSIGHTS); }}
+                            onClick={(e) => { e.stopPropagation(); navigate(ROUTES.INSIGHTS); }}
                             className="rounded-xl bg-[rgba(42,75,217,0.08)] text-primary hover:bg-[rgba(42,75,217,0.14)] active:scale-100"
                           >
                             <Icon name="insights" size={14} />
@@ -378,13 +377,13 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                             size="icon"
                             onClick={(e) => {
                               e.stopPropagation();
-                              pageStore.setPendingBuilderData({
-                                id:           survey.id,
-                                title:        survey.title,
-                                questions:    survey.questions || [],
-                                surveyTypeId: survey.survey_type_id || survey.surveyTypeId || null,
+                              navigate(toPath(ROUTES.BUILDER, { surveyId: survey.id }), {
+                                state: {
+                                  title:        survey.title,
+                                  questions:    survey.questions || [],
+                                  surveyTypeId: survey.survey_type_id || survey.surveyTypeId || null,
+                                },
                               });
-                              onNavigate(ROUTES.BUILDER);
                             }}
                             className="rounded-xl text-on-surface-variant hover:bg-[rgba(171,173,175,0.15)] active:scale-100"
                           >
@@ -424,7 +423,7 @@ export function SurveysListPage({ onNavigate, currentPage }) {
                     >
                       <Button
                         variant="gradient"
-                        onClick={() => onNavigate(ROUTES.CREATE)}
+                        onClick={() => navigate(ROUTES.CREATE)}
                         className="rounded-xl font-headline active:scale-100"
                       >
                         {t('surveys.empty.cta')}

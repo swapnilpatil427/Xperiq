@@ -1,4 +1,5 @@
 import { OrganizationSwitcher } from '@clerk/react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from './Icon';
 import { LogoFull } from './Logo';
 import { ROUTES } from '../constants/routes';
@@ -6,16 +7,18 @@ import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
-export function SideNav({ currentPage, onNavigate }) {
+export function SideNav() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
   const navItems = [
-    { label: t('nav.surveys'),     icon: 'poll',         page: ROUTES.SURVEYS },
-    { label: t('nav.insights'),    icon: 'psychology',   page: ROUTES.INSIGHTS,    fill: 1 },
-    { label: t('nav.respondents'), icon: 'groups',       page: ROUTES.RESPONDENTS },
-    { label: t('nav.workflows'),   icon: 'account_tree', page: ROUTES.WORKFLOWS },
-    { label: t('nav.settings'),    icon: 'settings',     page: ROUTES.SETTINGS },
+    { label: t('nav.surveys'),     icon: 'poll',         path: ROUTES.SURVEYS },
+    { label: t('nav.insights'),    icon: 'psychology',   path: ROUTES.INSIGHTS, fill: 1 },
+    { label: t('nav.respondents'), icon: 'groups',       path: ROUTES.RESPONDENTS },
+    { label: t('nav.workflows'),   icon: 'account_tree', path: ROUTES.WORKFLOWS },
+    { label: t('nav.settings'),    icon: 'settings',     path: ROUTES.SETTINGS },
   ];
 
   return (
@@ -31,11 +34,11 @@ export function SideNav({ currentPage, onNavigate }) {
       {/* Nav Items */}
       <nav className="flex-1 space-y-1">
         {navItems.map((item) => {
-          const isActive = currentPage === item.page;
+          const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
           return (
             <button
-              key={item.page}
-              onClick={() => onNavigate(item.page)}
+              key={item.path}
+              onClick={() => navigate(item.path)}
               className={`sidenav-item${isActive ? ' active active-bar' : ''}`}
             >
               <Icon name={item.icon} fill={isActive ? (item.fill || 1) : 0} size={20} />
@@ -78,7 +81,7 @@ export function SideNav({ currentPage, onNavigate }) {
         </div>
 
         <Button
-          onClick={() => onNavigate(ROUTES.BUILDER)}
+          onClick={() => navigate(ROUTES.CREATE)}
           variant="gradient"
           className="sidenav-cta w-full relative overflow-hidden font-bold py-3.5 px-4 text-sm group font-headline rounded-xl"
         >

@@ -1,11 +1,11 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { SideNav } from '../components/SideNav';
 import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
 import { PublishModal } from '../components/SurveyActionModal';
 import { useSurveys } from '../hooks/useSurveys';
 import { useApi } from '../hooks/useApi';
-import { pageStore } from '../lib/pageStore';
 import { ROUTES } from '../constants/routes';
 import { QTYPE_META, QTYPE_GROUPS, createQuestion, mapAiToBuilderQuestion } from '../constants/questionTypes';
 import { Button } from '@/components/ui/button';
@@ -1050,16 +1050,52 @@ function LogicView({ questions }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
-export function SurveyBuilderPage({ onNavigate }) {
-  const pending = useMemo(() => pageStore.consumePendingBuilderData(), []);
+export function SurveyBuilderPage() {
+  const { surveyId: surveyIdParam } = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const pending = location.state || null;
   const api = useApi();
 
+  // Edit mode: surveyIdParam is a real DB id (not 'new')
+  const isEditMode = !!surveyIdParam && surveyIdParam !== 'new';
+  // In edit mode, only trust state questions if they're non-empty (list endpoint
+  // may return surveys without questions populated, giving us an empty array).
+  // In new mode, any questions array (even empty) is intentional.
+  const hasStateQuestions = isEditMode
+    ? (pending?.questions?.length > 0)
+    : Array.isArray(pending?.questions);
+  // Load from DB when editing and no usable questions were passed in navigation state
+  const needsDbLoad = isEditMode && !hasStateQuestions;
+
+  const [isLoading,    setIsLoading]    = useState(needsDbLoad);
   const [questions, setQuestions] = useState(() => {
     if (pending?.questions?.length) return pending.questions.map(mapAiToBuilderQuestion);
     return [createQuestion('nps'), createQuestion('open_text')];
   });
-  const [surveyTitle, setSurveyTitle] = useState(pending?.title?.slice(0, 80) || 'New Survey');
-  const [surveyId,    setSurveyId]    = useState(pending?.id || null);
+  const [surveyTitle,  setSurveyTitle]  = useState(pending?.title?.slice(0, 80) || 'New Survey');
+  const [surveyTypeId, setSurveyTypeId] = useState(pending?.surveyTypeId || null);
+  const [surveyId,     setSurveyId]     = useState(
+    surveyIdParam && surveyIdParam !== 'new' ? surveyIdParam : (pending?.id || null)
+  );
+
+  // Load full survey from DB when opening by URL without state data
+  useEffect(() => {
+    if (!needsDbLoad) return;
+    api.getSurvey(surveyIdParam)
+      .then((survey) => {
+        if (survey) {
+          setSurveyTitle(survey.title || 'New Survey');
+          setSurveyTypeId(survey.survey_type_id || null);
+          if (survey.questions?.length) {
+            setQuestions(survey.questions.map(mapAiToBuilderQuestion));
+          }
+        }
+      })
+      .catch(() => {/* keep defaults on API failure */})
+      .finally(() => setIsLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [selectedId,  setSelectedId]  = useState(null);
   const [mode,        setMode]        = useState('build'); // 'build' | 'preview' | 'logic'
   const [saving,           setSaving]           = useState(false);
@@ -1124,12 +1160,12 @@ export function SurveyBuilderPage({ onNavigate }) {
 
   const handleAiCommand = useCallback(async (message) => {
     try {
-      const result = await api.refineSurvey(questions, message, { surveyTypeId: pending?.surveyTypeId, intent: surveyTitle });
+      const result = await api.refineSurvey(questions, message, { surveyTypeId, intent: surveyTitle });
       if (result.questions) setQuestions(result.questions.map(mapAiToBuilderQuestion));
     } catch (err) {
       console.error('AI copilot error:', err.message);
     }
-  }, [api, questions, pending, surveyTitle]);
+  }, [api, questions, surveyTypeId, surveyTitle]);
 
   const buildPayload = () => ({
     title: surveyTitle,
@@ -1142,7 +1178,7 @@ export function SurveyBuilderPage({ onNavigate }) {
       displayLogic: displayLogic || null,
       ...rest, // preserves all type-specific fields (options, rows, columns, scaleMax, etc.)
     })),
-    survey_type_id: pending?.surveyTypeId || null,
+    survey_type_id: surveyTypeId,
   });
 
   const doSave = async () => {
@@ -1171,7 +1207,7 @@ export function SurveyBuilderPage({ onNavigate }) {
       const id = survey?.id || surveyId;
       if (id) await publishSurvey(id);
       setShowPublishModal(false);
-      onNavigate(ROUTES.SURVEYS);
+      navigate(ROUTES.SURVEYS);
     } finally { setLaunching(false); }
   };
 
@@ -1181,9 +1217,21 @@ export function SurveyBuilderPage({ onNavigate }) {
   const PROPS_W    = 320; // 20rem
   const TOPNAV_H   = 64;
 
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen font-body bg-[#f5f7f9]">
+        <SideNav />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 animate-spin"
+            style={{ borderColor: 'rgba(42,75,217,0.2)', borderTopColor: '#2a4bd9' }} />
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex min-h-screen font-body bg-[#f5f7f9]">
-      <SideNav currentPage={ROUTES.SURVEYS} onNavigate={onNavigate} />
+      <SideNav />
 
       {/* Preview overlay */}
       {mode === 'preview' && (
@@ -1221,7 +1269,7 @@ export function SurveyBuilderPage({ onNavigate }) {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => onNavigate(ROUTES.SURVEYS)}
+            onClick={() => navigate(ROUTES.SURVEYS)}
             className="rounded-lg flex-shrink-0 hover:bg-[#eef1f3]"
           >
             <Icon name="arrow_back" size={18} className="text-[#595c5e]" />
@@ -1402,7 +1450,7 @@ export function SurveyBuilderPage({ onNavigate }) {
         </div>
       </aside>
 
-      <BottomNav currentPage={ROUTES.SURVEYS} onNavigate={onNavigate} />
+      <BottomNav />
 
       {/* Decorative glow */}
       <div className="fixed pointer-events-none -z-10 rounded-full"

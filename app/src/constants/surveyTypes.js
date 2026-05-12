@@ -973,27 +973,6 @@ export const SURVEY_TYPES = [
       'Workshop sign-up with role and goal data capture',
     ],
   },
-  {
-    id: 'custom',
-    category: 'operational',
-    label: 'Custom Survey',
-    shortLabel: 'Custom',
-    description: 'Start from a blank canvas. Full AI assistance, full control over question types, logic, and flow.',
-    icon: 'dashboard_customize',
-    color: '#2c2f31',
-    bg: '#e5e9eb',
-    metrics: ['Fully Custom', 'Any Metrics', 'Any Format'],
-    recommended: false,
-    estimatedMinutes: null,
-    questionCount: 'You decide',
-    tags: ['custom', 'blank', 'freeform', 'build your own', 'operational'],
-    intentPlaceholder: 'e.g., Describe anything — the AI will adapt to whatever goal you have in mind…',
-    suggestions: [
-      'Build a fully custom survey from scratch',
-      'Combine multiple survey types into one instrument',
-      'Create a unique research instrument for a novel use case',
-    ],
-  },
 ];
 
 // Pre-computed lookups for O(1) access

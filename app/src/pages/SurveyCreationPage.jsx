@@ -1,13 +1,14 @@
 import { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { SurveyTypeGallery } from '../components/SurveyTypeGallery';
 import { AiChatPanel } from '../components/AiChatPanel';
 import { useApi } from '../hooks/useApi';
-import { pageStore } from '../lib/pageStore';
-import { ROUTES } from '../constants/routes';
+import { ROUTES, toPath } from '../constants/routes';
 import { BADGES } from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
 import { SURVEY_TYPE_MAP } from '../constants/surveyTypes';
+import { createQuestion } from '../constants/questionTypes';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -63,8 +64,11 @@ function StepIndicator({ currentStep, stepLabels }) {
   );
 }
 
-export function SurveyCreationPage({ onNavigate }) {
+export function SurveyCreationPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isManual = location.state?.mode === 'manual';
   // step: 0=chooseType, 1=input, 2=generating, 3=review
   const [step, setStep] = useState(0);
   const [selectedTypeId, setSelectedTypeId] = useState(null);
@@ -89,6 +93,38 @@ export function SurveyCreationPage({ onNavigate }) {
   useEffect(() => {
     if (step === 1) textareaRef.current?.focus();
   }, [step]);
+
+  function getTemplateQuestions(typeId) {
+    const map = {
+      nps: ['nps', 'open_text'],              nps_relational: ['nps', 'open_text'],
+      csat: ['csat', 'open_text'],             ces: ['slider', 'open_text'],
+      voc: ['multiple_choice', 'open_text'],   enps: ['nps', 'open_text'],
+      pulse: ['rating', 'open_text'],          engagement: ['rating', 'multiple_choice', 'open_text'],
+      exit_interview: ['multiple_choice', 'open_text'],
+      '360_feedback': ['rating', 'multiple_choice'],
+      onboarding_feedback: ['rating', 'open_text'],
+      manager_effectiveness: ['rating', 'open_text'],
+      dei_climate: ['rating', 'multiple_choice'],
+      wellbeing: ['slider', 'open_text'],
+      course_evaluation: ['rating', 'open_text'],
+      student_satisfaction: ['csat', 'open_text'],
+      pmf: ['multiple_choice', 'open_text'],
+      feature_request: ['multiple_choice', 'short_text'],
+      usability: ['rating', 'open_text'],
+    };
+    return (map[typeId] || ['nps', 'open_text']).map((qType) => createQuestion(qType));
+  }
+
+  function handleManualStart(typeId) {
+    const type = typeId ? SURVEY_TYPE_MAP[typeId] : null;
+    navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
+      state: {
+        title:        type?.label || 'New Survey',
+        questions:    getTemplateQuestions(typeId),
+        surveyTypeId: typeId || null,
+      },
+    });
+  }
 
   async function handleGenerate() {
     if (!intent.trim()) return;
@@ -128,7 +164,7 @@ export function SurveyCreationPage({ onNavigate }) {
         <div className="flex items-center gap-4">
           <Button
             variant="ghost"
-            onClick={() => onNavigate(ROUTES.SURVEYS)}
+            onClick={() => navigate(ROUTES.SURVEYS)}
             className="flex items-center gap-2 text-sm font-semibold text-on-surface-variant hover:text-[var(--color-primary)] px-0"
           >
             <Icon name="arrow_back" size={18} />
@@ -156,8 +192,9 @@ export function SurveyCreationPage({ onNavigate }) {
           <SurveyTypeGallery
             selectedTypeId={selectedTypeId}
             onSelect={setSelectedTypeId}
-            onContinue={() => setStep(1)}
-            onSkip={() => { setSelectedTypeId(null); setStep(1); }}
+            onContinue={() => isManual ? handleManualStart(selectedTypeId) : setStep(1)}
+            onSkip={() => isManual ? handleManualStart(null) : (setSelectedTypeId(null), setStep(1))}
+            continueLabel={isManual ? t('create.typeGallery.startBuildingButton') : undefined}
           />
         )}
 
@@ -442,8 +479,9 @@ export function SurveyCreationPage({ onNavigate }) {
                   <div className="mt-8 flex gap-4">
                     <Button
                       onClick={() => {
-                        pageStore.setPendingBuilderData({ title: intent, questions, surveyTypeId: selectedTypeId });
-                        onNavigate(ROUTES.BUILDER);
+                        navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
+                          state: { title: intent, questions, surveyTypeId: selectedTypeId },
+                        });
                       }}
                       className="flex-1 py-4 h-auto text-white font-bold text-base cta-glow font-headline rounded-2xl"
                       style={{ background: 'linear-gradient(135deg, #2a4bd9, #879aff)', boxShadow: '0 20px 40px -10px rgba(42,75,217,0.35)' }}
@@ -457,8 +495,9 @@ export function SurveyCreationPage({ onNavigate }) {
                       onClick={async () => {
                         // Save directly without opening builder
                         try {
-                          pageStore.setPendingBuilderData({ title: intent, questions, surveyTypeId: selectedTypeId });
-                          onNavigate(ROUTES.BUILDER);
+                          navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
+                            state: { title: intent, questions, surveyTypeId: selectedTypeId },
+                          });
                         } catch { /* fallback */ }
                       }}
                       className="px-6 py-4 h-auto font-bold text-sm font-headline text-white rounded-2xl"

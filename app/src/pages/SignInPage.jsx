@@ -4,7 +4,7 @@ import { Icon } from '../components/Icon';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
 
-export function SignInPage({ onNavigate }) {
+export function SignInPage() {
   const { t } = useTranslation();
   const [mode, setMode] = useState('sign-in');
 

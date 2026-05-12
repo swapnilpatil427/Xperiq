@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { OrganizationProfile } from '@clerk/react';
 import { SideNav } from '../components/SideNav';
 import { BottomNav } from '../components/BottomNav';
@@ -46,9 +47,10 @@ const DEMO_TEAM_MEMBERS = [
   },
 ];
 
-export function BrandSettingsPage({ onNavigate, currentPage }) {
+export function BrandSettingsPage() {
   const { t } = useTranslation();
   const { orgId } = useAppAuth();
+  const navigate = useNavigate();
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
   const [activeTab, setActiveTab] = useState('General');
   const [brandName, setBrandName] = useState('InsightSense Global');
@@ -87,14 +89,12 @@ export function BrandSettingsPage({ onNavigate, currentPage }) {
 
   return (
     <div className="flex min-h-screen bg-surface">
-      <SideNav currentPage={ROUTES.SETTINGS} onNavigate={onNavigate} />
-      <BottomNav currentPage={ROUTES.SETTINGS} onNavigate={onNavigate} />
+      <SideNav />
+      <BottomNav />
 
       <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
         <TopBar
           title={t('settings.pageTitle')}
-          currentPage={ROUTES.SETTINGS}
-          onNavigate={onNavigate}
         />
 
         <div className="pt-20 pb-12 px-8 max-w-7xl mx-auto w-full space-y-8">
@@ -331,7 +331,7 @@ export function BrandSettingsPage({ onNavigate, currentPage }) {
                       Select a workspace from the onboarding screen to manage your organization.
                     </p>
                     <Button
-                      onClick={() => onNavigate(ROUTES.ONBOARDING)}
+                      onClick={() => navigate(ROUTES.ONBOARDING)}
                       variant="gradient"
                       className="px-6 py-3 text-white font-bold text-sm font-headline rounded-xl"
                       style={{ boxShadow: '0 10px 25px -5px rgba(42,75,217,0.35)' }}

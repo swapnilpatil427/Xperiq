@@ -1,4 +1,5 @@
 import { UserButton } from '@clerk/react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from './Icon';
 import { LogoFull } from './Logo';
 import { ROUTES } from '../constants/routes';
@@ -6,7 +7,7 @@ import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 
-export function TopBar({ title, subtitle, onNavigate }) {
+export function TopBar({ title, subtitle }) {
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
   return (
@@ -50,8 +51,10 @@ export function TopBar({ title, subtitle, onNavigate }) {
   );
 }
 
-export function TopBarPublic({ currentPage, onNavigate }) {
+export function TopBarPublic() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const navLinks = [
     { labelKey: 'nav.surveys',     page: ROUTES.SURVEYS },
@@ -64,15 +67,15 @@ export function TopBarPublic({ currentPage, onNavigate }) {
     <nav className="fixed top-0 w-full z-50 glass-nav flex flex-col">
       <div className="flex justify-between items-center h-16 px-6 max-w-screen-2xl mx-auto w-full">
         <div className="flex items-center gap-8">
-          <Button variant="ghost" onClick={() => onNavigate(ROUTES.LANDING)} className="p-0 h-auto hover:bg-transparent">
+          <Button variant="ghost" onClick={() => navigate(ROUTES.LANDING)} className="p-0 h-auto hover:bg-transparent">
             <LogoFull height={28} />
           </Button>
           <div className="hidden md:flex items-center gap-8">
             {navLinks.map((link) => (
               <button
                 key={link.page}
-                onClick={() => onNavigate(link.page)}
-                className={`nav-link${currentPage === link.page ? ' active' : ''}`}
+                onClick={() => navigate(link.page)}
+                className={`nav-link${location.pathname === link.page ? ' active' : ''}`}
               >
                 {t(link.labelKey)}
               </button>

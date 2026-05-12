@@ -4,7 +4,6 @@ import { TopBar } from '../components/TopBar';
 import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
 import { useWorkflows } from '../hooks/useWorkflows';
-import { ROUTES } from '../constants/routes';
 import { GRADIENTS } from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -61,7 +60,7 @@ function formatAction(wf) {
   return wf.action || '';
 }
 
-export function WorkflowsPage({ onNavigate, currentPage }) {
+export function WorkflowsPage() {
   const { t } = useTranslation();
   const { workflows, loading, createWorkflow, toggleWorkflow, deleteWorkflow } = useWorkflows();
   const [showNewModal, setShowNewModal] = useState(false);
@@ -95,15 +94,13 @@ export function WorkflowsPage({ onNavigate, currentPage }) {
 
   return (
     <div className="flex min-h-screen bg-surface">
-      <SideNav currentPage={currentPage} onNavigate={onNavigate} />
-      <BottomNav currentPage={currentPage} onNavigate={onNavigate} />
+      <SideNav />
+      <BottomNav />
 
       <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
         <TopBar
           title={t('workflows.pageTitle')}
           subtitle={t('workflows.pageSubtitle')}
-          currentPage={currentPage}
-          onNavigate={onNavigate}
         />
 
         <div className="pt-20 pb-12 px-6 md:px-8 max-w-5xl mx-auto w-full">

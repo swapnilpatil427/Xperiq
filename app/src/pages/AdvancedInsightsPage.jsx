@@ -4,7 +4,6 @@ import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
 import { useInsights } from '../hooks/useInsights';
 import { useSurveys } from '../hooks/useSurveys';
-import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -100,7 +99,7 @@ const themes = [
   { icon: 'monetization_on', bg: '#fffbeb', color: '#d97706', label: 'Revenue & Value' },
 ];
 
-export function AdvancedInsightsPage({ onNavigate }) {
+export function AdvancedInsightsPage() {
   const [activeTab, setActiveTab] = useState('analysis');
   const { t } = useTranslation();
   const { surveys } = useSurveys();
@@ -109,7 +108,7 @@ export function AdvancedInsightsPage({ onNavigate }) {
 
   return (
     <div className="flex min-h-screen bg-surface font-body">
-      <SideNav currentPage={ROUTES.INSIGHTS} onNavigate={onNavigate} />
+      <SideNav />
 
       <main className="flex-1 flex flex-col min-h-screen md:ml-64">
         {/* Top Bar */}
@@ -582,7 +581,7 @@ export function AdvancedInsightsPage({ onNavigate }) {
         </div>
       </main>
 
-      <BottomNav currentPage={ROUTES.INSIGHTS} onNavigate={onNavigate} />
+      <BottomNav />
     </div>
   );
 }

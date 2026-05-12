@@ -3,7 +3,6 @@ import { TopBar } from '../components/TopBar';
 import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
 import { useSurveys } from '../hooks/useSurveys';
-import { ROUTES } from '../constants/routes';
 import { INSIGHTS as INSIGHTS_THRESHOLDS } from '../constants/thresholds';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -38,7 +37,7 @@ const questions = [
   },
 ];
 
-export function ResponseDashboardPage({ onNavigate, currentPage }) {
+export function ResponseDashboardPage() {
   const { t } = useTranslation();
   const { surveys } = useSurveys();
   const totalResponses = surveys.reduce((acc, s) => acc + (s.responseCount || 0), 0);
@@ -48,8 +47,8 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
     : 74;
   return (
     <div className="flex min-h-screen bg-surface font-body">
-      <SideNav currentPage={ROUTES.INSIGHTS} onNavigate={onNavigate} />
-      <TopBar title={t('responseDashboard.pageTitle')} subtitle={t('responseDashboard.dateFilter')} onNavigate={onNavigate} />
+      <SideNav />
+      <TopBar title={t('responseDashboard.pageTitle')} subtitle={t('responseDashboard.dateFilter')} />
 
       <main className="flex-1 flex flex-col min-h-screen md:ml-64">
         <div className="pt-24 pb-12 px-6 space-y-8 max-w-7xl mx-auto w-full">
@@ -320,7 +319,7 @@ export function ResponseDashboardPage({ onNavigate, currentPage }) {
         </div>
       </main>
 
-      <BottomNav currentPage={ROUTES.INSIGHTS} onNavigate={onNavigate} />
+      <BottomNav />
     </div>
   );
 }

@@ -6,7 +6,6 @@ import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
 import { useInsights } from '../hooks/useInsights';
 import { useSurveys } from '../hooks/useSurveys';
-import { ROUTES } from '../constants/routes';
 import { SENTIMENT } from '../constants/thresholds';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -114,7 +113,7 @@ function sentimentToSignal(sentiment, t) {
   return                               { signal: t('insights.signals.neutral'),         signalColor: '#d97706' };
 }
 
-export function InsightsDashboardPage({ onNavigate, currentPage }) {
+export function InsightsDashboardPage() {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState('analysis');
   const { surveys } = useSurveys();
@@ -123,14 +122,13 @@ export function InsightsDashboardPage({ onNavigate, currentPage }) {
 
   return (
     <div className="flex min-h-screen bg-surface">
-      <SideNav currentPage={currentPage || ROUTES.INSIGHTS} onNavigate={onNavigate} />
-      <BottomNav currentPage={currentPage || ROUTES.INSIGHTS} onNavigate={onNavigate} />
+      <SideNav />
+      <BottomNav />
 
       <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
         <TopBar
           title={t('insights.pageTitle')}
           subtitle={t('insights.dateFilter')}
-          onNavigate={onNavigate}
         />
 
         {/* Dashboard Canvas */}

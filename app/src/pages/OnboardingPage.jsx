@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useOrganizationList, useUser, CreateOrganization } from '@clerk/react';
 import { Icon } from '../components/Icon';
 import { ROUTES } from '../constants/routes';
@@ -9,16 +10,17 @@ import { SignInPage } from './SignInPage';
 import { Button } from '@/components/ui/button';
 
 // Top-level: branch between Clerk-backed and demo mode
-export function OnboardingPage({ onNavigate }) {
+export function OnboardingPage() {
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-  if (clerkKey) return <ClerkOnboarding onNavigate={onNavigate} />;
-  return <DemoOnboarding onNavigate={onNavigate} />;
+  if (clerkKey) return <ClerkOnboarding />;
+  return <DemoOnboarding />;
 }
 
 // ─── Clerk-backed onboarding ────────────────────────────────────────────────
 
-function ClerkOnboarding({ onNavigate }) {
+function ClerkOnboarding() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { isSignedIn, isLoaded, signOut } = useAppAuth();
   const { user } = useUser();
   const { userMemberships, isLoaded: orgsLoaded, setActive } = useOrganizationList({
@@ -38,7 +40,7 @@ function ClerkOnboarding({ onNavigate }) {
 
   // Not signed in — show Clerk sign-in inline
   if (!isSignedIn) {
-    return <SignInPage onNavigate={onNavigate} />;
+    return <SignInPage />;
   }
 
   const orgs = userMemberships?.data ?? [];
@@ -48,12 +50,12 @@ function ClerkOnboarding({ onNavigate }) {
     if (setActive) {
       await setActive({ organization: membership.organization.id });
     }
-    onNavigate(ROUTES.SURVEYS);
+    navigate(ROUTES.SURVEYS);
   };
 
   const handleSignOut = async () => {
     await signOut();
-    onNavigate(ROUTES.LANDING);
+    navigate(ROUTES.LANDING);
   };
 
   return (
@@ -275,13 +277,14 @@ const DEMO_WORKSPACES = [
   },
 ];
 
-function DemoOnboarding({ onNavigate }) {
+function DemoOnboarding() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { userId, signOut } = useAppAuth();
 
   const handleSignOut = async () => {
     await signOut();
-    onNavigate(ROUTES.LANDING);
+    navigate(ROUTES.LANDING);
   };
 
   return (
@@ -331,7 +334,7 @@ function DemoOnboarding({ onNavigate }) {
               {DEMO_WORKSPACES.map((ws) => (
                 <button
                   key={ws.id}
-                  onClick={() => onNavigate(ROUTES.INSIGHTS)}
+                  onClick={() => navigate(ROUTES.INSIGHTS)}
                   className="group relative flex flex-col items-start p-8 text-left w-full active:scale-95 transition-all duration-300 bg-white rounded-2xl"
                   style={{ border: '1px solid rgba(171,173,175,0.1)',
                     boxShadow: '0 10px 30px -5px rgba(0,0,0,0.05)' }}

@@ -161,13 +161,22 @@ const en = {
     },
     typeGallery: {
       heading: 'What kind of survey are you building?',
-      description: 'Pick a type to unlock tailored questions, benchmarks, and AI context. Or skip to start from scratch.',
+      description: 'Pick a type to unlock tailored questions, benchmarks, and AI context.',
       searchPlaceholder: 'Search survey types…',
       skipLink: 'Skip — start with a blank canvas',
+      startBlankButton: 'Start blank',
       continueButton: 'Continue',
+      startBuildingButton: 'Start Building',
       popularBadge: 'Popular',
       noResults: 'No survey types match your search.',
       clearSearch: 'Clear search',
+      blankCard: {
+        title: 'Custom Survey',
+        badge: 'Custom',
+        description: 'Start from a blank canvas. Full AI assistance, full control over question types, logic, and flow.',
+        fullyCustom: 'Fully Custom',
+        anyMetrics: 'Any Metrics',
+      },
     },
     input: {
       heading: 'Describe your intent',

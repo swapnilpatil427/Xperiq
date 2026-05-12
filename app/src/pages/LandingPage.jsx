@@ -1,4 +1,5 @@
-import { Suspense } from 'react';
+import { Suspense, useLayoutEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { TopBarPublic } from '../components/TopBar';
 import { Icon } from '../components/Icon';
@@ -6,6 +7,7 @@ import { LogoMark } from '../components/Logo';
 import { HeroCanvas } from '../components/three/HeroCanvas';
 import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { useAppAuth } from '../lib/auth.jsx';
 import { Button } from '@/components/ui/button';
 
 // Animation variants
@@ -30,8 +32,18 @@ const scaleIn = {
   }),
 };
 
-export function LandingPage({ onNavigate }) {
+export function LandingPage() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const { isSignedIn, isLoaded } = useAppAuth();
+  const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+
+  // Auto-redirect signed-in users straight to the app
+  useLayoutEffect(() => {
+    if (clerkKey && isLoaded && isSignedIn) {
+      navigate(ROUTES.SURVEYS, { replace: true });
+    }
+  }, [isLoaded, isSignedIn]);
 
   const featureCards = [
     { icon: 'analytics',     ...t('landing.cards')[0] },
@@ -41,7 +53,7 @@ export function LandingPage({ onNavigate }) {
 
   return (
     <div className="min-h-screen font-body">
-      <TopBarPublic currentPage={ROUTES.LANDING} onNavigate={onNavigate} />
+      <TopBarPublic />
 
       {/* ── Hero ────────────────────────────────────────────── */}
       <main
@@ -108,7 +120,7 @@ export function LandingPage({ onNavigate }) {
             {/* CTAs */}
             <motion.div className="flex flex-wrap gap-4" variants={fadeUp} custom={3}>
               <Button
-                onClick={() => onNavigate(ROUTES.ONBOARDING)}
+                onClick={() => navigate(ROUTES.ONBOARDING)}
                 size="lg"
                 className="cta-glow relative overflow-hidden text-white font-bold active:scale-95 font-headline rounded-xl"
                 style={{
