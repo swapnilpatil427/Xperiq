@@ -53,13 +53,13 @@ export default function App() {
         {/* ── Protected routes ── */}
         <Route element={<ProtectedRoute />}>
 
-          {/* Builder: full-screen custom layout, no AppShell */}
+          {/* Full-screen flows: custom layout, no AppShell */}
           <Route path={ROUTES.BUILDER} element={<SurveyBuilderPage />} />
+          <Route path={ROUTES.CREATE}  element={<SurveyCreationPage />} />
 
           {/* All other app pages: wrapped in AppShell */}
           <Route element={<AppShell />}>
             <Route path={ROUTES.SURVEYS}            element={<SurveysListPage />} />
-            <Route path={ROUTES.CREATE}             element={<SurveyCreationPage />} />
             <Route path={ROUTES.RESPONSE_DASHBOARD} element={<ResponseDashboardPage />} />
             <Route path={ROUTES.INSIGHTS}           element={<InsightsDashboardPage />} />
             <Route path={ROUTES.ADVANCED_INSIGHTS}  element={<AdvancedInsightsPage />} />

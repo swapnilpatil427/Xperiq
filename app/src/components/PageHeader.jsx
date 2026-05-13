@@ -23,7 +23,7 @@ import { Icon } from './Icon';
  */
 export function PageHeader({ crumbs = [], title, subtitle, actions, className = '' }) {
   return (
-    <div className={`px-6 md:px-8 pt-8 md:pt-10 pb-6 ${className}`}>
+    <div className={`pt-8 md:pt-10 pb-6 ${className}`}>
       {/* Breadcrumb trail */}
       {crumbs.length > 0 && (
         <nav aria-label="breadcrumb" className="flex items-center gap-1 mb-4 flex-wrap">

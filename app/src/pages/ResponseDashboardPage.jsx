@@ -47,7 +47,7 @@ export function ResponseDashboardPage() {
     ? Math.round(activeSurveys.filter((s) => s.npsScore).reduce((acc, s) => acc + s.npsScore, 0) / activeSurveys.filter((s) => s.npsScore).length)
     : 74;
   return (
-        <div className="pb-24 md:pb-8 px-6 space-y-8 max-w-7xl mx-auto w-full">
+        <div className="pb-24 md:pb-8 px-6 md:px-8 space-y-8 max-w-7xl mx-auto w-full">
 
           <PageHeader
             crumbs={[
