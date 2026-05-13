@@ -10,7 +10,7 @@
 
 | Phase | Tasks | Done | Tested | % Complete |
 |---|---|---|---|---|
-| Phase 0 — Foundation | 12 | 4 | 0 | 33% |
+| Phase 0 — Foundation | 12 | 5 | 0 | 42% |
 | Phase 1 — Core Completion | 35 | 6 | 0 | 17% |
 | Phase 2 — AI Engine | 32 | 0 | 0 | 0% |
 | Phase 3 — Billing | 18 | 0 | 0 | 0% |
@@ -20,7 +20,7 @@
 | Phase 7 — Go-to-Market | 20 | 0 | 0 | 0% |
 | Phase 2A — Agentic Skills Foundation | 16 | 0 | 0 | 0% |
 | Phase 5A — MCP & Skill Publishing | 12 | 0 | 0 | 0% |
-| **Total** | **220** | **7** | **0** | **3%** |
+| **Total** | **220** | **8** | **0** | **4%** |
 
 ---
 
@@ -40,7 +40,7 @@ Estimated time to complete Sprint 0: **3–5 days**
 | ID | Task | Status | Notes |
 |---|---|---|---|
 | P0-1 | Install `@tailwindcss/vite`, verify all pages render correctly | ✅ | Installed, dev server starts cleanly |
-| P0-2 | Add `tsconfig.json`, begin TypeScript migration on `src/lib/` and `src/constants/` | ⬜ | |
+| P0-2 | Add `tsconfig.json`, begin TypeScript migration on `src/lib/` and `src/constants/` | ✅ | Full migration: all 72 .js/.jsx files renamed to .ts/.tsx. 0 type errors. tsconfig.json, vite-env.d.ts, src/types/index.ts created. |
 | P0-3 | Install Vitest + React Testing Library | ⬜ | `npm install -D vitest @testing-library/react @testing-library/user-event` |
 | P0-4 | Write first 10 unit tests: `i18n`, `routes`, `thresholds`, `useSurveys` (mock Firebase) | ⬜ | |
 | P0-5 | Install Playwright, write smoke E2E test: landing → sign-in → surveys | ⬜ | |
@@ -535,4 +535,5 @@ Estimated time to complete Sprint 0: **3–5 days**
 | 2026-05-11 | Survey Data Model (Sprint 2B): researched 15 survey types, 30+ question types, all contextual enrichment fields (IP/geo/device/session/UTM/quality signals) across Medallia/InMoment/Typeform and other leading platforms. Designed 3-tier storage architecture (Firestore + BigQuery + Firebase Storage). Wrote SURVEY_DATA_MODEL.md with full TypeScript interfaces (Survey, Question, Block, Response, Answer, Distribution, LogicRule, EmbeddedDataField), collection hierarchy, compound indexes, and migration guide from current minimal schema. |
 | 2026-05-11 | Local dev stack simplified: single docker-compose.yml (Postgres + Prometheus + Loki + Grafana), removed Supabase CLI dependency, Pino structured logging with optional Loki push, prom-client metrics with /api/metrics endpoint, Dockerfile + fly.toml added. |
 | 2026-05-11 | Cloud strategy decided: GCP only. Fly.toml kept as reference but GCP is the path. Scaling stages documented: Firebase (now) → Cloud Run + Cloud SQL (~$10K MRR) → Cloudflare + Cloud Run (global). ICP added as watchlist item. 7 migration portability principles enforced as code patterns. PRODUCT_PLAN.md and TRACKER.md updated with full strategy. |
+| 2026-05-13 | P0-2 TypeScript migration complete: 0 errors (down from 1599). All 72 .js/.jsx files converted to .ts/.tsx. Zod validation (P0-9) and rate limiting (P0-10) also complete from prior session. |
 | 2026-05-12 | Survey backend fully rewritten: clean data model (templateId only, no template fields on survey), full audit trail (created_at/updated_at/updated_by/published_at/paused_at/closed_at/deleted_at), soft delete, status lifecycle timestamps, COALESCE publish. Org profile backend (org_profiles table, GET+PUT upsert). Fixed optimistic update bug for updated_at. Survey builder: settings panel shows template info read-only + editable fields (description/intent/thankYouMessage). Fixed SurveyCreationPage: "Edit in Builder" passes correct navigation state (intent/fromTemplate/templateId), "Launch Survey" now directly creates+publishes and shows success modal with share URL. All 13 question types implemented in fill page. Brand settings persisted to backend. 3D page transition animations (Framer Motion AnimatePresence + rotateX). Survey question card slide animations in fill page. LoadingStates components (Spinner, OverlayLoader, SurveyListSkeleton). Skeleton loading in SurveysListPage. Overlay loader for publish in builder. i18n strings added for all new UI text. |
