@@ -1,5 +1,5 @@
 # Experient — Work Tracker
-# Updated: 2026-05-12
+# Updated: 2026-05-13
 
 > **How to use:** Tell Claude "mark P0-1 done and tested" or "start Sprint 1" and the tracker updates automatically.
 > Status key: ⬜ Not started · 🔄 In progress · ✅ Done · 🧪 Done + Tested · ⏭️ Skipped
@@ -10,7 +10,7 @@
 
 | Phase | Tasks | Done | Tested | % Complete |
 |---|---|---|---|---|
-| Phase 0 — Foundation | 12 | 9 | 0 | 75% |
+| Phase 0 — Foundation | 12 | 11 | 0 | 92% |
 | Phase 1 — Core Completion | 35 | 6 | 0 | 17% |
 | Phase 2 — AI Engine | 32 | 0 | 0 | 0% |
 | Phase 3 — Billing | 18 | 0 | 0 | 0% |
@@ -20,17 +20,17 @@
 | Phase 7 — Go-to-Market | 20 | 0 | 0 | 0% |
 | Phase 2A — Agentic Skills Foundation | 16 | 0 | 0 | 0% |
 | Phase 5A — MCP & Skill Publishing | 12 | 0 | 0 | 0% |
-| **Total** | **220** | **12** | **0** | **5%** |
+| **Total** | **220** | **14** | **0** | **6%** |
 
 ---
 
 ## ⚡ Current Recommendation
 
-**Start here → Phase 0, Sprint 0: Foundation**
+**Phase 0 is 92% complete → Start Sprint 1: Org & Team Management**
 
-Nothing else can be built safely until the foundation is solid. The app currently has a broken CSS bug (no Tailwind styles), no tests, a security hole (OpenRouter API key exposed client-side), and no CI pipeline. These compound into technical debt that slows every future sprint.
+Foundation is solid: TypeScript, 102 unit tests, CI pipeline (lint + typecheck + tests + build), ErrorBoundary on every page, Sentry wired, structured logging, rate limiting, Zod validation. Only P0-5 (Playwright E2E) is deferred.
 
-Estimated time to complete Sprint 0: **3–5 days**
+**Next:** Sprint 1 backend routes (1-1 through 1-7) + frontend wiring (1-8, 1-9).
 
 ---
 
@@ -43,13 +43,13 @@ Estimated time to complete Sprint 0: **3–5 days**
 | P0-2 | Add `tsconfig.json`, begin TypeScript migration on `src/lib/` and `src/constants/` | ✅ | Full migration: all 72 .js/.jsx files renamed to .ts/.tsx. 0 type errors. tsconfig.json, vite-env.d.ts, src/types/index.ts created. |
 | P0-3 | Install Vitest + React Testing Library | ✅ | vitest@4.1.6, @testing-library/react@16, @testing-library/user-event@14, @testing-library/jest-dom@6, jsdom@29. Requires Node ≥18 (root .nvmrc = 22.22.0). |
 | P0-4 | Write first 10 unit tests: `i18n`, `routes`, `thresholds`, `useSurveys` (mock Firebase) | ✅ | 102 tests, 0 failures. 4 files: i18n (27 tests), routes (22 tests), thresholds (24 tests), useSurveys (29 tests — all CRUD + reload + fallback paths). vitest.config.ts + src/test/setup.ts added. `npm test` script wired. |
-| P0-5 | Install Playwright, write smoke E2E test: landing → sign-in → surveys | ⬜ | |
+| P0-5 | Install Playwright, write smoke E2E test: landing → sign-in → surveys | ⏭️ | Deferred — will revisit after Sprint 1 ships |
 | P0-6 | Set up GitHub Actions CI: lint + type-check + unit tests on every PR | ✅ | `.github/workflows/ci.yml` — push/PR to main. Steps: Node 22 (reads app/.nvmrc), npm ci, eslint, tsc --noEmit, vitest --coverage, vite build. Concurrency group cancels stale runs. All 5 steps verified locally on Node 22. |
-| P0-7 | Integrate Sentry (frontend + backend) | ⬜ | Free tier |
+| P0-7 | Integrate Sentry (frontend + backend) | ✅ | SDKs installed (@sentry/react + @sentry/node v10). No-ops until VITE_SENTRY_DSN / SENTRY_DSN env vars are set. ErrorBoundary calls captureException. Sentry.setupExpressErrorHandler wired in backend. |
 | P0-8 | Add `ErrorBoundary` component wrapping each page in `App.jsx` | ✅ | ErrorBoundary enhanced with `inline` prop. All 12 AppShell pages wrapped with `<ErrorBoundary inline>` (compact card fallback, nav stays functional). 4 public pages wrapped with full-screen `<ErrorBoundary>`. Top-level boundary kept as global catch-all. |
 | P0-9 | Backend: add Zod request validation on all POST/PUT routes | ✅ | `src/schemas/` + `src/lib/validate.js`; all local POST/PUT routes covered |
 | P0-10 | Backend: add rate limiting middleware (`express-rate-limit`) | ✅ | Custom sliding-window limiter (Redis/in-memory). `apiLimiter` (200/15min) on all authenticated routes; `aiLimiter` (20/15min) stacked on `/api/ai` |
-| P0-11 | Backend: add structured JSON request logging → Cloud Logging | ⬜ | |
+| P0-11 | Backend: add structured JSON request logging → Cloud Logging | ✅ | GCP severity mapping (pino level → severity string) in production. requestId middleware generates UUID per request, included in all request logs. httpLogger updated with requestId. Sentry error handler added before global handler. |
 | P0-12 | **SECURITY:** Remove `openrouter.js` from `app/src/lib/` — API key must be server-side only | ✅ | `openrouter.js` only in `functions/src/lib/`, reads `process.env.OPENROUTER_API_KEY` — no frontend reference |
 
 ---

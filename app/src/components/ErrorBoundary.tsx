@@ -1,6 +1,7 @@
 import React from 'react';
 import { ErrorPage } from '../pages/ErrorPage';
 import { Icon } from './Icon';
+import { Sentry } from '../lib/sentry';
 
 interface Props {
   children: React.ReactNode;
@@ -26,6 +27,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[ErrorBoundary]', error, info.componentStack);
+    Sentry.captureException(error, { extra: { componentStack: info.componentStack } });
   }
 
   private handleRetry = () => this.setState({ hasError: false, error: null });
