@@ -10,7 +10,7 @@
 
 | Phase | Tasks | Done | Tested | % Complete |
 |---|---|---|---|---|
-| Phase 0 — Foundation | 12 | 1 | 0 | 8% |
+| Phase 0 — Foundation | 12 | 4 | 0 | 33% |
 | Phase 1 — Core Completion | 35 | 6 | 0 | 17% |
 | Phase 2 — AI Engine | 32 | 0 | 0 | 0% |
 | Phase 3 — Billing | 18 | 0 | 0 | 0% |
@@ -47,10 +47,10 @@ Estimated time to complete Sprint 0: **3–5 days**
 | P0-6 | Set up GitHub Actions CI: lint + type-check + unit tests on every PR | ⬜ | |
 | P0-7 | Integrate Sentry (frontend + backend) | ⬜ | Free tier |
 | P0-8 | Add `ErrorBoundary` component wrapping each page in `App.jsx` | ⬜ | |
-| P0-9 | Backend: add Zod request validation on all POST/PUT routes | ⬜ | |
-| P0-10 | Backend: add rate limiting middleware (`express-rate-limit`) | ⬜ | |
+| P0-9 | Backend: add Zod request validation on all POST/PUT routes | ✅ | `src/schemas/` + `src/lib/validate.js`; all local POST/PUT routes covered |
+| P0-10 | Backend: add rate limiting middleware (`express-rate-limit`) | ✅ | Custom sliding-window limiter (Redis/in-memory). `apiLimiter` (200/15min) on all authenticated routes; `aiLimiter` (20/15min) stacked on `/api/ai` |
 | P0-11 | Backend: add structured JSON request logging → Cloud Logging | ⬜ | |
-| P0-12 | **SECURITY:** Remove `openrouter.js` from `app/src/lib/` — API key must be server-side only | ⬜ | **High priority** |
+| P0-12 | **SECURITY:** Remove `openrouter.js` from `app/src/lib/` — API key must be server-side only | ✅ | `openrouter.js` only in `functions/src/lib/`, reads `process.env.OPENROUTER_API_KEY` — no frontend reference |
 
 ---
 

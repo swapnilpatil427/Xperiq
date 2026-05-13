@@ -1,14 +1,15 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { validate } = require('../../lib/validate');
+const { generateSurveySchema, analyzeInsightsSchema, refineSurveySchema } = require('../../schemas/ai');
 const { generateSurveyQuestions, analyzeInsights, refineSurveyQuestions } = require('../../lib/openrouter');
 const db = require('../../lib/db');
 const { insightsGenerated } = require('../../lib/metrics');
 const router = express.Router();
 
-router.post('/generate-survey', requireAuth, async (req, res) => {
+router.post('/generate-survey', requireAuth, validate(generateSurveySchema), async (req, res) => {
   try {
     const { intent, surveyTypeId } = req.body;
-    if (!intent) return res.status(400).json({ error: 'intent is required' });
 
     const questions = await generateSurveyQuestions(intent, surveyTypeId);
     res.json({ questions });
@@ -18,10 +19,9 @@ router.post('/generate-survey', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/analyze-insights', requireAuth, async (req, res) => {
+router.post('/analyze-insights', requireAuth, validate(analyzeInsightsSchema), async (req, res) => {
   try {
     const { surveyId } = req.body;
-    if (!surveyId) return res.status(400).json({ error: 'surveyId is required' });
 
     const { rows: [survey] } = await db.query(
       'SELECT * FROM surveys WHERE id = $1 AND org_id = $2',
@@ -58,11 +58,9 @@ router.post('/analyze-insights', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/refine-survey', requireAuth, async (req, res) => {
+router.post('/refine-survey', requireAuth, validate(refineSurveySchema), async (req, res) => {
   try {
     const { questions, message, context } = req.body;
-    if (!Array.isArray(questions)) return res.status(400).json({ error: 'questions array required' });
-    if (!message?.trim())          return res.status(400).json({ error: 'message required' });
 
     const result = await refineSurveyQuestions(questions, message.trim(), context || {});
     res.json(result);

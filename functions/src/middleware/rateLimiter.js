@@ -94,9 +94,21 @@ function makeRateLimiter({ windowMs = WINDOW_MS, max = MAX_HITS, keyFn } = {}) {
   };
 }
 
-// Response submission limiter: 5 per IP per survey per 15 min.
+// Response submission: 5 per IP per survey per 15 min (public endpoint).
 const responseSubmitLimiter = makeRateLimiter({
-  keyFn: (req) => `${req.ip}:${req.params.surveyId}`,
+  keyFn: (req) => `submit:${req.ip}:${req.params.surveyId}`,
 });
 
-module.exports = { makeRateLimiter, responseSubmitLimiter };
+// General API: 200 requests per IP per 15 min (authenticated endpoints).
+const apiLimiter = makeRateLimiter({
+  max: 200,
+  keyFn: (req) => `api:${req.ip}`,
+});
+
+// AI endpoints: 20 requests per IP per 15 min (LLM calls are expensive).
+const aiLimiter = makeRateLimiter({
+  max: 20,
+  keyFn: (req) => `ai:${req.ip}`,
+});
+
+module.exports = { makeRateLimiter, responseSubmitLimiter, apiLimiter, aiLimiter };

@@ -1,5 +1,7 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { validate } = require('../../lib/validate');
+const { submitResponseSchema } = require('../../schemas/responses');
 const { responseSubmitLimiter } = require('../../middleware/rateLimiter');
 const db = require('../../lib/db');
 const { maybeAutoAnalyze } = require('../../triggers/autoAnalyze');
@@ -21,14 +23,10 @@ async function ensureIndexes() {
 ensureIndexes().catch(console.error);
 
 // ── Submit response — public, rate-limited ────────────────────────────────────
-router.post('/:surveyId/responses', responseSubmitLimiter, async (req, res) => {
+router.post('/:surveyId/responses', responseSubmitLimiter, validate(submitResponseSchema), async (req, res) => {
   try {
     const { surveyId } = req.params;
     const { answers, publishToken } = req.body;
-
-    if (!answers || !Array.isArray(answers)) {
-      return res.status(400).json({ error: 'answers array is required' });
-    }
 
     const { rows: [survey] } = await db.query(
       `SELECT id, org_id FROM surveys WHERE id = $1 AND publish_token = $2 AND status = 'active'`,

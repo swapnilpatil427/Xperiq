@@ -1,5 +1,7 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { validate } = require('../../lib/validate');
+const { createWorkflowSchema, updateWorkflowSchema } = require('../../schemas/workflows');
 const db = require('../../lib/db');
 const router = express.Router();
 
@@ -15,10 +17,9 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, validate(createWorkflowSchema), async (req, res) => {
   try {
     const { name, condition, action } = req.body;
-    if (!name) return res.status(400).json({ error: 'name is required' });
     const { rows } = await db.query(
       `INSERT INTO workflows (org_id, name, condition, action, created_by)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
@@ -30,7 +31,7 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireAuth, validate(updateWorkflowSchema), async (req, res) => {
   try {
     const { name, condition, action, status } = req.body;
     const sets = ['updated_at = NOW()'];

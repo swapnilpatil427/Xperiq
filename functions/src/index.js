@@ -4,6 +4,7 @@ const cors    = require('cors');
 const logger  = require('./lib/logger');
 const { register } = require('./lib/metrics');
 const httpLogger   = require('./middleware/httpLogger');
+const { apiLimiter, aiLimiter } = require('./middleware/rateLimiter');
 
 const BACKEND = process.env.BACKEND || 'firebase';
 const isLocal = BACKEND === 'local';
@@ -19,13 +20,13 @@ app.use(httpLogger); // structured request logging + Prometheus HTTP metrics
 
 // ── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/public',    require(`${dir}/public`));
-app.use('/api/surveys',   require(`${dir}/surveys`));
-app.use('/api/surveys',   require(`${dir}/responses`));
-app.use('/api/surveys',   require(`${dir}/insights`));
-app.use('/api/templates', require(`${dir}/templates`));
-app.use('/api/ai',        require(`${dir}/ai`));
-app.use('/api/workflows',   require(`${dir}/workflows`));
-app.use('/api/org-profile', require(`${dir}/orgProfile`));
+app.use('/api/surveys',   apiLimiter, require(`${dir}/surveys`));
+app.use('/api/surveys',   apiLimiter, require(`${dir}/responses`));
+app.use('/api/surveys',   apiLimiter, require(`${dir}/insights`));
+app.use('/api/templates', apiLimiter, require(`${dir}/templates`));
+app.use('/api/ai',        apiLimiter, aiLimiter, require(`${dir}/ai`));
+app.use('/api/workflows',   apiLimiter, require(`${dir}/workflows`));
+app.use('/api/org-profile', apiLimiter, require(`${dir}/orgProfile`));
 
 // ── Observability endpoints ───────────────────────────────────────────────────
 app.get('/api/health', (req, res) =>

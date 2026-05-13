@@ -1,5 +1,7 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { validate } = require('../../lib/validate');
+const { createTemplateSchema, updateTemplateSchema } = require('../../schemas/templates');
 const db = require('../../lib/db');
 const SYSTEM_TEMPLATES = require('../../data/systemTemplates');
 const router = express.Router();
@@ -101,13 +103,11 @@ router.get('/:id', requireAuth, async (req, res) => {
 });
 
 // POST /api/templates
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, validate(createTemplateSchema), async (req, res) => {
   try {
     await ensureTable();
     const { label, shortLabel, description, category, icon, color, bg, metrics, tags,
             estimatedMinutes, questionCount, questions, scoring, intelligence, clonedFromId } = req.body;
-
-    if (!label) return res.status(400).json({ error: 'label is required' });
 
     const { rows } = await db.query(
       `INSERT INTO org_templates
@@ -133,7 +133,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 // PUT /api/templates/:id
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireAuth, validate(updateTemplateSchema), async (req, res) => {
   try {
     const isSystem = SYSTEM_TEMPLATES.some((t) => t.id === req.params.id);
     if (isSystem) return res.status(403).json({ error: 'System templates cannot be modified' });

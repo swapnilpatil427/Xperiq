@@ -1,5 +1,7 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { validate } = require('../../lib/validate');
+const { createSurveySchema, updateSurveySchema } = require('../../schemas/surveys');
 const db = require('../../lib/db');
 const { surveysCreated } = require('../../lib/metrics');
 const router = express.Router();
@@ -167,7 +169,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 // ── CREATE ────────────────────────────────────────────────────────────────────
 // Only survey-run fields are accepted; template-level data stays on the template.
-router.post('/', requireAuth, async (req, res) => {
+router.post('/', requireAuth, validate(createSurveySchema), async (req, res) => {
   try {
     const {
       title,
@@ -178,7 +180,6 @@ router.post('/', requireAuth, async (req, res) => {
       intent,
       thank_you_message,
     } = req.body;
-    if (!title) return res.status(400).json({ error: 'title is required' });
 
     const { rows } = await db.query(
       `INSERT INTO surveys
@@ -207,7 +208,7 @@ router.post('/', requireAuth, async (req, res) => {
 
 // ── UPDATE ────────────────────────────────────────────────────────────────────
 // Handles field updates and lifecycle status transitions.
-router.put('/:id', requireAuth, async (req, res) => {
+router.put('/:id', requireAuth, validate(updateSurveySchema), async (req, res) => {
   try {
     const {
       title,

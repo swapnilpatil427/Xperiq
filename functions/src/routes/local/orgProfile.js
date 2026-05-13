@@ -1,5 +1,7 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { validate } = require('../../lib/validate');
+const { updateOrgProfileSchema } = require('../../schemas/orgProfile');
 const db = require('../../lib/db');
 const router = express.Router();
 
@@ -33,7 +35,7 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-router.put('/', requireAuth, async (req, res) => {
+router.put('/', requireAuth, validate(updateOrgProfileSchema), async (req, res) => {
   try {
     const {
       industry, company_size, use_case, target_audience,
