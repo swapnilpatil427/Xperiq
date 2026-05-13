@@ -30,12 +30,13 @@ export function SomePage() {
 - All user-visible strings via `t()` from `useTranslation()`
 
 ## Max-width guide
+All standard pages use `max-w-7xl mx-auto w-full` on the root container so content
+left/right edges are uniform regardless of viewport size.
+
 | max-w | Used by |
 |-------|---------|
-| max-w-3xl | TemplateEditor (narrow form) |
-| max-w-5xl | Workflows |
-| max-w-6xl | Surveys, Templates, Respondents |
-| max-w-7xl | Insights, AdvancedInsights, ResponseDashboard, BrandSettings, Data |
+| max-w-7xl | ALL standard pages (Surveys, Data, Insights, AdvancedInsights, ResponseDashboard, ResponseCollection, BrandSettings, Workflows, Templates) |
+| max-w-3xl (internal) | TemplateEditor form content — placed inside a max-w-7xl outer container, wrapping everything below PageHeader |
 
 ## Route map
 | File | Route | Notes |

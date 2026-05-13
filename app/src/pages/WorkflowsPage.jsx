@@ -95,7 +95,7 @@ export function WorkflowsPage() {
 
   return (
     <>
-        <div className="max-w-5xl mx-auto w-full">
+        <div className="max-w-7xl mx-auto w-full">
           <PageHeader
             crumbs={[{ label: t('nav.workflows'), icon: 'account_tree', path: ROUTES.WORKFLOWS }]}
             title={t('workflows.mainHeading')}

@@ -235,7 +235,7 @@ export function SurveysListPage() {
 
   return (
     <>
-        <div className="max-w-6xl mx-auto w-full">
+        <div className="max-w-7xl mx-auto w-full">
 
           <PageHeader
             crumbs={[{ label: t('nav.surveys'), icon: 'poll', path: ROUTES.SURVEYS }]}

@@ -1034,7 +1034,7 @@ export function TemplateLibraryPage() {
 
   return (
     <>
-        <div className="max-w-6xl mx-auto w-full">
+        <div className="max-w-7xl mx-auto w-full">
 
           <PageHeader
             crumbs={[{ label: t('nav.templates'), icon: 'auto_awesome', path: ROUTES.TEMPLATES }]}

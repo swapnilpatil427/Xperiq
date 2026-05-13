@@ -96,7 +96,7 @@ export function DataPage() {
   useEffect(() => { loadResponses(); }, [loadResponses]);
 
   return (
-    <div className="max-w-5xl mx-auto w-full">
+    <div className="max-w-7xl mx-auto w-full">
       <PageHeader
         crumbs={[{ label: t('data.pageTitle'), icon: 'dataset', path: ROUTES.DATA }]}
         title={t('data.pageTitle')}

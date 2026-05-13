@@ -53,7 +53,7 @@ export function ResponseCollectionPage() {
   ];
 
   return (
-        <div className="max-w-4xl mx-auto w-full">
+        <div className="max-w-7xl mx-auto w-full">
 
           <PageHeader
             crumbs={[{ label: t('nav.respondents'), icon: 'groups', path: ROUTES.RESPONDENTS }]}

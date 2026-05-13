@@ -301,7 +301,7 @@ export function TemplateEditorPage() {
 
   return (
     <>
-        <div className="max-w-3xl mx-auto w-full">
+        <div className="max-w-7xl mx-auto w-full">
 
           <PageHeader
             crumbs={[
@@ -310,6 +310,8 @@ export function TemplateEditorPage() {
             ]}
             title={t('templates.editor.pageTitle')}
           />
+
+          <div className="max-w-3xl">
 
           {/* Back + heading */}
           <div className="flex items-center gap-3 mb-6">
@@ -577,6 +579,7 @@ export function TemplateEditorPage() {
                 )}
               </Button>
             </div>
+          </div>
           </div>
         </div>
 
