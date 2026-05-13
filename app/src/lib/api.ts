@@ -1,39 +1,46 @@
+import axios from 'axios';
 import type {
   ListSurveysParams, ListSurveysResult, Survey, SurveyResponse,
-  Template, Workflow, Insight, OrgProfile, Question,
+  Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
 } from '../types';
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/experient-prod/us-central1/api';
 
 export type GetToken = () => Promise<string | null>;
 
-async function request<T = unknown>(
-  method: string,
-  path: string,
-  body: unknown,
-  getToken: GetToken | null,
-): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (getToken) {
+function createAxiosInstance(getToken: GetToken) {
+  const instance = axios.create({ baseURL: BASE });
+
+  instance.interceptors.request.use(async (config) => {
     const token = await getToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-  }
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+    if (token) {
+      config.headers = config.headers ?? {};
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText })) as { error: string };
-    throw new Error(err.error || `HTTP ${res.status}`);
-  }
-  return res.json() as Promise<T>;
+
+  instance.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      const message =
+        error.response?.data?.error ||
+        error.response?.statusText ||
+        `HTTP ${error.response?.status}` ||
+        error.message;
+      return Promise.reject(new Error(message));
+    }
+  );
+
+  return instance;
 }
 
 export function createApiClient(getToken: GetToken) {
+  const http = createAxiosInstance(getToken);
+
   return {
     // Surveys
-    listSurveys: (params: ListSurveysParams = {}) => {
+    listSurveys: async (params: ListSurveysParams = {}) => {
       const qs = new URLSearchParams();
       if (params.q)                      qs.set('q',              params.q);
       if (params.status?.length)         qs.set('status',         params.status.join(','));
@@ -43,66 +50,152 @@ export function createApiClient(getToken: GetToken) {
       if (params.page)                   qs.set('page',           String(params.page));
       if (params.limit)                  qs.set('limit',          String(params.limit));
       const query = qs.toString() ? `?${qs}` : '';
-      return request<ListSurveysResult>('GET', `/api/surveys${query}`, null, getToken);
+      const res = await http.get<ListSurveysResult>(`/api/surveys${query}`);
+      return res.data;
     },
-    getSurvey: (id: string) =>
-      request<{ survey: Survey }>('GET', `/api/surveys/${id}`, null, getToken),
-    createSurvey: (data: Partial<Survey>) =>
-      request<{ survey: Survey }>('POST', '/api/surveys', data, getToken),
-    updateSurvey: (id: string, data: Partial<Survey>) =>
-      request<{ success: boolean }>('PUT', `/api/surveys/${id}`, data, getToken),
-    deleteSurvey: (id: string) =>
-      request<{ success: boolean }>('DELETE', `/api/surveys/${id}`, null, getToken),
-    publishSurvey: (id: string) =>
-      request<{ publishToken: string; publishedAt: string }>('POST', `/api/surveys/${id}/publish`, {}, getToken),
+    getSurvey: async (id: string) => {
+      const res = await http.get<{ survey: Survey }>(`/api/surveys/${id}`);
+      return res.data;
+    },
+    createSurvey: async (data: Partial<Survey>) => {
+      const res = await http.post<{ survey: Survey }>('/api/surveys', data);
+      return res.data;
+    },
+    updateSurvey: async (id: string, data: Partial<Survey>) => {
+      const res = await http.put<{ success: boolean }>(`/api/surveys/${id}`, data);
+      return res.data;
+    },
+    deleteSurvey: async (id: string) => {
+      const res = await http.delete<{ success: boolean }>(`/api/surveys/${id}`);
+      return res.data;
+    },
+    publishSurvey: async (id: string) => {
+      const res = await http.post<{ publishToken: string; publishedAt: string }>(`/api/surveys/${id}/publish`, {});
+      return res.data;
+    },
 
     // Responses
-    submitResponse: (surveyId: string, data: { answers: unknown[]; publishToken: string }) =>
-      request<{ success: boolean; id: string }>('POST', `/api/surveys/${surveyId}/responses`, data, null),
-    getResponses: (surveyId: string) =>
-      request<{ responses: SurveyResponse[]; total: number }>('GET', `/api/surveys/${surveyId}/responses`, null, getToken),
-    getInsights: (surveyId: string) =>
-      request<{ insights: Insight }>('GET', `/api/surveys/${surveyId}/insights`, null, getToken),
+    submitResponse: async (surveyId: string, data: { answers: unknown[]; publishToken: string }) => {
+      const publicHttp = axios.create({ baseURL: BASE });
+      const res = await publicHttp.post<{ success: boolean; id: string }>(`/api/surveys/${surveyId}/responses`, data);
+      return res.data;
+    },
+    getResponses: async (surveyId: string) => {
+      const res = await http.get<{ responses: SurveyResponse[]; total: number }>(`/api/surveys/${surveyId}/responses`);
+      return res.data;
+    },
+    getInsights: async (surveyId: string) => {
+      const res = await http.get<{ insights: Insight }>(`/api/surveys/${surveyId}/insights`);
+      return res.data;
+    },
 
     // AI
-    generateSurvey: (intent: string, surveyTypeId?: string) =>
-      request<{ questions: Question[] }>('POST', '/api/ai/generate-survey', { intent, surveyTypeId }, getToken),
-    analyzeInsights: (surveyId: string) =>
-      request<{ insights: Insight }>('POST', '/api/ai/analyze-insights', { surveyId }, getToken),
-    refineSurvey: (questions: Question[], message: string, context: Record<string, unknown>) =>
-      request<{ questions: Question[]; explanation?: string }>('POST', '/api/ai/refine-survey', { questions, message, context }, getToken),
+    generateSurvey: async (intent: string, surveyTypeId?: string) => {
+      const res = await http.post<{ questions: Question[] }>('/api/ai/generate-survey', { intent, surveyTypeId });
+      return res.data;
+    },
+    analyzeInsights: async (surveyId: string) => {
+      const res = await http.post<{ insights: Insight }>('/api/ai/analyze-insights', { surveyId });
+      return res.data;
+    },
+    refineSurvey: async (questions: Question[], message: string, context: Record<string, unknown>) => {
+      const res = await http.post<{ questions: Question[]; explanation?: string }>('/api/ai/refine-survey', { questions, message, context });
+      return res.data;
+    },
 
     // Templates
-    listTemplates: () =>
-      request<{ templates: Template[] }>('GET', '/api/templates', null, getToken),
-    getTemplate: (id: string) =>
-      request<{ template: Template }>('GET', `/api/templates/${id}`, null, getToken),
-    createTemplate: (data: Partial<Template>) =>
-      request<{ template: Template }>('POST', '/api/templates', data, getToken),
-    updateTemplate: (id: string, data: Partial<Template>) =>
-      request<{ success: boolean }>('PUT', `/api/templates/${id}`, data, getToken),
-    deleteTemplate: (id: string) =>
-      request<{ success: boolean }>('DELETE', `/api/templates/${id}`, null, getToken),
-    cloneTemplate: (id: string) =>
-      request<{ template: Template }>('POST', `/api/templates/${id}/clone`, {}, getToken),
+    listTemplates: async () => {
+      const res = await http.get<{ templates: Template[] }>('/api/templates');
+      return res.data;
+    },
+    getTemplate: async (id: string) => {
+      const res = await http.get<{ template: Template }>(`/api/templates/${id}`);
+      return res.data;
+    },
+    createTemplate: async (data: Partial<Template>) => {
+      const res = await http.post<{ template: Template }>('/api/templates', data);
+      return res.data;
+    },
+    updateTemplate: async (id: string, data: Partial<Template>) => {
+      const res = await http.put<{ success: boolean }>(`/api/templates/${id}`, data);
+      return res.data;
+    },
+    deleteTemplate: async (id: string) => {
+      const res = await http.delete<{ success: boolean }>(`/api/templates/${id}`);
+      return res.data;
+    },
+    cloneTemplate: async (id: string) => {
+      const res = await http.post<{ template: Template }>(`/api/templates/${id}/clone`, {});
+      return res.data;
+    },
 
-    // Org profile
-    getOrgProfile: () =>
-      request<{ profile: OrgProfile | null }>('GET', '/api/org-profile', null, getToken),
-    updateOrgProfile: (data: Partial<OrgProfile>) =>
-      request<{ profile: OrgProfile }>('PUT', '/api/org-profile', data, getToken),
+    // Org profile (legacy)
+    getOrgProfile: async () => {
+      const res = await http.get<{ profile: OrgProfile | null }>('/api/org-profile');
+      return res.data;
+    },
+    updateOrgProfile: async (data: Partial<OrgProfile>) => {
+      const res = await http.put<{ profile: OrgProfile }>('/api/org-profile', data);
+      return res.data;
+    },
+
+    // Org (Sprint 1)
+    getOrg: async () => {
+      const res = await http.get<{ org: Org }>('/api/orgs/me');
+      return res.data;
+    },
+    updateOrg: async (data: { name?: string; logoUrl?: string }) => {
+      const res = await http.put<{ org: Org }>('/api/orgs/me', data);
+      return res.data;
+    },
+    uploadLogo: async (file: File) => {
+      const form = new FormData();
+      form.append('logo', file);
+      const res = await http.post<{ logoUrl: string }>('/api/orgs/me/logo', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      return res.data;
+    },
+
+    // Members (Sprint 1)
+    getMembers: async () => {
+      const res = await http.get<{ members: OrgMember[]; total: number }>('/api/orgs/me/members');
+      return res.data;
+    },
+    inviteMember: async (email: string, role?: string) => {
+      const res = await http.post<{ success: boolean; invitation?: { id: string; emailAddress: string; status: string } }>('/api/orgs/me/invitations', { email, role });
+      return res.data;
+    },
+    removeMember: async (userId: string) => {
+      const res = await http.delete<{ success: boolean }>(`/api/orgs/me/members/${userId}`);
+      return res.data;
+    },
+    updateMemberRole: async (userId: string, role: string) => {
+      const res = await http.put<{ success: boolean }>(`/api/orgs/me/members/${userId}/role`, { role });
+      return res.data;
+    },
 
     // Workflows
-    listWorkflows: () =>
-      request<{ workflows: Workflow[] }>('GET', '/api/workflows', null, getToken),
-    createWorkflow: (data: Partial<Workflow>) =>
-      request<{ workflow: Workflow }>('POST', '/api/workflows', data, getToken),
-    updateWorkflow: (id: string, data: Partial<Workflow>) =>
-      request<{ success: boolean }>('PUT', `/api/workflows/${id}`, data, getToken),
-    deleteWorkflow: (id: string) =>
-      request<{ success: boolean }>('DELETE', `/api/workflows/${id}`, null, getToken),
-    toggleWorkflow: (id: string) =>
-      request<{ status: string }>('POST', `/api/workflows/${id}/toggle`, {}, getToken),
+    listWorkflows: async () => {
+      const res = await http.get<{ workflows: Workflow[] }>('/api/workflows');
+      return res.data;
+    },
+    createWorkflow: async (data: Partial<Workflow>) => {
+      const res = await http.post<{ workflow: Workflow }>('/api/workflows', data);
+      return res.data;
+    },
+    updateWorkflow: async (id: string, data: Partial<Workflow>) => {
+      const res = await http.put<{ success: boolean }>(`/api/workflows/${id}`, data);
+      return res.data;
+    },
+    deleteWorkflow: async (id: string) => {
+      const res = await http.delete<{ success: boolean }>(`/api/workflows/${id}`);
+      return res.data;
+    },
+    toggleWorkflow: async (id: string) => {
+      const res = await http.post<{ status: string }>(`/api/workflows/${id}/toggle`, {});
+      return res.data;
+    },
   };
 }
 

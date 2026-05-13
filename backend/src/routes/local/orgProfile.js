@@ -17,12 +17,17 @@ async function ensureTable() {
       website           TEXT,
       brand_description TEXT,
       brand_name        TEXT,
+      logo_url          TEXT,
       brand_colors      JSONB DEFAULT '{}',
       brand_fonts       JSONB DEFAULT '{}',
       created_at        TIMESTAMPTZ DEFAULT NOW(),
       updated_at        TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // Add logo_url column if it was missing in an older schema
+  await db.query(`
+    ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT
+  `).catch(() => {});
 }
 ensureTable().catch(console.error);
 

@@ -47,7 +47,7 @@ jobs:
         run: npm run build:app
 
   backend:
-    name: Backend — install · syntax
+    name: Backend — install · syntax · test
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -68,3 +68,6 @@ jobs:
 
       - name: Syntax check
         run: find src -name "*.js" | xargs node --check
+
+      - name: Unit tests
+        run: npm test
