@@ -44,29 +44,30 @@ export default function App() {
   return (
     <ErrorBoundary>
       <Routes>
-        {/* ── Public routes ── */}
-        <Route path={ROUTES.LANDING}    element={<LandingPage />} />
-        <Route path={ROUTES.SIGNIN}     element={<SignInPage />} />
-        <Route path={ROUTES.ONBOARDING} element={<OnboardingPage />} />
-        <Route path="/s/:token"         element={<SurveyFillPage />} />
+        {/* ── Public routes — each page gets its own full-screen boundary ── */}
+        <Route path={ROUTES.LANDING}    element={<ErrorBoundary><LandingPage /></ErrorBoundary>} />
+        <Route path={ROUTES.SIGNIN}     element={<ErrorBoundary><SignInPage /></ErrorBoundary>} />
+        <Route path={ROUTES.ONBOARDING} element={<ErrorBoundary><OnboardingPage /></ErrorBoundary>} />
+        <Route path="/s/:token"         element={<ErrorBoundary><SurveyFillPage /></ErrorBoundary>} />
 
         {/* ── Protected routes ── */}
         <Route element={<ProtectedRoute />}>
 
-            {/* All app pages: wrapped in AppShell */}
+          {/* All app pages: wrapped in AppShell + inline boundary per page
+              so a single page crash never breaks the nav or other pages */}
           <Route element={<AppShell />}>
-            <Route path={ROUTES.BUILDER}            element={<SurveyBuilderPage />} />
-            <Route path={ROUTES.SURVEYS}            element={<SurveysListPage />} />
-            <Route path={ROUTES.CREATE}             element={<SurveyCreationPage />} />
-            <Route path={ROUTES.RESPONSE_DASHBOARD} element={<ResponseDashboardPage />} />
-            <Route path={ROUTES.INSIGHTS}           element={<InsightsDashboardPage />} />
-            <Route path={ROUTES.ADVANCED_INSIGHTS}  element={<AdvancedInsightsPage />} />
-            <Route path={ROUTES.RESPONDENTS}        element={<ResponseCollectionPage />} />
-            <Route path={ROUTES.TEMPLATES}          element={<TemplateLibraryPage />} />
-            <Route path={ROUTES.TEMPLATE_EDITOR}    element={<TemplateEditorPage />} />
-            <Route path={ROUTES.WORKFLOWS}          element={<WorkflowsPage />} />
-            <Route path={ROUTES.SETTINGS}           element={<BrandSettingsPage />} />
-            <Route path={ROUTES.DATA}               element={<DataPage />} />
+            <Route path={ROUTES.BUILDER}            element={<ErrorBoundary inline><SurveyBuilderPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SURVEYS}            element={<ErrorBoundary inline><SurveysListPage /></ErrorBoundary>} />
+            <Route path={ROUTES.CREATE}             element={<ErrorBoundary inline><SurveyCreationPage /></ErrorBoundary>} />
+            <Route path={ROUTES.RESPONSE_DASHBOARD} element={<ErrorBoundary inline><ResponseDashboardPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHTS}           element={<ErrorBoundary inline><InsightsDashboardPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADVANCED_INSIGHTS}  element={<ErrorBoundary inline><AdvancedInsightsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.RESPONDENTS}        element={<ErrorBoundary inline><ResponseCollectionPage /></ErrorBoundary>} />
+            <Route path={ROUTES.TEMPLATES}          element={<ErrorBoundary inline><TemplateLibraryPage /></ErrorBoundary>} />
+            <Route path={ROUTES.TEMPLATE_EDITOR}    element={<ErrorBoundary inline><TemplateEditorPage /></ErrorBoundary>} />
+            <Route path={ROUTES.WORKFLOWS}          element={<ErrorBoundary inline><WorkflowsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS}           element={<ErrorBoundary inline><BrandSettingsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.DATA}               element={<ErrorBoundary inline><DataPage /></ErrorBoundary>} />
           </Route>
 
           <Route path="/app" element={<Navigate to={ROUTES.SURVEYS} replace />} />
