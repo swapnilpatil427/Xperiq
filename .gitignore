@@ -12,7 +12,8 @@ node_modules
 # Build outputs
 dist
 dist-ssr
-lib/
+# Only ignore a top-level lib/ build artifact — do not ignore app/src/lib or functions/src/lib
+/lib/
 coverage
 
 # Firebase
