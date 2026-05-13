@@ -178,7 +178,7 @@ export function SurveyCreationPage() {
   }
 
   return (
-    <div className="relative overflow-hidden bg-surface pb-24 md:pb-8">
+    <div className="relative overflow-hidden bg-surface">
       {/* Background effects — absolute so they don't bleed over AppShell TopBar */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
         <div className="mesh-grid absolute inset-0 opacity-50" />
@@ -189,7 +189,7 @@ export function SurveyCreationPage() {
       </div>
 
       {/* Standard page header — breadcrumb (Surveys → Create Survey) + H1 */}
-      <div className="relative z-10 px-6 md:px-8">
+      <div className="relative z-10">
         <PageHeader
           crumbs={[
             { label: t('nav.surveys'), path: ROUTES.SURVEYS },
@@ -199,7 +199,7 @@ export function SurveyCreationPage() {
         />
       </div>
 
-      <main className="relative z-10 flex items-start justify-center pb-12 px-6 min-h-[calc(100vh-8rem)]">
+      <main className="relative z-10 flex items-start justify-center pb-12 min-h-[calc(100vh-8rem)]">
 
         {/* ── Step 0: Type Gallery ── */}
         {step === 0 && (

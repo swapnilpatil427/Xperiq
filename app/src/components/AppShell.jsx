@@ -52,7 +52,10 @@ export function AppShell() {
             exit="exit"
             className="flex-1 flex flex-col overflow-x-hidden"
           >
-            <Outlet />
+            {/* Global page container — all pages get consistent gutters + BottomNav clearance */}
+            <div className="px-6 md:px-8 pb-24 md:pb-8 w-full flex-1 flex flex-col">
+              <Outlet />
+            </div>
           </motion.div>
         </AnimatePresence>
       </main>

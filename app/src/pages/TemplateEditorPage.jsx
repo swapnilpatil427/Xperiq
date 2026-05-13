@@ -301,7 +301,7 @@ export function TemplateEditorPage() {
 
   return (
     <>
-        <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-3xl mx-auto w-full">
+        <div className="max-w-3xl mx-auto w-full">
 
           <PageHeader
             crumbs={[

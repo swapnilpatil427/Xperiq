@@ -6,17 +6,36 @@ Each file = one route. Exported as named function, e.g. `export function Surveys
 ```jsx
 export function SomePage() {
   const { t } = useTranslation();
-  useSetPageTitle(t('some.pageTitle'), t('some.pageSubtitle')); // Sets TopBar title
   // ... state, hooks
-  return <div className="px-6 md:px-8 py-6 pb-24 md:pb-8">...</div>;
+  return (
+    <div className="max-w-6xl mx-auto w-full">
+      <PageHeader
+        crumbs={[{ label: t('nav.parent'), path: ROUTES.PARENT }, { label: t('page.title') }]}
+        title={t('page.title')}
+        subtitle={t('page.subtitle')}
+        actions={<Button>...</Button>}
+      />
+      {/* page content */}
+    </div>
+  );
 }
 ```
 
 ## Rules
-- Import `useSetPageTitle` from `../contexts/pageTitle` to set the TopBar title
+- **DO NOT** add `px-6 md:px-8` or `pb-24 md:pb-8` to page wrappers — AppShell provides both globally
+- Pages only declare `max-w-X mx-auto w-full` to constrain content width
 - Do NOT import SideNav, TopBar, or BottomNav — AppShell handles those
-- Bottom padding: always include `pb-24 md:pb-8` to avoid content hiding behind mobile BottomNav
+- Use `PageHeader` from `../components/PageHeader` for all page headings
+- Breadcrumbs: pass 1 crumb for top-level pages (no trail shown), 2 crumbs for sub-pages (trail shown)
 - All user-visible strings via `t()` from `useTranslation()`
+
+## Max-width guide
+| max-w | Used by |
+|-------|---------|
+| max-w-3xl | TemplateEditor (narrow form) |
+| max-w-5xl | Workflows |
+| max-w-6xl | Surveys, Templates, Respondents |
+| max-w-7xl | Insights, AdvancedInsights, ResponseDashboard, BrandSettings, Data |
 
 ## Route map
 | File | Route | Notes |

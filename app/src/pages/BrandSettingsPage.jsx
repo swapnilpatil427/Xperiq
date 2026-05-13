@@ -150,7 +150,7 @@ export function BrandSettingsPage() {
   ];
 
   return (
-        <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-7xl mx-auto w-full space-y-8">
+        <div className="max-w-7xl mx-auto w-full space-y-8">
 
           <PageHeader
             crumbs={[{ label: t('nav.settings'), icon: 'settings', path: ROUTES.SETTINGS }]}

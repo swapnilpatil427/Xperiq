@@ -108,7 +108,7 @@ export function AdvancedInsightsPage() {
   const { insights, generating, regenerate } = useInsights(activeSurvey?.id);
 
   return (
-        <div className="pb-24 md:pb-8 px-6 md:px-8 space-y-8 max-w-7xl mx-auto w-full">
+        <div className="space-y-8 max-w-7xl mx-auto w-full">
 
           <PageHeader
             crumbs={[
