@@ -53,13 +53,15 @@ export function ResponseCollectionPage() {
   ];
 
   return (
-        <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-6xl mx-auto w-full flex flex-col items-center">
+        <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-6xl mx-auto w-full">
 
           <PageHeader
             crumbs={[{ label: t('nav.respondents'), icon: 'groups', path: ROUTES.RESPONDENTS }]}
             title={t('collection.pageTitle')}
             subtitle={t('collection.shareDescription')}
           />
+
+          <div className="flex flex-col items-center">
 
           {/* Survey selector */}
           {activeSurveys.length > 1 && (
@@ -284,6 +286,7 @@ export function ResponseCollectionPage() {
               </Card>
             ))}
           </div>
+          </div>{/* end items-center wrapper */}
         </div>
   );
 }

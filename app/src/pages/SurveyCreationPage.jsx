@@ -11,7 +11,6 @@ import { useSetPageTitle } from '../contexts/pageTitle';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Separator } from '@/components/ui/separator';
 
 const QUESTION_TYPE_COLORS = {
   nps:             BADGES.primary,
@@ -178,9 +177,9 @@ export function SurveyCreationPage() {
   }
 
   return (
-    <div className="min-h-screen relative overflow-hidden bg-surface">
-      {/* Mesh grid background */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+    <div className="relative overflow-hidden bg-surface pb-24 md:pb-8">
+      {/* Background effects — absolute so they don't bleed over AppShell TopBar */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
         <div className="mesh-grid absolute inset-0 opacity-50" />
         <div className="absolute top-[-15%] left-[-10%] w-[45%] h-[45%] rounded-full"
           style={{ background: 'rgba(42,75,217,0.08)', filter: 'blur(120px)' }} />
@@ -188,34 +187,31 @@ export function SurveyCreationPage() {
           style={{ background: 'rgba(131,41,200,0.08)', filter: 'blur(150px)' }} />
       </div>
 
-      {/* Top nav */}
-      <nav className="fixed top-0 w-full z-50 glass-nav flex items-center justify-between h-16 px-6"
-        style={{ boxShadow: '0 8px 32px rgba(31,38,135,0.07)' }}>
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            onClick={() => navigate(ROUTES.SURVEYS)}
-            className="flex items-center gap-2 text-sm font-semibold text-on-surface-variant hover:text-[var(--color-primary)] px-0"
-          >
-            <Icon name="arrow_back" size={18} />
-            {t('create.backToSurveys')}
-          </Button>
-          <Separator orientation="vertical" className="h-6" />
-          <span className="text-sm font-bold font-headline text-on-surface">
+      {/* Sub-header: back button + page context (below AppShell TopBar) */}
+      <div className="relative z-10 flex items-center justify-between px-6 md:px-8 h-12"
+        style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+        <Button
+          variant="ghost"
+          onClick={() => navigate(ROUTES.SURVEYS)}
+          className="flex items-center gap-2 text-sm font-semibold text-on-surface-variant hover:text-primary px-0"
+        >
+          <Icon name="arrow_back" size={18} />
+          {t('create.backToSurveys')}
+        </Button>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold font-headline text-on-surface hidden md:block">
             {t('create.pageTitle')}
           </span>
-        </div>
-        {step === 3 && (
-          <div className="flex items-center gap-3">
+          {step === 3 && (
             <div className="flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full bg-success-container text-success">
               <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />
               {t('create.questionsGeneratedBadge', { n: questions.length })}
             </div>
-          </div>
-        )}
-      </nav>
+          )}
+        </div>
+      </div>
 
-      <main className="relative z-10 flex items-start justify-center pt-24 pb-20 px-6 min-h-screen">
+      <main className="relative z-10 flex items-start justify-center pt-10 pb-12 px-6 min-h-[calc(100vh-8rem)]">
 
         {/* ── Step 0: Type Gallery ── */}
         {step === 0 && (
@@ -608,7 +604,7 @@ export function SurveyCreationPage() {
               </div>
 
               {/* Right: AI Agent chat */}
-              <div className="w-96 shrink-0 sticky top-24">
+              <div className="w-96 shrink-0 sticky top-6">
                 <AiChatPanel
                   questionCount={questions.length}
                   surveyTypeLabel={selectedType?.label}
