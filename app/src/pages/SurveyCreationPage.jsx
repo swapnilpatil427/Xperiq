@@ -188,15 +188,16 @@ export function SurveyCreationPage() {
           style={{ background: 'rgba(131,41,200,0.08)', filter: 'blur(150px)' }} />
       </div>
 
-      {/* Standard page header — centered to match wizard content width */}
+      {/* Page header — step 0 shows breadcrumb only (gallery owns its heading),
+          steps 1+ show full title+breadcrumb centered to match wizard width */}
       <div className="relative z-10 flex justify-center">
-        <div className="w-full max-w-2xl">
+        <div className={`w-full ${step === 0 ? 'max-w-5xl' : 'max-w-2xl'}`}>
           <PageHeader
             crumbs={[
               { label: t('nav.surveys'), path: ROUTES.SURVEYS },
               { label: t('create.pageTitle') },
             ]}
-            title={t('create.pageTitle')}
+            title={step > 0 ? t('create.pageTitle') : undefined}
           />
         </div>
       </div>

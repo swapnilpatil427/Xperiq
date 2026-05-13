@@ -65,24 +65,28 @@ export function PageHeader({ crumbs = [], title, subtitle, actions, className = 
         </nav>
       )}
 
-      {/* Title row */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="text-2xl md:text-[1.75rem] font-extrabold tracking-tight font-headline text-on-surface leading-tight">
-            {title}
-          </h1>
-          {subtitle && (
-            <p className="text-sm text-on-surface-variant mt-1.5 leading-relaxed max-w-2xl">
-              {subtitle}
-            </p>
+      {/* Title row — only rendered when title or actions are provided */}
+      {(title || actions) && (
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            {title && (
+              <h1 className="text-2xl md:text-[1.75rem] font-extrabold tracking-tight font-headline text-on-surface leading-tight">
+                {title}
+              </h1>
+            )}
+            {subtitle && (
+              <p className="text-sm text-on-surface-variant mt-1.5 leading-relaxed max-w-2xl">
+                {subtitle}
+              </p>
+            )}
+          </div>
+          {actions && (
+            <div className="flex items-center gap-3 flex-shrink-0 pt-0.5">
+              {actions}
+            </div>
           )}
         </div>
-        {actions && (
-          <div className="flex items-center gap-3 flex-shrink-0 pt-0.5">
-            {actions}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
