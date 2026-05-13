@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { PageHeader } from '../components/PageHeader';
 import { SurveyTypeGallery } from '../components/SurveyTypeGallery';
-import { AiChatPanel } from '../components/AiChatPanel';
+import { IrisChat } from '../components/IrisChat';
 import { useApi } from '../hooks/useApi';
 import { ROUTES, toPath } from '../constants/routes';
 import { BADGES } from '../constants/colors';
@@ -368,14 +368,14 @@ export function SurveyCreationPage() {
           </div>
         )}
 
-        {/* ── Step 3: Review + AI Agent ── */}
+        {/* ── Step 3: Review ── */}
         {step === 3 && (
-          <div className="w-full max-w-6xl">
+          <div className="w-full max-w-2xl">
             <StepIndicator currentStep={3} stepLabels={STEP_LABELS} />
 
-            <div className="flex gap-6 items-start">
-              {/* Left: question review */}
-              <div className="flex-1 min-w-0">
+            <div>
+              {/* Question review */}
+              <div className="w-full">
                 <div className="space-y-4 mb-6">
                   <div className="flex items-center justify-between">
                     <h2 className="text-2xl font-extrabold tracking-tighter font-headline text-on-surface">
@@ -594,22 +594,19 @@ export function SurveyCreationPage() {
                 )}
               </div>
 
-              {/* Right: AI Agent chat */}
-              <div className="w-96 shrink-0 sticky top-6">
-                <AiChatPanel
-                  questionCount={questions.length}
-                  surveyTypeLabel={selectedType?.label}
-                  onRefine={async (message) => {
-                    const result = await api.refineSurvey(questions, message, {
-                      surveyTypeId: selectedTypeId,
-                      intent,
-                    });
-                    setQuestions(result.questions || questions);
-                    return result;
-                  }}
-                />
-              </div>
             </div>
+
+            <IrisChat
+              context={{ surveyTitle: intent.slice(0, 60) || selectedType?.label, questionCount: questions.length, surveyType: selectedType?.label }}
+              onRefine={async (message) => {
+                const result = await api.refineSurvey(questions, message, {
+                  surveyTypeId: selectedTypeId,
+                  intent,
+                });
+                setQuestions(result.questions || questions);
+                return result;
+              }}
+            />
           </div>
         )}
       </main>

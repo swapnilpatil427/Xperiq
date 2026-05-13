@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { SideNav } from './SideNav';
 import { TopBar } from './TopBar';
 import { BottomNav } from './BottomNav';
+import { AppFooter } from './AppFooter';
 import { useSidebarState } from '../hooks/useSidebarState';
 import { useBreakpoint } from '../hooks/useBreakpoint';
 
@@ -55,6 +56,7 @@ export function AppShell() {
             {/* Global page container — all pages get consistent gutters + BottomNav clearance */}
             <div className="px-6 md:px-8 pb-24 md:pb-8 w-full flex-1 flex flex-col">
               <Outlet />
+              <AppFooter />
             </div>
           </motion.div>
         </AnimatePresence>
