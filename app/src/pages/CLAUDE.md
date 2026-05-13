@@ -43,7 +43,7 @@ left/right edges are uniform regardless of viewport size.
 |------|-------|-------|
 | SurveysListPage | /app/surveys | Survey library with server-side pagination/filter/search |
 | SurveyCreationPage | /app/surveys/create | AI + manual survey creation wizard |
-| SurveyBuilderPage | /app/surveys/:id/build | Full-screen builder — has its OWN SideNav, outside AppShell |
+| SurveyBuilderPage | /app/surveys/:id/build | Full-screen builder — inside AppShell (isBuilder mode: no gutters, no footer) |
 | InsightsDashboardPage | /app/insights | Topic-based AI analysis |
 | AdvancedInsightsPage | /app/insights/advanced | Extended insights view |
 | ResponseCollectionPage | /app/respondents | Survey distribution channels |
@@ -59,4 +59,4 @@ left/right edges are uniform regardless of viewport size.
 | OnboardingPage | /onboarding | New user org setup |
 
 ## SurveyBuilderPage is special
-It lives outside AppShell and manages its own SideNav via `useSidebarState()`. It uses `const SIDENAV_W = isExpanded ? 256 : 56` to position panels.
+It lives INSIDE AppShell (wired in App.jsx). AppShell detects `/surveys/:id/build` via `isBuilder` regex and skips gutters, footer, and BottomNav for it. The page uses `var(--sidebar-width)` (set by AppShell) to position its fixed panels. It returns a React Fragment `<>` — no outer div. Fixed panels: QuestionPalette (left) and PropertiesPanel (right), both at `top: 4rem`. Save/Launch/Settings buttons live in the PageHeader `actions` slot inside the page, not in TopBar.

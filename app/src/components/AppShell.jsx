@@ -21,6 +21,7 @@ export function AppShell() {
 
   const isMobile = breakpoint === 'mobile';
   const isTablet = breakpoint === 'tablet';
+  const isBuilder = /\/surveys\/[^/]+\/build/.test(location.pathname);
 
   useEffect(() => {
     if (isTablet) setExpanded(false);
@@ -53,16 +54,21 @@ export function AppShell() {
             exit="exit"
             className="flex-1 flex flex-col overflow-x-hidden"
           >
-            {/* Global page container — all pages get consistent gutters + BottomNav clearance */}
-            <div className="px-6 md:px-8 pb-24 md:pb-8 w-full flex-1 flex flex-col">
+            {isBuilder ? (
+              /* Builder gets the full viewport — no gutters, no footer, no BottomNav clearance */
               <Outlet />
-              <AppFooter />
-            </div>
+            ) : (
+              /* Standard pages: consistent gutters + BottomNav clearance + footer */
+              <div className="px-6 md:px-8 pb-24 md:pb-8 w-full flex-1 flex flex-col">
+                <Outlet />
+                <AppFooter />
+              </div>
+            )}
           </motion.div>
         </AnimatePresence>
       </main>
 
-      {isMobile && <BottomNav />}
+      {isMobile && !isBuilder && <BottomNav />}
     </div>
   );
 }

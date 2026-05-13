@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { PageHeader } from '../components/PageHeader';
 import { SurveyTypeGallery } from '../components/SurveyTypeGallery';
-import { IrisChat } from '../components/IrisChat';
+import { ExperientCopilot } from '../components/ExperientCopilot';
 import { useApi } from '../hooks/useApi';
 import { ROUTES, toPath } from '../constants/routes';
 import { BADGES } from '../constants/colors';
@@ -178,19 +178,10 @@ export function SurveyCreationPage() {
   }
 
   return (
-    <div className="relative overflow-hidden bg-surface">
-      {/* Background effects — absolute so they don't bleed over AppShell TopBar */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="mesh-grid absolute inset-0 opacity-50" />
-        <div className="absolute top-[-15%] left-[-10%] w-[45%] h-[45%] rounded-full"
-          style={{ background: 'rgba(42,75,217,0.08)', filter: 'blur(120px)' }} />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full"
-          style={{ background: 'rgba(131,41,200,0.08)', filter: 'blur(150px)' }} />
-      </div>
-
+    <div className="bg-surface">
       {/* Page header — step 0 shows breadcrumb only (gallery owns its heading),
           steps 1+ show full title+breadcrumb centered to match wizard width */}
-      <div className="relative z-10 flex justify-center">
+      <div className="flex justify-center">
         <div className={`w-full ${step === 0 ? 'max-w-5xl' : 'max-w-2xl'}`}>
           <PageHeader
             crumbs={[
@@ -202,7 +193,7 @@ export function SurveyCreationPage() {
         </div>
       </div>
 
-      <main className="relative z-10 flex items-start justify-center pb-12 min-h-[calc(100vh-8rem)]">
+      <main className="flex items-start justify-center pb-12 min-h-[calc(100vh-8rem)]">
 
         {/* ── Step 0: Type Gallery ── */}
         {step === 0 && (
@@ -596,8 +587,8 @@ export function SurveyCreationPage() {
 
             </div>
 
-            <IrisChat
-              context={{ surveyTitle: intent.slice(0, 60) || selectedType?.label, questionCount: questions.length, surveyType: selectedType?.label }}
+            <ExperientCopilot
+              context={{ surveyTitle: intent.slice(0, 60) || selectedType?.label, questionCount: questions.length, surveyType: selectedType?.label, isBuilder: false }}
               onRefine={async (message) => {
                 const result = await api.refineSurvey(questions, message, {
                   surveyTypeId: selectedTypeId,

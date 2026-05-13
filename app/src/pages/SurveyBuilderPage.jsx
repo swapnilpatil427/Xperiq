@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { SideNav } from '../components/SideNav';
 import { Icon } from '../components/Icon';
-import { useSidebarState } from '../hooks/useSidebarState';
+import { PageHeader } from '../components/PageHeader';
 import { PublishModal, PublishSuccessModal } from '../components/SurveyActionModal';
 import { Spinner, OverlayLoader } from '../components/LoadingStates';
 import { useSurveys } from '../hooks/useSurveys';
@@ -18,6 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import { ExperientCopilot } from '../components/ExperientCopilot';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QUESTION TYPE PALETTE
@@ -48,19 +48,7 @@ function TypeTile({ meta, typeKey, onAdd }) {
   );
 }
 
-function QuestionPalette({ onAdd, onAiCommand }) {
-  const [aiInput, setAiInput] = useState('');
-  const [aiLoading, setAiLoading] = useState(false);
-  const api = useApi();
-
-  const handleAiCommand = async () => {
-    if (!aiInput.trim() || aiLoading) return;
-    setAiLoading(true);
-    await onAiCommand(aiInput.trim());
-    setAiInput('');
-    setAiLoading(false);
-  };
-
+function QuestionPalette({ onAdd }) {
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Scrollable type list */}
@@ -82,47 +70,6 @@ function QuestionPalette({ onAdd, onAiCommand }) {
         })}
       </div>
 
-      {/* AI Copilot — always visible at bottom */}
-      <div className="flex-shrink-0 px-3 pb-3 pt-2 border-t border-border/20 bg-background">
-        <div className="rounded-2xl overflow-hidden"
-          style={{ background: 'linear-gradient(135deg, rgba(42,75,217,0.04) 0%, rgba(131,41,200,0.04) 100%)', border: '1px solid rgba(42,75,217,0.15)', boxShadow: '0 4px 16px rgba(42,75,217,0.06)' }}>
-          {/* Copilot header */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-[rgba(42,75,217,0.08)]">
-            <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0"
-              style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}>
-              <Icon name="auto_awesome" size={11} style={{ color: 'white' }} />
-            </div>
-            <span className="text-[10px] font-black uppercase tracking-widest"
-              style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              AI Copilot
-            </span>
-            <span className="ml-auto text-[9px] text-muted-foreground/40 font-medium">⏎ to send</span>
-          </div>
-          <Textarea
-            value={aiInput}
-            onChange={(e) => setAiInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiCommand(); } }}
-            placeholder="e.g. Add a demographic question, reorder by difficulty…"
-            rows={2}
-            className="w-full resize-none text-xs p-3 outline-none bg-transparent text-foreground placeholder:text-muted-foreground/40 rounded-none border-0 focus-visible:ring-0"
-          />
-          <Button
-            onClick={handleAiCommand}
-            disabled={!aiInput.trim() || aiLoading}
-            className={cn(
-              'w-full py-2.5 text-xs font-bold rounded-none rounded-b-2xl h-auto flex items-center justify-center gap-1.5',
-              aiInput.trim() && !aiLoading
-                ? 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-tertiary)] text-white hover:opacity-90 active:scale-[0.99]'
-                : 'bg-transparent text-muted-foreground/40'
-            )}
-          >
-            {aiLoading
-              ? <><div className="w-3 h-3 border-2 rounded-full animate-spin border-[var(--color-primary)] border-t-transparent" />Thinking…</>
-              : <><Icon name="auto_awesome" size={13} />Apply to Survey</>
-            }
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1521,7 +1468,6 @@ export function SurveyBuilderPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { isExpanded, toggle } = useSidebarState();
 
   const pending = location.state || null;
   const api = useApi();
@@ -1655,13 +1601,15 @@ export function SurveyBuilderPage() {
   }, []);
 
   const handleAiCommand = useCallback(async (message) => {
-    try {
-      const result = await api.refineSurvey(questions, message, { surveyTypeId, intent: surveyTitle });
-      if (result.questions) { isDirtyRef.current = true; setQuestions(result.questions.map(mapAiToBuilderQuestion)); }
-    } catch (err) {
-      console.error('AI copilot error:', err.message);
-    }
-  }, [api, questions, surveyTypeId, surveyTitle]);
+    const result = await api.refineSurvey(questions, message, {
+      surveyTypeId,
+      intent: surveySettings.intent || surveyTitle,
+      description: surveySettings.description,
+      templateId: surveySettings.templateId,
+    });
+    if (result.questions) { isDirtyRef.current = true; setQuestions(result.questions.map(mapAiToBuilderQuestion)); }
+    return result;
+  }, [api, questions, surveyTypeId, surveyTitle, surveySettings]);
 
   const buildPayload = () => ({
     title: surveyTitle,
@@ -1733,27 +1681,20 @@ export function SurveyBuilderPage() {
   };
 
   // ── Layout constants ──────────────────────────────────────────────────────
-  const SIDENAV_W  = isExpanded ? 256 : 56;
   const PALETTE_W  = 224; // 14rem
   const PROPS_W    = 320; // 20rem
-  const TOPNAV_H   = 64;
 
   if (isLoading) {
     return (
-      <div className="flex min-h-screen font-body bg-[#f5f7f9]">
-        <SideNav isExpanded={isExpanded} onToggle={toggle} />
-        <div className="flex-1 flex items-center justify-center gap-4 flex-col">
-          <Spinner size={36} />
-          <p className="text-sm font-semibold text-on-surface-variant">Loading survey…</p>
-        </div>
+      <div className="flex-1 flex items-center justify-center gap-4 flex-col min-h-[60vh]">
+        <Spinner size={36} />
+        <p className="text-sm font-semibold text-on-surface-variant">Loading survey…</p>
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen font-body bg-[#f5f7f9]">
-      <SideNav isExpanded={isExpanded} onToggle={toggle} />
-
+    <>
       <OverlayLoader visible={launching} message="Publishing survey…" />
 
       {/* Preview overlay */}
@@ -1787,130 +1728,115 @@ export function SurveyBuilderPage() {
 
       {/* ── Question Type Palette ── */}
       <aside
-        className="fixed z-30 overflow-hidden"
+        className="fixed z-30 overflow-hidden bg-white"
         style={{
-          left:    SIDENAV_W,
-          top:     TOPNAV_H,
+          left:    'var(--sidebar-width)',
+          top:     '4rem',
           width:   PALETTE_W,
-          height:  `calc(100vh - ${TOPNAV_H}px)`,
+          height:  'calc(100vh - 4rem)',
           borderRight: '1px solid rgba(171,173,175,0.12)',
         }}
       >
-        <QuestionPalette onAdd={addQuestion} onAiCommand={handleAiCommand} />
+        <QuestionPalette onAdd={addQuestion} />
       </aside>
 
-      {/* ── Top Nav ── */}
-      <nav
-        className="fixed top-0 left-0 right-0 z-50 h-16 flex items-center justify-between px-5 gap-4 bg-white border-b border-[rgba(171,173,175,0.12)] shadow-[0_2px_12px_rgba(0,0,0,0.04)]"
+      {/* ── Canvas ── */}
+      <div
+        style={{
+          marginLeft:   PALETTE_W,
+          marginRight:  panelOpen ? PROPS_W : 0,
+          paddingBottom: 120,
+          transition:   'margin-right 0.3s cubic-bezier(0.4,0,0.2,1)',
+          minHeight:    'calc(100vh - 4rem)',
+        }}
       >
-        <div className="flex items-center gap-3" style={{ marginLeft: SIDENAV_W + PALETTE_W }}>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate(ROUTES.SURVEYS)}
-            className="rounded-lg flex-shrink-0 hover:bg-[#eef1f3]"
-          >
-            <Icon name="arrow_back" size={18} className="text-[#595c5e]" />
-          </Button>
-          <Input
-            value={surveyTitle}
-            onChange={(e) => { isDirtyRef.current = true; setSurveyTitle(e.target.value); }}
-            className="text-sm font-semibold bg-transparent border-0 shadow-none outline-none text-foreground min-w-0 focus-visible:ring-0 h-auto p-0 max-w-[260px]"
+        {/* PageHeader: breadcrumb + editable title + action buttons */}
+        <div className="max-w-3xl mx-auto px-6">
+          <PageHeader
+            crumbs={[
+              { label: t('nav.surveys'), path: ROUTES.SURVEYS },
+              { label: surveyTitle },
+            ]}
+            title={
+              <input
+                value={surveyTitle}
+                onChange={(e) => { isDirtyRef.current = true; setSurveyTitle(e.target.value); }}
+                className="text-2xl md:text-[1.75rem] font-extrabold tracking-tight font-headline text-on-surface leading-tight bg-transparent border-none outline-none w-full block px-0 focus:ring-0"
+                style={{ boxShadow: 'none' }}
+              />
+            }
+            actions={
+              <div className="flex items-center gap-2">
+                {surveyId && !autoSaving && autoSavedAt && (
+                  <span className="text-xs text-muted-foreground hidden sm:block">
+                    {`${t('builder.autosaved')} ${autoSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                  </span>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setSettingsOpen((v) => !v); setSelectedId(null); }}
+                  className={cn(
+                    'rounded-full gap-1.5',
+                    settingsOpen
+                      ? 'bg-[rgba(42,75,217,0.08)] text-[var(--color-primary)] border-[rgba(42,75,217,0.2)] hover:bg-[rgba(42,75,217,0.12)]'
+                      : 'bg-[#f5f7f9] text-[#595c5e] border-[#dfe3e6] hover:bg-[#eef1f3]'
+                  )}
+                >
+                  <Icon name="settings" size={15} />{t('builder.settings.settingsButton')}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSave}
+                  disabled={saving || autoSaving || launching}
+                  className={cn(
+                    'rounded-full flex items-center gap-1.5 active:scale-95',
+                    saved
+                      ? 'bg-[var(--color-success)] text-white border-[var(--color-success)] hover:opacity-90'
+                      : 'bg-[#eef1f3] text-[#595c5e] border-[#dfe3e6] hover:bg-[#dfe3e6]'
+                  )}
+                >
+                  {(saving || autoSaving)
+                    ? <><Spinner size={14} color="#595c5e" />{autoSaving ? t('builder.autosaving') : t('common.saving')}</>
+                    : <><Icon name={saved ? 'check' : 'save'} size={15} />{saved ? t('common.saved') : t('common.save')}</>
+                  }
+                </Button>
+                <Button
+                  variant="success"
+                  size="sm"
+                  onClick={() => setShowPublishModal(true)}
+                  disabled={saving || launching}
+                  className="rounded-full gap-1.5 shadow-[0_8px_20px_-4px_rgba(5,150,105,0.3)]"
+                >
+                  <Icon name="rocket_launch" size={15} />Launch
+                </Button>
+              </div>
+            }
           />
         </div>
 
-        {/* Mode tabs */}
-        <div className="flex items-center gap-1 rounded-xl p-1 bg-[#f5f7f9] border border-[rgba(171,173,175,0.15)]">
-          {[['build','edit','Build'], ['logic','schema','Logic']].map(([m, icon, label]) => (
-            <Button
+        {/* Mode tab bar */}
+        <div className="flex items-center gap-1 max-w-3xl mx-auto px-6 mb-6">
+          {[['build', 'edit', 'Build'], ['logic', 'schema', 'Logic'], ['preview', 'play_arrow', 'Preview']].map(([m, icon, label]) => (
+            <button
               key={m}
-              variant="ghost"
-              size="sm"
               onClick={() => setMode(m)}
               className={cn(
-                'flex items-center gap-1.5 rounded-lg text-xs font-bold h-auto px-3 py-1.5',
-                mode === m ? 'bg-white text-[var(--color-primary)] shadow-sm hover:bg-white' : 'text-muted-foreground hover:text-foreground hover:bg-transparent'
+                'flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-full transition-all',
+                mode === m
+                  ? 'bg-[#eff2ff] text-[#4338ca]'
+                  : 'text-[#9ca3af] hover:text-[#374151] hover:bg-[#f3f4f6]'
               )}
             >
               <Icon name={icon} size={14} />{label}
-            </Button>
+            </button>
           ))}
         </div>
 
-        {/* Autosave last-saved timestamp (shown after save completes) */}
-        {surveyId && !autoSaving && autoSavedAt && (
-          <span className="text-xs text-muted-foreground">
-            {`${t('builder.autosaved')} ${autoSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-          </span>
-        )}
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => { setSettingsOpen((v) => !v); setSelectedId(null); }}
-            className={cn(
-              'rounded-full gap-1.5',
-              settingsOpen
-                ? 'bg-[rgba(42,75,217,0.08)] text-[var(--color-primary)] border-[rgba(42,75,217,0.2)] hover:bg-[rgba(42,75,217,0.12)]'
-                : 'bg-[#f5f7f9] text-[#595c5e] border-[#dfe3e6] hover:bg-[#eef1f3]'
-            )}
-          >
-            <Icon name="settings" size={15} />{t('builder.settings.settingsButton')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setMode('preview')}
-            className="rounded-full bg-[#f5f7f9] text-[#595c5e] border-[#dfe3e6] hover:bg-[#eef1f3] gap-1.5"
-          >
-            <Icon name="play_arrow" size={16} />Preview
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSave}
-            disabled={saving || autoSaving || launching}
-            className={cn(
-              'rounded-full flex items-center gap-1.5 active:scale-95',
-              saved
-                ? 'bg-[var(--color-success)] text-white border-[var(--color-success)] hover:opacity-90'
-                : 'bg-[#eef1f3] text-[#595c5e] border-[#dfe3e6] hover:bg-[#dfe3e6]'
-            )}
-          >
-            {(saving || autoSaving)
-              ? <><Spinner size={14} color="#595c5e" />{autoSaving ? t('builder.autosaving') : t('common.saving')}</>
-              : <><Icon name={saved ? 'check' : 'save'} size={15} />{saved ? t('common.saved') : t('common.save')}</>
-            }
-          </Button>
-          <Button
-            variant="success"
-            size="sm"
-            onClick={() => setShowPublishModal(true)}
-            disabled={saving || launching}
-            className="rounded-full gap-1.5 shadow-[0_8px_20px_-4px_rgba(5,150,105,0.3)]"
-          >
-            <Icon name="rocket_launch" size={15} />Launch
-          </Button>
-        </div>
-      </nav>
-
-      {/* ── Canvas ── */}
-      <main
-        className="flex-1"
-        style={{
-          marginLeft:   SIDENAV_W + PALETTE_W,
-          marginRight:  panelOpen ? PROPS_W : 0,
-          paddingTop:   TOPNAV_H + 24,
-          paddingBottom: 120,
-          transition:   'margin-right 0.3s cubic-bezier(0.4,0,0.2,1)',
-          minHeight:    '100vh',
-        }}
-      >
         {mode === 'logic' ? (
           <LogicView questions={questions} />
-        ) : (
+        ) : mode === 'preview' ? null : (
           <div className="max-w-3xl mx-auto px-6 space-y-4">
             {/* Template intelligence banner */}
             {fromTemplate?.intelligence && (
@@ -2000,16 +1926,16 @@ export function SurveyBuilderPage() {
             </Button>
           </div>
         )}
-      </main>
+      </div>
 
       {/* ── Properties / Settings Panel ── */}
       <aside
         className="fixed z-30 overflow-hidden bg-[#fafbfc]"
         style={{
           right:     0,
-          top:       TOPNAV_H,
+          top:       '4rem',
           width:     panelOpen ? PROPS_W : 0,
-          height:    `calc(100vh - ${TOPNAV_H}px)`,
+          height:    'calc(100vh - 4rem)',
           transition: 'width 0.3s cubic-bezier(0.4,0,0.2,1)',
           borderLeft: '1px solid rgba(171,173,175,0.12)',
         }}
@@ -2036,6 +1962,18 @@ export function SurveyBuilderPage() {
       {/* Decorative glow */}
       <div className="fixed pointer-events-none -z-10 rounded-full"
         style={{ top: '-5%', right: '-10%', width: 600, height: 600, background: 'rgba(224,231,255,0.25)', filter: 'blur(150px)' }} />
-    </div>
+
+      <ExperientCopilot
+        context={{
+          surveyTitle,
+          questionCount: questions.length,
+          surveyType: surveyTypeId,
+          surveySettings,
+          templateInfo: fromTemplate ? { label: fromTemplate.label, id: fromTemplate.id } : null,
+          isBuilder: true,
+        }}
+        onRefine={handleAiCommand}
+      />
+    </>
   );
 }
