@@ -2,7 +2,9 @@ import { Icon } from '../components/Icon';
 import { useSetPageTitle } from '../contexts/pageTitle';
 import { useSurveys } from '../hooks/useSurveys';
 import { INSIGHTS as INSIGHTS_THRESHOLDS } from '../constants/thresholds';
+import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { PageHeader } from '../components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -46,6 +48,15 @@ export function ResponseDashboardPage() {
     : 74;
   return (
         <div className="pb-24 md:pb-8 px-6 space-y-8 max-w-7xl mx-auto w-full">
+
+          <PageHeader
+            crumbs={[
+              { label: t('nav.surveys'), icon: 'poll', path: ROUTES.SURVEYS },
+              { label: t('responseDashboard.pageTitle') }
+            ]}
+            title={t('responseDashboard.pageTitle')}
+            subtitle={t('responseDashboard.dateFilter')}
+          />
 
           {/* Top Metrics */}
           <section className="grid grid-cols-1 md:grid-cols-3 gap-6">

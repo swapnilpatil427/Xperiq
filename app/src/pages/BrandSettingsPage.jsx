@@ -17,6 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { applyBrandTheme, saveBrandTheme, DEFAULT_BRAND_THEME } from '../lib/brandTheme';
+import { PageHeader } from '../components/PageHeader';
 
 const DEMO_TEAM_MEMBERS = [
   {
@@ -150,6 +151,11 @@ export function BrandSettingsPage() {
 
   return (
         <div className="pb-24 md:pb-8 px-8 max-w-7xl mx-auto w-full space-y-8">
+
+          <PageHeader
+            crumbs={[{ label: t('nav.settings'), icon: 'settings', path: ROUTES.SETTINGS }]}
+            title={t('settings.pageTitle')}
+          />
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>

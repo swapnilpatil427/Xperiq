@@ -9,6 +9,7 @@ import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '../components/PageHeader';
 
 const SCORING_METHOD_LABELS = {
   nps: 'Net Promoter Score',
@@ -1035,25 +1036,21 @@ export function TemplateLibraryPage() {
     <>
         <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-6xl mx-auto w-full">
 
-          {/* Page header */}
-          <div className="flex items-start justify-between mb-8">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-widest text-on-surface-variant mb-1">
-                {t('templates.pageSubtitle')}
-              </p>
-              <h1 className="text-3xl font-extrabold tracking-tighter font-headline text-on-surface">
-                {t('templates.pageTitle')}
-              </h1>
-            </div>
-            <Button
-              onClick={() => setEditModal({ isNew: true })}
-              className="flex items-center gap-2 font-bold text-sm text-white rounded-xl px-5 py-2.5"
-              style={{ background: '#2a4bd9' }}
-            >
-              <Icon name="add" size={18} />
-              {t('templates.createButton')}
-            </Button>
-          </div>
+          <PageHeader
+            crumbs={[{ label: t('nav.templates'), icon: 'auto_awesome', path: ROUTES.TEMPLATES }]}
+            title={t('templates.pageTitle')}
+            subtitle={t('templates.systemLibraryDescription', { n: filteredSystem.length + filteredOrg.length })}
+            actions={
+              <Button
+                onClick={() => setEditModal({ isNew: true })}
+                className="flex items-center gap-2 font-bold text-sm text-white rounded-xl px-5 py-2.5"
+                style={{ background: '#2a4bd9' }}
+              >
+                <Icon name="add" size={18} />
+                {t('templates.createButton')}
+              </Button>
+            }
+          />
 
           {/* Search */}
           <div className="flex flex-col gap-3 mb-8">

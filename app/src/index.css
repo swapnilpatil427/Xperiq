@@ -703,3 +703,17 @@ body {
   color: var(--color-error);
   border-color: rgba(180,19,64,0.2);
 }
+
+/* ─── PageHeader component ───────────────────────────────── */
+
+.page-header-breadcrumb a:hover {
+  text-decoration: none;
+}
+
+/* ─── Divider in content area ────────────────────────────── */
+
+.content-divider {
+  height: 1px;
+  background: linear-gradient(to right, rgba(171,173,175,0.15), transparent);
+  margin-bottom: 1.5rem;
+}

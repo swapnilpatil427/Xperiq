@@ -9,6 +9,7 @@ import { useSetPageTitle } from '../contexts/pageTitle';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { PageHeader } from '../components/PageHeader';
 
 function timeAgo(iso) {
   if (!iso) return '—';
@@ -96,32 +97,31 @@ export function DataPage() {
 
   return (
     <div className="px-6 md:px-8 py-6 pb-24 md:pb-8">
-      {/* Header row */}
-      <div className="flex items-center justify-between mb-6 gap-4 flex-wrap">
-        <div>
-          <p className="text-sm text-on-surface-variant mt-0.5">
-            {selectedSurveyId === 'all'
-              ? `${responses.length} responses across active surveys`
-              : `${responses.length} total responses`}
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Select value={selectedSurveyId} onValueChange={setSelectedSurveyId}>
-            <SelectTrigger className="w-52 text-sm font-semibold rounded-xl border-[rgba(171,173,175,0.3)]">
-              <SelectValue placeholder={t('data.allSurveys')} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t('data.allSurveys')}</SelectItem>
-              {surveys.map(s => (
-                <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button variant="ghost" size="icon" onClick={loadResponses} className="rounded-xl">
-            <Icon name="refresh" size={18} />
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        crumbs={[{ label: t('data.pageTitle'), icon: 'dataset', path: ROUTES.DATA }]}
+        title={t('data.pageTitle')}
+        subtitle={selectedSurveyId === 'all'
+          ? `${responses.length} responses across active surveys`
+          : `${responses.length} total responses`}
+        actions={
+          <div className="flex items-center gap-3">
+            <Select value={selectedSurveyId} onValueChange={setSelectedSurveyId}>
+              <SelectTrigger className="w-52 text-sm font-semibold rounded-xl border-[rgba(171,173,175,0.3)]">
+                <SelectValue placeholder={t('data.allSurveys')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('data.allSurveys')}</SelectItem>
+                {surveys.map(s => (
+                  <SelectItem key={s.id} value={s.id}>{s.title}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="icon" onClick={loadResponses} className="rounded-xl">
+              <Icon name="refresh" size={18} />
+            </Button>
+          </div>
+        }
+      />
 
       {/* Content */}
       {loading && (

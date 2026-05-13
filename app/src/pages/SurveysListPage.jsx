@@ -13,6 +13,7 @@ import { SENTIMENT_COLORS }      from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
 import { Badge }   from '@/components/ui/badge';
 import { Button }  from '@/components/ui/button';
+import { PageHeader } from '../components/PageHeader';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -236,6 +237,29 @@ export function SurveysListPage() {
     <>
         <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-6xl mx-auto w-full">
 
+          <PageHeader
+            crumbs={[{ label: t('nav.surveys'), icon: 'poll', path: ROUTES.SURVEYS }]}
+            title={t('surveys.libraryHeading')}
+            subtitle={t('surveys.countDescription', { count: kpiTotalSurveys, responses: kpiTotalResponses.toLocaleString() })}
+            actions={
+              <div className="flex items-center gap-3">
+                <Button variant="ghost" size="sm" onClick={() => navigate(ROUTES.TEMPLATES)}
+                  className="rounded-xl font-headline text-on-surface-variant gap-1.5">
+                  <Icon name="library_books" size={16} />{t('nav.templates')}
+                </Button>
+                <Button variant="gradient" size="sm" onClick={() => navigate(ROUTES.CREATE)}
+                  className="rounded-xl font-headline">
+                  <Icon name="auto_awesome" size={16} />{t('surveys.createWithAI')}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => navigate(ROUTES.CREATE, { state: { mode: 'manual' } })}
+                  className="rounded-xl font-headline text-on-surface">
+                  <Icon name="add" size={16} />{t('surveys.manual')}
+                </Button>
+              </div>
+            }
+            className="mb-0"
+          />
+
           {/* KPI row */}
           <motion.div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8" variants={stagger} initial="hidden" animate="visible">
             {kpiCards.map((card, i) => (
@@ -252,40 +276,6 @@ export function SurveysListPage() {
                 </div>
               </motion.div>
             ))}
-          </motion.div>
-
-          {/* Header row */}
-          <motion.div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6"
-            variants={fadeUp} initial="hidden" animate="visible" custom={0.5}>
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tighter font-headline text-on-surface">
-                {t('surveys.libraryHeading')}
-              </h1>
-              <p className="text-sm mt-0.5 text-on-surface-variant">
-                {t('surveys.countDescription', { count: kpiTotalSurveys, responses: kpiTotalResponses.toLocaleString() })}
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="rounded-xl">
-                <Button variant="ghost" size="sm" onClick={() => navigate(ROUTES.TEMPLATES)}
-                  className="rounded-xl font-headline text-on-surface-variant gap-1.5">
-                  <Icon name="library_books" size={16} />{t('nav.templates')}
-                </Button>
-              </motion.div>
-              <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                style={{ boxShadow: '0 10px 25px -5px rgba(42,75,217,0.35)' }} className="rounded-xl">
-                <Button variant="gradient" size="sm" onClick={() => navigate(ROUTES.CREATE)}
-                  className="rounded-xl font-headline">
-                  <Icon name="auto_awesome" size={16} />{t('surveys.createWithAI')}
-                </Button>
-              </motion.div>
-              <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.97 }} className="rounded-xl">
-                <Button variant="outline" size="sm" onClick={() => navigate(ROUTES.CREATE, { state: { mode: 'manual' } })}
-                  className="rounded-xl font-headline text-on-surface">
-                  <Icon name="add" size={16} />{t('surveys.manual')}
-                </Button>
-              </motion.div>
-            </div>
           </motion.div>
 
           {/* ── Toolbar ── */}

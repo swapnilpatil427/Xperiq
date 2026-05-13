@@ -5,7 +5,9 @@ import { useSetPageTitle } from '../contexts/pageTitle';
 import { useInsights } from '../hooks/useInsights';
 import { useSurveys } from '../hooks/useSurveys';
 import { SENTIMENT } from '../constants/thresholds';
+import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { PageHeader } from '../components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -121,6 +123,12 @@ export function InsightsDashboardPage() {
 
   return (
         <div className="pb-24 md:pb-8 px-6 md:px-8 space-y-8 max-w-7xl mx-auto w-full">
+
+          <PageHeader
+            crumbs={[{ label: t('nav.insights'), icon: 'psychology', path: ROUTES.INSIGHTS }]}
+            title={t('insights.pageTitle')}
+            subtitle={t('insights.topicDescription', { count: topics.length })}
+          />
 
           {/* NPS + CSAT */}
           <motion.section

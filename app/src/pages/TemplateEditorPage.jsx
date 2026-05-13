@@ -10,6 +10,7 @@ import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
+import { PageHeader } from '../components/PageHeader';
 
 // ── Tag Input ─────────────────────────────────────────────────────────────────
 
@@ -301,6 +302,14 @@ export function TemplateEditorPage() {
   return (
     <>
         <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-3xl mx-auto w-full">
+
+          <PageHeader
+            crumbs={[
+              { label: t('nav.templates'), icon: 'auto_awesome', path: ROUTES.TEMPLATES },
+              { label: t('templates.editor.pageTitle') }
+            ]}
+            title={t('templates.editor.pageTitle')}
+          />
 
           {/* Back + heading */}
           <div className="flex items-center gap-3 mb-6">

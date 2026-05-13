@@ -3,7 +3,9 @@ import { Icon } from '../components/Icon';
 import { useSetPageTitle } from '../contexts/pageTitle';
 import { useWorkflows } from '../hooks/useWorkflows';
 import { GRADIENTS } from '../constants/colors';
+import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { PageHeader } from '../components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -94,30 +96,21 @@ export function WorkflowsPage() {
   return (
     <>
         <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-5xl mx-auto w-full">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10">
-            <div className="space-y-2">
-              <span className="text-xs font-bold tracking-widest uppercase text-primary">
-                {t('workflows.pageSubtitle')}
-              </span>
-              <h1 className="text-4xl font-black tracking-tighter font-headline text-on-surface">
-                {t('workflows.mainHeading')}
-              </h1>
-              <p className="text-sm max-w-xl text-on-surface-variant">
-                {t('workflows.mainDescription')}
-              </p>
-            </div>
-
-            <Button
-              onClick={() => setShowNewModal(true)}
-              variant="gradient"
-              className="flex items-center gap-2 px-5 py-3 text-sm font-bold text-white transition-all active:scale-95 cta-glow shrink-0 font-headline rounded-xl"
-              style={{ boxShadow: '0 10px 25px -5px rgba(42,75,217,0.3)' }}
-            >
-              <Icon name="add_circle" size={18} />
-              {t('workflows.newWorkflowButton')}
-            </Button>
-          </div>
+          <PageHeader
+            crumbs={[{ label: t('nav.workflows'), icon: 'account_tree', path: ROUTES.WORKFLOWS }]}
+            title={t('workflows.mainHeading')}
+            subtitle={t('workflows.mainDescription')}
+            actions={
+              <Button
+                onClick={() => setShowNewModal(true)}
+                className="flex items-center gap-2 font-bold text-sm text-white rounded-xl px-5 py-2.5"
+                style={{ background: '#2a4bd9' }}
+              >
+                <Icon name="add" size={18} />
+                {t('workflows.newWorkflowButton')}
+              </Button>
+            }
+          />
 
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-4 mb-8">

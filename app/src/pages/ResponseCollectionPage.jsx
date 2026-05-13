@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { useSetPageTitle } from '../contexts/pageTitle';
 import { useSurveys } from '../hooks/useSurveys';
+import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { PageHeader } from '../components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -52,6 +54,12 @@ export function ResponseCollectionPage() {
 
   return (
         <div className="pb-24 md:pb-8 px-4 md:px-8 max-w-6xl mx-auto w-full flex flex-col items-center">
+
+          <PageHeader
+            crumbs={[{ label: t('nav.respondents'), icon: 'groups', path: ROUTES.RESPONDENTS }]}
+            title={t('collection.pageTitle')}
+            subtitle={t('collection.shareDescription')}
+          />
 
           {/* Survey selector */}
           {activeSurveys.length > 1 && (
