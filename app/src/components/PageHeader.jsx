@@ -22,11 +22,15 @@ import { Icon } from './Icon';
  *   className — extra classes on the wrapper div
  */
 export function PageHeader({ crumbs = [], title, subtitle, actions, className = '' }) {
+  // Only render the breadcrumb trail when there are 2+ crumbs.
+  // A single crumb just names the current page — redundant with the H1 below it.
+  const showBreadcrumbs = crumbs.length >= 2;
+
   return (
     <div className={`pt-8 md:pt-10 pb-6 ${className}`}>
-      {/* Breadcrumb trail */}
-      {crumbs.length > 0 && (
-        <nav aria-label="breadcrumb" className="flex items-center gap-1 mb-4 flex-wrap">
+      {/* Breadcrumb trail — back-link style for parent crumbs, muted text for current */}
+      {showBreadcrumbs && (
+        <nav aria-label="breadcrumb" className="flex items-center gap-1.5 mb-3 flex-wrap">
           {crumbs.map((crumb, i) => {
             const isLast = i === crumbs.length - 1;
             return (
@@ -41,18 +45,17 @@ export function PageHeader({ crumbs = [], title, subtitle, actions, className = 
                 {crumb.path && !isLast ? (
                   <Link
                     to={crumb.path}
-                    className="flex items-center gap-1 text-[11px] font-bold text-on-surface-variant hover:text-primary transition-colors tracking-wide uppercase"
+                    className="flex items-center gap-1.5 text-sm font-medium text-on-surface-variant hover:text-primary transition-colors"
                   >
-                    {crumb.icon && <Icon name={crumb.icon} size={13} />}
+                    {i === 0 && <Icon name="chevron_left" size={16} className="flex-shrink-0" />}
                     {crumb.label}
                   </Link>
                 ) : (
                   <span
-                    className={`flex items-center gap-1 text-[11px] font-bold tracking-wide uppercase ${
-                      isLast ? 'text-primary' : 'text-on-surface-variant'
+                    className={`flex items-center gap-1 text-sm ${
+                      isLast ? 'font-semibold text-on-surface' : 'font-medium text-on-surface-variant'
                     }`}
                   >
-                    {crumb.icon && <Icon name={crumb.icon} size={13} />}
                     {crumb.label}
                   </span>
                 )}

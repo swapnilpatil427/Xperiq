@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '../components/Icon';
+import { PageHeader } from '../components/PageHeader';
 import { SurveyTypeGallery } from '../components/SurveyTypeGallery';
 import { AiChatPanel } from '../components/AiChatPanel';
 import { useApi } from '../hooks/useApi';
@@ -187,31 +188,18 @@ export function SurveyCreationPage() {
           style={{ background: 'rgba(131,41,200,0.08)', filter: 'blur(150px)' }} />
       </div>
 
-      {/* Sub-header: back button + page context (below AppShell TopBar) */}
-      <div className="relative z-10 flex items-center justify-between px-6 md:px-8 h-12"
-        style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-        <Button
-          variant="ghost"
-          onClick={() => navigate(ROUTES.SURVEYS)}
-          className="flex items-center gap-2 text-sm font-semibold text-on-surface-variant hover:text-primary px-0"
-        >
-          <Icon name="arrow_back" size={18} />
-          {t('create.backToSurveys')}
-        </Button>
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-bold font-headline text-on-surface hidden md:block">
-            {t('create.pageTitle')}
-          </span>
-          {step === 3 && (
-            <div className="flex items-center gap-2 text-xs font-bold px-3 py-1 rounded-full bg-success-container text-success">
-              <div className="w-1.5 h-1.5 rounded-full" style={{ background: '#10b981' }} />
-              {t('create.questionsGeneratedBadge', { n: questions.length })}
-            </div>
-          )}
-        </div>
+      {/* Standard page header — breadcrumb (Surveys → Create Survey) + H1 */}
+      <div className="relative z-10 px-6 md:px-8">
+        <PageHeader
+          crumbs={[
+            { label: t('nav.surveys'), path: ROUTES.SURVEYS },
+            { label: t('create.pageTitle') },
+          ]}
+          title={t('create.pageTitle')}
+        />
       </div>
 
-      <main className="relative z-10 flex items-start justify-center pt-10 pb-12 px-6 min-h-[calc(100vh-8rem)]">
+      <main className="relative z-10 flex items-start justify-center pb-12 px-6 min-h-[calc(100vh-8rem)]">
 
         {/* ── Step 0: Type Gallery ── */}
         {step === 0 && (
