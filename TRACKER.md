@@ -10,7 +10,7 @@
 
 | Phase | Tasks | Done | Tested | % Complete |
 |---|---|---|---|---|
-| Phase 0 — Foundation | 12 | 5 | 0 | 42% |
+| Phase 0 — Foundation | 12 | 9 | 0 | 75% |
 | Phase 1 — Core Completion | 35 | 6 | 0 | 17% |
 | Phase 2 — AI Engine | 32 | 0 | 0 | 0% |
 | Phase 3 — Billing | 18 | 0 | 0 | 0% |
@@ -20,7 +20,7 @@
 | Phase 7 — Go-to-Market | 20 | 0 | 0 | 0% |
 | Phase 2A — Agentic Skills Foundation | 16 | 0 | 0 | 0% |
 | Phase 5A — MCP & Skill Publishing | 12 | 0 | 0 | 0% |
-| **Total** | **220** | **8** | **0** | **4%** |
+| **Total** | **220** | **12** | **0** | **5%** |
 
 ---
 
@@ -41,12 +41,12 @@ Estimated time to complete Sprint 0: **3–5 days**
 |---|---|---|---|
 | P0-1 | Install `@tailwindcss/vite`, verify all pages render correctly | ✅ | Installed, dev server starts cleanly |
 | P0-2 | Add `tsconfig.json`, begin TypeScript migration on `src/lib/` and `src/constants/` | ✅ | Full migration: all 72 .js/.jsx files renamed to .ts/.tsx. 0 type errors. tsconfig.json, vite-env.d.ts, src/types/index.ts created. |
-| P0-3 | Install Vitest + React Testing Library | ⬜ | `npm install -D vitest @testing-library/react @testing-library/user-event` |
-| P0-4 | Write first 10 unit tests: `i18n`, `routes`, `thresholds`, `useSurveys` (mock Firebase) | ⬜ | |
+| P0-3 | Install Vitest + React Testing Library | ✅ | vitest@4.1.6, @testing-library/react@16, @testing-library/user-event@14, @testing-library/jest-dom@6, jsdom@29. Requires Node ≥18 (root .nvmrc = 22.22.0). |
+| P0-4 | Write first 10 unit tests: `i18n`, `routes`, `thresholds`, `useSurveys` (mock Firebase) | ✅ | 102 tests, 0 failures. 4 files: i18n (27 tests), routes (22 tests), thresholds (24 tests), useSurveys (29 tests — all CRUD + reload + fallback paths). vitest.config.ts + src/test/setup.ts added. `npm test` script wired. |
 | P0-5 | Install Playwright, write smoke E2E test: landing → sign-in → surveys | ⬜ | |
-| P0-6 | Set up GitHub Actions CI: lint + type-check + unit tests on every PR | ⬜ | |
+| P0-6 | Set up GitHub Actions CI: lint + type-check + unit tests on every PR | ✅ | `.github/workflows/ci.yml` — push/PR to main. Steps: Node 22 (reads app/.nvmrc), npm ci, eslint, tsc --noEmit, vitest --coverage, vite build. Concurrency group cancels stale runs. All 5 steps verified locally on Node 22. |
 | P0-7 | Integrate Sentry (frontend + backend) | ⬜ | Free tier |
-| P0-8 | Add `ErrorBoundary` component wrapping each page in `App.jsx` | ⬜ | |
+| P0-8 | Add `ErrorBoundary` component wrapping each page in `App.jsx` | ✅ | ErrorBoundary enhanced with `inline` prop. All 12 AppShell pages wrapped with `<ErrorBoundary inline>` (compact card fallback, nav stays functional). 4 public pages wrapped with full-screen `<ErrorBoundary>`. Top-level boundary kept as global catch-all. |
 | P0-9 | Backend: add Zod request validation on all POST/PUT routes | ✅ | `src/schemas/` + `src/lib/validate.js`; all local POST/PUT routes covered |
 | P0-10 | Backend: add rate limiting middleware (`express-rate-limit`) | ✅ | Custom sliding-window limiter (Redis/in-memory). `apiLimiter` (200/15min) on all authenticated routes; `aiLimiter` (20/15min) stacked on `/api/ai` |
 | P0-11 | Backend: add structured JSON request logging → Cloud Logging | ⬜ | |
@@ -536,4 +536,6 @@ Estimated time to complete Sprint 0: **3–5 days**
 | 2026-05-11 | Local dev stack simplified: single docker-compose.yml (Postgres + Prometheus + Loki + Grafana), removed Supabase CLI dependency, Pino structured logging with optional Loki push, prom-client metrics with /api/metrics endpoint, Dockerfile + fly.toml added. |
 | 2026-05-11 | Cloud strategy decided: GCP only. Fly.toml kept as reference but GCP is the path. Scaling stages documented: Firebase (now) → Cloud Run + Cloud SQL (~$10K MRR) → Cloudflare + Cloud Run (global). ICP added as watchlist item. 7 migration portability principles enforced as code patterns. PRODUCT_PLAN.md and TRACKER.md updated with full strategy. |
 | 2026-05-13 | P0-2 TypeScript migration complete: 0 errors (down from 1599). All 72 .js/.jsx files converted to .ts/.tsx. Zod validation (P0-9) and rate limiting (P0-10) also complete from prior session. |
+| 2026-05-13 | P0-3 + P0-4 complete: Vitest 4.1.6 + React Testing Library installed. vitest.config.ts created (jsdom env). 102 unit tests written across 4 files — i18n (27), routes (22), thresholds (24), useSurveys (29, mock API). All 102 pass. `npm test` script added. |
+| 2026-05-13 | P0-8 complete: ErrorBoundary enhanced with `inline` prop. 12 AppShell pages wrapped with compact inline boundary (nav stays functional on page crash). 4 public pages wrapped with full-screen boundary. Top-level catch-all kept. P0-6 complete: .github/workflows/ci.yml created — lint + tsc + vitest on every push/PR to main. coverage/ gitignored, eslint ignores coverage/. Full CI sim: lint ✓ typecheck ✓ 102 tests ✓. |
 | 2026-05-12 | Survey backend fully rewritten: clean data model (templateId only, no template fields on survey), full audit trail (created_at/updated_at/updated_by/published_at/paused_at/closed_at/deleted_at), soft delete, status lifecycle timestamps, COALESCE publish. Org profile backend (org_profiles table, GET+PUT upsert). Fixed optimistic update bug for updated_at. Survey builder: settings panel shows template info read-only + editable fields (description/intent/thankYouMessage). Fixed SurveyCreationPage: "Edit in Builder" passes correct navigation state (intent/fromTemplate/templateId), "Launch Survey" now directly creates+publishes and shows success modal with share URL. All 13 question types implemented in fill page. Brand settings persisted to backend. 3D page transition animations (Framer Motion AnimatePresence + rotateX). Survey question card slide animations in fill page. LoadingStates components (Spinner, OverlayLoader, SurveyListSkeleton). Skeleton loading in SurveysListPage. Overlay loader for publish in builder. i18n strings added for all new UI text. |
