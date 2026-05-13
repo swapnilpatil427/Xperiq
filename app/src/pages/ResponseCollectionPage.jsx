@@ -53,7 +53,7 @@ export function ResponseCollectionPage() {
   ];
 
   return (
-        <div className="max-w-6xl mx-auto w-full">
+        <div className="max-w-4xl mx-auto w-full">
 
           <PageHeader
             crumbs={[{ label: t('nav.respondents'), icon: 'groups', path: ROUTES.RESPONDENTS }]}
@@ -61,11 +61,9 @@ export function ResponseCollectionPage() {
             subtitle={t('collection.shareDescription')}
           />
 
-          <div className="flex flex-col items-center">
-
           {/* Survey selector */}
           {activeSurveys.length > 1 && (
-            <div className="w-full max-w-4xl mb-6">
+            <div className="w-full mb-6">
               <Select
                 value={selectedSurveyId ?? '__all__'}
                 onValueChange={(val) => setSelectedSurveyId(val === '__all__' ? null : val)}
@@ -113,7 +111,7 @@ export function ResponseCollectionPage() {
 
           {/* Central Share Card */}
           <Card
-            className="w-full max-w-4xl glass-card p-8 md:p-12 relative overflow-hidden border-white/60"
+            className="w-full glass-card p-8 md:p-12 relative overflow-hidden border-white/60"
             style={{
               borderRadius: '1rem',
               boxShadow: '0 40px 100px -20px rgba(0,0,0,0.05)',
@@ -264,7 +262,7 @@ export function ResponseCollectionPage() {
           </Card>
 
           {/* Secondary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-4xl mt-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full mt-6">
             {cards.map((card) => (
               <Card
                 key={card.title}
@@ -286,7 +284,6 @@ export function ResponseCollectionPage() {
               </Card>
             ))}
           </div>
-          </div>{/* end items-center wrapper */}
         </div>
   );
 }

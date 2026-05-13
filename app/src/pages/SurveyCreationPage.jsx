@@ -188,15 +188,17 @@ export function SurveyCreationPage() {
           style={{ background: 'rgba(131,41,200,0.08)', filter: 'blur(150px)' }} />
       </div>
 
-      {/* Standard page header — breadcrumb (Surveys → Create Survey) + H1 */}
-      <div className="relative z-10">
-        <PageHeader
-          crumbs={[
-            { label: t('nav.surveys'), path: ROUTES.SURVEYS },
-            { label: t('create.pageTitle') },
-          ]}
-          title={t('create.pageTitle')}
-        />
+      {/* Standard page header — centered to match wizard content width */}
+      <div className="relative z-10 flex justify-center">
+        <div className="w-full max-w-2xl">
+          <PageHeader
+            crumbs={[
+              { label: t('nav.surveys'), path: ROUTES.SURVEYS },
+              { label: t('create.pageTitle') },
+            ]}
+            title={t('create.pageTitle')}
+          />
+        </div>
       </div>
 
       <main className="relative z-10 flex items-start justify-center pb-12 min-h-[calc(100vh-8rem)]">
