@@ -19,12 +19,13 @@ function httpLogger(req, res, next) {
     const labels    = { method: req.method, route, status };
 
     const logData = {
-      method:   req.method,
+      requestId: req.id,
+      method:    req.method,
       route,
-      status:   res.statusCode,
-      ms:       Math.round(durationS * 1000),
-      userId:   req.userId,
-      orgId:    req.orgId,
+      status:    res.statusCode,
+      ms:        Math.round(durationS * 1000),
+      userId:    req.userId,
+      orgId:     req.orgId,
     };
 
     if (res.statusCode >= 500)      logger.error(logData, 'request error');
