@@ -1,9 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../components/Icon';
-import { SideNav } from '../components/SideNav';
-import { BottomNav } from '../components/BottomNav';
-import { TopBar } from '../components/TopBar';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { useApi } from '../hooks/useApi';
 import { ROUTES, toPath } from '../constants/routes';
 import { SURVEY_CATEGORIES } from '../constants/surveyTypes';
@@ -943,6 +941,7 @@ function TemplateCard({ template, onUseClick, onEdit, onDelete, onInfoClick }) {
 
 export function TemplateLibraryPage() {
   const { t } = useTranslation();
+  useSetPageTitle(t('templates.pageTitle'), t('templates.pageSubtitle'));
   const navigate = useNavigate();
   const api = useApi();
 
@@ -1033,14 +1032,8 @@ export function TemplateLibraryPage() {
   const hasResults = filteredSystem.length > 0 || filteredOrg.length > 0;
 
   return (
-    <div className="flex min-h-screen bg-surface">
-      <SideNav />
-      <BottomNav />
-
-      <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-        <TopBar title={t('templates.pageTitle')} subtitle={t('templates.pageSubtitle')} />
-
-        <div className="pt-20 pb-12 px-6 md:px-8 max-w-6xl mx-auto w-full">
+    <>
+        <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-6xl mx-auto w-full">
 
           {/* Page header */}
           <div className="flex items-start justify-between mb-8">
@@ -1227,7 +1220,6 @@ export function TemplateLibraryPage() {
             </div>
           )}
         </div>
-      </main>
 
       {/* Use modal */}
       {useModal && (
@@ -1264,6 +1256,6 @@ export function TemplateLibraryPage() {
           onUseClick={(tmpl) => { setInfoModal(null); setUseModal(tmpl); }}
         />
       )}
-    </div>
+    </>
   );
 }

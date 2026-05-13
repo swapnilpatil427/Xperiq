@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { SideNav } from '../components/SideNav';
-import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { useInsights } from '../hooks/useInsights';
 import { useSurveys } from '../hooks/useSurveys';
 import { useTranslation } from '../lib/i18n';
@@ -10,7 +9,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 
 const topicCards = [
   {
@@ -102,54 +100,13 @@ const themes = [
 export function AdvancedInsightsPage() {
   const [activeTab, setActiveTab] = useState('analysis');
   const { t } = useTranslation();
+  useSetPageTitle(t('advancedInsights.pageTitle'), t('advancedInsights.dateFilter'));
   const { surveys } = useSurveys();
   const activeSurvey = surveys.find((s) => s.status === 'active') || surveys[0];
   const { insights, generating, regenerate } = useInsights(activeSurvey?.id);
 
   return (
-    <div className="flex min-h-screen bg-surface font-body">
-      <SideNav />
-
-      <main className="flex-1 flex flex-col min-h-screen md:ml-64">
-        {/* Top Bar */}
-        <header
-          className="topbar-fixed fixed top-0 z-50 glass-nav flex justify-between items-center h-16 px-6"
-          style={{
-            boxShadow: '0 8px 32px 0 rgba(31,38,135,0.07)',
-          }}
-        >
-          <div className="flex items-center gap-4">
-            <h2 className="text-2xl font-bold tracking-tight font-headline text-on-surface">
-              {t('advancedInsights.pageTitle')}
-            </h2>
-            <Separator orientation="vertical" className="h-6 opacity-50" />
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-muted/30">
-              <Icon name="calendar_today" size={16} className="text-primary" />
-              <span className="text-xs font-semibold text-on-surface-variant">{t('advancedInsights.dateFilter')}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              {['notifications', 'help'].map((icon) => (
-                <Button
-                  key={icon}
-                  variant="ghost"
-                  size="icon"
-                  className="w-10 h-10 rounded-full text-on-surface-variant hover:bg-muted/50"
-                >
-                  <Icon name={icon} size={20} />
-                </Button>
-              ))}
-            </div>
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-white font-headline bg-gradient-primary border-2 border-white"
-            >
-              AR
-            </div>
-          </div>
-        </header>
-
-        <div className="pt-24 pb-12 px-6 space-y-8 max-w-7xl mx-auto w-full">
+        <div className="pb-24 md:pb-8 px-6 space-y-8 max-w-7xl mx-auto w-full">
 
           {/* NPS + CSAT */}
           <section className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -579,9 +536,5 @@ export function AdvancedInsightsPage() {
             </div>
           </section>
         </div>
-      </main>
-
-      <BottomNav />
-    </div>
   );
 }

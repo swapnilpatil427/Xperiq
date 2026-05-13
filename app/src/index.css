@@ -116,6 +116,7 @@ body {
   color: var(--color-on-surface);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
 }
 
 #root {
@@ -573,8 +574,9 @@ body {
 /* ─── TopBar layout ──────────────────────────────────────── */
 
 .topbar-fixed {
-  width: calc(100% - 16rem);
-  left: 16rem;
+  left: var(--sidebar-width, 16rem);
+  width: calc(100% - var(--sidebar-width, 16rem));
+  transition: left 250ms ease, width 250ms ease;
   box-shadow: var(--shadow-nav);
 }
 
@@ -637,4 +639,67 @@ body {
   background: rgba(180,19,64,0.06);
   color: var(--color-error);
   border: 1px solid rgba(180,19,64,0.12);
+}
+
+/* ─── Sidebar collapsed icon-only item ──────────────────────── */
+
+.sidenav-item-collapsed {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.625rem;
+  border-radius: 0.625rem;
+  border: 1px solid transparent;
+  color: var(--color-on-surface-variant);
+  background: transparent;
+  transition: all 0.2s ease;
+  cursor: pointer;
+  position: relative;
+}
+
+.sidenav-item-collapsed:hover {
+  background: rgba(42,75,217,0.06);
+  color: var(--color-primary);
+}
+
+.sidenav-item-collapsed.active {
+  background: linear-gradient(135deg, rgba(42,75,217,0.1), rgba(131,41,200,0.06));
+  color: var(--color-primary);
+  border-color: rgba(42,75,217,0.18);
+}
+
+/* ─── Credits chip in TopBar ─────────────────────────────────── */
+
+.credits-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-family: var(--font-headline);
+  background: rgba(42,75,217,0.07);
+  color: var(--color-primary);
+  border: 1px solid rgba(42,75,217,0.15);
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.credits-chip:hover {
+  background: rgba(42,75,217,0.12);
+  box-shadow: 0 2px 12px rgba(42,75,217,0.15);
+}
+
+.credits-chip.warn {
+  background: rgba(217,119,6,0.08);
+  color: var(--color-warning);
+  border-color: rgba(217,119,6,0.2);
+}
+
+.credits-chip.critical {
+  background: rgba(180,19,64,0.08);
+  color: var(--color-error);
+  border-color: rgba(180,19,64,0.2);
 }

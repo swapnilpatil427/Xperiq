@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { SideNav } from '../components/SideNav';
-import { TopBar } from '../components/TopBar';
-import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { useSurveys } from '../hooks/useSurveys';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
@@ -15,6 +13,7 @@ const DEMO_TOKEN = 'demo-survey-2024';
 
 export function ResponseCollectionPage() {
   const { t } = useTranslation();
+  useSetPageTitle(t('collection.pageTitle'), t('collection.pageSubtitle'));
   const { surveys } = useSurveys();
   const [copied, setCopied] = useState(false);
   const [selectedSurveyId, setSelectedSurveyId] = useState(null);
@@ -52,17 +51,7 @@ export function ResponseCollectionPage() {
   ];
 
   return (
-    <div className="flex min-h-screen bg-surface font-body">
-      <SideNav />
-      <BottomNav />
-
-      <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-        <TopBar
-          title={t('collection.pageTitle')}
-          subtitle={t('collection.pageSubtitle')}
-        />
-
-        <div className="pt-24 pb-32 px-4 md:px-8 max-w-6xl mx-auto w-full flex flex-col items-center">
+        <div className="pb-24 md:pb-8 px-4 md:px-8 max-w-6xl mx-auto w-full flex flex-col items-center">
 
           {/* Survey selector */}
           {activeSurveys.length > 1 && (
@@ -288,7 +277,5 @@ export function ResponseCollectionPage() {
             ))}
           </div>
         </div>
-      </main>
-    </div>
   );
 }

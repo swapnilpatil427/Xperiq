@@ -1,97 +1,214 @@
-import { OrganizationSwitcher } from '@clerk/react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { OrganizationSwitcher } from '@clerk/react';
 import { Icon } from './Icon';
-import { LogoFull } from './Logo';
+import { LogoFull, LogoMark } from './Logo';
 import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
-export function SideNav() {
+const NAV_ITEMS = [
+  { key: 'nav.surveys',     icon: 'poll',         path: ROUTES.SURVEYS },
+  { key: 'nav.data',        icon: 'dataset',      path: '/app/data' },
+  { key: 'nav.insights',    icon: 'psychology',   path: ROUTES.INSIGHTS, fill: 1 },
+  { key: 'nav.respondents', icon: 'groups',       path: ROUTES.RESPONDENTS },
+  { key: 'nav.workflows',   icon: 'account_tree', path: ROUTES.WORKFLOWS },
+  { key: 'nav.templates',   icon: 'auto_awesome',  path: ROUTES.TEMPLATES },
+];
+const SETTINGS_ITEM = { key: 'nav.settings', icon: 'settings', path: ROUTES.SETTINGS };
+
+export function SideNav({ isExpanded, onToggle }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-  const navItems = [
-    { label: t('nav.surveys'),     icon: 'poll',         path: ROUTES.SURVEYS },
-    { label: t('nav.insights'),    icon: 'psychology',   path: ROUTES.INSIGHTS, fill: 1 },
-    { label: t('nav.respondents'), icon: 'groups',       path: ROUTES.RESPONDENTS },
-    { label: t('nav.workflows'),   icon: 'account_tree', path: ROUTES.WORKFLOWS },
-    { label: t('nav.settings'),    icon: 'settings',     path: ROUTES.SETTINGS },
-  ];
+  function isActive(path) {
+    return location.pathname === path || location.pathname.startsWith(path + '/');
+  }
+
+  const allItems = [...NAV_ITEMS, SETTINGS_ITEM];
 
   return (
-    <aside className="sidenav hidden md:flex h-screen w-64 flex-col py-8 px-4 gap-y-3 fixed left-0 top-0 z-40">
-      {/* Brand / Logo */}
-      <div className="px-3 mb-6">
-        <LogoFull height={30} showTagline />
-      </div>
-
-      {/* Divider */}
-      <div className="mx-3 mb-2 divider-gradient" />
-
-      {/* Nav Items */}
-      <nav className="flex-1 space-y-1">
-        {navItems.map((item) => {
-          const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
-          return (
+    <TooltipProvider delayDuration={0}>
+      <aside
+        className="sidenav fixed left-0 top-0 z-40 h-screen flex flex-col overflow-hidden transition-all duration-[250ms] ease-out"
+        style={{ width: isExpanded ? '16rem' : '3.5rem' }}
+      >
+        {/* Logo + toggle */}
+        <div className={`flex items-center h-16 flex-shrink-0 px-3 ${isExpanded ? 'justify-between' : 'justify-center'}`}>
+          {isExpanded ? (
+            <div className="pl-1">
+              <LogoFull height={28} />
+            </div>
+          ) : (
+            <LogoMark size={28} />
+          )}
+          {isExpanded && (
             <button
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              className={`sidenav-item${isActive ? ' active active-bar' : ''}`}
+              onClick={onToggle}
+              className="p-1.5 rounded-lg text-on-surface-variant hover:bg-primary/5 hover:text-primary transition-colors flex-shrink-0"
+              aria-label="Collapse sidebar"
             >
-              <Icon name={item.icon} fill={isActive ? (item.fill || 1) : 0} size={20} />
-              {item.label}
-              {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary" />}
+              <Icon name="menu_open" size={18} />
             </button>
-          );
-        })}
-      </nav>
-
-      {/* Bottom section */}
-      <div className="space-y-3 mx-1">
-        {/* Organization switcher */}
-        {clerkKey && (
-          <div className="px-1">
-            <OrganizationSwitcher
-              hidePersonal
-              afterSelectOrganizationUrl="/"
-              afterCreateOrganizationUrl="/"
-              afterLeaveOrganizationUrl="/"
-              appearance={{
-                elements: {
-                  rootBox: 'w-full',
-                  organizationSwitcherTrigger:
-                    'w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-on-surface-variant hover:bg-primary/5 transition-colors',
-                  organizationSwitcherTriggerIcon: 'ml-auto',
-                },
-              }}
-            />
-          </div>
-        )}
-
-        {/* AI Credits */}
-        <div className="sidenav-credit-widget">
-          <p className="font-bold mb-0.5 text-on-surface">AI Credits</p>
-          <div className="flex items-center justify-between mt-2">
-            <Progress value={68} className="flex-1 mr-3 h-1.5" />
-            <span className="text-[10px] font-bold text-primary">680 / 1k</span>
-          </div>
+          )}
         </div>
 
-        <Button
-          onClick={() => navigate(ROUTES.CREATE)}
-          variant="gradient"
-          className="sidenav-cta w-full relative overflow-hidden font-bold py-3.5 px-4 text-sm group font-headline rounded-xl"
-        >
-          <span className="shimmer absolute inset-0 rounded-[0.75rem] opacity-0 group-hover:opacity-100 transition-opacity" />
-          <span className="relative flex items-center justify-center gap-2">
-            <Icon name="add_circle" size={18} />
-            {t('nav.createNewSurvey')}
-          </span>
-        </Button>
-      </div>
-    </aside>
+        {/* Divider */}
+        <div className="mx-3 mb-1 divider-gradient flex-shrink-0" />
+
+        {/* Nav items */}
+        <nav className="flex-1 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden py-2">
+          {NAV_ITEMS.map((item) => {
+            const active = isActive(item.path);
+            if (!isExpanded) {
+              return (
+                <Tooltip key={item.path}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => navigate(item.path)}
+                      className={`sidenav-item-collapsed${active ? ' active' : ''}`}
+                      aria-label={t(item.key)}
+                    >
+                      <Icon name={item.icon} fill={active ? (item.fill || 1) : 0} size={20} />
+                      {active && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-3/5 rounded-r-full bg-gradient-to-b from-primary to-tertiary" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="font-semibold text-xs">
+                    {t(item.key)}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                className={`sidenav-item${active ? ' active active-bar' : ''}`}
+              >
+                <Icon name={item.icon} fill={active ? (item.fill || 1) : 0} size={20} />
+                <span className="truncate">{t(item.key)}</span>
+                {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
+              </button>
+            );
+          })}
+
+          {/* Divider before Settings */}
+          <div className={`my-2 ${isExpanded ? 'mx-2' : 'mx-1'} divider-gradient`} />
+
+          {/* Settings */}
+          {(() => {
+            const item = SETTINGS_ITEM;
+            const active = isActive(item.path);
+            if (!isExpanded) {
+              return (
+                <Tooltip key={item.path}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => navigate(item.path)}
+                      className={`sidenav-item-collapsed${active ? ' active' : ''}`}
+                      aria-label={t(item.key)}
+                    >
+                      <Icon name={item.icon} fill={active ? 1 : 0} size={20} />
+                      {active && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-3/5 rounded-r-full bg-gradient-to-b from-primary to-tertiary" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="font-semibold text-xs">
+                    {t(item.key)}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+            return (
+              <button
+                onClick={() => navigate(item.path)}
+                className={`sidenav-item${active ? ' active active-bar' : ''}`}
+              >
+                <Icon name={item.icon} fill={active ? 1 : 0} size={20} />
+                <span className="truncate">{t(item.key)}</span>
+                {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
+              </button>
+            );
+          })()}
+        </nav>
+
+        {/* Bottom section */}
+        <div className={`flex-shrink-0 px-2 pb-4 space-y-2 ${!isExpanded && 'flex flex-col items-center'}`}>
+          {/* Org switcher */}
+          {clerkKey && isExpanded && (
+            <div className="px-1">
+              <OrganizationSwitcher
+                hidePersonal
+                afterSelectOrganizationUrl="/"
+                afterCreateOrganizationUrl="/"
+                afterLeaveOrganizationUrl="/"
+                appearance={{
+                  elements: {
+                    rootBox: 'w-full',
+                    organizationSwitcherTrigger:
+                      'w-full flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold text-on-surface-variant hover:bg-primary/5 transition-colors',
+                    organizationSwitcherTriggerIcon: 'ml-auto',
+                  },
+                }}
+              />
+            </div>
+          )}
+
+          {/* Collapse toggle (when expanded show it in header; when collapsed show at bottom) */}
+          {!isExpanded && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onToggle}
+                  className="sidenav-item-collapsed"
+                  aria-label="Expand sidebar"
+                >
+                  <Icon name="menu" size={20} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="font-semibold text-xs">
+                Expand
+              </TooltipContent>
+            </Tooltip>
+          )}
+
+          {/* Create CTA */}
+          {isExpanded ? (
+            <Button
+              onClick={() => navigate(ROUTES.CREATE)}
+              variant="gradient"
+              className="sidenav-cta w-full relative overflow-hidden font-bold py-3 px-4 text-sm group font-headline rounded-xl"
+            >
+              <span className="shimmer absolute inset-0 rounded-[0.75rem] opacity-0 group-hover:opacity-100 transition-opacity" />
+              <span className="relative flex items-center justify-center gap-2">
+                <Icon name="add_circle" size={18} />
+                {t('nav.createNewSurvey')}
+              </span>
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => navigate(ROUTES.CREATE)}
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold transition-transform hover:scale-105 active:scale-95"
+                  style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)', boxShadow: '0 6px 20px rgba(42,75,217,0.4)' }}
+                  aria-label={t('nav.createNewSurvey')}
+                >
+                  <Icon name="add" size={18} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="font-semibold text-xs">
+                {t('nav.createNewSurvey')}
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      </aside>
+    </TooltipProvider>
   );
 }

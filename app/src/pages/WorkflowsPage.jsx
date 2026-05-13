@@ -1,8 +1,6 @@
 import { useState } from 'react';
-import { SideNav } from '../components/SideNav';
-import { TopBar } from '../components/TopBar';
-import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { useWorkflows } from '../hooks/useWorkflows';
 import { GRADIENTS } from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
@@ -62,6 +60,7 @@ function formatAction(wf) {
 
 export function WorkflowsPage() {
   const { t } = useTranslation();
+  useSetPageTitle(t('workflows.pageTitle'), t('workflows.pageSubtitle'));
   const { workflows, loading, createWorkflow, toggleWorkflow, deleteWorkflow } = useWorkflows();
   const [showNewModal, setShowNewModal] = useState(false);
   const [newName, setNewName] = useState('');
@@ -93,17 +92,8 @@ export function WorkflowsPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-surface">
-      <SideNav />
-      <BottomNav />
-
-      <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-        <TopBar
-          title={t('workflows.pageTitle')}
-          subtitle={t('workflows.pageSubtitle')}
-        />
-
-        <div className="pt-20 pb-12 px-6 md:px-8 max-w-5xl mx-auto w-full">
+    <>
+        <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-5xl mx-auto w-full">
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-10">
             <div className="space-y-2">
@@ -271,7 +261,6 @@ export function WorkflowsPage() {
             </div>
           )}
         </div>
-      </main>
 
       {/* New Workflow Modal */}
       <Dialog
@@ -385,6 +374,6 @@ export function WorkflowsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }

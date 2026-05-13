@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { OrganizationProfile } from '@clerk/react';
-import { SideNav } from '../components/SideNav';
-import { BottomNav } from '../components/BottomNav';
-import { TopBar } from '../components/TopBar';
 import { Icon } from '../components/Icon';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
 import { useAppAuth } from '../lib/auth.jsx';
@@ -64,6 +62,7 @@ const AUDIENCE_OPTIONS = ['B2B Customers', 'B2C Consumers', 'Internal Employees'
 
 export function BrandSettingsPage() {
   const { t } = useTranslation();
+  useSetPageTitle(t('settings.pageTitle'));
   const { orgId } = useAppAuth();
   const navigate = useNavigate();
   const api = useApi();
@@ -150,16 +149,7 @@ export function BrandSettingsPage() {
   ];
 
   return (
-    <div className="flex min-h-screen bg-surface">
-      <SideNav />
-      <BottomNav />
-
-      <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-        <TopBar
-          title={t('settings.pageTitle')}
-        />
-
-        <div className="pt-20 pb-12 px-8 max-w-7xl mx-auto w-full space-y-8">
+        <div className="pb-24 md:pb-8 px-8 max-w-7xl mx-auto w-full space-y-8">
 
           {/* Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -600,7 +590,5 @@ export function BrandSettingsPage() {
             )}
           </Tabs>
         </div>
-      </main>
-    </div>
   );
 }

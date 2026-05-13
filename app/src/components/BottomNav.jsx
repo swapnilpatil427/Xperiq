@@ -9,42 +9,46 @@ export function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // 5 items: Surveys | Data | FAB(Create) | Insights | Settings
   const items = [
-    { labelKey: 'nav.surveys',     icon: 'poll',       path: ROUTES.SURVEYS },
-    { labelKey: 'nav.insights',    icon: 'psychology',  path: ROUTES.INSIGHTS },
-    { labelKey: 'nav.respondents', icon: 'groups',     path: ROUTES.RESPONDENTS },
-    { labelKey: 'nav.settings',    icon: 'settings',   path: ROUTES.SETTINGS },
+    { labelKey: 'nav.surveys',  icon: 'poll',      path: ROUTES.SURVEYS  },
+    { labelKey: 'nav.data',     icon: 'dataset',   path: '/app/data'     },
+    { isFab: true,               icon: 'add',       path: ROUTES.CREATE   },
+    { labelKey: 'nav.insights', icon: 'psychology', path: ROUTES.INSIGHTS },
+    { labelKey: 'nav.settings', icon: 'settings',  path: ROUTES.SETTINGS },
   ];
 
   return (
-    <nav className="bottomnav md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-6 pb-8 pt-4">
+    <nav
+      className="bottomnav fixed bottom-0 left-0 w-full z-50 flex justify-around items-end px-2"
+      style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom, 1.5rem))', paddingTop: '0.75rem' }}
+    >
       {items.map((item, i) => {
-        const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
-        const isMid = i === 1;
-
-        if (isMid) {
+        if (item.isFab) {
           return (
-            <Button
-              key={item.path}
+            <button
+              key="fab"
               onClick={() => navigate(item.path)}
-              className="bottomnav-fab"
-              variant="ghost"
-              size="icon"
+              className="bottomnav-fab mb-1 flex items-center justify-center"
+              aria-label={t('nav.createNewSurvey')}
             >
-              <Icon name={item.icon} fill={1} size={22} />
-            </Button>
+              <Icon name={item.icon} fill={1} size={24} />
+            </button>
           );
         }
 
+        const isActive = location.pathname === item.path || location.pathname.startsWith(item.path + '/');
         return (
           <Button
             key={item.path}
             variant="ghost"
             onClick={() => navigate(item.path)}
-            className={`flex flex-col h-auto gap-0 px-3 py-1 rounded-xl hover:bg-transparent ${isActive ? 'text-primary' : 'text-inverse-on-surface'}`}
+            className={`flex flex-col h-auto gap-0.5 px-3 py-1 rounded-xl hover:bg-transparent min-w-0 ${
+              isActive ? 'text-primary' : 'text-inverse-on-surface'
+            }`}
           >
             <Icon name={item.icon} fill={isActive ? 1 : 0} size={22} />
-            <span className="text-[10px] font-bold uppercase tracking-widest mt-1 font-headline">
+            <span className="text-[9px] font-bold uppercase tracking-widest font-headline truncate">
               {t(item.labelKey)}
             </span>
           </Button>

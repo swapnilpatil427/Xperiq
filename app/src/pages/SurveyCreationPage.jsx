@@ -7,6 +7,7 @@ import { useApi } from '../hooks/useApi';
 import { ROUTES, toPath } from '../constants/routes';
 import { BADGES } from '../constants/colors';
 import { useTranslation } from '../lib/i18n';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -64,6 +65,7 @@ function StepIndicator({ currentStep, stepLabels }) {
 
 export function SurveyCreationPage() {
   const { t } = useTranslation();
+  useSetPageTitle(t('create.pageTitle'));
   const navigate = useNavigate();
   const location = useLocation();
   const isManual = location.state?.mode === 'manual';

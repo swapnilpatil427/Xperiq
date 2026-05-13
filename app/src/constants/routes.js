@@ -15,6 +15,7 @@ export const ROUTES = {
   TEMPLATE_EDITOR:    '/app/templates/new',
   WORKFLOWS:          '/app/workflows',
   SETTINGS:           '/app/settings',
+  DATA:               '/app/data',
 };
 
 /** Replace :param placeholders with concrete values */

@@ -1,9 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Icon } from '../components/Icon';
-import { SideNav } from '../components/SideNav';
-import { BottomNav } from '../components/BottomNav';
-import { TopBar } from '../components/TopBar';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { useApi } from '../hooks/useApi';
 import { ROUTES } from '../constants/routes';
 import { SURVEY_CATEGORIES } from '../constants/surveyTypes';
@@ -201,6 +199,7 @@ function TypePicker({ onSelect, onClose }) {
 
 export function TemplateEditorPage() {
   const { t } = useTranslation();
+  useSetPageTitle(t('templates.editor.pageTitle'), t('templates.pageSubtitle'));
   const navigate = useNavigate();
   const location = useLocation();
   const api = useApi();
@@ -300,14 +299,8 @@ export function TemplateEditorPage() {
   const nonAllCats = SURVEY_CATEGORIES.filter((c) => c.id !== 'all');
 
   return (
-    <div className="flex min-h-screen bg-surface">
-      <SideNav />
-      <BottomNav />
-
-      <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-        <TopBar title={t('templates.editor.pageTitle')} subtitle={t('templates.pageSubtitle')} />
-
-        <div className="pt-20 pb-16 px-6 md:px-8 max-w-3xl mx-auto w-full">
+    <>
+        <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-3xl mx-auto w-full">
 
           {/* Back + heading */}
           <div className="flex items-center gap-3 mb-6">
@@ -577,7 +570,6 @@ export function TemplateEditorPage() {
             </div>
           </div>
         </div>
-      </main>
 
       {typePicker && (
         <TypePicker
@@ -585,6 +577,6 @@ export function TemplateEditorPage() {
           onClose={() => setTypePicker(false)}
         />
       )}
-    </div>
+    </>
   );
 }

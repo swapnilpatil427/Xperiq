@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { SideNav } from '../components/SideNav';
-import { TopBar } from '../components/TopBar';
-import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { useInsights } from '../hooks/useInsights';
 import { useSurveys } from '../hooks/useSurveys';
 import { SENTIMENT } from '../constants/thresholds';
@@ -115,24 +113,14 @@ function sentimentToSignal(sentiment, t) {
 
 export function InsightsDashboardPage() {
   const { t } = useTranslation();
+  useSetPageTitle(t('insights.pageTitle'), t('insights.dateFilter'));
   const [activeTab, setActiveTab] = useState('analysis');
   const { surveys } = useSurveys();
   const activeSurvey = surveys.find((s) => s.status === 'active') || surveys[0];
   const { insights, generating, regenerate } = useInsights(activeSurvey?.id);
 
   return (
-    <div className="flex min-h-screen bg-surface">
-      <SideNav />
-      <BottomNav />
-
-      <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-        <TopBar
-          title={t('insights.pageTitle')}
-          subtitle={t('insights.dateFilter')}
-        />
-
-        {/* Dashboard Canvas */}
-        <div className="pt-20 pb-12 px-6 md:px-8 space-y-8 max-w-7xl mx-auto w-full">
+        <div className="pb-24 md:pb-8 px-6 md:px-8 space-y-8 max-w-7xl mx-auto w-full">
 
           {/* NPS + CSAT */}
           <motion.section
@@ -593,7 +581,5 @@ export function InsightsDashboardPage() {
             </motion.div>
           </motion.section>
         </div>
-      </main>
-    </div>
   );
 }

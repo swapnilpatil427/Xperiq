@@ -1,7 +1,5 @@
-import { SideNav } from '../components/SideNav';
-import { TopBar } from '../components/TopBar';
-import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { useSurveys } from '../hooks/useSurveys';
 import { INSIGHTS as INSIGHTS_THRESHOLDS } from '../constants/thresholds';
 import { useTranslation } from '../lib/i18n';
@@ -39,6 +37,7 @@ const questions = [
 
 export function ResponseDashboardPage() {
   const { t } = useTranslation();
+  useSetPageTitle(t('responseDashboard.pageTitle'), t('responseDashboard.dateFilter'));
   const { surveys } = useSurveys();
   const totalResponses = surveys.reduce((acc, s) => acc + (s.responseCount || 0), 0);
   const activeSurveys = surveys.filter((s) => s.status === 'active');
@@ -46,12 +45,7 @@ export function ResponseDashboardPage() {
     ? Math.round(activeSurveys.filter((s) => s.npsScore).reduce((acc, s) => acc + s.npsScore, 0) / activeSurveys.filter((s) => s.npsScore).length)
     : 74;
   return (
-    <div className="flex min-h-screen bg-surface font-body">
-      <SideNav />
-      <TopBar title={t('responseDashboard.pageTitle')} subtitle={t('responseDashboard.dateFilter')} />
-
-      <main className="flex-1 flex flex-col min-h-screen md:ml-64">
-        <div className="pt-24 pb-12 px-6 space-y-8 max-w-7xl mx-auto w-full">
+        <div className="pb-24 md:pb-8 px-6 space-y-8 max-w-7xl mx-auto w-full">
 
           {/* Top Metrics */}
           <section className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -317,9 +311,5 @@ export function ResponseDashboardPage() {
             </div>
           </Card>
         </div>
-      </main>
-
-      <BottomNav />
-    </div>
   );
 }

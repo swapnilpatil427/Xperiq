@@ -23,8 +23,18 @@ const en = {
     workflows: 'Workflows',
     settings: 'Settings',
     templates: 'Templates',
+    data: 'Data',
     createNewSurvey: 'Create New Survey',
     newSurvey: 'New Survey',
+  },
+
+  credits: {
+    remaining: '{n} credits',
+    sheetTitle: 'AI Credits',
+    sheetDescription: 'Credits power AI features: survey generation, insight analysis, and smart suggestions.',
+    upgradeButton: 'Upgrade Plan',
+    used: '{used} / {total} used',
+    lowWarning: 'Running low on credits',
   },
 
   common: {
@@ -924,6 +934,15 @@ const en = {
       saveButton: 'Save Organization Profile',
       savedButton: 'Saved!',
     },
+  },
+  data: {
+    pageTitle: 'Data',
+    pageSubtitle: 'All Responses',
+    emptyHeading: 'No responses yet',
+    emptyDescription: 'Publish a survey and start collecting responses to see them here.',
+    survey: 'Survey',
+    responded: 'Responded',
+    allSurveys: 'All surveys',
   },
 };
 

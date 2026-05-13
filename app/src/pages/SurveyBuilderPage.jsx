@@ -1,8 +1,8 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { SideNav } from '../components/SideNav';
-import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
+import { useSidebarState } from '../hooks/useSidebarState';
 import { PublishModal, PublishSuccessModal } from '../components/SurveyActionModal';
 import { Spinner, OverlayLoader } from '../components/LoadingStates';
 import { useSurveys } from '../hooks/useSurveys';
@@ -1521,6 +1521,7 @@ export function SurveyBuilderPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { isExpanded, toggle } = useSidebarState();
 
   const pending = location.state || null;
   const api = useApi();
@@ -1732,7 +1733,7 @@ export function SurveyBuilderPage() {
   };
 
   // ── Layout constants ──────────────────────────────────────────────────────
-  const SIDENAV_W  = 256; // 16rem
+  const SIDENAV_W  = isExpanded ? 256 : 56;
   const PALETTE_W  = 224; // 14rem
   const PROPS_W    = 320; // 20rem
   const TOPNAV_H   = 64;
@@ -1740,7 +1741,7 @@ export function SurveyBuilderPage() {
   if (isLoading) {
     return (
       <div className="flex min-h-screen font-body bg-[#f5f7f9]">
-        <SideNav />
+        <SideNav isExpanded={isExpanded} onToggle={toggle} />
         <div className="flex-1 flex items-center justify-center gap-4 flex-col">
           <Spinner size={36} />
           <p className="text-sm font-semibold text-on-surface-variant">Loading survey…</p>
@@ -1751,7 +1752,7 @@ export function SurveyBuilderPage() {
 
   return (
     <div className="flex min-h-screen font-body bg-[#f5f7f9]">
-      <SideNav />
+      <SideNav isExpanded={isExpanded} onToggle={toggle} />
 
       <OverlayLoader visible={launching} message="Publishing survey…" />
 
@@ -2031,8 +2032,6 @@ export function SurveyBuilderPage() {
           )}
         </div>
       </aside>
-
-      <BottomNav />
 
       {/* Decorative glow */}
       <div className="fixed pointer-events-none -z-10 rounded-full"

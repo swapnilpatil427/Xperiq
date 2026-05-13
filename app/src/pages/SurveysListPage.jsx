@@ -1,10 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SideNav }    from '../components/SideNav';
-import { TopBar }     from '../components/TopBar';
-import { BottomNav }  from '../components/BottomNav';
 import { Icon }       from '../components/Icon';
+import { useSetPageTitle } from '../contexts/pageTitle';
 import { PauseModal, ResumeModal, CloseModal, ReopenModal, DeleteSurveyModal } from '../components/SurveyActionModal';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { SurveyListSkeleton, Spinner } from '../components/LoadingStates';
@@ -134,6 +132,7 @@ function SortDropdown({ value, order, onChange }) {
 export function SurveysListPage() {
   const { t }    = useTranslation();
   const navigate = useNavigate();
+  useSetPageTitle(t('surveys.pageTitle'));
   const api      = useApi();
 
   // ── list state
@@ -234,17 +233,8 @@ export function SurveysListPage() {
   const remaining         = total - surveys.length;
 
   return (
-    <div className="flex min-h-screen bg-surface">
-      <SideNav />
-      <BottomNav />
-
-      <main className="flex-1 md:ml-64 flex flex-col min-h-screen">
-        <TopBar
-          title={t('surveys.pageTitle')}
-          subtitle={t('surveys.activeSurveysSubtitle', { n: kpiActiveSurveys })}
-        />
-
-        <div className="pt-20 pb-12 px-6 md:px-8 max-w-6xl mx-auto w-full">
+    <>
+        <div className="pb-24 md:pb-8 px-6 md:px-8 max-w-6xl mx-auto w-full">
 
           {/* KPI row */}
           <motion.div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8" variants={stagger} initial="hidden" animate="visible">
@@ -633,7 +623,6 @@ export function SurveysListPage() {
           )}
 
         </div>
-      </main>
 
       {/* Modals */}
       <PauseModal open={!!pauseTarget} onClose={() => setPauseTarget(null)}
@@ -660,6 +649,6 @@ export function SurveysListPage() {
         surveyTitle={deleteTarget?.title} responseCount={deleteTarget?.responseCount ?? 0}
         busy={statusChanging === deleteTarget?.id}
         onConfirm={async () => { setStatusChanging(deleteTarget.id); await deleteSurvey(deleteTarget.id); setStatusChanging(null); setDeleteTarget(null); }} />
-    </div>
+    </>
   );
 }
