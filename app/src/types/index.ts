@@ -176,10 +176,28 @@ export interface OrgProfile {
   website?: string | null;
   brand_description?: string | null;
   brand_name?: string | null;
+  logo_url?: string | null;
   brand_colors?: Record<string, string>;
   brand_fonts?: Record<string, string>;
   created_at?: string;
   updated_at?: string;
+}
+
+// ── Org & Members ─────────────────────────────────────────────────────────────
+
+export interface Org {
+  orgId: string;
+  name: string | null;
+  logoUrl?: string | null;
+}
+
+export interface OrgMember {
+  userId: string;
+  identifier: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  role: string;
+  joinedAt: string;
 }
 
 // ── API client ────────────────────────────────────────────────────────────────
