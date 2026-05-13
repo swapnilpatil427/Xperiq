@@ -1,12 +1,27 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { responseSubmitLimiter } = require('../../middleware/rateLimiter');
 const db = require('../../lib/db');
 const { maybeAutoAnalyze } = require('../../triggers/autoAnalyze');
 const { responsesSubmitted } = require('../../lib/metrics');
 const router = express.Router();
 
-// Submit response — public (no auth)
-router.post('/:surveyId/responses', async (req, res) => {
+// Pagination defaults — adjust here if org-level settings are added later.
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE     = 200;
+
+// Ensure a composite index exists for efficient paginated queries.
+// Runs once on startup; safe to call repeatedly (IF NOT EXISTS).
+async function ensureIndexes() {
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS responses_survey_submitted
+      ON responses (survey_id, submitted_at DESC)
+  `).catch(() => {});
+}
+ensureIndexes().catch(console.error);
+
+// ── Submit response — public, rate-limited ────────────────────────────────────
+router.post('/:surveyId/responses', responseSubmitLimiter, async (req, res) => {
   try {
     const { surveyId } = req.params;
     const { answers, publishToken } = req.body;
@@ -40,17 +55,39 @@ router.post('/:surveyId/responses', async (req, res) => {
   }
 });
 
-// Get responses — authenticated
+// ── Get responses — authenticated, paginated ──────────────────────────────────
+// Query params: ?limit=50&offset=0
+// Returns: { responses, total, limit, offset, hasMore }
 router.get('/:surveyId/responses', requireAuth, async (req, res) => {
   try {
-    const { rows } = await db.query(
-      `SELECT * FROM responses
-       WHERE survey_id = $1 AND org_id = $2
-       ORDER BY submitted_at DESC
-       LIMIT 100`,
-      [req.params.surveyId, req.orgId]
-    );
-    res.json({ responses: rows, total: rows.length });
+    const limit  = Math.min(Math.max(1, parseInt(req.query.limit  || DEFAULT_PAGE_SIZE, 10)), MAX_PAGE_SIZE);
+    const offset = Math.max(0, parseInt(req.query.offset || '0', 10));
+
+    const [countRes, rowsRes] = await Promise.all([
+      db.query(
+        `SELECT COUNT(*)::int AS total
+         FROM responses
+         WHERE survey_id = $1 AND org_id = $2`,
+        [req.params.surveyId, req.orgId]
+      ),
+      db.query(
+        `SELECT *
+         FROM responses
+         WHERE survey_id = $1 AND org_id = $2
+         ORDER BY submitted_at DESC
+         LIMIT $3 OFFSET $4`,
+        [req.params.surveyId, req.orgId, limit, offset]
+      ),
+    ]);
+
+    const total = countRes.rows[0].total;
+    res.json({
+      responses: rowsRes.rows,
+      total,
+      limit,
+      offset,
+      hasMore: offset + rowsRes.rows.length < total,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

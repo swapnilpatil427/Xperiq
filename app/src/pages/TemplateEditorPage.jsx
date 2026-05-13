@@ -349,7 +349,7 @@ export function TemplateEditorPage() {
                   value={form.label}
                   onChange={(e) => set('label', e.target.value)}
                   placeholder={t('templates.editor.labelPlaceholder')}
-                  className="w-full text-sm font-semibold bg-surface-container-low rounded-xl focus-visible:ring-0 focus-visible:ring-offset-0 border-0"
+                  className="w-full text-sm font-semibold bg-surface-container-low rounded-[10px] focus-visible:ring-0 focus-visible:ring-offset-0 border-0"
                   style={errors.label ? { border: '1.5px solid #b41340' } : {}}
                 />
                 {errors.label && (
@@ -370,7 +370,7 @@ export function TemplateEditorPage() {
                     onChange={(e) => set('shortLabel', e.target.value)}
                     placeholder={t('templates.editor.shortLabelPlaceholder')}
                     maxLength={12}
-                    className="w-full text-sm bg-surface-container-low rounded-xl focus-visible:ring-0 focus-visible:ring-offset-0 border-0 pr-12"
+                    className="w-full text-sm bg-surface-container-low rounded-[10px] focus-visible:ring-0 focus-visible:ring-offset-0 border-0 pr-12"
                   />
                   <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold ${form.shortLabel.length > 12 ? 'text-error' : 'text-on-surface-variant'}`}>
                     {form.shortLabel.length}/12

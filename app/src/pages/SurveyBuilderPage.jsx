@@ -3,9 +3,11 @@ import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { SideNav } from '../components/SideNav';
 import { BottomNav } from '../components/BottomNav';
 import { Icon } from '../components/Icon';
-import { PublishModal } from '../components/SurveyActionModal';
+import { PublishModal, PublishSuccessModal } from '../components/SurveyActionModal';
+import { Spinner, OverlayLoader } from '../components/LoadingStates';
 import { useSurveys } from '../hooks/useSurveys';
 import { useApi } from '../hooks/useApi';
+import { useTranslation } from '../lib/i18n';
 import { ROUTES } from '../constants/routes';
 import { QTYPE_META, QTYPE_GROUPS, createQuestion, mapAiToBuilderQuestion } from '../constants/questionTypes';
 import { Button } from '@/components/ui/button';
@@ -81,30 +83,42 @@ function QuestionPalette({ onAdd, onAiCommand }) {
       </div>
 
       {/* AI Copilot — always visible at bottom */}
-      <div className="flex-shrink-0 px-3 py-3 border-t border-border/20 bg-background">
-        <div className="text-[10px] font-black uppercase tracking-widest mb-2 text-muted-foreground/60">AI Copilot</div>
-        <div className="rounded-xl overflow-hidden border border-[rgba(42,75,217,0.2)] shadow-[0_2px_8px_rgba(42,75,217,0.06)]">
+      <div className="flex-shrink-0 px-3 pb-3 pt-2 border-t border-border/20 bg-background">
+        <div className="rounded-2xl overflow-hidden"
+          style={{ background: 'linear-gradient(135deg, rgba(42,75,217,0.04) 0%, rgba(131,41,200,0.04) 100%)', border: '1px solid rgba(42,75,217,0.15)', boxShadow: '0 4px 16px rgba(42,75,217,0.06)' }}>
+          {/* Copilot header */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-[rgba(42,75,217,0.08)]">
+            <div className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0"
+              style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}>
+              <Icon name="auto_awesome" size={11} style={{ color: 'white' }} />
+            </div>
+            <span className="text-[10px] font-black uppercase tracking-widest"
+              style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              AI Copilot
+            </span>
+            <span className="ml-auto text-[9px] text-muted-foreground/40 font-medium">⏎ to send</span>
+          </div>
           <Textarea
             value={aiInput}
             onChange={(e) => setAiInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiCommand(); } }}
-            placeholder="Ask AI to modify survey…"
+            placeholder="e.g. Add a demographic question, reorder by difficulty…"
             rows={2}
-            className="w-full resize-none text-xs p-3 outline-none bg-white text-foreground placeholder:text-muted-foreground/40 rounded-none border-0 focus-visible:ring-0"
+            className="w-full resize-none text-xs p-3 outline-none bg-transparent text-foreground placeholder:text-muted-foreground/40 rounded-none border-0 focus-visible:ring-0"
           />
           <Button
             onClick={handleAiCommand}
             disabled={!aiInput.trim() || aiLoading}
             className={cn(
-              'w-full py-2 text-xs font-bold rounded-none h-auto flex items-center justify-center gap-1.5',
+              'w-full py-2.5 text-xs font-bold rounded-none rounded-b-2xl h-auto flex items-center justify-center gap-1.5',
               aiInput.trim() && !aiLoading
-                ? 'bg-gradient-to-br from-[var(--color-primary)] to-[var(--color-tertiary)] text-white hover:opacity-90'
-                : 'bg-[#eef1f3] text-muted-foreground'
+                ? 'bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-tertiary)] text-white hover:opacity-90 active:scale-[0.99]'
+                : 'bg-transparent text-muted-foreground/40'
             )}
           >
             {aiLoading
-              ? <><div className="w-3 h-3 border-2 rounded-full animate-spin border-muted-foreground border-t-transparent" />Thinking…</>
-              : <><Icon name="auto_awesome" size={13} />Apply Change</>
+              ? <><div className="w-3 h-3 border-2 rounded-full animate-spin border-[var(--color-primary)] border-t-transparent" />Thinking…</>
+              : <><Icon name="auto_awesome" size={13} />Apply to Survey</>
             }
           </Button>
         </div>
@@ -359,7 +373,11 @@ function QuestionCard({ q, index, total, selected, onSelect, onUpdate, onDelete,
         ) : (
           <div
             onClick={(e) => { e.stopPropagation(); setEditingText(true); }}
-            className="cursor-text"
+            title="Click to edit question text"
+            className={cn(
+              'cursor-text rounded-lg transition-all',
+              !editingText && 'hover:bg-[rgba(42,75,217,0.04)] hover:ring-1 hover:ring-[rgba(42,75,217,0.15)]',
+            )}
           >
             {editingText ? (
               <Textarea
@@ -368,12 +386,15 @@ function QuestionCard({ q, index, total, selected, onSelect, onUpdate, onDelete,
                 onChange={(e) => onUpdate(q.id, { question: e.target.value })}
                 onBlur={() => setEditingText(false)}
                 rows={2}
-                className="w-full resize-none text-base font-semibold bg-muted/30 rounded-lg px-3 py-2 font-headline text-foreground border-0 focus-visible:ring-0"
+                className="w-full resize-none text-base font-semibold rounded-lg px-3 py-2 font-headline text-foreground border border-[rgba(42,75,217,0.3)] focus-visible:ring-1 focus-visible:ring-[rgba(42,75,217,0.4)] bg-white"
               />
             ) : (
-              <p className={cn('text-base font-semibold font-headline leading-snug', q.question ? 'text-foreground' : 'text-muted-foreground/50')}>
-                {q.question || 'Click to enter question text…'}
-              </p>
+              <div className="group px-3 py-2 flex items-start gap-2 min-h-[40px]">
+                <p className={cn('text-base font-semibold font-headline leading-snug flex-1', q.question ? 'text-foreground' : 'text-muted-foreground/40 italic')}>
+                  {q.question || 'Click to enter question text…'}
+                </p>
+                <Icon name="edit" size={13} className="text-muted-foreground/30 flex-shrink-0 mt-1 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </div>
             )}
           </div>
         )}
@@ -636,7 +657,7 @@ function PropertiesPanel({ q, allQuestions, onUpdate, onClose }) {
           <Label className="text-[10px] font-black uppercase tracking-widest block mb-1.5 text-muted-foreground">Question Text</Label>
           <Textarea value={q.question} onChange={(e) => u({ question: e.target.value })}
             rows={3} placeholder="Enter your question…"
-            className="w-full resize-none text-sm px-3 py-2.5 rounded-xl bg-white border-[#dfe3e6] text-foreground focus-visible:ring-1" />
+            className="w-full resize-none text-sm px-3 py-2.5 rounded-[10px] bg-white border-[#dfe3e6] text-foreground focus-visible:ring-1" />
         </div>
 
         {/* Question type */}
@@ -646,7 +667,7 @@ function PropertiesPanel({ q, allQuestions, onUpdate, onClose }) {
             const fresh = createQuestion(newType);
             onUpdate(q.id, { ...fresh, id: q.id, question: q.question, required: q.required, skipLogic: q.skipLogic || [], displayLogic: q.displayLogic });
           }}>
-            <SelectTrigger className="w-full text-sm h-10 rounded-xl bg-white border-[#dfe3e6] text-foreground">
+            <SelectTrigger className="w-full text-sm h-10 rounded-[10px] bg-white border-[#dfe3e6] text-foreground">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -885,30 +906,36 @@ function PropertiesPanel({ q, allQuestions, onUpdate, onClose }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PREVIEW MODE
+// PREVIEW MODE — fully interactive
 // ─────────────────────────────────────────────────────────────────────────────
-function PreviewMode({ questions, title, onClose }) {
+function PreviewMode({ questions, title, thankYouMessage, settings, onClose }) {
+  const { t } = useTranslation();
   const [current, setCurrent] = useState(0);
   const [answers, setAnswers]  = useState({});
   const [done, setDone]        = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
   const q = questions[current];
+  const val = answers[q?.id];
+  const setAnswer = (v) => q && setAnswers((prev) => ({ ...prev, [q.id]: v }));
+  const canContinue = !q?.required || q?.type === 'statement' || val !== undefined;
+  const progress = questions.length > 0 ? ((current + 1) / questions.length) * 100 : 0;
 
   const advance = () => {
-    // Evaluate skip logic
-    const rule = (q?.skipLogic || []).find((r) => {
-      const val = answers[q.id];
+    if (!q) return;
+    const rule = (q.skipLogic || []).find((r) => {
+      const v = answers[q.id];
       const { operator, value } = r.condition;
-      const num = Number(val);
-      const cmp = Number(value);
-      if (operator === 'answered')     return val !== undefined && val !== '';
-      if (operator === 'not_answered') return val === undefined || val === '';
-      if (operator === 'eq')           return String(val) === String(value);
-      if (operator === 'neq')          return String(val) !== String(value);
+      const num = Number(v), cmp = Number(value);
+      if (operator === 'answered')     return v !== undefined && v !== '';
+      if (operator === 'not_answered') return v === undefined || v === '';
+      if (operator === 'eq')           return String(v) === String(value);
+      if (operator === 'neq')          return String(v) !== String(value);
       if (operator === 'lt')           return !isNaN(num) && num < cmp;
       if (operator === 'lte')          return !isNaN(num) && num <= cmp;
       if (operator === 'gt')           return !isNaN(num) && num > cmp;
       if (operator === 'gte')          return !isNaN(num) && num >= cmp;
-      if (operator === 'contains')     return String(val).includes(String(value));
+      if (operator === 'contains')     return String(v).includes(String(value));
       return false;
     });
     if (rule) {
@@ -920,71 +947,388 @@ function PreviewMode({ questions, title, onClose }) {
     else setDone(true);
   };
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="relative w-full max-w-xl mx-4 rounded-3xl overflow-hidden bg-white shadow-[0_40px_100px_rgba(0,0,0,0.3)]">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onClose}
-          className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full bg-[#eef1f3] hover:bg-[#dfe3e6]"
-        >
-          <Icon name="close" size={18} className="text-[#595c5e]" />
-        </Button>
+  function QuestionInput({ q }) {
+    const v = answers[q.id];
+    const ch = (newVal) => setAnswers((prev) => ({ ...prev, [q.id]: newVal }));
+    switch (q.type) {
+      case 'nps':
+        return (
+          <div className="mt-5">
+            <div className="flex gap-1">
+              {Array.from({ length: 11 }, (_, i) => (
+                <button key={i} onClick={() => ch(i)}
+                  className="flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95"
+                  style={{
+                    background: v === i ? (i <= 6 ? '#b41340' : i <= 8 ? '#d97706' : '#059669') : '#eef1f3',
+                    color: v === i ? '#fff' : '#595c5e',
+                    transform: v === i ? 'scale(1.08)' : 'scale(1)',
+                    boxShadow: v === i ? '0 4px 12px rgba(0,0,0,0.15)' : 'none',
+                  }}>
+                  {i}
+                </button>
+              ))}
+            </div>
+            <div className="flex justify-between mt-2 px-1">
+              <span className="text-xs font-semibold" style={{ color: '#b41340' }}>{q.labelLow || t('fill.npsLabelLow')}</span>
+              <span className="text-xs font-semibold" style={{ color: '#059669' }}>{q.labelHigh || t('fill.npsLabelHigh')}</span>
+            </div>
+          </div>
+        );
+      case 'csat': {
+        const style = q.csatStyle || 'emoji';
+        if (style === 'emoji') {
+          const emojis = [['😠','Very Bad'],['😕','Bad'],['😐','Neutral'],['😊','Good'],['😍','Excellent']];
+          return (
+            <div className="flex gap-3 mt-5 justify-center">
+              {emojis.map(([emoji, label], i) => (
+                <button key={i} onClick={() => ch(i + 1)}
+                  className="flex flex-col items-center gap-1.5 p-3 rounded-2xl transition-all active:scale-95"
+                  style={{
+                    background: v === i + 1 ? '#e0e7ff' : '#f5f7f9',
+                    border: v === i + 1 ? '2px solid #2a4bd9' : '2px solid transparent',
+                  }}>
+                  <span className="text-3xl">{emoji}</span>
+                  <span className="text-[10px] font-bold text-muted-foreground">{label}</span>
+                </button>
+              ))}
+            </div>
+          );
+        }
+        return (
+          <div className="flex gap-2 mt-5">
+            {Array.from({ length: 5 }, (_, i) => (
+              <button key={i + 1} onClick={() => ch(i + 1)}
+                className="flex-1 py-4 rounded-xl font-black text-xl transition-all active:scale-95"
+                style={{ background: v >= i + 1 ? '#d97706' : '#eef1f3', color: v >= i + 1 ? '#fff' : '#c4c4c4' }}>
+                {style === 'stars' ? '★' : i + 1}
+              </button>
+            ))}
+          </div>
+        );
+      }
+      case 'rating':
+        return (
+          <div className="flex gap-2 mt-5">
+            {Array.from({ length: q.scaleMax || 5 }, (_, i) => (
+              <button key={i + 1} onClick={() => ch(i + 1)}
+                className="flex-1 py-4 rounded-xl font-black text-xl transition-all active:scale-95"
+                style={{
+                  background: v >= i + 1 ? '#2a4bd9' : '#eef1f3',
+                  color: v >= i + 1 ? '#fff' : '#c4c4c4',
+                  boxShadow: v >= i + 1 ? '0 8px 20px rgba(42,75,217,0.2)' : 'none',
+                }}>
+                {q.ratingStyle === 'numbers' ? i + 1 : '★'}
+              </button>
+            ))}
+          </div>
+        );
+      case 'multiple_choice':
+        return (
+          <div className="flex flex-col gap-2.5 mt-5">
+            {(q.options || []).map((opt) => (
+              <button key={opt} onClick={() => ch(opt)}
+                className="flex items-center gap-3 px-5 py-4 rounded-xl text-left transition-all active:scale-95"
+                style={{
+                  background: v === opt ? '#e0e7ff' : '#eef1f3',
+                  border: v === opt ? '2px solid #2a4bd9' : '2px solid transparent',
+                  color: v === opt ? '#2a4bd9' : '#2c2f31',
+                }}>
+                <div className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center"
+                  style={{ border: v === opt ? '2px solid #2a4bd9' : '2px solid #d0d5d8', background: v === opt ? '#2a4bd9' : 'transparent' }}>
+                  {v === opt && <div className="w-2 h-2 rounded-full bg-white" />}
+                </div>
+                <span className="font-semibold text-sm">{opt}</span>
+              </button>
+            ))}
+            {q.allowOther && (
+              <div className="flex items-center gap-3 px-5 py-4 rounded-xl bg-[#eef1f3] border-2 border-transparent">
+                <div className="w-5 h-5 rounded-full border-2 border-[#d0d5d8] flex-shrink-0" />
+                <span className="font-semibold text-sm text-[#abadaf] italic">Other (specify)…</span>
+              </div>
+            )}
+          </div>
+        );
+      case 'checkbox': {
+        const arrVal = Array.isArray(v) ? v : [];
+        const toggle = (opt) => ch(arrVal.includes(opt) ? arrVal.filter((x) => x !== opt) : [...arrVal, opt]);
+        return (
+          <div className="flex flex-col gap-2.5 mt-5">
+            {(q.options || []).map((opt) => (
+              <button key={opt} onClick={() => toggle(opt)}
+                className="flex items-center gap-3 px-5 py-4 rounded-xl text-left transition-all active:scale-95"
+                style={{
+                  background: arrVal.includes(opt) ? '#e0e7ff' : '#eef1f3',
+                  border: arrVal.includes(opt) ? '2px solid #2a4bd9' : '2px solid transparent',
+                }}>
+                <div className="w-5 h-5 rounded flex-shrink-0 flex items-center justify-center"
+                  style={{ border: arrVal.includes(opt) ? '2px solid #2a4bd9' : '2px solid #d0d5d8', background: arrVal.includes(opt) ? '#2a4bd9' : 'transparent' }}>
+                  {arrVal.includes(opt) && <Icon name="check" size={12} style={{ color: '#fff' }} />}
+                </div>
+                <span className="font-semibold text-sm" style={{ color: arrVal.includes(opt) ? '#2a4bd9' : '#2c2f31' }}>{opt}</span>
+              </button>
+            ))}
+          </div>
+        );
+      }
+      case 'dropdown':
+        return (
+          <select value={v || ''} onChange={(e) => ch(e.target.value)}
+            className="w-full mt-5 px-4 py-3 rounded-[10px] text-sm font-semibold bg-[#f5f7f9] border border-[#dfe3e6] text-foreground appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#2a4bd9]">
+            <option value="">{q.placeholder || 'Choose an option…'}</option>
+            {(q.options || []).map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+          </select>
+        );
+      case 'open_text':
+        return (
+          <textarea value={v || ''} onChange={(e) => ch(e.target.value)}
+            placeholder={q.placeholder || t('fill.textareaPlaceholder')}
+            rows={4}
+            className="w-full mt-5 resize-none text-sm px-4 py-3 rounded-[10px] bg-[#f5f7f9] border border-[#dfe3e6] text-foreground focus:outline-none focus:ring-2 focus:ring-[#2a4bd9] placeholder:text-[#abadaf]" />
+        );
+      case 'short_text':
+        return (
+          <input type="text" value={v || ''} onChange={(e) => ch(e.target.value)}
+            placeholder={q.placeholder || 'Type your answer…'}
+            className="w-full mt-5 px-4 py-3 rounded-[10px] text-sm font-medium bg-[#f5f7f9] border border-[#dfe3e6] text-foreground focus:outline-none focus:ring-2 focus:ring-[#2a4bd9]" />
+        );
+      case 'slider': {
+        const min = q.min ?? 0, max = q.max ?? 100, step = q.step ?? 1, cur = v ?? min;
+        return (
+          <div className="mt-6 px-2">
+            <div className="flex justify-between text-xs font-semibold text-muted-foreground mb-3">
+              <span>{q.labelLow || min}</span>
+              <span className="text-base font-bold text-foreground">{cur}</span>
+              <span>{q.labelHigh || max}</span>
+            </div>
+            <input type="range" min={min} max={max} step={step} value={cur}
+              onChange={(e) => ch(Number(e.target.value))}
+              className="w-full accent-[#2a4bd9]" />
+          </div>
+        );
+      }
+      case 'date': {
+        const type = q.dateType === 'time' ? 'time' : q.dateType === 'datetime' ? 'datetime-local' : 'date';
+        return (
+          <input type={type} value={v || ''} onChange={(e) => ch(e.target.value)}
+            className="w-full mt-5 px-4 py-3 rounded-[10px] text-sm font-medium bg-[#f5f7f9] border border-[#dfe3e6] text-foreground focus:outline-none focus:ring-2 focus:ring-[#2a4bd9]" />
+        );
+      }
+      case 'matrix': {
+        const rows = q.rows || [], cols = q.columns || [], multi = q.matrixType === 'checkbox';
+        const matVal = v || {};
+        const toggle = (row, col) => {
+          if (multi) {
+            const prev = matVal[row] || [];
+            ch({ ...matVal, [row]: prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col] });
+          } else {
+            ch({ ...matVal, [row]: col });
+          }
+        };
+        const isSel = (row, col) => multi ? (matVal[row] || []).includes(col) : matVal[row] === col;
+        return (
+          <div className="mt-5 overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr>
+                  <th className="text-left py-2 pr-4 w-1/3" />
+                  {cols.map((c) => <th key={c} className="py-2 px-2 text-center text-xs font-bold text-muted-foreground">{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, ri) => (
+                  <tr key={row} style={{ background: ri % 2 === 0 ? '#f5f7f9' : 'transparent' }}>
+                    <td className="py-3 pr-4 font-semibold text-sm text-foreground">{row}</td>
+                    {cols.map((col) => (
+                      <td key={col} className="py-3 px-2 text-center">
+                        <button onClick={() => toggle(row, col)}
+                          className={`w-5 h-5 mx-auto flex items-center justify-center ${multi ? 'rounded' : 'rounded-full'}`}
+                          style={{ border: isSel(row, col) ? '2px solid #2a4bd9' : '2px solid #d0d5d8', background: isSel(row, col) ? '#2a4bd9' : 'transparent' }}>
+                          {isSel(row, col) && <Icon name="check" size={11} style={{ color: '#fff' }} />}
+                        </button>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+      case 'ranking': {
+        const opts = q.options || [];
+        const ranked = Array.isArray(v) && v.length ? v : opts;
+        const move = (from, to) => {
+          const next = [...ranked];
+          const [item] = next.splice(from, 1);
+          next.splice(to, 0, item);
+          ch(next);
+        };
+        return (
+          <div className="mt-5 space-y-2">
+            {ranked.map((opt, i) => (
+              <div key={opt} className="flex items-center gap-3 px-4 py-3 rounded-xl bg-[#f5f7f9] border border-[#dfe3e6]">
+                <span className="w-6 h-6 rounded-lg flex items-center justify-center text-xs font-black bg-[#e0e7ff] text-[#2a4bd9] flex-shrink-0">{i + 1}</span>
+                <span className="flex-1 text-sm font-semibold text-foreground">{opt}</span>
+                <div className="flex flex-col gap-0.5">
+                  <button onClick={() => { if (i > 0) move(i, i - 1); }} disabled={i === 0}
+                    className="w-6 h-5 flex items-center justify-center rounded text-muted-foreground hover:bg-[#dfe3e6] disabled:opacity-30">
+                    <Icon name="arrow_drop_up" size={16} />
+                  </button>
+                  <button onClick={() => { if (i < ranked.length - 1) move(i, i + 1); }} disabled={i === ranked.length - 1}
+                    className="w-6 h-5 flex items-center justify-center rounded text-muted-foreground hover:bg-[#dfe3e6] disabled:opacity-30">
+                    <Icon name="arrow_drop_down" size={16} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      }
+      default: return null;
+    }
+  }
 
-        <div className="h-1 w-full bg-[#eef1f3]">
-          <div className="h-full transition-all bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-tertiary)]"
-            style={{ width: `${((current + 1) / questions.length) * 100}%` }} />
+  return (
+    <div className="fixed inset-0 z-[100] flex items-start justify-center py-6 bg-black/60 backdrop-blur-sm overflow-y-auto">
+      <div className="relative w-full max-w-xl mx-4 rounded-3xl overflow-hidden bg-white shadow-[0_40px_100px_rgba(0,0,0,0.35)]">
+
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[rgba(171,173,175,0.12)] bg-[#fafbfc]">
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-[#e0e7ff] text-[var(--color-primary)]">
+              <Icon name="play_arrow" size={12} />Preview
+            </div>
+            <span className="text-sm font-semibold text-foreground truncate max-w-[200px]">{title}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSettingsOpen((v) => !v)}
+              className={cn(
+                'rounded-full gap-1.5 h-auto py-1.5 px-3 text-xs font-bold',
+                settingsOpen
+                  ? 'bg-[rgba(42,75,217,0.08)] text-[var(--color-primary)]'
+                  : 'text-muted-foreground hover:bg-[#eef1f3]'
+              )}
+            >
+              <Icon name="settings" size={13} />Settings
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose}
+              className="w-8 h-8 rounded-full bg-[#eef1f3] hover:bg-[#dfe3e6]">
+              <Icon name="close" size={16} className="text-[#595c5e]" />
+            </Button>
+          </div>
         </div>
 
-        <div className="p-10">
+        {/* Settings panel (collapsible) */}
+        {settingsOpen && settings && (
+          <div className="px-6 py-4 border-b border-[rgba(171,173,175,0.12)] bg-[#f5f7f9] space-y-3">
+            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Survey Configuration</p>
+            {settings.description && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 mb-1">Description</p>
+                <p className="text-sm text-foreground">{settings.description}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 mb-1">Thank You Message</p>
+              {settings.thankYouMessage
+                ? <p className="text-sm text-foreground bg-white rounded-xl px-3 py-2 border border-[#dfe3e6]">{settings.thankYouMessage}</p>
+                : <p className="text-xs italic text-[#abadaf]">Not configured — close preview and open Settings to add one.</p>
+              }
+            </div>
+            {settings.intent && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/70 mb-1">Survey Goal</p>
+                <p className="text-sm text-muted-foreground">{settings.intent}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Progress bar */}
+        <div className="h-1 w-full bg-[#eef1f3]">
+          <div className="h-full transition-all bg-gradient-to-r from-[var(--color-primary)] to-[var(--color-tertiary)]"
+            style={{ width: done ? '100%' : `${progress}%` }} />
+        </div>
+
+        {/* Main content */}
+        <div className="px-8 py-8 max-h-[65vh] overflow-y-auto">
           {done ? (
-            <div className="text-center py-8">
-              <div className="text-5xl mb-4">🎉</div>
-              <h2 className="text-2xl font-extrabold font-headline text-foreground">Survey complete!</h2>
-              <p className="mt-2 text-sm text-muted-foreground">This was a preview. In production, responses would be saved.</p>
-              <Button
-                onClick={onClose}
-                variant="gradient"
-                className="mt-6 px-6 py-3 rounded-xl"
-              >
+            <div className="text-center py-6">
+              <div className="w-20 h-20 rounded-2xl flex items-center justify-center mx-auto mb-6"
+                style={{ background: 'linear-gradient(135deg, #059669, #10b981)', boxShadow: '0 12px 32px rgba(5,150,105,0.3)' }}>
+                <Icon name="check_circle" fill={1} size={40} style={{ color: '#fff' }} />
+              </div>
+              <h2 className="text-2xl font-extrabold font-headline text-foreground">
+                {t('fill.thankYou.heading')}
+              </h2>
+              <p className="mt-3 text-base leading-relaxed text-muted-foreground max-w-xs mx-auto">
+                {thankYouMessage || t('fill.thankYou.message')}
+              </p>
+              {!thankYouMessage && (
+                <p className="mt-3 text-xs px-3 py-2 rounded-xl text-[#d97706] bg-[rgba(217,119,6,0.06)] border border-[rgba(217,119,6,0.15)] inline-flex items-center gap-1.5">
+                  <Icon name="info" size={13} />
+                  No custom message set — open Settings to configure one
+                </p>
+              )}
+              <Button onClick={onClose}
+                className="mt-6 px-6 py-3 rounded-xl h-auto font-bold text-white"
+                style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
                 Close Preview
               </Button>
             </div>
           ) : q ? (
             <>
-              <div className="mb-2 text-xs font-bold text-muted-foreground/60">
-                Question {current + 1} of {questions.filter((x) => x.type !== 'statement').length}
-              </div>
+              {q.type !== 'statement' && (
+                <div className="mb-4 flex items-center justify-between">
+                  <span className="text-xs font-bold text-muted-foreground/50">
+                    {current + 1} / {questions.filter((x) => x.type !== 'statement').length}
+                  </span>
+                  {q.required && (
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#b41340]">Required</span>
+                  )}
+                </div>
+              )}
               {q.type === 'statement' ? (
                 <h2 className="text-2xl font-extrabold font-headline mb-6 text-foreground">{q.question}</h2>
               ) : (
-                <>
-                  <h2 className="text-xl font-extrabold font-headline mb-6 text-foreground">
-                    {q.question} {q.required && <span className="text-destructive">*</span>}
-                  </h2>
-                  <TypePreview q={q} />
-                </>
+                <h2 className="text-xl font-extrabold font-headline text-foreground leading-snug">
+                  {q.question || <span className="text-muted-foreground/40 italic">No question text entered</span>}
+                </h2>
               )}
-              <div className="flex justify-between mt-8">
-                <Button
-                  variant="secondary"
-                  onClick={() => setCurrent(Math.max(0, current - 1))}
+              {q.type !== 'statement' && <QuestionInput q={q} />}
+              <div className="flex gap-3 mt-8">
+                <Button onClick={() => setCurrent(Math.max(0, current - 1))}
                   disabled={current === 0}
-                  className="px-5 rounded-xl bg-[#eef1f3] text-[#595c5e] hover:bg-[#dfe3e6] disabled:opacity-30"
-                >
+                  className="px-5 rounded-xl h-auto py-3 bg-[#eef1f3] text-[#595c5e] hover:bg-[#dfe3e6] font-bold disabled:opacity-30">
                   ← Back
                 </Button>
-                <Button
-                  variant="gradient"
-                  onClick={advance}
-                  className="px-6 rounded-xl"
-                >
-                  {current === questions.length - 1 ? 'Submit' : 'Continue →'}
+                <Button onClick={advance}
+                  disabled={q.type !== 'statement' && !canContinue}
+                  className="flex-1 px-6 rounded-xl h-auto py-3 font-bold text-white transition-all"
+                  style={{
+                    background: canContinue || q.type === 'statement'
+                      ? 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))'
+                      : '#eef1f3',
+                    color: canContinue || q.type === 'statement' ? 'white' : '#abadaf',
+                  }}>
+                  {current === questions.length - 1 ? 'Submit →' : 'Continue →'}
                 </Button>
               </div>
             </>
           ) : null}
+        </div>
+
+        {/* Footer hint */}
+        <div className="px-6 py-3 border-t border-[rgba(171,173,175,0.08)] flex items-center justify-between bg-[#fafbfc]">
+          <span className="text-[10px] text-muted-foreground/60">Preview mode — responses are not saved</span>
+          {thankYouMessage && (
+            <span className="text-[10px] font-bold text-[var(--color-success)] flex items-center gap-1">
+              <Icon name="check_circle" size={11} />Thank you message configured
+            </span>
+          )}
         </div>
       </div>
     </div>
@@ -1048,25 +1392,144 @@ function LogicView({ questions }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SURVEY SETTINGS PANEL
+// ─────────────────────────────────────────────────────────────────────────────
+function SurveySettingsPanel({ settings, onChange, onClose, fromTemplate }) {
+  const { t } = useTranslation();
+  const u = (patch) => onChange({ ...settings, ...patch });
+
+  return (
+    <div className="h-full flex flex-col overflow-y-auto bg-[#fafbfc]">
+      <div className="flex items-center justify-between px-5 py-4 sticky top-0 z-10 bg-[#fafbfc] border-b border-[rgba(171,173,175,0.1)]">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg flex items-center justify-center bg-[rgba(42,75,217,0.08)]">
+            <Icon name="settings" size={15} style={{ color: 'var(--color-primary)' }} />
+          </div>
+          <span className="text-sm font-extrabold font-headline text-foreground">{t('builder.settings.heading')}</span>
+        </div>
+        <Button variant="ghost" size="icon" onClick={onClose} className="h-7 w-7 rounded-lg hover:bg-[#eef1f3]">
+          <Icon name="close" size={18} className="text-muted-foreground" />
+        </Button>
+      </div>
+
+      <div className="flex-1 px-5 py-4 space-y-5 overflow-y-auto">
+
+        {/* Template info — read-only, sourced from template record */}
+        {fromTemplate && (
+          <div className="rounded-xl p-3.5 space-y-2.5"
+            style={{ background: 'rgba(131,41,200,0.05)', border: '1px solid rgba(131,41,200,0.12)' }}>
+            <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: 'var(--color-tertiary)' }}>
+              {t('builder.settings.templateLabel')}
+            </p>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: fromTemplate.bg || '#f3e8ff', color: fromTemplate.color || 'var(--color-tertiary)' }}>
+                <Icon name={fromTemplate.icon || 'library_books'} size={13} />
+              </div>
+              <span className="text-sm font-bold text-foreground">{fromTemplate.label || fromTemplate.title}</span>
+            </div>
+            {fromTemplate.category && (
+              <span className="inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full"
+                style={{ background: 'rgba(131,41,200,0.1)', color: 'var(--color-tertiary)' }}>
+                {fromTemplate.category}
+              </span>
+            )}
+            {fromTemplate.tags?.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {fromTemplate.tags.slice(0, 6).map((tag) => (
+                  <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                    style={{ background: 'rgba(131,41,200,0.08)', color: 'var(--color-tertiary)' }}>
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
+            {fromTemplate.estimatedMinutes > 0 && (
+              <p className="text-[10px] text-muted-foreground flex items-center gap-1 mt-1">
+                <Icon name="schedule" size={11} />
+                ~{fromTemplate.estimatedMinutes} min to complete
+              </p>
+            )}
+          </div>
+        )}
+
+        <div>
+          <Label className="text-[10px] font-black uppercase tracking-widest block mb-1.5 text-muted-foreground">
+            {t('builder.settings.descriptionLabel')}
+          </Label>
+          <Textarea
+            value={settings.description || ''}
+            onChange={(e) => u({ description: e.target.value })}
+            rows={3}
+            placeholder={t('builder.settings.descriptionPlaceholder')}
+            className="w-full resize-none text-sm px-3 py-2.5 rounded-[10px] bg-white border-[#dfe3e6] text-foreground focus-visible:ring-1"
+          />
+        </div>
+
+        <div>
+          <Label className="text-[10px] font-black uppercase tracking-widest block mb-1.5 text-muted-foreground">
+            {t('builder.settings.intentLabel')}
+          </Label>
+          <Textarea
+            value={settings.intent || ''}
+            onChange={(e) => u({ intent: e.target.value })}
+            rows={3}
+            placeholder={t('builder.settings.intentPlaceholder')}
+            className="w-full resize-none text-sm px-3 py-2.5 rounded-[10px] bg-white border-[#dfe3e6] text-foreground focus-visible:ring-1"
+          />
+        </div>
+
+        <Separator />
+
+        <div>
+          <Label className="text-[10px] font-black uppercase tracking-widest block mb-1.5 text-muted-foreground">
+            {t('builder.settings.thankYouMessageLabel')}
+          </Label>
+          <Textarea
+            value={settings.thankYouMessage || ''}
+            onChange={(e) => u({ thankYouMessage: e.target.value })}
+            rows={3}
+            placeholder={t('builder.settings.thankYouMessagePlaceholder')}
+            className="w-full resize-none text-sm px-3 py-2.5 rounded-[10px] bg-white border-[#dfe3e6] text-foreground focus-visible:ring-1"
+          />
+          {/* Live preview */}
+          {settings.thankYouMessage && (
+            <div className="mt-2 rounded-xl px-3 py-2.5 border border-[rgba(5,150,105,0.15)]"
+              style={{ background: 'rgba(5,150,105,0.04)' }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--color-success)] mb-1 flex items-center gap-1">
+                <Icon name="visibility" size={10} />Preview
+              </p>
+              <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{settings.thankYouMessage}</p>
+            </div>
+          )}
+          {!settings.thankYouMessage && (
+            <p className="text-[10px] text-muted-foreground/60 mt-1.5 flex items-center gap-1">
+              <Icon name="info" size={10} />Shown to respondents after they submit. Supports line breaks.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 export function SurveyBuilderPage() {
   const { surveyId: surveyIdParam } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const pending = location.state || null;
   const api = useApi();
 
   // Edit mode: surveyIdParam is a real DB id (not 'new')
   const isEditMode = !!surveyIdParam && surveyIdParam !== 'new';
-  // In edit mode, only trust state questions if they're non-empty (list endpoint
-  // may return surveys without questions populated, giving us an empty array).
-  // In new mode, any questions array (even empty) is intentional.
   const hasStateQuestions = isEditMode
     ? (pending?.questions?.length > 0)
     : Array.isArray(pending?.questions);
-  // Load from DB when editing and no usable questions were passed in navigation state
   const needsDbLoad = isEditMode && !hasStateQuestions;
 
   const [isLoading,    setIsLoading]    = useState(needsDbLoad);
@@ -1080,28 +1543,55 @@ export function SurveyBuilderPage() {
     surveyIdParam && surveyIdParam !== 'new' ? surveyIdParam : (pending?.id || null)
   );
 
+  const fromTemplate = pending?.fromTemplate || null;
+
+  // Only survey-run-specific fields — template data (tags, estimated_minutes, etc.) is
+  // derived from the template record via template_id, never duplicated on the survey.
+  const [surveySettings, setSurveySettings] = useState({
+    description:      pending?.description || '',
+    intent:           pending?.intent || '',
+    thankYouMessage:  pending?.thankYouMessage || '',
+    templateId:       pending?.templateId || fromTemplate?.id || null,
+  });
+
   // Load full survey from DB when opening by URL without state data
   useEffect(() => {
     if (!needsDbLoad) return;
     api.getSurvey(surveyIdParam)
-      .then((survey) => {
-        if (survey) {
-          setSurveyTitle(survey.title || 'New Survey');
-          setSurveyTypeId(survey.survey_type_id || null);
-          if (survey.questions?.length) {
-            setQuestions(survey.questions.map(mapAiToBuilderQuestion));
+      .then((data) => {
+        const s = data?.survey || data;
+        if (s) {
+          setSurveyTitle(s.title || 'New Survey');
+          setSurveyTypeId(s.survey_type_id || null);
+          setSurveySettings({
+            description:     s.description || '',
+            intent:          s.intent || '',
+            thankYouMessage: s.thank_you_message || '',
+            templateId:      s.template_id || null,
+          });
+          if (s.questions?.length) {
+            setQuestions(s.questions.map(mapAiToBuilderQuestion));
           }
         }
       })
-      .catch(() => {/* keep defaults on API failure */})
+      .catch(() => {})
       .finally(() => setIsLoading(false));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [selectedId,  setSelectedId]  = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [mode,        setMode]        = useState('build'); // 'build' | 'preview' | 'logic'
   const [saving,           setSaving]           = useState(false);
   const [saved,            setSaved]            = useState(false);
   const [launching,        setLaunching]        = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
+  const [publishSuccessUrl, setPublishSuccessUrl] = useState(null);
+  const [autoSaving,       setAutoSaving]       = useState(false);
+  const [autoSavedAt,      setAutoSavedAt]      = useState(null);
+  const autosaveRef = useRef(null);
+  // Tracks whether user has made any changes since data was loaded — prevents autosave from
+  // firing immediately after page load when state is populated from the API.
+  const isDirtyRef = useRef(false);
   const { createSurvey, updateSurvey, publishSurvey } = useSurveys();
 
   // Drag state via refs (no re-renders mid-drag)
@@ -1109,10 +1599,11 @@ export function SurveyBuilderPage() {
   const [dragOver,    setDragOver]    = useState(null);
 
   const selectedQ = questions.find((q) => q.id === selectedId) || null;
-  const panelOpen = !!selectedId && mode === 'build';
+  const panelOpen = (!!selectedId || settingsOpen) && mode === 'build';
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const addQuestion  = useCallback((type) => {
+    isDirtyRef.current = true;
     const q = createQuestion(type);
     setQuestions((prev) => [...prev, q]);
     setSelectedId(q.id);
@@ -1121,10 +1612,12 @@ export function SurveyBuilderPage() {
   }, []);
 
   const updateQuestion = useCallback((id, patch) => {
+    isDirtyRef.current = true;
     setQuestions((prev) => prev.map((q) => (q.id === id ? { ...q, ...patch } : q)));
   }, []);
 
   const deleteQuestion = useCallback((id) => {
+    isDirtyRef.current = true;
     setQuestions((prev) => {
       const filtered = prev.filter((q) => q.id !== id);
       return filtered.map((q) => ({
@@ -1136,6 +1629,7 @@ export function SurveyBuilderPage() {
   }, []);
 
   const duplicateQuestion = useCallback((id) => {
+    isDirtyRef.current = true;
     const src = questions.find((q) => q.id === id);
     if (!src) return;
     const copy = { ...src, id: `q_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, question: src.question + ' (copy)' };
@@ -1150,6 +1644,7 @@ export function SurveyBuilderPage() {
 
   const reorder = useCallback((fromIndex, toIndex) => {
     if (fromIndex === toIndex) return;
+    isDirtyRef.current = true;
     setQuestions((prev) => {
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
@@ -1161,7 +1656,7 @@ export function SurveyBuilderPage() {
   const handleAiCommand = useCallback(async (message) => {
     try {
       const result = await api.refineSurvey(questions, message, { surveyTypeId, intent: surveyTitle });
-      if (result.questions) setQuestions(result.questions.map(mapAiToBuilderQuestion));
+      if (result.questions) { isDirtyRef.current = true; setQuestions(result.questions.map(mapAiToBuilderQuestion)); }
     } catch (err) {
       console.error('AI copilot error:', err.message);
     }
@@ -1176,19 +1671,29 @@ export function SurveyBuilderPage() {
       required:     !!required,
       skipLogic:    skipLogic || [],
       displayLogic: displayLogic || null,
-      ...rest, // preserves all type-specific fields (options, rows, columns, scaleMax, etc.)
+      ...rest,
     })),
-    survey_type_id: surveyTypeId,
+    survey_type_id:    surveyTypeId,
+    description:       surveySettings.description || null,
+    intent:            surveySettings.intent || null,
+    thank_you_message: surveySettings.thankYouMessage || null,
+    template_id:       surveySettings.templateId || null,
   });
 
   const doSave = async () => {
     const payload = buildPayload();
     if (surveyId) {
-      // Update existing — never creates a duplicate row
-      await updateSurvey(surveyId, { title: payload.title, questions: payload.questions });
+      await updateSurvey(surveyId, {
+        title:             payload.title,
+        questions:         payload.questions,
+        survey_type_id:    payload.survey_type_id,
+        description:       payload.description,
+        intent:            payload.intent,
+        thank_you_message: payload.thank_you_message,
+        template_id:       payload.template_id,
+      });
       return { id: surveyId };
     }
-    // First save — create new row
     const result = await createSurvey(payload);
     if (result?.id) setSurveyId(result.id);
     return result;
@@ -1200,14 +1705,29 @@ export function SurveyBuilderPage() {
     finally { setSaving(false); }
   };
 
+  useEffect(() => {
+    if (!surveyId || !isDirtyRef.current) return;
+    if (autosaveRef.current) clearTimeout(autosaveRef.current);
+    autosaveRef.current = setTimeout(async () => {
+      setAutoSaving(true);
+      try { await doSave(); setAutoSavedAt(new Date()); }
+      catch (err) { console.error('[autosave] failed:', err); }
+      finally { setAutoSaving(false); }
+    }, 30_000);
+    return () => clearTimeout(autosaveRef.current);
+  }, [questions, surveyTitle, surveySettings]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleLaunch = async () => {
     setLaunching(true);
     try {
       const survey = await doSave();
       const id = survey?.id || surveyId;
-      if (id) await publishSurvey(id);
-      setShowPublishModal(false);
-      navigate(ROUTES.SURVEYS);
+      if (id) {
+        const result = await publishSurvey(id);
+        const token = result?.publishToken || `mock-${id}`;
+        setShowPublishModal(false);
+        setPublishSuccessUrl(`${window.location.origin}/s/${token}`);
+      }
     } finally { setLaunching(false); }
   };
 
@@ -1221,9 +1741,9 @@ export function SurveyBuilderPage() {
     return (
       <div className="flex min-h-screen font-body bg-[#f5f7f9]">
         <SideNav />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-8 h-8 rounded-full border-2 animate-spin"
-            style={{ borderColor: 'rgba(42,75,217,0.2)', borderTopColor: '#2a4bd9' }} />
+        <div className="flex-1 flex items-center justify-center gap-4 flex-col">
+          <Spinner size={36} />
+          <p className="text-sm font-semibold text-on-surface-variant">Loading survey…</p>
         </div>
       </div>
     );
@@ -1233,9 +1753,17 @@ export function SurveyBuilderPage() {
     <div className="flex min-h-screen font-body bg-[#f5f7f9]">
       <SideNav />
 
+      <OverlayLoader visible={launching} message="Publishing survey…" />
+
       {/* Preview overlay */}
       {mode === 'preview' && (
-        <PreviewMode questions={questions} title={surveyTitle} onClose={() => setMode('build')} />
+        <PreviewMode
+          questions={questions}
+          title={surveyTitle}
+          thankYouMessage={surveySettings.thankYouMessage}
+          settings={surveySettings}
+          onClose={() => setMode('build')}
+        />
       )}
 
       {/* Publish confirmation */}
@@ -1245,6 +1773,15 @@ export function SurveyBuilderPage() {
         onConfirm={handleLaunch}
         busy={launching}
         surveyTitle={surveyTitle}
+      />
+
+      {/* Publish success */}
+      <PublishSuccessModal
+        open={!!publishSuccessUrl}
+        onClose={() => setPublishSuccessUrl(null)}
+        shareUrl={publishSuccessUrl || ''}
+        onViewSurvey={() => { if (publishSuccessUrl) window.open(publishSuccessUrl, '_blank'); }}
+        onGoToList={() => navigate(ROUTES.SURVEYS)}
       />
 
       {/* ── Question Type Palette ── */}
@@ -1276,7 +1813,7 @@ export function SurveyBuilderPage() {
           </Button>
           <Input
             value={surveyTitle}
-            onChange={(e) => setSurveyTitle(e.target.value)}
+            onChange={(e) => { isDirtyRef.current = true; setSurveyTitle(e.target.value); }}
             className="text-sm font-semibold bg-transparent border-0 shadow-none outline-none text-foreground min-w-0 focus-visible:ring-0 h-auto p-0 max-w-[260px]"
           />
         </div>
@@ -1299,8 +1836,28 @@ export function SurveyBuilderPage() {
           ))}
         </div>
 
+        {/* Autosave last-saved timestamp (shown after save completes) */}
+        {surveyId && !autoSaving && autoSavedAt && (
+          <span className="text-xs text-muted-foreground">
+            {`${t('builder.autosaved')} ${autoSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+          </span>
+        )}
+
         {/* Actions */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => { setSettingsOpen((v) => !v); setSelectedId(null); }}
+            className={cn(
+              'rounded-full gap-1.5',
+              settingsOpen
+                ? 'bg-[rgba(42,75,217,0.08)] text-[var(--color-primary)] border-[rgba(42,75,217,0.2)] hover:bg-[rgba(42,75,217,0.12)]'
+                : 'bg-[#f5f7f9] text-[#595c5e] border-[#dfe3e6] hover:bg-[#eef1f3]'
+            )}
+          >
+            <Icon name="settings" size={15} />{t('builder.settings.settingsButton')}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -1313,7 +1870,7 @@ export function SurveyBuilderPage() {
             variant="outline"
             size="sm"
             onClick={handleSave}
-            disabled={saving || launching}
+            disabled={saving || autoSaving || launching}
             className={cn(
               'rounded-full flex items-center gap-1.5 active:scale-95',
               saved
@@ -1321,9 +1878,9 @@ export function SurveyBuilderPage() {
                 : 'bg-[#eef1f3] text-[#595c5e] border-[#dfe3e6] hover:bg-[#dfe3e6]'
             )}
           >
-            {saving
-              ? <><div className="w-3.5 h-3.5 rounded-full border-2 animate-spin border-[#595c5e] border-t-transparent" />Saving…</>
-              : <><Icon name={saved ? 'check' : 'save'} size={15} />{saved ? 'Saved!' : 'Save'}</>
+            {(saving || autoSaving)
+              ? <><Spinner size={14} color="#595c5e" />{autoSaving ? t('builder.autosaving') : t('common.saving')}</>
+              : <><Icon name={saved ? 'check' : 'save'} size={15} />{saved ? t('common.saved') : t('common.save')}</>
             }
           </Button>
           <Button
@@ -1354,6 +1911,22 @@ export function SurveyBuilderPage() {
           <LogicView questions={questions} />
         ) : (
           <div className="max-w-3xl mx-auto px-6 space-y-4">
+            {/* Template intelligence banner */}
+            {fromTemplate?.intelligence && (
+              <div className="rounded-2xl p-4 flex items-start gap-3"
+                style={{ background: 'rgba(131,41,200,0.05)', border: '1px solid rgba(131,41,200,0.12)' }}>
+                <Icon name="auto_awesome" size={16} style={{ color: 'var(--color-tertiary)', marginTop: 2 }} />
+                <div>
+                  <p className="text-xs font-bold mb-0.5" style={{ color: 'var(--color-tertiary)' }}>
+                    AI Intelligence Active — {fromTemplate.label}
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    {fromTemplate.intelligence.scoringNarrative || 'Template intelligence is guiding AI suggestions for this survey.'}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Question count badge */}
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
@@ -1428,7 +2001,7 @@ export function SurveyBuilderPage() {
         )}
       </main>
 
-      {/* ── Properties Panel ── */}
+      {/* ── Properties / Settings Panel ── */}
       <aside
         className="fixed z-30 overflow-hidden bg-[#fafbfc]"
         style={{
@@ -1441,12 +2014,21 @@ export function SurveyBuilderPage() {
         }}
       >
         <div className="w-[320px] h-full overflow-hidden">
-          <PropertiesPanel
-            q={selectedQ}
-            allQuestions={questions}
-            onUpdate={updateQuestion}
-            onClose={() => setSelectedId(null)}
-          />
+          {settingsOpen ? (
+            <SurveySettingsPanel
+              settings={surveySettings}
+              onChange={(v) => { isDirtyRef.current = true; setSurveySettings(v); }}
+              onClose={() => setSettingsOpen(false)}
+              fromTemplate={fromTemplate}
+            />
+          ) : (
+            <PropertiesPanel
+              q={selectedQ}
+              allQuestions={questions}
+              onUpdate={updateQuestion}
+              onClose={() => setSelectedId(null)}
+            />
+          )}
         </div>
       </aside>
 

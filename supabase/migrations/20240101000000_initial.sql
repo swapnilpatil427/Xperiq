@@ -12,7 +12,7 @@ CREATE TABLE surveys (
   title          TEXT        NOT NULL,
   description    TEXT,
   status         TEXT        NOT NULL DEFAULT 'draft'
-                             CHECK (status IN ('draft','active','paused')),
+                             CHECK (status IN ('draft','active','paused','closed')),
   survey_type_id TEXT,
   questions      JSONB       NOT NULL DEFAULT '[]',
   created_by     TEXT,
@@ -37,8 +37,9 @@ CREATE TABLE responses (
   submitted_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX responses_survey_id ON responses(survey_id);
-CREATE INDEX responses_org_id    ON responses(org_id);
+CREATE INDEX responses_survey_id       ON responses(survey_id);
+CREATE INDEX responses_org_id          ON responses(org_id);
+CREATE INDEX responses_survey_submitted ON responses(survey_id, submitted_at DESC);
 
 -- ── Insights ──────────────────────────────────────────────────────────────────
 CREATE TABLE insights (
@@ -74,60 +75,6 @@ CREATE TABLE workflows (
 
 CREATE INDEX workflows_org_id ON workflows(org_id);
 
--- ── Seed data for dev-org ─────────────────────────────────────────────────────
-INSERT INTO surveys (org_id, title, status, survey_type_id, questions, created_by, nps_score) VALUES
-(
-  'dev-org',
-  'Q2 Product Experience Survey',
-  'active',
-  'nps',
-  '[
-    {"id":"q1","type":"nps","question":"How likely are you to recommend us to a colleague?","required":true},
-    {"id":"q2","type":"multiple_choice","question":"Which area needs the most improvement?","options":["Onboarding","Performance","Features","Support"],"required":true},
-    {"id":"q3","type":"open_text","question":"What one change would make you a promoter?","required":false}
-  ]'::jsonb,
-  'dev-user',
-  74
-),
-(
-  'dev-org',
-  'Post-Support CSAT Pulse',
-  'active',
-  'csat',
-  '[
-    {"id":"q1","type":"rating","question":"Rate your support experience (1–5)","required":true},
-    {"id":"q2","type":"open_text","question":"What did our support team do well?","required":false}
-  ]'::jsonb,
-  'dev-user',
-  88
-),
-(
-  'dev-org',
-  'Onboarding Friction Audit',
-  'draft',
-  'onboarding_feedback',
-  '[
-    {"id":"q1","type":"rating","question":"How easy was the onboarding process?","required":true},
-    {"id":"q2","type":"multiple_choice","question":"Where did you get stuck?","options":["Account setup","First project","Integrations","Documentation","Other"],"required":true},
-    {"id":"q3","type":"open_text","question":"Describe your biggest friction point","required":false}
-  ]'::jsonb,
-  'dev-user',
-  null
-);
-
--- Seed 12 mock responses for the first survey so the insights page has data
-WITH s AS (SELECT id, org_id FROM surveys WHERE title = 'Q2 Product Experience Survey' LIMIT 1)
-INSERT INTO responses (survey_id, org_id, answers, nps_score)
-SELECT
-  s.id,
-  s.org_id,
-  jsonb_build_array(
-    jsonb_build_object('id','a1','type','nps','value', (ARRAY[3,4,5,6,7,7,8,8,9,9,10,10])[gs.n]),
-    jsonb_build_object('id','a2','type','multiple_choice','value',(ARRAY['Onboarding','Features','Support','Performance','Onboarding','Features','Support','Onboarding','Features','Performance','Support','Onboarding'])[gs.n]),
-    jsonb_build_object('id','a3','type','open_text','value',(ARRAY['Too many steps','Needs better docs','Great product','Slow at times','Confusing nav','Love the UI','Support was fast','Hard to start','Best tool yet','Needs polish','Excellent overall','Onboarding unclear'])[gs.n])
-  ),
-  (ARRAY[3,4,5,6,7,7,8,8,9,9,10,10])[gs.n]
-FROM s, generate_series(1,12) AS gs(n);
 
 -- Seed 3 workflows
 WITH org AS (SELECT 'dev-org' AS org_id)

@@ -76,6 +76,9 @@ export function SurveyCreationPage() {
   const [intent, setIntent] = useState('');
   const [questions, setQuestions] = useState([]);
   const [editingId, setEditingId] = useState(null);
+  const [launching, setLaunching] = useState(false);
+  const [launchResult, setLaunchResult] = useState(null);
+  const [copied, setCopied] = useState(false);
   const textareaRef = useRef(null);
   const api = useApi();
 
@@ -119,6 +122,8 @@ export function SurveyCreationPage() {
         title:        type?.label || 'New Survey',
         questions:    type?.questions || [],
         surveyTypeId: typeId || null,
+        fromTemplate: type || null,
+        templateId:   typeId || null,
       },
     });
   }
@@ -134,6 +139,32 @@ export function SurveyCreationPage() {
       setStep(3);
       setQuestions([]);
     }
+  }
+
+  async function handleLaunch() {
+    if (launching) return;
+    setLaunching(true);
+    try {
+      const { survey } = await api.createSurvey({
+        title: intent.slice(0, 200) || 'New Survey',
+        questions,
+        survey_type_id: selectedTypeId || null,
+        template_id: selectedTypeId || null,
+        intent,
+      });
+      const { publishToken } = await api.publishSurvey(survey.id);
+      const shareUrl = `${window.location.origin}/s/${publishToken}`;
+      setLaunchResult({ surveyId: survey.id, shareUrl });
+    } catch {
+      setLaunching(false);
+    }
+  }
+
+  function handleCopyLink(url) {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   }
 
   function removeQuestion(id) {
@@ -260,7 +291,7 @@ export function SurveyCreationPage() {
                 onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleGenerate(); }}
                 placeholder={PLACEHOLDER}
                 rows={5}
-                className="w-full resize-none text-sm leading-relaxed bg-surface-container-low font-body text-on-surface rounded-2xl p-5 border-0 mb-4 focus-visible:ring-0 focus-visible:ring-offset-0 outline-none"
+                className="w-full resize-none text-sm leading-relaxed bg-surface-container-low font-body text-on-surface rounded-[10px] p-5 border-0 mb-4 focus-visible:ring-0 focus-visible:ring-offset-0 outline-none"
               />
 
               <Button
@@ -474,13 +505,20 @@ export function SurveyCreationPage() {
                   })}
                 </div>
 
-                {questions.length > 0 && (
+                {questions.length > 0 && !launchResult && (
                   <div className="mt-8 space-y-3">
                     <div className="flex gap-4">
                       <Button
                         onClick={() => {
                           navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
-                            state: { title: intent, questions, surveyTypeId: selectedTypeId },
+                            state: {
+                              title: intent,
+                              questions,
+                              surveyTypeId: selectedTypeId,
+                              intent,
+                              fromTemplate: selectedType,
+                              templateId: selectedTypeId,
+                            },
                           });
                         }}
                         className="flex-1 py-4 h-auto text-white font-bold text-base cta-glow font-headline rounded-2xl"
@@ -492,17 +530,15 @@ export function SurveyCreationPage() {
                         </span>
                       </Button>
                       <Button
-                        onClick={() => {
-                          navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
-                            state: { title: intent, questions, surveyTypeId: selectedTypeId },
-                          });
-                        }}
+                        onClick={handleLaunch}
+                        disabled={launching}
                         className="px-6 py-4 h-auto font-bold text-sm font-headline text-white rounded-2xl"
-                        style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
+                        style={{ background: 'linear-gradient(135deg, #059669, #047857)', opacity: launching ? 0.7 : 1 }}
                       >
                         <span className="flex items-center gap-2">
-                          <Icon name="rocket_launch" size={18} />
-                          {t('create.review.launchButton')}
+                          <Icon name={launching ? 'progress_activity' : 'rocket_launch'} size={18}
+                            className={launching ? 'animate-spin' : ''} />
+                          {launching ? t('create.review.launchingButton') : t('create.review.launchButton')}
                         </span>
                       </Button>
                     </div>
@@ -517,6 +553,54 @@ export function SurveyCreationPage() {
                       <Icon name="bookmark_add" size={16} />
                       {t('create.review.saveAsTemplate')}
                     </Button>
+                  </div>
+                )}
+
+                {launchResult && (
+                  <div className="mt-8 glass-card rounded-2xl p-8 text-center"
+                    style={{ boxShadow: '0 40px 80px -20px rgba(5,150,105,0.2)', border: '1px solid rgba(16,185,129,0.2)' }}>
+                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
+                      style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}>
+                      <Icon name="rocket_launch" fill={1} size={28} className="text-white" />
+                    </div>
+                    <h3 className="text-2xl font-extrabold tracking-tighter font-headline text-on-surface mb-2">
+                      {t('create.review.launchSuccessHeading')}
+                    </h3>
+                    <p className="text-sm text-on-surface-variant mb-6">
+                      {t('create.review.launchSuccessMessage')}
+                    </p>
+                    <div className="flex items-center gap-2 p-3 rounded-xl mb-5"
+                      style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+                      <Icon name="link" size={16} className="text-success flex-shrink-0" />
+                      <span className="flex-1 text-xs font-mono text-on-surface truncate text-left">{launchResult.shareUrl}</span>
+                      <Button
+                        size="sm"
+                        onClick={() => handleCopyLink(launchResult.shareUrl)}
+                        className="rounded-lg text-xs font-bold px-3 h-7 flex-shrink-0"
+                        style={{ background: copied ? '#059669' : '#2a4bd9', color: '#fff' }}
+                      >
+                        <Icon name={copied ? 'check' : 'content_copy'} size={14} className="mr-1" />
+                        {copied ? t('create.review.launchSuccessCopiedButton') : t('create.review.launchSuccessCopyButton')}
+                      </Button>
+                    </div>
+                    <div className="flex gap-3">
+                      <Button
+                        onClick={() => window.open(launchResult.shareUrl, '_blank')}
+                        className="flex-1 font-bold rounded-xl text-white"
+                        style={{ background: 'linear-gradient(135deg, #059669, #047857)' }}
+                      >
+                        <Icon name="open_in_new" size={16} className="mr-2" />
+                        {t('create.review.launchSuccessViewButton')}
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => navigate(ROUTES.SURVEYS)}
+                        className="flex-1 font-bold rounded-xl"
+                      >
+                        <Icon name="arrow_back" size={16} className="mr-2" />
+                        {t('create.review.launchSuccessGoToList')}
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>

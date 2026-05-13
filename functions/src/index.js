@@ -10,6 +10,9 @@ const isLocal = BACKEND === 'local';
 const dir     = isLocal ? './routes/local' : './routes';
 
 const app = express();
+// Trust the first proxy hop so req.ip reflects the real client IP behind
+// GCP Cloud Run / load balancers that set X-Forwarded-For.
+app.set('trust proxy', 1);
 app.use(cors({ origin: true }));
 app.use(express.json());
 app.use(httpLogger); // structured request logging + Prometheus HTTP metrics
@@ -21,7 +24,8 @@ app.use('/api/surveys',   require(`${dir}/responses`));
 app.use('/api/surveys',   require(`${dir}/insights`));
 app.use('/api/templates', require(`${dir}/templates`));
 app.use('/api/ai',        require(`${dir}/ai`));
-app.use('/api/workflows', require(`${dir}/workflows`));
+app.use('/api/workflows',   require(`${dir}/workflows`));
+app.use('/api/org-profile', require(`${dir}/orgProfile`));
 
 // ── Observability endpoints ───────────────────────────────────────────────────
 app.get('/api/health', (req, res) =>

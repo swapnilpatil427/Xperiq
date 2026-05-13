@@ -6,7 +6,7 @@
     "dev":         "concurrently --kill-others-on-fail -n \"api,web\" -c \"cyan,magenta\" \"npm --prefix functions run dev\" \"npm --prefix app run dev\"",
     "infra":       "docker compose up -d",
     "infra:stop":  "docker compose down",
-    "infra:reset": "docker compose down -v && docker compose up -d",
+    "infra:reset": "docker compose down -v && docker compose build postgres && docker compose up -d",
     "infra:logs":  "docker compose logs -f",
     "install:all": "npm install && npm --prefix functions install && npm --prefix app install"
   },

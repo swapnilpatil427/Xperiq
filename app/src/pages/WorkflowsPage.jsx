@@ -301,7 +301,7 @@ export function WorkflowsPage() {
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder={t('workflows.modal.namePlaceholder')}
-                className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-surface-container-low text-on-surface border-0 focus-visible:ring-2 focus-visible:ring-primary"
+                className="w-full px-4 py-3 rounded-[10px] text-sm font-medium bg-surface-container-low text-on-surface border-0 focus-visible:ring-2 focus-visible:ring-primary"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
               />
@@ -314,7 +314,7 @@ export function WorkflowsPage() {
                 value={String(newConditionIdx)}
                 onValueChange={(val) => setNewConditionIdx(Number(val))}
               >
-                <SelectTrigger className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-surface-container-low text-on-surface border-0">
+                <SelectTrigger className="w-full px-4 py-3 rounded-[10px] text-sm font-medium bg-surface-container-low text-on-surface border-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -332,7 +332,7 @@ export function WorkflowsPage() {
                 value={String(newActionIdx)}
                 onValueChange={(val) => setNewActionIdx(Number(val))}
               >
-                <SelectTrigger className="w-full px-4 py-3 rounded-xl text-sm font-medium bg-surface-container-low text-on-surface border-0">
+                <SelectTrigger className="w-full px-4 py-3 rounded-[10px] text-sm font-medium bg-surface-container-low text-on-surface border-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>

@@ -38,9 +38,9 @@
   --brand-font-body: "Inter", sans-serif;
 
   /* Brand radius */
-  --brand-radius: 1rem;
-  --brand-radius-sm: 0.5rem;
-  --brand-radius-lg: 2rem;
+  --brand-radius: 0.75rem;
+  --brand-radius-sm: 0.375rem;
+  --brand-radius-lg: 1rem;
 }
 
 /* ── Semantic color aliases (map brand tokens → semantic roles) ──────────── */
@@ -134,7 +134,7 @@
   --radius-DEFAULT: var(--brand-radius);
   --radius-sm: var(--brand-radius-sm);
   --radius-lg: var(--brand-radius-lg);
-  --radius-xl: 3rem;
+  --radius-xl: 1.25rem;
   --radius-full: 9999px;
 
   /* Shadows */

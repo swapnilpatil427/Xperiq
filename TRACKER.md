@@ -1,5 +1,5 @@
 # Experient — Work Tracker
-# Updated: 2026-05-11
+# Updated: 2026-05-12
 
 > **How to use:** Tell Claude "mark P0-1 done and tested" or "start Sprint 1" and the tracker updates automatically.
 > Status key: ⬜ Not started · 🔄 In progress · ✅ Done · 🧪 Done + Tested · ⏭️ Skipped
@@ -101,6 +101,28 @@ Estimated time to complete Sprint 0: **3–5 days**
 | 2-14 | Frontend: upgrade modal triggered at enterprise feature gates (SSO, white-label, audit log) | ⬜ | |
 | 2-15 | Tests: role middleware unit test (admin/analyst/viewer × each route), permission hook unit test | ⬜ | |
 
+### Sprint 1C — Survey Lifecycle & UX Polish (Completed 2026-05-12)
+
+**Goal:** Every survey state transition (draft → live → paused → closed → deleted) is operable by a non-technical PM from the survey list. No builder required for lifecycle management.
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| 1C-1 | Backend: `closed_at`, `deleted_at`, soft-delete on surveys route | ✅ | Status transitions with lifecycle timestamps |
+| 1C-2 | Backend: survey audit trail — `created_at`, `updated_at`, `updated_by`, `published_at`, `paused_at`, `closed_at`, `deleted_at` | ✅ | Full lifecycle timestamps on every survey row |
+| 1C-3 | Frontend: Close Survey modal — clear explanation of what Close vs Pause means | ✅ | `CloseModal` in SurveyActionModal.jsx |
+| 1C-4 | Frontend: Reopen Survey modal — reactivate a closed survey from the list | ✅ | `ReopenModal` in SurveyActionModal.jsx |
+| 1C-5 | Frontend: Delete Survey modal — soft-delete with 30-day recovery note | ✅ | `DeleteSurveyModal` in SurveyActionModal.jsx |
+| 1C-6 | Frontend: overflow "more actions" menu on every survey card (Close, Delete) | ✅ | Shadcn DropdownMenu |
+| 1C-7 | Frontend: "Closed" filter tab in survey list | ✅ | Hidden when count = 0 |
+| 1C-8 | Frontend: `closed` status badge variant | ✅ | Grey secondary badge |
+| 1C-9 | Frontend: 3D page transitions (Framer Motion AnimatePresence) | ✅ | All routes via AnimatedRoutes in App.jsx |
+| 1C-10 | Frontend: animated survey question cards in fill page (direction-aware slide) | ✅ | AnimatePresence + custom direction state |
+| 1C-11 | Frontend: skeleton loading for survey list (shimmer cards) | ✅ | `SurveyListSkeleton` component |
+| 1C-12 | Frontend: overlay loader for publish operation in builder | ✅ | `OverlayLoader` with AnimatePresence |
+| 1C-13 | Frontend: "Edit in Builder" passes correct navigation state (intent/fromTemplate/templateId) | ✅ | Fixed in SurveyCreationPage |
+| 1C-14 | Frontend: "Launch Survey" directly creates+publishes without going to builder, shows share URL | ✅ | Fixed in SurveyCreationPage |
+| 1C-15 | Frontend: Org profile persisted to backend (industry/size/useCase/targetAudience/website/brandDescription) | ✅ | New `org_profiles` table + GET/PUT API |
+
 ### Sprint 2B — Survey Data Model (Completed 2026-05-11)
 
 **Goal:** Design a flexible, globally-compatible survey/response data model before any further backend work. All survey routes, analytics, and distribution features build on this foundation.
@@ -125,6 +147,25 @@ Estimated time to complete Sprint 0: **3–5 days**
 | 3-7 | Frontend: response volume sparklines on `SurveysListPage` | ⬜ | |
 | 3-8 | Frontend: empty states for all pages | ⬜ | |
 | 3-9 | Tests: analytics aggregation unit tests, dashboard E2E | ⬜ | |
+
+### Sprint 3B — Distribution & Notifications (PM Gap Backlog)
+
+**Goal:** Close the distribution gap between Experient and Qualtrics/SurveyMonkey. A survey that can only be shared as a bare URL is fundamentally less valuable than one with channels, scheduling, and lifecycle notifications.
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| 3B-1 | Backend: `POST /api/surveys/:id/distribute` — record distribution event (channel, sent_at, audience size) | ⬜ | Foundation for tracking reach |
+| 3B-2 | Backend: `POST /api/surveys/:id/channels/email` — send via SendGrid/Resend to a list of emails | ⬜ | Attach org branding, unsubscribe footer |
+| 3B-3 | Backend: QR code generation endpoint for any survey | ⬜ | `qrcode` npm package, return base64 PNG |
+| 3B-4 | Frontend: Distribution panel in builder (share link + QR + email channel) | ⬜ | Replace bare share URL in publish success |
+| 3B-5 | Backend: `POST /api/surveys/:id/schedule` — schedule auto-open at a future datetime | ⬜ | Cloud Tasks + survey status update |
+| 3B-6 | Backend: Response milestone webhook — notify when N responses hit a threshold | ⬜ | Fires to configured endpoint or Slack |
+| 3B-7 | Frontend: Notification settings in BrandSettingsPage — Slack webhook URL, email for alerts | ⬜ | Per-org notification config |
+| 3B-8 | Backend: `POST /api/contacts` — upload CSV of contacts, parse into `org_contacts` table | ⬜ | Foundation for targeted sends |
+| 3B-9 | Frontend: Contacts page — upload CSV, view list, tag by segment | ⬜ | Required for email distribution channel |
+| 3B-10 | Backend: NPS respondent timeline — track same contact across multiple survey runs | ⬜ | `contact_id` FK on responses table |
+| 3B-11 | Frontend: NPS trend view per respondent in ResponseDashboardPage | ⬜ | "John moved from detractor → passive" |
+| 3B-12 | Backend: Custom domain for survey fill page (CNAME support via Cloudflare) | ⬜ | Enterprise feature — `feedback.yourbrand.com` |
 
 ---
 
@@ -494,3 +535,4 @@ Estimated time to complete Sprint 0: **3–5 days**
 | 2026-05-11 | Survey Data Model (Sprint 2B): researched 15 survey types, 30+ question types, all contextual enrichment fields (IP/geo/device/session/UTM/quality signals) across Qualtrics/Medallia/InMoment/Typeform. Designed 3-tier storage architecture (Firestore + BigQuery + Firebase Storage). Wrote SURVEY_DATA_MODEL.md with full TypeScript interfaces (Survey, Question, Block, Response, Answer, Distribution, LogicRule, EmbeddedDataField), collection hierarchy, compound indexes, and migration guide from current minimal schema. |
 | 2026-05-11 | Local dev stack simplified: single docker-compose.yml (Postgres + Prometheus + Loki + Grafana), removed Supabase CLI dependency, Pino structured logging with optional Loki push, prom-client metrics with /api/metrics endpoint, Dockerfile + fly.toml added. |
 | 2026-05-11 | Cloud strategy decided: GCP only. Fly.toml kept as reference but GCP is the path. Scaling stages documented: Firebase (now) → Cloud Run + Cloud SQL (~$10K MRR) → Cloudflare + Cloud Run (global). ICP added as watchlist item. 7 migration portability principles enforced as code patterns. PRODUCT_PLAN.md and TRACKER.md updated with full strategy. |
+| 2026-05-12 | Survey backend fully rewritten: clean data model (templateId only, no template fields on survey), full audit trail (created_at/updated_at/updated_by/published_at/paused_at/closed_at/deleted_at), soft delete, status lifecycle timestamps, COALESCE publish. Org profile backend (org_profiles table, GET+PUT upsert). Fixed optimistic update bug for updated_at. Survey builder: settings panel shows template info read-only + editable fields (description/intent/thankYouMessage). Fixed SurveyCreationPage: "Edit in Builder" passes correct navigation state (intent/fromTemplate/templateId), "Launch Survey" now directly creates+publishes and shows success modal with share URL. All 13 question types implemented in fill page. Brand settings persisted to backend. 3D page transition animations (Framer Motion AnimatePresence + rotateX). Survey question card slide animations in fill page. LoadingStates components (Spinner, OverlayLoader, SurveyListSkeleton). Skeleton loading in SurveysListPage. Overlay loader for publish in builder. i18n strings added for all new UI text. |

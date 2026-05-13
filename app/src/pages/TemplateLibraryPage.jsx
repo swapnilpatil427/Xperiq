@@ -638,7 +638,7 @@ function TemplateModal({ template, categories, onSave, onClose }) {
             value={form.label}
             onChange={(e) => set('label', e.target.value)}
             placeholder="e.g., Customer Onboarding NPS"
-            className={`w-full text-sm font-semibold bg-surface-container-low rounded-xl focus-visible:ring-0 focus-visible:ring-offset-0 ${errors.label ? 'border-error' : 'border-0'}`}
+            className={`w-full text-sm font-semibold bg-surface-container-low rounded-[10px] focus-visible:ring-0 focus-visible:ring-offset-0 ${errors.label ? 'border-error' : 'border-0'}`}
             style={errors.label ? { borderColor: '#b41340', borderWidth: '1.5px' } : {}}
           />
           <FieldError msg={errors.label} />
@@ -655,7 +655,7 @@ function TemplateModal({ template, categories, onSave, onClose }) {
               onChange={(e) => set('shortLabel', e.target.value)}
               placeholder="e.g., Onboarding NPS"
               maxLength={12}
-              className={`w-full text-sm bg-surface-container-low rounded-xl focus-visible:ring-0 focus-visible:ring-offset-0 pr-12 ${errors.shortLabel ? 'border-error' : 'border-0'}`}
+              className={`w-full text-sm bg-surface-container-low rounded-[10px] focus-visible:ring-0 focus-visible:ring-offset-0 pr-12 ${errors.shortLabel ? 'border-error' : 'border-0'}`}
               style={errors.shortLabel ? { borderColor: '#b41340', borderWidth: '1.5px' } : {}}
             />
             <span className={`absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold ${form.shortLabel.length > 12 ? 'text-error' : 'text-on-surface-variant'}`}>
@@ -1071,7 +1071,7 @@ export function TemplateLibraryPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder={t('templates.searchPlaceholder')}
-                className="w-full pl-11 pr-10 py-3 text-sm rounded-xl bg-white text-on-surface font-body"
+                className="w-full pl-11 pr-10 py-3 text-sm rounded-[10px] bg-white text-on-surface font-body"
                 style={{ border: '1.5px solid #eef1f3', boxShadow: '0 2px 8px rgba(0,0,0,0.04)' }}
               />
               {search && (

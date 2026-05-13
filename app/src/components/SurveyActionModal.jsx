@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Icon } from './Icon';
+import { useTranslation } from '../lib/i18n';
 import {
   Dialog,
   DialogContent,
@@ -7,8 +9,23 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
-// ── row helper ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared primitives — every modal uses these so the structure is identical
+// ─────────────────────────────────────────────────────────────────────────────
+
+function ModalIcon({ gradient, icon, shadow }) {
+  return (
+    <div
+      className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
+      style={{ background: gradient, boxShadow: shadow }}
+    >
+      <Icon name={icon} size={22} style={{ color: 'white' }} />
+    </div>
+  );
+}
+
 function CheckRow({ icon, color, bg, text, sub }) {
   return (
     <div className="flex items-start gap-3">
@@ -24,58 +41,147 @@ function CheckRow({ icon, color, bg, text, sub }) {
   );
 }
 
-// ── PUBLISH MODAL ─────────────────────────────────────────────────────────────
-export function PublishModal({ open, onClose, onConfirm, busy, surveyTitle }) {
+function StatBar({ responseCount, extra }) {
+  const { t } = useTranslation();
+  if (!responseCount && !extra) return null;
+  return (
+    <div className="flex items-center gap-4 px-4 py-3 rounded-2xl mb-4"
+      style={{ background: 'rgba(42,75,217,0.05)', border: '1px solid rgba(42,75,217,0.1)' }}>
+      {responseCount > 0 && (
+        <div className="flex items-center gap-2">
+          <Icon name="bar_chart" size={16} style={{ color: 'var(--color-primary)' }} />
+          <span className="text-sm font-semibold text-foreground">
+            <strong style={{ color: 'var(--color-primary)' }}>{responseCount.toLocaleString()}</strong>
+            {' '}{responseCount !== 1 ? t('common.responses') : t('common.response')}
+          </span>
+        </div>
+      )}
+      {extra && (
+        <div className="flex items-center gap-2 ml-auto">
+          <Icon name={extra.icon} size={15} style={{ color: '#8329c8' }} />
+          <span className="text-xs font-semibold text-muted-foreground">{extra.label}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WhatHappensBox({ heading, children }) {
+  return (
+    <div className="rounded-2xl p-4 mb-4 space-y-3"
+      style={{ background: '#f8f9fb', border: '1px solid rgba(171,173,175,0.2)' }}>
+      <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-muted-foreground">
+        {heading}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+function FooterNote({ icon, iconColor, iconBg, children }) {
+  return (
+    <div className="flex items-center gap-2.5 px-4 py-3 rounded-2xl"
+      style={{ background: iconBg, border: `1px solid ${iconColor}22` }}>
+      <Icon name={icon} size={16} style={{ color: iconColor }} />
+      <p className="text-xs text-muted-foreground leading-relaxed">{children}</p>
+    </div>
+  );
+}
+
+// The ONE canonical cancel button — always looks the same
+function CancelButton({ onClick, disabled, label }) {
+  return (
+    <Button
+      onClick={onClick}
+      disabled={disabled}
+      className="flex-1 py-3 h-auto rounded-xl text-sm font-bold active:scale-95 bg-white border border-[#e2e5e8] text-[#595c5e] hover:bg-[#f5f7f9] hover:border-[#d0d4d8] shadow-none"
+    >
+      {label}
+    </Button>
+  );
+}
+
+// The action button (colored) — accepts gradient + shadow props
+function ActionButton({ onClick, disabled, busy, busyLabel, icon, label, gradient, shadow }) {
+  return (
+    <Button
+      onClick={onClick}
+      disabled={disabled || busy}
+      className="flex-[2] py-3 h-auto rounded-xl text-sm font-bold text-white active:scale-95 flex items-center justify-center gap-2"
+      style={{ background: gradient, boxShadow: shadow, opacity: busy ? 0.8 : 1 }}
+    >
+      {busy ? (
+        <>
+          <div className="w-4 h-4 rounded-full border-2 animate-spin border-white border-t-transparent" />
+          {busyLabel}
+        </>
+      ) : (
+        <>
+          <Icon name={icon} size={16} />
+          {label}
+        </>
+      )}
+    </Button>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLISH MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+export function PublishModal({ open, onClose, onConfirm, busy, surveyTitle, questionCount }) {
+  const { t } = useTranslation();
+  const m = 'surveys.modals.publish';
+  const questionLabel = questionCount > 0
+    ? t(questionCount !== 1 ? `${m}.questionStatPlural` : `${m}.questionStat`, { n: questionCount })
+    : null;
+
   return (
     <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
       <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden gap-0">
-        {/* Header */}
         <div className="px-7 pt-7 pb-5">
           <DialogHeader className="mb-5">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 8px 24px rgba(5,150,105,0.3)' }}>
-                <Icon name="rocket_launch" size={22} style={{ color: 'white' }} />
-              </div>
+              <ModalIcon
+                gradient="linear-gradient(135deg, #059669, #047857)"
+                icon="rocket_launch"
+                shadow="0 8px 24px rgba(5,150,105,0.3)"
+              />
               <div>
                 <DialogTitle className="text-xl font-extrabold font-headline text-foreground">
-                  Publish Survey
+                  {t(`${m}.title`)}
                 </DialogTitle>
                 <p className="text-sm mt-0.5 text-muted-foreground">
-                  {surveyTitle ? `"${surveyTitle}"` : 'This survey'} will go live immediately
+                  {t(`${m}.subtitle`, { title: surveyTitle || t('common.thisSurvey') })}
                 </p>
               </div>
             </div>
           </DialogHeader>
 
-          {/* What happens */}
-          <div className="rounded-2xl p-4 mb-4 space-y-3 bg-muted"
-            style={{ border: '1px solid rgba(171,173,175,0.15)' }}>
-            <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-muted-foreground">
-              What happens when you publish
-            </p>
-            <CheckRow icon="public" color="#059669" bg="rgba(5,150,105,0.1)"
-              text="Survey goes live instantly"
-              sub="Respondents can access it via the shareable link" />
-            <CheckRow icon="bar_chart" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
-              text="Responses collected in real-time"
-              sub="Every submission is stored and available immediately" />
-            <CheckRow icon="auto_awesome" color="#8329c8" bg="rgba(131,41,200,0.1)"
-              text="AI Insights unlock after first responses"
-              sub="Head to the Insights tab — analysis runs automatically" />
-          </div>
+          {questionLabel && (
+            <StatBar responseCount={0} extra={{ icon: 'help_outline', label: questionLabel }} />
+          )}
 
-          {/* Distribution */}
+          <WhatHappensBox heading={t(`${m}.bodyHeading`)}>
+            <CheckRow icon="public" color="#059669" bg="rgba(5,150,105,0.1)"
+              text={t(`${m}.row1text`)} sub={t(`${m}.row1sub`)} />
+            <CheckRow icon="bar_chart" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
+              text={t(`${m}.row2text`)} sub={t(`${m}.row2sub`)} />
+            <CheckRow icon="auto_awesome" color="#8329c8" bg="rgba(131,41,200,0.1)"
+              text={t(`${m}.row3text`)} sub={t(`${m}.row3sub`)} />
+            <CheckRow icon="pause_circle" color="#d97706" bg="rgba(217,119,6,0.1)"
+              text={t(`${m}.row4text`)} sub={t(`${m}.row4sub`)} />
+          </WhatHappensBox>
+
           <div className="rounded-2xl p-4 mb-4"
             style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.12)' }}>
             <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: 'var(--color-primary)' }}>
-              How to distribute
+              {t(`${m}.channelsHeading`)}
             </p>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { icon: 'link', label: 'Shareable link', sub: 'Copy & paste anywhere' },
-                { icon: 'qr_code_2', label: 'QR code', sub: 'Print or display on screen' },
-                { icon: 'mail', label: 'Email embed', sub: 'Send via your email tool' },
+                { icon: 'link',      label: t(`${m}.channel1Label`), sub: t(`${m}.channel1Sub`) },
+                { icon: 'qr_code_2', label: t(`${m}.channel2Label`), sub: t(`${m}.channel2Sub`) },
+                { icon: 'mail',      label: t(`${m}.channel3Label`), sub: t(`${m}.channel3Sub`) },
               ].map(({ icon, label, sub }) => (
                 <div key={label} className="flex flex-col items-center text-center gap-1.5 p-2.5 rounded-xl"
                   style={{ background: 'rgba(42,75,217,0.06)' }}>
@@ -85,158 +191,446 @@ export function PublishModal({ open, onClose, onConfirm, busy, surveyTitle }) {
                 </div>
               ))}
             </div>
-            <p className="text-xs mt-3 text-muted-foreground">
-              After publishing, open <strong>Distribute</strong> in the survey menu to copy your link, download a QR code, or get an email template.
-            </p>
           </div>
 
-          {/* Insights note */}
-          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl"
-            style={{ background: 'rgba(131,41,200,0.06)', border: '1px solid rgba(131,41,200,0.1)' }}>
-            <Icon name="insights" size={16} style={{ color: 'var(--color-tertiary)' }} />
-            <p className="text-xs text-muted-foreground">
-              <strong style={{ color: 'var(--color-tertiary)' }}>Insights</strong> — available in the left nav once responses start coming in. AI analysis runs every time you visit.
-            </p>
-          </div>
+          <FooterNote icon="auto_awesome" iconColor="#8329c8" iconBg="rgba(131,41,200,0.05)">
+            <strong style={{ color: '#8329c8' }}>{t(`${m}.footerBold`)}</strong>{' '}{t(`${m}.footerNote`)}
+          </FooterNote>
         </div>
 
-        {/* Footer */}
         <DialogFooter className="flex items-center gap-3 px-7 py-5 border-t border-border sm:justify-start">
-          <Button
-            onClick={onClose}
-            disabled={busy}
-            variant="ghost"
-            className="flex-1 py-3 rounded-xl text-sm font-bold bg-[#e8eeff] text-[#2a4bd9] hover:bg-[#dce4ff] hover:text-[#173dcd]"
-          >
-            Cancel
-          </Button>
-          <Button
+          <CancelButton onClick={onClose} disabled={busy} label={t(`${m}.cancelButton`)} />
+          <ActionButton
             onClick={onConfirm}
-            disabled={busy}
-            className="flex-[2] py-3 rounded-xl text-sm font-bold text-white active:scale-95 flex items-center justify-center gap-2"
-            style={{ background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 8px 24px rgba(5,150,105,0.3)' }}
-          >
-            {busy
-              ? <><div className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: 'white', borderTopColor: 'transparent' }} />Publishing…</>
-              : <><Icon name="rocket_launch" size={16} />Publish Now</>
-            }
-          </Button>
+            busy={busy}
+            busyLabel={t(`${m}.confirmingButton`)}
+            icon="rocket_launch"
+            label={t(`${m}.confirmButton`)}
+            gradient="linear-gradient(135deg, #059669, #047857)"
+            shadow="0 8px 24px rgba(5,150,105,0.3)"
+          />
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-// ── PAUSE MODAL ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// PUBLISH SUCCESS MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+export function PublishSuccessModal({ open, onClose, shareUrl, onViewSurvey, onGoToList }) {
+  const { t } = useTranslation();
+  const m = 'surveys.modals.publishSuccess';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch {
+      const el = document.createElement('textarea');
+      el.value = shareUrl;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(val) => { if (!val && onClose) onClose(); }}>
+      <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden gap-0" onPointerDownOutside={(e) => e.preventDefault()}>
+        <div className="px-7 pt-7 pb-5">
+          <DialogHeader className="mb-6">
+            <div className="flex items-start gap-4">
+              <ModalIcon
+                gradient="linear-gradient(135deg, #059669, #047857)"
+                icon="check_circle"
+                shadow="0 12px 32px rgba(5,150,105,0.35)"
+              />
+              <div>
+                <DialogTitle className="text-2xl font-extrabold font-headline text-foreground">
+                  {t(`${m}.title`)}
+                </DialogTitle>
+                <p className="text-sm mt-1 text-muted-foreground">
+                  {t(`${m}.subtitle`)}
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="rounded-2xl p-4 mb-4"
+            style={{ background: 'rgba(5,150,105,0.05)', border: '1px solid rgba(5,150,105,0.15)' }}>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#059669' }}>
+              {t(`${m}.shareLinkLabel`)}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                readOnly
+                value={shareUrl}
+                className="flex-1 text-xs font-mono bg-white border-[#dfe3e6] text-foreground rounded-xl h-9 focus-visible:ring-0"
+              />
+              <Button
+                onClick={handleCopy}
+                size="sm"
+                className="h-9 px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 flex-shrink-0"
+                style={{
+                  background: copied ? '#059669' : 'var(--color-primary)',
+                  color: 'white',
+                  boxShadow: copied ? '0 4px 16px rgba(5,150,105,0.3)' : '0 4px 16px rgba(42,75,217,0.3)',
+                }}
+              >
+                <Icon name={copied ? 'check' : 'content_copy'} size={14} />
+                {copied ? t('common.copied') : t('common.copy')}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            {[
+              { icon: 'mail',      label: t(`${m}.channel1Label`), hint: t(`${m}.channel1Hint`) },
+              { icon: 'qr_code_2', label: t(`${m}.channel2Label`), hint: t(`${m}.channel2Hint`) },
+              { icon: 'share',     label: t(`${m}.channel3Label`), hint: t(`${m}.channel3Hint`) },
+            ].map(({ icon, label, hint }) => (
+              <div key={label} className="flex flex-col items-center text-center gap-1.5 p-3 rounded-xl"
+                style={{ background: 'rgba(42,75,217,0.05)', border: '1px solid rgba(42,75,217,0.1)' }}>
+                <Icon name={icon} size={18} style={{ color: 'var(--color-primary)' }} />
+                <span className="text-xs font-bold text-foreground">{label}</span>
+                <span className="text-[10px] text-muted-foreground">{hint}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <DialogFooter className="flex items-center gap-3 px-7 py-5 border-t border-border sm:justify-start">
+          <Button
+            onClick={onViewSurvey}
+            className="flex-1 py-3 h-auto rounded-xl text-sm font-bold bg-white border border-[#e2e5e8] text-[#595c5e] hover:bg-[#f5f7f9] active:scale-95 flex items-center justify-center gap-2"
+          >
+            <Icon name="open_in_new" size={15} />
+            {t(`${m}.viewButton`)}
+          </Button>
+          <ActionButton
+            onClick={onGoToList}
+            icon="list"
+            label={t(`${m}.goToListButton`)}
+            gradient="linear-gradient(135deg, #059669, #047857)"
+            shadow="0 8px 24px rgba(5,150,105,0.3)"
+          />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PAUSE MODAL
+// ─────────────────────────────────────────────────────────────────────────────
 export function PauseModal({ open, onClose, onConfirm, busy, surveyTitle, responseCount }) {
+  const { t } = useTranslation();
+  const m = 'surveys.modals.pause';
+
   return (
     <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
       <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden gap-0">
-        {/* Header */}
         <div className="px-7 pt-7 pb-5">
           <DialogHeader className="mb-5">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{ background: 'rgba(217,119,6,0.1)', border: '1px solid rgba(217,119,6,0.2)' }}>
-                <Icon name="pause_circle" size={24} style={{ color: '#d97706' }} />
-              </div>
+              <ModalIcon
+                gradient="linear-gradient(135deg, #d97706, #b45309)"
+                icon="pause_circle"
+                shadow="0 8px 24px rgba(217,119,6,0.3)"
+              />
               <div>
                 <DialogTitle className="text-xl font-extrabold font-headline text-foreground">
-                  Pause Survey
+                  {t(`${m}.title`)}
                 </DialogTitle>
                 <p className="text-sm mt-0.5 text-muted-foreground">
-                  {surveyTitle ? `"${surveyTitle}"` : 'This survey'} will stop accepting new responses
+                  {t(`${m}.subtitle`, { title: surveyTitle || t('common.thisSurvey') })}
                 </p>
               </div>
             </div>
           </DialogHeader>
 
-          {/* Response count pill */}
-          {responseCount > 0 && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-2xl mb-4"
-              style={{ background: 'rgba(42,75,217,0.05)', border: '1px solid rgba(42,75,217,0.12)' }}>
-              <Icon name="bar_chart" size={16} style={{ color: 'var(--color-primary)' }} />
-              <span className="text-sm font-semibold text-foreground">
-                <strong style={{ color: 'var(--color-primary)' }}>{responseCount.toLocaleString()}</strong> response{responseCount !== 1 ? 's' : ''} collected so far
-              </span>
-            </div>
-          )}
+          <StatBar responseCount={responseCount} extra={{ icon: 'history_toggle_off', label: t(`${m}.statExtra`) }} />
 
-          {/* What happens */}
-          <div className="rounded-2xl p-4 mb-4 space-y-3 bg-muted"
-            style={{ border: '1px solid rgba(171,173,175,0.15)' }}>
-            <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-muted-foreground">
-              What happens when you pause
-            </p>
+          <WhatHappensBox heading={t(`${m}.bodyHeading`)}>
             <CheckRow icon="block" color="#d97706" bg="rgba(217,119,6,0.1)"
-              text="New responses blocked"
-              sub="Anyone visiting your survey link will see a 'closed' message" />
+              text={t(`${m}.row1text`)} sub={t(`${m}.row1sub`)} />
             <CheckRow icon="shield" color="#059669" bg="rgba(5,150,105,0.1)"
-              text="All existing responses preserved"
-              sub="No data is deleted — everything stays safe" />
+              text={t(`${m}.row2text`)} sub={t(`${m}.row2sub`)} />
             <CheckRow icon="insights" color="#8329c8" bg="rgba(131,41,200,0.1)"
-              text="Insights remain fully accessible"
-              sub="You can still view and export all analysis" />
+              text={t(`${m}.row3text`)} sub={t(`${m}.row3sub`)} />
             <CheckRow icon="play_circle" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
-              text="Resume anytime"
-              sub="Click Resume in the survey list to go live again instantly" />
-          </div>
+              text={t(`${m}.row4text`)} sub={t(`${m}.row4sub`)} />
+          </WhatHappensBox>
 
-          {/* Safety note */}
-          <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl"
-            style={{ background: 'rgba(5,150,105,0.05)', border: '1px solid rgba(5,150,105,0.12)' }}>
-            <Icon name="verified_user" size={16} style={{ color: 'var(--color-success)' }} />
-            <p className="text-xs text-muted-foreground">
-              <strong style={{ color: 'var(--color-success)' }}>Your data is safe.</strong> Pausing is reversible — no responses or settings are lost.
-            </p>
-          </div>
+          <FooterNote icon="verified_user" iconColor="#059669" iconBg="rgba(5,150,105,0.05)">
+            <strong style={{ color: '#059669' }}>{t(`${m}.footerBold`)}</strong>{' '}{t(`${m}.footerNote`)}
+          </FooterNote>
         </div>
 
-        {/* Footer */}
         <DialogFooter className="flex items-center gap-3 px-7 py-5 border-t border-border sm:justify-start">
-          <Button
-            onClick={onClose}
-            disabled={busy}
-            variant="secondary"
-            className="flex-1 py-3 rounded-xl text-sm font-bold"
-          >
-            Keep Live
-          </Button>
-          <Button
+          <CancelButton onClick={onClose} disabled={busy} label={t(`${m}.cancelButton`)} />
+          <ActionButton
             onClick={onConfirm}
-            disabled={busy}
-            variant="warning"
-            className="flex-[2] py-3 rounded-xl text-sm font-bold active:scale-95 flex items-center justify-center gap-2"
-          >
-            {busy
-              ? <><div className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: '#d97706', borderTopColor: 'transparent' }} />Pausing…</>
-              : <><Icon name="pause" size={16} />Pause Survey</>
-            }
-          </Button>
+            busy={busy}
+            busyLabel={t(`${m}.confirmingButton`)}
+            icon="pause"
+            label={t(`${m}.confirmButton`)}
+            gradient="linear-gradient(135deg, #d97706, #b45309)"
+            shadow="0 8px 24px rgba(217,119,6,0.25)"
+          />
         </DialogFooter>
       </DialogContent>
     </Dialog>
   );
 }
 
-// ── RESUME MODAL ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// RESUME MODAL
+// ─────────────────────────────────────────────────────────────────────────────
 export function ResumeModal({ open, onClose, onConfirm, busy, surveyTitle, responseCount }) {
+  const { t } = useTranslation();
+  const m = 'surveys.modals.resume';
+
   return (
     <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
       <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden gap-0">
         <div className="px-7 pt-7 pb-5">
           <DialogHeader className="mb-5">
             <div className="flex items-start gap-4">
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)', boxShadow: '0 8px 24px rgba(42,75,217,0.25)' }}>
-                <Icon name="play_circle" size={24} style={{ color: 'white' }} />
-              </div>
+              <ModalIcon
+                gradient="linear-gradient(135deg, #2a4bd9, #8329c8)"
+                icon="play_circle"
+                shadow="0 8px 24px rgba(42,75,217,0.3)"
+              />
               <div>
                 <DialogTitle className="text-xl font-extrabold font-headline text-foreground">
-                  Resume Survey
+                  {t(`${m}.title`)}
                 </DialogTitle>
                 <p className="text-sm mt-0.5 text-muted-foreground">
-                  {surveyTitle ? `"${surveyTitle}"` : 'This survey'} will go live again immediately
+                  {t(`${m}.subtitle`, { title: surveyTitle || t('common.thisSurvey') })}
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <StatBar responseCount={responseCount} extra={{ icon: 'add_circle', label: t(`${m}.statExtra`) }} />
+
+          <WhatHappensBox heading={t(`${m}.bodyHeading`)}>
+            <CheckRow icon="public" color="#059669" bg="rgba(5,150,105,0.1)"
+              text={t(`${m}.row1text`)} sub={t(`${m}.row1sub`)} />
+            <CheckRow icon="add_circle" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
+              text={t(`${m}.row2text`)} sub={t(`${m}.row2sub`)} />
+            <CheckRow icon="auto_awesome" color="#8329c8" bg="rgba(131,41,200,0.1)"
+              text={t(`${m}.row3text`)} sub={t(`${m}.row3sub`)} />
+            <CheckRow icon="notifications" color="#d97706" bg="rgba(217,119,6,0.1)"
+              text={t(`${m}.row4text`)} sub={t(`${m}.row4sub`)} />
+          </WhatHappensBox>
+
+          <FooterNote icon="bolt" iconColor="#2a4bd9" iconBg="rgba(42,75,217,0.05)">
+            <strong style={{ color: '#2a4bd9' }}>{t(`${m}.footerBold`)}</strong>{' '}{t(`${m}.footerNote`)}
+          </FooterNote>
+        </div>
+
+        <DialogFooter className="flex items-center gap-3 px-7 py-5 border-t border-border sm:justify-start">
+          <CancelButton onClick={onClose} disabled={busy} label={t(`${m}.cancelButton`)} />
+          <ActionButton
+            onClick={onConfirm}
+            busy={busy}
+            busyLabel={t(`${m}.confirmingButton`)}
+            icon="play_arrow"
+            label={t(`${m}.confirmButton`)}
+            gradient="linear-gradient(135deg, #2a4bd9, #8329c8)"
+            shadow="0 8px 24px rgba(42,75,217,0.3)"
+          />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CLOSE MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+export function CloseModal({ open, onClose, onConfirm, busy, surveyTitle, responseCount }) {
+  const { t } = useTranslation();
+  const m = 'surveys.modals.close';
+
+  return (
+    <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
+      <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden gap-0">
+        <div className="px-7 pt-7 pb-5">
+          <DialogHeader className="mb-5">
+            <div className="flex items-start gap-4">
+              <ModalIcon
+                gradient="linear-gradient(135deg, #4b5563, #374151)"
+                icon="lock"
+                shadow="0 8px 24px rgba(75,85,99,0.3)"
+              />
+              <div>
+                <DialogTitle className="text-xl font-extrabold font-headline text-foreground">
+                  {t(`${m}.title`)}
+                </DialogTitle>
+                <p className="text-sm mt-0.5 text-muted-foreground">
+                  {t(`${m}.subtitle`, { title: surveyTitle || t('common.thisSurvey') })}
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <StatBar
+            responseCount={responseCount}
+            extra={{ icon: 'lock_open', label: t(`${m}.statExtra`) }}
+          />
+
+          <WhatHappensBox heading={t(`${m}.bodyHeading`)}>
+            <CheckRow icon="block" color="#6b7280" bg="rgba(107,114,128,0.1)"
+              text={t(`${m}.row1text`)} sub={t(`${m}.row1sub`)} />
+            <CheckRow icon="shield" color="#059669" bg="rgba(5,150,105,0.1)"
+              text={t(`${m}.row2text`)} sub={t(`${m}.row2sub`)} />
+            <CheckRow icon="lock_open" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
+              text={t(`${m}.row3text`)} sub={t(`${m}.row3sub`)} />
+            <CheckRow icon="compare_arrows" color="#8329c8" bg="rgba(131,41,200,0.1)"
+              text={t(`${m}.row4text`)} sub={t(`${m}.row4sub`)} />
+          </WhatHappensBox>
+
+          <div className="rounded-2xl p-4 mb-4"
+            style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.1)' }}>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: 'var(--color-primary)' }}>
+              {t(`${m}.afterHeading`)}
+            </p>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { icon: 'insights',  label: t(`${m}.after1Label`), sub: t(`${m}.after1Sub`) },
+                { icon: 'download',  label: t(`${m}.after2Label`), sub: t(`${m}.after2Sub`) },
+                { icon: 'lock_open', label: t(`${m}.after3Label`), sub: t(`${m}.after3Sub`) },
+              ].map(({ icon, label, sub }) => (
+                <div key={label} className="flex flex-col items-center text-center gap-1 p-2.5 rounded-xl"
+                  style={{ background: 'rgba(42,75,217,0.06)' }}>
+                  <Icon name={icon} size={16} style={{ color: 'var(--color-primary)' }} />
+                  <span className="text-xs font-bold text-foreground">{label}</span>
+                  <span className="text-[10px] text-muted-foreground">{sub}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <FooterNote icon="verified_user" iconColor="#059669" iconBg="rgba(5,150,105,0.05)">
+            <strong style={{ color: '#059669' }}>{t(`${m}.footerBold`)}</strong>{' '}{t(`${m}.footerNote`)}
+          </FooterNote>
+        </div>
+
+        <DialogFooter className="flex items-center gap-3 px-7 py-5 border-t border-border sm:justify-start">
+          <CancelButton onClick={onClose} disabled={busy} label={t(`${m}.cancelButton`)} />
+          <ActionButton
+            onClick={onConfirm}
+            busy={busy}
+            busyLabel={t(`${m}.confirmingButton`)}
+            icon="lock"
+            label={t(`${m}.confirmButton`)}
+            gradient="linear-gradient(135deg, #4b5563, #374151)"
+            shadow="0 8px 24px rgba(75,85,99,0.25)"
+          />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// REOPEN MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+export function ReopenModal({ open, onClose, onConfirm, busy, surveyTitle, responseCount }) {
+  const { t } = useTranslation();
+  const m = 'surveys.modals.reopen';
+
+  return (
+    <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
+      <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden gap-0">
+        <div className="px-7 pt-7 pb-5">
+          <DialogHeader className="mb-5">
+            <div className="flex items-start gap-4">
+              <ModalIcon
+                gradient="linear-gradient(135deg, #2a4bd9, #8329c8)"
+                icon="lock_open"
+                shadow="0 8px 24px rgba(42,75,217,0.3)"
+              />
+              <div>
+                <DialogTitle className="text-xl font-extrabold font-headline text-foreground">
+                  {t(`${m}.title`)}
+                </DialogTitle>
+                <p className="text-sm mt-0.5 text-muted-foreground">
+                  {t(`${m}.subtitle`, { title: surveyTitle || t('common.thisSurvey') })}
+                </p>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <StatBar
+            responseCount={responseCount}
+            extra={{ icon: 'add_circle', label: t(`${m}.statExtra`) }}
+          />
+
+          <WhatHappensBox heading={t(`${m}.bodyHeading`)}>
+            <CheckRow icon="public" color="#059669" bg="rgba(5,150,105,0.1)"
+              text={t(`${m}.row1text`)} sub={t(`${m}.row1sub`)} />
+            <CheckRow icon="add_circle" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
+              text={t(`${m}.row2text`)} sub={t(`${m}.row2sub`)} />
+            <CheckRow icon="auto_awesome" color="#8329c8" bg="rgba(131,41,200,0.1)"
+              text={t(`${m}.row3text`)} sub={t(`${m}.row3sub`)} />
+            <CheckRow icon="pause_circle" color="#d97706" bg="rgba(217,119,6,0.1)"
+              text={t(`${m}.row4text`)} sub={t(`${m}.row4sub`)} />
+          </WhatHappensBox>
+
+          <FooterNote icon="bolt" iconColor="#2a4bd9" iconBg="rgba(42,75,217,0.05)">
+            <strong style={{ color: '#2a4bd9' }}>{t(`${m}.footerBold`)}</strong>{' '}{t(`${m}.footerNote`)}
+          </FooterNote>
+        </div>
+
+        <DialogFooter className="flex items-center gap-3 px-7 py-5 border-t border-border sm:justify-start">
+          <CancelButton onClick={onClose} disabled={busy} label={t(`${m}.cancelButton`)} />
+          <ActionButton
+            onClick={onConfirm}
+            busy={busy}
+            busyLabel={t(`${m}.confirmingButton`)}
+            icon="lock_open"
+            label={t(`${m}.confirmButton`)}
+            gradient="linear-gradient(135deg, #2a4bd9, #8329c8)"
+            shadow="0 8px 24px rgba(42,75,217,0.3)"
+          />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE MODAL
+// ─────────────────────────────────────────────────────────────────────────────
+export function DeleteSurveyModal({ open, onClose, onConfirm, busy, surveyTitle, responseCount }) {
+  const { t } = useTranslation();
+  const m = 'surveys.modals.delete';
+
+  return (
+    <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
+      <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden gap-0">
+        <div className="px-7 pt-7 pb-5">
+          <DialogHeader className="mb-5">
+            <div className="flex items-start gap-4">
+              <ModalIcon
+                gradient="linear-gradient(135deg, #b41340, #7f0f2e)"
+                icon="delete_forever"
+                shadow="0 8px 24px rgba(180,19,64,0.3)"
+              />
+              <div>
+                <DialogTitle className="text-xl font-extrabold font-headline text-foreground">
+                  {t(`${m}.title`)}
+                </DialogTitle>
+                <p className="text-sm mt-0.5 text-muted-foreground">
+                  {t(`${m}.subtitle`, { title: surveyTitle || t('common.thisSurvey') })}
                 </p>
               </div>
             </div>
@@ -244,51 +638,66 @@ export function ResumeModal({ open, onClose, onConfirm, busy, surveyTitle, respo
 
           {responseCount > 0 && (
             <div className="flex items-center gap-2 px-4 py-3 rounded-2xl mb-4"
-              style={{ background: 'rgba(42,75,217,0.05)', border: '1px solid rgba(42,75,217,0.12)' }}>
-              <Icon name="bar_chart" size={16} style={{ color: 'var(--color-primary)' }} />
+              style={{ background: 'rgba(180,19,64,0.05)', border: '1px solid rgba(180,19,64,0.15)' }}>
+              <Icon name="warning" size={16} style={{ color: '#b41340' }} />
               <span className="text-sm font-semibold text-foreground">
-                <strong style={{ color: 'var(--color-primary)' }}>{responseCount.toLocaleString()}</strong> response{responseCount !== 1 ? 's' : ''} already collected
+                <strong style={{ color: '#b41340' }}>
+                  {t(responseCount !== 1 ? `${m}.responseWarningPlural` : `${m}.responseWarning`, { n: responseCount.toLocaleString() })}
+                </strong>
+                <span className="text-xs font-normal text-muted-foreground ml-1.5">
+                  {t(`${m}.responseRecoverable`)}
+                </span>
               </span>
             </div>
           )}
 
-          <div className="rounded-2xl p-4 mb-4 space-y-3 bg-muted"
-            style={{ border: '1px solid rgba(171,173,175,0.15)' }}>
-            <p className="text-[10px] font-black uppercase tracking-widest mb-3 text-muted-foreground">
-              What happens when you resume
+          <WhatHappensBox heading={t(`${m}.bodyHeading`)}>
+            <CheckRow icon="visibility_off" color="#b41340" bg="rgba(180,19,64,0.1)"
+              text={t(`${m}.row1text`)} sub={t(`${m}.row1sub`)} />
+            <CheckRow icon="link_off" color="#d97706" bg="rgba(217,119,6,0.1)"
+              text={t(`${m}.row2text`)} sub={t(`${m}.row2sub`)} />
+            <CheckRow icon="inventory_2" color="#059669" bg="rgba(5,150,105,0.1)"
+              text={t(`${m}.row3text`)} sub={t(`${m}.row3sub`)} />
+          </WhatHappensBox>
+
+          <div className="rounded-2xl p-4 mb-4"
+            style={{ background: 'rgba(180,19,64,0.04)', border: '1px solid rgba(180,19,64,0.12)' }}>
+            <p className="text-[10px] font-black uppercase tracking-widest mb-2" style={{ color: '#b41340' }}>
+              {t(`${m}.alternativesHeading`)}
             </p>
-            <CheckRow icon="public" color="#059669" bg="rgba(5,150,105,0.1)"
-              text="Survey link becomes active again"
-              sub="Your existing link still works — no need to redistribute" />
-            <CheckRow icon="add_circle" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
-              text="New responses accepted immediately"
-              sub="Appended to your existing response dataset" />
-            <CheckRow icon="auto_awesome" color="#8329c8" bg="rgba(131,41,200,0.1)"
-              text="Insights refresh with new data"
-              sub="AI analysis updates automatically as responses come in" />
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { icon: 'pause_circle', label: t(`${m}.alt1Label`), sub: t(`${m}.alt1Sub`) },
+                { icon: 'lock',         label: t(`${m}.alt2Label`), sub: t(`${m}.alt2Sub`) },
+              ].map(({ icon, label, sub }) => (
+                <div key={label} className="flex items-center gap-3 p-2.5 rounded-xl"
+                  style={{ background: 'rgba(180,19,64,0.06)' }}>
+                  <Icon name={icon} size={18} style={{ color: '#b41340' }} />
+                  <div>
+                    <div className="text-xs font-bold text-foreground">{label}</div>
+                    <div className="text-[10px] text-muted-foreground">{sub}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
+
+          <FooterNote icon="verified_user" iconColor="#059669" iconBg="rgba(5,150,105,0.05)">
+            <strong style={{ color: '#059669' }}>{t(`${m}.footerBold`)}</strong>{' '}{t(`${m}.footerNote`)}
+          </FooterNote>
         </div>
 
         <DialogFooter className="flex items-center gap-3 px-7 py-5 border-t border-border sm:justify-start">
-          <Button
-            onClick={onClose}
-            disabled={busy}
-            variant="ghost"
-            className="flex-1 py-3 rounded-xl text-sm font-bold bg-[#e8eeff] text-[#2a4bd9] hover:bg-[#dce4ff] hover:text-[#173dcd]"
-          >
-            Cancel
-          </Button>
-          <Button
+          <CancelButton onClick={onClose} disabled={busy} label={t(`${m}.cancelButton`)} />
+          <ActionButton
             onClick={onConfirm}
-            disabled={busy}
-            className="flex-[2] py-3 rounded-xl text-sm font-bold text-white active:scale-95 flex items-center justify-center gap-2"
-            style={{ background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 8px 24px rgba(5,150,105,0.25)' }}
-          >
-            {busy
-              ? <><div className="w-4 h-4 rounded-full border-2 animate-spin" style={{ borderColor: 'white', borderTopColor: 'transparent' }} />Resuming…</>
-              : <><Icon name="play_arrow" size={16} />Resume Survey</>
-            }
-          </Button>
+            busy={busy}
+            busyLabel={t(`${m}.confirmingButton`)}
+            icon="delete_forever"
+            label={t(`${m}.confirmButton`)}
+            gradient="linear-gradient(135deg, #b41340, #7f0f2e)"
+            shadow="0 8px 24px rgba(180,19,64,0.3)"
+          />
         </DialogFooter>
       </DialogContent>
     </Dialog>

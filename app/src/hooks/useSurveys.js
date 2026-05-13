@@ -43,7 +43,7 @@ export function useSurveys() {
   }, [api, load]);
 
   const updateSurvey = useCallback(async (id, data) => {
-    setSurveys((prev) => prev.map((s) => (s.id === id ? { ...s, ...data } : s)));
+    setSurveys((prev) => prev.map((s) => (s.id === id ? { ...s, ...data, updated_at: new Date().toISOString() } : s)));
     try { await api.updateSurvey(id, data); } catch { /* optimistic */ }
   }, [api]);
 

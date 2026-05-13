@@ -71,7 +71,7 @@ export function ResponseCollectionPage() {
                 value={selectedSurveyId ?? '__all__'}
                 onValueChange={(val) => setSelectedSurveyId(val === '__all__' ? null : val)}
               >
-                <SelectTrigger className="w-full px-4 py-2.5 text-sm font-semibold rounded-xl bg-white text-on-surface border-border">
+                <SelectTrigger className="w-full px-4 py-2.5 text-sm font-semibold rounded-[10px] bg-white text-on-surface border-border">
                   <SelectValue placeholder="Select a survey…" />
                 </SelectTrigger>
                 <SelectContent>
