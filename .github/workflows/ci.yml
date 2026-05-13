@@ -27,10 +27,12 @@ jobs:
         with:
           node-version-file: app/.nvmrc
           cache: npm
-          cache-dependency-path: app/package-lock.json
+          cache-dependency-path: app/package.json
 
       - name: Install dependencies
-        run: npm install
+        # Delete the macOS-generated lockfile so npm resolves platform-specific
+        # optional binaries (rolldown linux x64) correctly on this Ubuntu runner.
+        run: rm -f package-lock.json && npm install
 
       - name: Lint
         run: npm run lint
