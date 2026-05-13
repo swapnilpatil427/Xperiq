@@ -30,6 +30,8 @@ app.use('/api/templates',   apiLimiter, require(`${dir}/templates`));
 app.use('/api/ai',          apiLimiter, aiLimiter, require(`${dir}/ai`));
 app.use('/api/workflows',   apiLimiter, require(`${dir}/workflows`));
 app.use('/api/org-profile', apiLimiter, require(`${dir}/orgProfile`));
+app.use('/api/orgs',       apiLimiter, require(`${dir}/orgs`));
+app.use('/api/orgs/me',    apiLimiter, require(`${dir}/members`));
 
 // ── Observability endpoints ───────────────────────────────────────────────────
 app.get('/api/health', (req, res) =>

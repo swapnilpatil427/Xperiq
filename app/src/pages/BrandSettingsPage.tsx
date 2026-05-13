@@ -8,6 +8,7 @@ import { useTranslation } from '../lib/i18n';
 import { useAppAuth } from '../lib/auth.tsx';
 import { useApi } from '../hooks/useApi';
 import type { OrgProfile } from '../types';
+import { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -70,8 +71,11 @@ export function BrandSettingsPage() {
   const api = useApi();
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
   const [activeTab, setActiveTab] = useState('General');
-  const [brandName, setBrandName] = useState('InsightSense Global');
+  const [brandName, setBrandName] = useState('');
   const [brandSaved, setBrandSaved] = useState(false);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [logoUploading, setLogoUploading] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const [primaryColor, setPrimaryColor] = useState(DEFAULT_BRAND_THEME.primary);
   const [accentColor, setAccentColor] = useState(DEFAULT_BRAND_THEME.accent);
   const [secondaryColor, setSecondaryColor] = useState(DEFAULT_BRAND_THEME.secondary);
@@ -87,6 +91,11 @@ export function BrandSettingsPage() {
   const [orgSaved, setOrgSaved] = useState(false);
 
   useEffect(() => {
+    api.getOrg().then((data) => {
+      if (data?.org?.name) setBrandName(data.org.name);
+      if (data?.org?.logoUrl) setLogoUrl(data.org.logoUrl);
+    }).catch(() => {});
+
     api.getOrgProfile().then((data) => {
       if (data?.profile) {
         const p = data.profile;
@@ -98,7 +107,8 @@ export function BrandSettingsPage() {
           website:          p.website || '',
           brand_description: p.brand_description || '',
         });
-        if (p.brand_name) setBrandName(p.brand_name);
+        if (p.brand_name && !brandName) setBrandName(p.brand_name);
+        if (p.logo_url) setLogoUrl(p.logo_url);
         if (p.brand_colors?.primary) setPrimaryColor(p.brand_colors.primary);
         if (p.brand_colors?.accent) setAccentColor(p.brand_colors.accent);
         if (p.brand_colors?.secondary) setSecondaryColor(p.brand_colors.secondary);
@@ -125,6 +135,7 @@ export function BrandSettingsPage() {
       brand_colors: { primary: primaryColor, accent: accentColor, secondary: secondaryColor },
       brand_fonts: { heading: fontHeading, body: fontBody },
     }).catch(() => {});
+    api.updateOrg({ name: brandName }).catch(() => {});
     setBrandSaved(true);
     setTimeout(() => setBrandSaved(false), 2000);
   }
@@ -137,6 +148,26 @@ export function BrandSettingsPage() {
       setTimeout(() => setOrgSaved(false), 2000);
     } catch { /* ignore */ }
     finally { setOrgSaving(false); }
+  }
+
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert(t('settings.general.logoTypeError'));
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      alert(t('settings.general.logoSizeError'));
+      return;
+    }
+    setLogoUploading(true);
+    try {
+      const { logoUrl: url } = await api.uploadLogo(file);
+      setLogoUrl(url);
+      await api.updateOrg({ logoUrl: url });
+    } catch { /* non-fatal */ }
+    finally { setLogoUploading(false); }
   }
 
   const tabs = [
@@ -302,22 +333,44 @@ export function BrandSettingsPage() {
                           {t('settings.general.logoLabel')}
                         </Label>
                         <div
-                          className="relative w-32 h-32 bg-white rounded-2xl flex items-center justify-center cursor-pointer transition-transform duration-500 hover:[transform:rotateX(0deg)]"
+                          className="relative w-32 h-32 bg-white rounded-2xl flex items-center justify-center cursor-pointer transition-transform duration-500 hover:[transform:rotateX(0deg)] overflow-hidden"
                           style={{ boxShadow: '0 40px 60px -10px rgba(0,0,0,0.2)', transform: 'rotateX(5deg)' }}
                         >
-                          <Icon name="token" fill={1} size={48} className="text-primary" />
+                          {logoUrl ? (
+                            <img src={logoUrl} alt="org logo" className="w-full h-full object-contain p-2" />
+                          ) : (
+                            <Icon name="token" fill={1} size={48} className="text-primary" />
+                          )}
                           <div
                             className="absolute -bottom-6 rounded-full"
                             style={{ width: 96, height: 16, background: 'rgba(44,47,49,0.05)', filter: 'blur(16px)' }}
                           />
                         </div>
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleLogoUpload}
+                        />
                         <Button
                           variant="ghost"
                           size="sm"
+                          disabled={logoUploading}
+                          onClick={() => logoInputRef.current?.click()}
                           className="mt-10 text-xs font-bold flex items-center gap-2 transition-opacity hover:opacity-80 text-primary font-headline"
                         >
-                          <Icon name="upload" size={16} />
-                          {t('settings.general.replaceAsset').toUpperCase()}
+                          {logoUploading ? (
+                            <>
+                              <div className="w-3 h-3 rounded-full border-2 border-primary/40 border-t-primary animate-spin" />
+                              {t('settings.general.uploadingLogo')}
+                            </>
+                          ) : (
+                            <>
+                              <Icon name="upload" size={16} />
+                              {t('settings.general.uploadLogo').toUpperCase()}
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>

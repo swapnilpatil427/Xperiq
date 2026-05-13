@@ -11,7 +11,7 @@
 | Phase | Tasks | Done | Tested | % Complete |
 |---|---|---|---|---|
 | Phase 0 — Foundation | 12 | 11 | 0 | 92% |
-| Phase 1 — Core Completion | 35 | 6 | 0 | 17% |
+| Phase 1 — Core Completion | 35 | 14 | 0 | 40% |
 | Phase 2 — AI Engine | 32 | 0 | 0 | 0% |
 | Phase 3 — Billing | 18 | 0 | 0 | 0% |
 | Phase 4 — Enterprise | 38 | 0 | 0 | 0% |
@@ -20,17 +20,17 @@
 | Phase 7 — Go-to-Market | 20 | 0 | 0 | 0% |
 | Phase 2A — Agentic Skills Foundation | 16 | 0 | 0 | 0% |
 | Phase 5A — MCP & Skill Publishing | 12 | 0 | 0 | 0% |
-| **Total** | **220** | **14** | **0** | **6%** |
+| **Total** | **220** | **22** | **0** | **10%** |
 
 ---
 
 ## ⚡ Current Recommendation
 
-**Phase 0 is 92% complete → Start Sprint 1: Org & Team Management**
+**Sprint 1 complete → Start Sprint 2: RBAC & Permissions**
 
-Foundation is solid: TypeScript, 102 unit tests, CI pipeline (lint + typecheck + tests + build), ErrorBoundary on every page, Sentry wired, structured logging, rate limiting, Zod validation. Only P0-5 (Playwright E2E) is deferred.
+Sprint 1 shipped: all 7 org/member backend routes, logo upload (Firebase Storage), axios-based API client, BrandSettingsPage wired to real API. 13 backend unit tests passing. Frontend: 0 TS errors, 0 lint errors, 102 tests pass, build clean.
 
-**Next:** Sprint 1 backend routes (1-1 through 1-7) + frontend wiring (1-8, 1-9).
+**Next:** Sprint 2 — RBAC roles (`org:admin`, `org:analyst`, `org:viewer`) + permission gates in frontend.
 
 ---
 
@@ -61,18 +61,19 @@ Foundation is solid: TypeScript, 102 unit tests, CI pipeline (lint + typecheck +
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| 1-1 | Backend: `POST /api/orgs` — create organization | ⬜ | |
-| 1-2 | Backend: `GET /api/orgs/me` — get current org | ⬜ | |
-| 1-3 | Backend: `PUT /api/orgs/me` — update org name/logo | ⬜ | |
-| 1-4 | Backend: `GET /api/orgs/me/members` — list members | ⬜ | |
-| 1-5 | Backend: `POST /api/orgs/me/invitations` — invite by email | ⬜ | Uses Clerk Invitations API |
-| 1-6 | Backend: `DELETE /api/orgs/me/members/:userId` — remove member | ⬜ | |
-| 1-7 | Backend: `PUT /api/orgs/me/members/:userId/role` — update role | ⬜ | |
-| 1-8 | Frontend: wire `BrandSettingsPage` to real org API | ⬜ | |
-| 1-9 | Frontend: wire team table to real members + invite modal | ⬜ | |
+| 1-1 | Backend: `POST /api/orgs` — create organization | 🧪 | `routes/local/orgs.js` — upsert org_profiles row |
+| 1-2 | Backend: `GET /api/orgs/me` — get current org | 🧪 | Returns orgId, name, logoUrl + full profile fields |
+| 1-3 | Backend: `PUT /api/orgs/me` — update org name/logo | 🧪 | Syncs name to Clerk when not SKIP_AUTH |
+| 1-3a | Backend: `POST /api/orgs/me/logo` — upload logo to Firebase Storage | 🧪 | Dev: base64 data URL; prod: Firebase Storage public URL |
+| 1-4 | Backend: `GET /api/orgs/me/members` — list members | 🧪 | SKIP_AUTH: `{ members: [], total: 0 }`; else Clerk API |
+| 1-5 | Backend: `POST /api/orgs/me/invitations` — invite by email | 🧪 | SKIP_AUTH: mock; else Clerk createOrganizationInvitation |
+| 1-6 | Backend: `DELETE /api/orgs/me/members/:userId` — remove member | 🧪 | SKIP_AUTH: mock; else Clerk deleteOrganizationMembership |
+| 1-7 | Backend: `PUT /api/orgs/me/members/:userId/role` — update role | 🧪 | SKIP_AUTH: mock; else Clerk updateOrganizationMembership |
+| 1-8 | Frontend: wire `BrandSettingsPage` to real org API | 🧪 | getOrg() on mount, updateOrg() on save, logo upload flow |
+| 1-9 | Frontend: wire team table to real members + invite modal | ✅ | Clerk configured: `<OrganizationProfile />` handles all team management natively. Dev mode: DEMO_TEAM_MEMBERS placeholder. |
 | 1-10 | Frontend: `OnboardingPage` — real Clerk org list | ✅ | `useOrganizationList`, `CreateOrganization` modal, sign-out wired |
 | 1-11 | Frontend: org switcher in `SideNav` | ✅ | `OrganizationSwitcher` at bottom of sidenav |
-| 1-12 | Tests: org API routes (unit), invite flow (E2E) | ⬜ | |
+| 1-12 | Tests: org API routes (unit), invite flow (E2E) | 🧪 | 13 vitest unit tests in `backend/src/__tests__/` — all pass |
 
 ### Sprint 2 — RBAC, Enterprise Roles & Permissions (Weeks 5–6)
 
@@ -535,6 +536,7 @@ Foundation is solid: TypeScript, 102 unit tests, CI pipeline (lint + typecheck +
 | 2026-05-11 | Survey Data Model (Sprint 2B): researched 15 survey types, 30+ question types, all contextual enrichment fields (IP/geo/device/session/UTM/quality signals) across Medallia/InMoment/Typeform and other leading platforms. Designed 3-tier storage architecture (Firestore + BigQuery + Firebase Storage). Wrote SURVEY_DATA_MODEL.md with full TypeScript interfaces (Survey, Question, Block, Response, Answer, Distribution, LogicRule, EmbeddedDataField), collection hierarchy, compound indexes, and migration guide from current minimal schema. |
 | 2026-05-11 | Local dev stack simplified: single docker-compose.yml (Postgres + Prometheus + Loki + Grafana), removed Supabase CLI dependency, Pino structured logging with optional Loki push, prom-client metrics with /api/metrics endpoint, Dockerfile + fly.toml added. |
 | 2026-05-11 | Cloud strategy decided: GCP only. Fly.toml kept as reference but GCP is the path. Scaling stages documented: Firebase (now) → Cloud Run + Cloud SQL (~$10K MRR) → Cloudflare + Cloud Run (global). ICP added as watchlist item. 7 migration portability principles enforced as code patterns. PRODUCT_PLAN.md and TRACKER.md updated with full strategy. |
+| 2026-05-13 | Sprint 1 (tasks 1-1 through 1-8, 1-12): All backend org & member routes implemented (orgs.js + members.js + schemas/orgs.js). orgProfile.js updated with logo_url column. api.ts rewritten with axios (all existing methods + getOrg/updateOrg/uploadLogo/getMembers/inviteMember/removeMember/updateMemberRole). types/index.ts: Org + OrgMember interfaces added, logo_url added to OrgProfile. BrandSettingsPage: loads org name from API, logo upload with preview, syncs name on save. 13 backend unit tests (vitest). All 102 frontend tests pass. tsc: 0 errors. lint: 0 errors. build: success. |
 | 2026-05-13 | P0-2 TypeScript migration complete: 0 errors (down from 1599). All 72 .js/.jsx files converted to .ts/.tsx. Zod validation (P0-9) and rate limiting (P0-10) also complete from prior session. |
 | 2026-05-13 | P0-3 + P0-4 complete: Vitest 4.1.6 + React Testing Library installed. vitest.config.ts created (jsdom env). 102 unit tests written across 4 files — i18n (27), routes (22), thresholds (24), useSurveys (29, mock API). All 102 pass. `npm test` script added. |
 | 2026-05-13 | P0-8 complete: ErrorBoundary enhanced with `inline` prop. 12 AppShell pages wrapped with compact inline boundary (nav stays functional on page crash). 4 public pages wrapped with full-screen boundary. Top-level catch-all kept. P0-6 complete: .github/workflows/ci.yml created — lint + tsc + vitest on every push/PR to main. coverage/ gitignored, eslint ignores coverage/. Full CI sim: lint ✓ typecheck ✓ 102 tests ✓. |
