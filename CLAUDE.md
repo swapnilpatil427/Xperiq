@@ -1,7 +1,7 @@
 # Experient — Project Root
 
 ## What this is
-Experient is an AI-powered experience intelligence platform. It lets organizations create surveys, collect responses, and generate AI-powered insights. Think of it as a modern Qualtrics competitor with dimensional intelligence built in.
+Experient is an AI-powered experience intelligence platform. It lets organizations create surveys, collect responses, and generate AI-powered insights. Think of it as a modern enterprise XM platform challenger with dimensional intelligence built in.
 
 ## Monorepo layout
 - `app/` — React frontend (Vite + Tailwind v4)

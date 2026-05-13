@@ -1,7 +1,7 @@
 # Experient — Complete Product & Go-to-Market Plan
 # AI-Era Experience Management Platform
 
-**Vision:** The world's first AI-native experience management platform — and the first to be fully agentic. Not a survey tool with AI bolted on. An intelligence layer that happens to collect feedback, packaged as four AI skills any agent can use. Beats Qualtrics, SurveyMonkey, Medallia, and InMoment by being 10× simpler, 100× cheaper, natively AI, and callable from anywhere.
+**Vision:** The world's first AI-native experience management platform — and the first to be fully agentic. Not a survey tool with AI bolted on. An intelligence layer that happens to collect feedback, packaged as four AI skills any agent can use. Beats legacy XM platforms (SurveyMonkey, Medallia, InMoment) by being 10× simpler, 100× cheaper, natively AI, and callable from anywhere.
 
 **Status at plan creation:** 2026-05-07
 **Updated:** 2026-05-11 — Agentic Skills direction added
@@ -38,7 +38,7 @@ All four skills are designed by PMs before any code is written. Each PM spec ans
 
 ### Why This Wins GTM
 
-- Qualtrics, Medallia, SurveyMonkey have no skills layer. Zero.
+- Legacy XM platforms (Medallia, SurveyMonkey, InMoment) have no skills layer. Zero.
 - Teams using Claude internally can add Experient in 30 seconds via MCP config.
 - Demo is a 60-second video of Claude doing survey → distribute → insights → workflow with no UI.
 - This becomes the hook for ProductHunt, HN, developer communities, and enterprise sales.
@@ -48,7 +48,7 @@ All four skills are designed by PMs before any code is written. Each PM spec ans
 
 ## Why We Win the AI Race
 
-| Dimension | Qualtrics | SurveyMonkey | Medallia | InMoment | **Experient** |
+| Dimension | Legacy XM | SurveyMonkey | Medallia | InMoment | **Experient** |
 |---|---|---|---|---|---|
 | Pricing model | Seat license ($$$) | Seat license ($$) | Enterprise contract | Enterprise contract | **Credits — pay per signal** |
 | AI | Bolted-on, GPT wrapper | Basic, superficial | Heavy services model | Reports-based | **Native intelligence layer** |
@@ -565,12 +565,12 @@ This is the most differentiated feature. "Ask your data a question in plain Engl
   - Changelog
 - [ ] **18-2** SEO: target 50 keywords
   - Primary: "AI survey tool", "experience management platform", "NPS software", "customer feedback AI"
-  - Competitive: "Qualtrics alternative", "SurveyMonkey alternative", "Medallia alternative"
+  - Competitive: "enterprise XM alternative", "SurveyMonkey alternative", "Medallia alternative"
   - Long-tail: "AI-powered survey analysis", "automatic NPS analysis", "survey insights AI"
 - [ ] **18-3** Programmatic SEO: landing pages for each industry vertical (SaaS, Healthcare, Finance, Retail, Education) — auto-generated from templates with unique content
 - [ ] **18-4** Content calendar: 2 blog posts/week for first 6 months
   - Technical: "How AI changes customer feedback analysis"
-  - Competitive: "Qualtrics vs Experient — honest comparison"
+  - Competitive: "legacy XM vs Experient — honest comparison"
   - How-to: "Build your first NPS program in 10 minutes"
   - Research: "State of Experience Management 2027"
 - [ ] **18-5** Video: 90-second product demo video (Loom-style) — show full flow from AI survey creation to insight generation in under 2 minutes
@@ -595,7 +595,7 @@ This is the most differentiated feature. "Ask your data a question in plain Engl
 - [ ] **19-6** Champion program: power users who love the product → case study + LinkedIn post + referral credit (500 credits per referral)
 
 **Advertising:**
-- [ ] **19-7** Google Ads: search campaigns for primary keywords + competitor keywords (Qualtrics pricing, SurveyMonkey alternative)
+- [ ] **19-7** Google Ads: search campaigns for primary keywords + competitor keywords (enterprise XM pricing, SurveyMonkey alternative)
 - [ ] **19-8** LinkedIn Ads: target CX managers, VP Product, Head of Research at companies 50-5000 employees
 - [ ] **19-9** Reddit: r/CX, r/SaaS, r/ProductManagement — organic presence first, then promoted posts
 - [ ] **19-10** G2 / Capterra listings: create profile, incentivize first 20 reviews from design partners
@@ -610,7 +610,7 @@ This is the most differentiated feature. "Ask your data a question in plain Engl
 **Launch Sequence:**
 - [ ] **19-16** Design partner program: 10 companies get 6 months free Business tier in exchange for weekly feedback calls + case study
 - [ ] **19-17** Beta → GA announcement: blog post + LinkedIn + ProductHunt on same day
-- [ ] **19-18** Press outreach: TechCrunch, VentureBeat, CX Today — pitch "AI-native challenger to Qualtrics"
+- [ ] **19-18** Press outreach: TechCrunch, VentureBeat, CX Today — pitch "AI-native challenger to legacy XM platforms"
 - [ ] **19-19** Launch event: 60-minute webinar "The Future of Experience Management" — live demo + Q&A
 
 ---
@@ -791,7 +791,7 @@ The `features.ts` frontend module reads this at app boot. Changing a price or mo
 
 1. Install `@tailwindcss/vite` and verify the app renders correctly
 2. Start Sprint 0: set up Vitest, add ErrorBoundary, remove client-side OpenRouter key
-3. Create 5 design partner agreements — start with 2–3 companies who currently pay for Qualtrics
+3. Create 5 design partner agreements — start with 2–3 companies who currently use legacy XM platforms
 4. Register `experient.ai` domain if not already owned
 5. Set up Clerk organization (free tier) and Firebase project per `README_SETUP.md`
 6. Validate full deploy works end-to-end: `firebase deploy`

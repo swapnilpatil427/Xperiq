@@ -129,7 +129,7 @@ Estimated time to complete Sprint 0: **3–5 days**
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| 2B-1 | Research all survey types across Qualtrics, Medallia, InMoment, Typeform, SurveyMonkey, LimeSurvey | ✅ | 15 survey types, 30+ question types catalogued |
+| 2B-1 | Research all survey types across leading platforms (Medallia, InMoment, Typeform, SurveyMonkey, LimeSurvey) | ✅ | 15 survey types, 30+ question types catalogued |
 | 2B-2 | Research all contextual enrichment data (IP, geo, device, network, session, UTM, behavioral, quality signals) | ✅ | Full schema designed |
 | 2B-3 | Design distributed storage architecture: Firestore (operational) + BigQuery (analytics) + Firebase Storage (binaries) | ✅ | Split-write, no ETL |
 | 2B-4 | Write `SURVEY_DATA_MODEL.md` — full TypeScript interface definitions, collection hierarchy, indexes, migration guide | ✅ | At root of Experient/ repo |
@@ -150,7 +150,7 @@ Estimated time to complete Sprint 0: **3–5 days**
 
 ### Sprint 3B — Distribution & Notifications (PM Gap Backlog)
 
-**Goal:** Close the distribution gap between Experient and Qualtrics/SurveyMonkey. A survey that can only be shared as a bare URL is fundamentally less valuable than one with channels, scheduling, and lifecycle notifications.
+**Goal:** Close the distribution gap between Experient and established platforms (SurveyMonkey et al.). A survey that can only be shared as a bare URL is fundamentally less valuable than one with channels, scheduling, and lifecycle notifications.
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
@@ -532,7 +532,7 @@ Estimated time to complete Sprint 0: **3–5 days**
 | 2026-05-11 | Clerk auth end-to-end: fixed redirect flow, auth.jsx signOut, post-sign-in auto-redirect (useLayoutEffect), OnboardingPage with real Clerk org list + CreateOrganization modal, UserButton in TopBar, OrganizationSwitcher in SideNav, OrganizationProfile in Settings. @tailwindcss/vite installed. |
 | 2026-05-11 | Sprint 2 expanded with enterprise role model: 3 roles (admin/analyst/viewer), 15 tasks covering Clerk Dashboard config, usePermissions hook, role gates, backend middleware. |
 | 2026-05-11 | Agentic Skills strategy added: Sprint 7A (16 tasks — 4 PM specs + skill executor layer + credit metering + Cmd+K routing), Sprint 15A (12 tasks — MCP server, 5 MCP tools, Claude skill marketplace, GTM demo). PRODUCT_PLAN.md updated with agentic vision, four-skill architecture, PM-first design principle, and competitive table. |
-| 2026-05-11 | Survey Data Model (Sprint 2B): researched 15 survey types, 30+ question types, all contextual enrichment fields (IP/geo/device/session/UTM/quality signals) across Qualtrics/Medallia/InMoment/Typeform. Designed 3-tier storage architecture (Firestore + BigQuery + Firebase Storage). Wrote SURVEY_DATA_MODEL.md with full TypeScript interfaces (Survey, Question, Block, Response, Answer, Distribution, LogicRule, EmbeddedDataField), collection hierarchy, compound indexes, and migration guide from current minimal schema. |
+| 2026-05-11 | Survey Data Model (Sprint 2B): researched 15 survey types, 30+ question types, all contextual enrichment fields (IP/geo/device/session/UTM/quality signals) across Medallia/InMoment/Typeform and other leading platforms. Designed 3-tier storage architecture (Firestore + BigQuery + Firebase Storage). Wrote SURVEY_DATA_MODEL.md with full TypeScript interfaces (Survey, Question, Block, Response, Answer, Distribution, LogicRule, EmbeddedDataField), collection hierarchy, compound indexes, and migration guide from current minimal schema. |
 | 2026-05-11 | Local dev stack simplified: single docker-compose.yml (Postgres + Prometheus + Loki + Grafana), removed Supabase CLI dependency, Pino structured logging with optional Loki push, prom-client metrics with /api/metrics endpoint, Dockerfile + fly.toml added. |
 | 2026-05-11 | Cloud strategy decided: GCP only. Fly.toml kept as reference but GCP is the path. Scaling stages documented: Firebase (now) → Cloud Run + Cloud SQL (~$10K MRR) → Cloudflare + Cloud Run (global). ICP added as watchlist item. 7 migration portability principles enforced as code patterns. PRODUCT_PLAN.md and TRACKER.md updated with full strategy. |
 | 2026-05-12 | Survey backend fully rewritten: clean data model (templateId only, no template fields on survey), full audit trail (created_at/updated_at/updated_by/published_at/paused_at/closed_at/deleted_at), soft delete, status lifecycle timestamps, COALESCE publish. Org profile backend (org_profiles table, GET+PUT upsert). Fixed optimistic update bug for updated_at. Survey builder: settings panel shows template info read-only + editable fields (description/intent/thankYouMessage). Fixed SurveyCreationPage: "Edit in Builder" passes correct navigation state (intent/fromTemplate/templateId), "Launch Survey" now directly creates+publishes and shows success modal with share URL. All 13 question types implemented in fill page. Brand settings persisted to backend. 3D page transition animations (Framer Motion AnimatePresence + rotateX). Survey question card slide animations in fill page. LoadingStates components (Spinner, OverlayLoader, SurveyListSkeleton). Skeleton loading in SurveysListPage. Overlay loader for publish in builder. i18n strings added for all new UI text. |
