@@ -2,7 +2,7 @@ app = "experient-api"
 primary_region = "ord"   # Chicago — change to your closest: lax, iad, lhr, fra, sin, nrt
 
 [build]
-  dockerfile = "functions/Dockerfile"
+  dockerfile = "backend/Dockerfile"
 
 [env]
   NODE_ENV  = "production"

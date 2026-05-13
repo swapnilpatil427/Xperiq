@@ -52,7 +52,7 @@ src/
 - `SKIP_AUTH=true` — Bypasses auth for LOCAL DEV ONLY
 
 ## Postgres schema highlights
-See SURVEY_DATA_MODEL.md at project root for full schema.
+See docs/SURVEY_DATA_MODEL.md for full schema.
 Key tables: surveys, responses, templates, workflows, orgs
 surveys.questions: JSONB column storing array of question objects
 surveys.status: CHECK constraint — 'draft' | 'active' | 'paused' | 'closed'
