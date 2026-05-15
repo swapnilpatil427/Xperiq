@@ -8,9 +8,8 @@ const { insightsGenerated } = require('../../lib/metrics');
 const router = express.Router();
 
 router.post('/generate-survey', requireAuth, validate(generateSurveySchema), async (req, res) => {
+  const { intent, surveyTypeId } = req.body;
   try {
-    const { intent, surveyTypeId } = req.body;
-
     const questions = await generateSurveyQuestions(intent, surveyTypeId);
     res.json({ questions });
   } catch (err) {

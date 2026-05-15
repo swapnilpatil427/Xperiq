@@ -946,6 +946,26 @@ const en = {
       savedButton: 'Saved!',
     },
   },
+  permissions: {
+    deniedBanner: 'You need a higher role to do this. Ask your admin.',
+    insufficientRole: 'Insufficient permissions',
+    contactAdmin: 'Contact your organization admin to request access.',
+  },
+
+  upgrade: {
+    title: 'Upgrade to {plan}',
+    featureLocked: '{feature} is not available on your current plan.',
+    benefit1: 'Unlock advanced AI features and automation',
+    benefit2: 'Priority support and onboarding',
+    benefit3: 'Team collaboration and role-based access',
+    cta: 'Upgrade — starts at {price}',
+  },
+
+  enterprise: {
+    modeBadge: 'Enterprise',
+    modeTooltip: 'Enterprise mode is active',
+  },
+
   data: {
     pageTitle: 'Data',
     pageSubtitle: 'All Responses',

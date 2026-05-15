@@ -2,18 +2,27 @@ const fetch = require('node-fetch');
 const logger = require('./logger');
 const { aiDuration, aiTotal, aiTokensTotal } = require('./metrics');
 
-const BASE_URL  = 'https://openrouter.ai/api/v1';
-const FREE_MODEL = 'meta-llama/llama-3.1-8b-instruct:free';
+const BASE_URL = 'https://openrouter.ai/api/v1';
 
-// Rough cost table (USD per 1k tokens) — update as models change
+// Model selection mirrors the agents service AGENTS_ENV tiers.
+// dev + dev-paid → Gemini 2.5 Flash (fast, cheap, no free-tier rate limits).
+// staging + prod → Gemini 2.0 Flash (stable GA model for backend AI ops).
+const _MODEL_MAP = {
+  'dev':      'google/gemini-2.5-flash',
+  'dev-paid': 'google/gemini-2.5-flash',
+  'staging':  'google/gemini-2.0-flash',
+  'prod':     'google/gemini-2.0-flash',
+};
+const DEFAULT_MODEL = _MODEL_MAP[process.env.AGENTS_ENV] ?? 'google/gemini-2.5-flash';
+
+// Rough cost table (USD per 1k tokens, blended input+output)
 const COST_PER_1K = {
-  'llama-3.1-8b-instruct:free': 0,
-  'gemini-flash-1.5':           0.000075,
-  'gpt-4o-mini':                0.00015,
-  'claude-haiku-3-5':           0.0008,
+  'gemini-2.5-flash': 0.0003,
+  'gemini-2.0-flash': 0.0002,
+  'gpt-4o-mini':      0.00015,
 };
 
-async function chat(messages, model = FREE_MODEL, operation = 'chat') {
+async function chat(messages, model = DEFAULT_MODEL, operation = 'chat') {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
 
@@ -79,7 +88,7 @@ async function generateSurveyQuestions(intent, surveyTypeId) {
       },
       { role: 'user', content: `Create a survey for this goal: ${intent}${typeHint}` },
     ],
-    FREE_MODEL,
+    DEFAULT_MODEL,
     'generate-survey'
   );
   return JSON.parse(content.trim());
@@ -104,7 +113,7 @@ async function analyzeInsights(surveyTitle, responses) {
         content: `Survey: "${surveyTitle}"\n\nResponses (${responses.length} total, showing ${sample.length}):\n${JSON.stringify(sample)}`,
       },
     ],
-    FREE_MODEL,
+    DEFAULT_MODEL,
     'analyze-insights'
   );
   return JSON.parse(content.trim());
@@ -138,7 +147,7 @@ Return ONLY valid JSON — no markdown:
       { role: 'system', content: system },
       { role: 'user',   content: `Survey type: ${context.surveyTypeId || 'general'}\nGoal: ${context.intent || ''}\n\nCurrent questions:\n${JSON.stringify(questions, null, 2)}\n\nChange request: "${message}"` },
     ],
-    FREE_MODEL,
+    DEFAULT_MODEL,
     'refine-survey'
   );
 

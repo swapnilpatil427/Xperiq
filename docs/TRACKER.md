@@ -1,5 +1,5 @@
 # Experient — Work Tracker
-# Updated: 2026-05-13
+# Updated: 2026-05-14
 
 > **How to use:** Tell Claude "mark P0-1 done and tested" or "start Sprint 1" and the tracker updates automatically.
 > Status key: ⬜ Not started · 🔄 In progress · ✅ Done · 🧪 Done + Tested · ⏭️ Skipped
@@ -11,7 +11,7 @@
 | Phase | Tasks | Done | Tested | % Complete |
 |---|---|---|---|---|
 | Phase 0 — Foundation | 12 | 11 | 0 | 92% |
-| Phase 1 — Core Completion | 35 | 14 | 0 | 40% |
+| Phase 1 — Core Completion | 35 | 27 | 0 | 77% |
 | Phase 2 — AI Engine | 32 | 0 | 0 | 0% |
 | Phase 3 — Billing | 18 | 0 | 0 | 0% |
 | Phase 4 — Enterprise | 38 | 0 | 0 | 0% |
@@ -20,17 +20,17 @@
 | Phase 7 — Go-to-Market | 20 | 0 | 0 | 0% |
 | Phase 2A — Agentic Skills Foundation | 16 | 0 | 0 | 0% |
 | Phase 5A — MCP & Skill Publishing | 12 | 0 | 0 | 0% |
-| **Total** | **220** | **22** | **0** | **10%** |
+| **Total** | **220** | **35** | **0** | **16%** |
 
 ---
 
 ## ⚡ Current Recommendation
 
-**Sprint 1 complete → Start Sprint 2: RBAC & Permissions**
+**Sprint 2 complete → Start Sprint 3: Analytics & Dashboard**
 
-Sprint 1 shipped: all 7 org/member backend routes, logo upload (Firebase Storage), axios-based API client, BrandSettingsPage wired to real API. 13 backend unit tests passing. Frontend: 0 TS errors, 0 lint errors, 102 tests pass, build clean.
+Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `features.ts` plan-tier flags, `requireRole` middleware, role gates on all survey + member write routes, API Keys tab gated to admin, enterprise mode badge on OnboardingPage, `UpgradeModal` component. 42 backend tests + 110 frontend tests passing. tsc: 0 errors.
 
-**Next:** Sprint 2 — RBAC roles (`org:admin`, `org:analyst`, `org:viewer`) + permission gates in frontend.
+**Next:** Sprint 3 — wire `ResponseDashboardPage` and `InsightsDashboardPage` to real analytics endpoints.
 
 ---
 
@@ -88,19 +88,19 @@ Sprint 1 shipped: all 7 org/member backend routes, logo upload (Firebase Storage
 |---|---|---|---|
 | 2-1 | **Clerk Dashboard:** create custom roles `org:analyst` and `org:viewer` under Configure → Organizations → Roles | ⬜ | One-time dashboard setup, not code |
 | 2-2 | **Clerk Dashboard:** set `org:admin` permissions: manage_members, manage_billing, delete_organization | ⬜ | One-time dashboard setup |
-| 2-3 | Frontend: `usePermissions()` hook — wraps `useOrganization().membership.role`, returns `{ isAdmin, isAnalyst, isViewer, role }` | ⬜ | `src/lib/permissions.ts` |
-| 2-4 | Frontend: gate "Create Survey", "Edit Survey", "Delete Survey" actions behind `isAdmin \|\| isAnalyst` | ⬜ | Disable button + show tooltip if no permission |
-| 2-5 | Frontend: gate "Invite Member", "Change Role", "Remove Member" behind `isAdmin` only | ⬜ | These are in Settings → Organization tab |
-| 2-6 | Frontend: gate "API Keys" tab behind `isAdmin` only | ⬜ | `BrandSettingsPage` |
-| 2-7 | Frontend: `<PermissionGate role="admin">` wrapper component — renders children or null | ⬜ | Reusable gate for any restricted UI element |
-| 2-8 | Frontend: permission denied banner for viewers who try restricted actions | ⬜ | Friendly "Ask your admin" message |
-| 2-9 | Backend: `requireRole(minRole)` middleware — reads Clerk JWT org role claim, blocks 403 if insufficient | ⬜ | Order: viewer < analyst < admin |
-| 2-10 | Backend: apply `requireRole('analyst')` on `POST /api/surveys`, `PUT /api/surveys/:id` | ⬜ | |
-| 2-11 | Backend: apply `requireRole('admin')` on `POST /api/orgs/me/invitations`, `DELETE /api/orgs/me/members/:id` | ⬜ | |
-| 2-12 | Frontend: `src/lib/features.ts` — plan-tier feature flags (free / starter / business / enterprise) | ⬜ | Separate from role gates |
-| 2-13 | Frontend: "Enterprise mode" badge in `OnboardingPage` for orgs with ≥5 members or Business+ plan | ⬜ | Visual indicator, not a gate |
-| 2-14 | Frontend: upgrade modal triggered at enterprise feature gates (SSO, white-label, audit log) | ⬜ | |
-| 2-15 | Tests: role middleware unit test (admin/analyst/viewer × each route), permission hook unit test | ⬜ | |
+| 2-3 | Frontend: `usePermissions()` hook — wraps `useOrganization().membership.role`, returns `{ isAdmin, isAnalyst, isViewer, role }` | 🧪 | `src/lib/permissions.ts`. Demo mode always grants admin. |
+| 2-4 | Frontend: gate "Create Survey", "Edit Survey", "Delete Survey" actions behind `isAdmin \|\| isAnalyst` | 🧪 | Create buttons + delete menu item hidden for viewers |
+| 2-5 | Frontend: gate "Invite Member", "Change Role", "Remove Member" behind `isAdmin` only | 🧪 | Backend enforces requireRole('admin') on those routes |
+| 2-6 | Frontend: gate "API Keys" tab behind `isAdmin` only | 🧪 | Tab hidden + content shows PermissionDeniedBanner if accessed directly |
+| 2-7 | Frontend: `<PermissionGate role="admin">` wrapper component — renders children or null | 🧪 | `src/components/PermissionGate.tsx` — also exports `PermissionDeniedBanner` |
+| 2-8 | Frontend: permission denied banner for viewers who try restricted actions | 🧪 | Amber pill "Ask your admin" in `PermissionDeniedBanner` |
+| 2-9 | Backend: `requireRole(minRole)` middleware — reads Clerk JWT org role claim, blocks 403 if insufficient | 🧪 | `src/middleware/requireRole.js` — viewer < analyst < admin |
+| 2-10 | Backend: apply `requireRole('analyst')` on `POST /api/surveys`, `PUT /api/surveys/:id` | 🧪 | Also on DELETE /:id and POST /:id/publish |
+| 2-11 | Backend: apply `requireRole('admin')` on `POST /api/orgs/me/invitations`, `DELETE /api/orgs/me/members/:id` | 🧪 | Also on PUT /members/:userId/role |
+| 2-12 | Frontend: `src/lib/features.ts` — plan-tier feature flags (free / starter / business / enterprise) | 🧪 | `getFeatureFlags(plan)` returns full flag object; `isEnterpriseMode(memberCount, plan)` helper |
+| 2-13 | Frontend: "Enterprise mode" badge in `OnboardingPage` for orgs with ≥5 members or Business+ plan | 🧪 | Green pill badge on org card |
+| 2-14 | Frontend: upgrade modal triggered at enterprise feature gates (SSO, white-label, audit log) | 🧪 | `<UpgradeModal>` component with plan branding + pricing |
+| 2-15 | Tests: role middleware unit test (admin/analyst/viewer × each route), permission hook unit test | 🧪 | 12 requireRole tests + 8 permissions/features tests. 42 backend + 110 frontend all pass. |
 
 ### Sprint 1C — Survey Lifecycle & UX Polish (Completed 2026-05-12)
 
@@ -537,6 +537,7 @@ Sprint 1 shipped: all 7 org/member backend routes, logo upload (Firebase Storage
 | 2026-05-11 | Local dev stack simplified: single docker-compose.yml (Postgres + Prometheus + Loki + Grafana), removed Supabase CLI dependency, Pino structured logging with optional Loki push, prom-client metrics with /api/metrics endpoint, Dockerfile + fly.toml added. |
 | 2026-05-11 | Cloud strategy decided: GCP only. Fly.toml kept as reference but GCP is the path. Scaling stages documented: Firebase (now) → Cloud Run + Cloud SQL (~$10K MRR) → Cloudflare + Cloud Run (global). ICP added as watchlist item. 7 migration portability principles enforced as code patterns. PRODUCT_PLAN.md and TRACKER.md updated with full strategy. |
 | 2026-05-13 | Sprint 1 (tasks 1-1 through 1-8, 1-12): All backend org & member routes implemented (orgs.js + members.js + schemas/orgs.js). orgProfile.js updated with logo_url column. api.ts rewritten with axios (all existing methods + getOrg/updateOrg/uploadLogo/getMembers/inviteMember/removeMember/updateMemberRole). types/index.ts: Org + OrgMember interfaces added, logo_url added to OrgProfile. BrandSettingsPage: loads org name from API, logo upload with preview, syncs name on save. 13 backend unit tests (vitest). All 102 frontend tests pass. tsc: 0 errors. lint: 0 errors. build: success. |
+| 2026-05-14 | Sprint 2 (RBAC) complete: `usePermissions()` hook + `<PermissionGate>` + `PermissionDeniedBanner`, `features.ts` plan-tier flags, `requireRole` middleware, role gates on all survey + member write routes (analyst for survey CRUD/publish, admin for invite/remove/role-change), API Keys tab gated to admin only, enterprise mode badge on OnboardingPage, `UpgradeModal` component, i18n strings for permissions/upgrade/enterprise. 12 new requireRole unit tests + 8 new permissions/features unit tests. 42 backend + 110 frontend all passing. tsc: 0 errors. |
 | 2026-05-13 | P0-2 TypeScript migration complete: 0 errors (down from 1599). All 72 .js/.jsx files converted to .ts/.tsx. Zod validation (P0-9) and rate limiting (P0-10) also complete from prior session. |
 | 2026-05-13 | P0-3 + P0-4 complete: Vitest 4.1.6 + React Testing Library installed. vitest.config.ts created (jsdom env). 102 unit tests written across 4 files — i18n (27), routes (22), thresholds (24), useSurveys (29, mock API). All 102 pass. `npm test` script added. |
 | 2026-05-13 | P0-8 complete: ErrorBoundary enhanced with `inline` prop. 12 AppShell pages wrapped with compact inline boundary (nav stays functional on page crash). 4 public pages wrapped with full-screen boundary. Top-level catch-all kept. P0-6 complete: .github/workflows/ci.yml created — lint + tsc + vitest on every push/PR to main. coverage/ gitignored, eslint ignores coverage/. Full CI sim: lint ✓ typecheck ✓ 102 tests ✓. |

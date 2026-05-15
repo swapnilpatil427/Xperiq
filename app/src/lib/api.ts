@@ -4,6 +4,72 @@ import type {
   Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
 } from '../types';
 
+// ── Copilot types ──────────────────────────────────────────────────────────────
+export interface OrgContext {
+  industry?: string;
+  size?: string;
+  use_case?: string;
+  target_audience?: string;
+  prior_survey_count?: number;
+  brand_description?: string;
+  region?: string;
+}
+
+export interface RunStatus {
+  run_id:           string;
+  thread_id:        string;
+  status:           'running' | 'completed' | 'failed' | 'waiting_approval';
+  stream_events:    StreamEvent[];
+  qc_score?:        number;
+  compliance_risk?: string;
+  questions?:       Question[];
+  recommendations:  Recommendation[];
+  credit_summary:   Record<string, unknown>;
+  error?:           string;
+  validation_warnings: string[];
+}
+
+export interface StreamEvent {
+  event:     string;
+  agent:     string;
+  data:      Record<string, unknown>;
+  timestamp: string;
+}
+
+export interface Recommendation {
+  action:     string;
+  label:      string;
+  reason:     string;
+  priority:   'high' | 'medium' | 'low';
+  cta:        string;
+  confidence: number;
+}
+
+export interface CopilotRefineResult {
+  questions:     Question[];
+  explanation:   string;
+  response_type: 'edit' | 'answer';
+  changes:       Array<{ question_id: string; what_changed: string }>;
+  suggestions:   string[];
+}
+
+export interface QuestionsResult {
+  questions: Question[];
+  message:   string;
+  changes:   Record<string, unknown>[];
+}
+
+export interface Notification {
+  id:         string;
+  type:       string;
+  title:      string;
+  body:       string;
+  payload:    Record<string, unknown>;
+  run_id?:    string;
+  read:       boolean;
+  created_at: string;
+}
+
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/experient-prod/us-central1/api';
 
 export type GetToken = () => Promise<string | null>;
@@ -89,7 +155,7 @@ export function createApiClient(getToken: GetToken) {
       return res.data;
     },
 
-    // AI
+    // AI (legacy direct endpoints)
     generateSurvey: async (intent: string, surveyTypeId?: string) => {
       const res = await http.post<{ questions: Question[] }>('/api/ai/generate-survey', { intent, surveyTypeId });
       return res.data;
@@ -100,6 +166,126 @@ export function createApiClient(getToken: GetToken) {
     },
     refineSurvey: async (questions: Question[], message: string, context: Record<string, unknown>) => {
       const res = await http.post<{ questions: Question[]; explanation?: string }>('/api/ai/refine-survey', { questions, message, context });
+      return res.data;
+    },
+
+    // ── Copilot Orchestration ──────────────────────────────────────────────────
+
+    /** Start a survey creation run. Returns run_id immediately — poll for results. */
+    startRun: async (params: {
+      intent: string;
+      surveyTypeId?: string;
+      sessionId?: string;
+      orgContext?: OrgContext;
+    }) => {
+      const res = await http.post<{ run_id: string; thread_id: string; status: string }>(
+        '/api/copilot/orchestrate',
+        params,
+      );
+      return res.data;
+    },
+
+    /** Poll a run for status, questions, QC score, recommendations. */
+    getRunStatus: async (runId: string): Promise<RunStatus> => {
+      const res = await http.get<RunStatus>(`/api/copilot/runs/${runId}/status`);
+      return res.data;
+    },
+
+    // ── Copilot Chat Edits ─────────────────────────────────────────────────────
+
+    /** Apply a natural-language edit to survey questions ("add skip logic to q3"). */
+    copilotRefine: async (runId: string, params: {
+      message: string;
+      orgContext?: OrgContext;
+      surveyTypeId?: string;
+      intent?: string;
+      conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>;
+    }): Promise<CopilotRefineResult> => {
+      const res = await http.post<CopilotRefineResult>(
+        `/api/copilot/runs/${runId}/refine`,
+        params,
+      );
+      return res.data;
+    },
+
+    /** Add conditional skip/display logic to the survey questions. */
+    addSkipLogic: async (runId: string, request: string, orgContext?: OrgContext): Promise<QuestionsResult> => {
+      const res = await http.post<QuestionsResult>(
+        `/api/copilot/runs/${runId}/skip-logic`,
+        { request, orgContext: orgContext ?? {} },
+      );
+      return res.data;
+    },
+
+    // ── Question CRUD ──────────────────────────────────────────────────────────
+
+    addQuestion: async (runId: string, type?: string, afterId?: string): Promise<QuestionsResult> => {
+      const res = await http.post<QuestionsResult>(
+        `/api/copilot/runs/${runId}/questions`,
+        { type: type ?? 'open_text', afterId },
+      );
+      return res.data;
+    },
+
+    removeQuestion: async (runId: string, qId: string): Promise<QuestionsResult> => {
+      const res = await http.delete<QuestionsResult>(
+        `/api/copilot/runs/${runId}/questions/${qId}`,
+      );
+      return res.data;
+    },
+
+    patchQuestion: async (runId: string, qId: string, fields: Partial<Question>): Promise<QuestionsResult> => {
+      const res = await http.patch<QuestionsResult>(
+        `/api/copilot/runs/${runId}/questions/${qId}`,
+        { fields },
+      );
+      return res.data;
+    },
+
+    reorderQuestions: async (runId: string, order: string[]): Promise<QuestionsResult> => {
+      const res = await http.post<QuestionsResult>(
+        `/api/copilot/runs/${runId}/reorder`,
+        { order },
+      );
+      return res.data;
+    },
+
+    /** Execute a recommendation action (e.g. "add_skip_logic", "refine_question"). */
+    applyRecommendation: async (runId: string, actionId: string, params?: {
+      parameters?: Record<string, unknown>;
+      orgContext?: OrgContext;
+      surveyTypeId?: string;
+      intent?: string;
+    }): Promise<QuestionsResult> => {
+      const res = await http.post<QuestionsResult>(
+        `/api/copilot/runs/${runId}/apply-recommendation/${actionId}`,
+        params ?? {},
+      );
+      return res.data;
+    },
+
+    // ── Notifications ──────────────────────────────────────────────────────────
+
+    getNotifications: async (): Promise<Notification[]> => {
+      const res = await http.get<Notification[]>('/api/copilot/notifications');
+      return res.data;
+    },
+
+    getUnreadCount: async (): Promise<number> => {
+      const res = await http.get<{ count: number }>('/api/copilot/notifications/unread-count');
+      return res.data.count;
+    },
+
+    markNotificationRead: async (id: string): Promise<void> => {
+      await http.post(`/api/copilot/notifications/${id}/read`, {});
+    },
+
+    markAllNotificationsRead: async (): Promise<void> => {
+      await http.post('/api/copilot/notifications/read-all', {});
+    },
+
+    getAgentRegistry: async () => {
+      const res = await http.get<unknown[]>('/api/copilot/agents/registry');
       return res.data;
     },
 

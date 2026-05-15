@@ -10,11 +10,12 @@ const __dirname = dirname(__filename);
 const _require = createRequire(import.meta.url);
 
 // Pre-resolve all module paths to absolute paths
-const AUTH_PATH   = _require.resolve(resolve(__dirname, '../middleware/auth'));
-const DB_PATH     = _require.resolve(resolve(__dirname, '../lib/db'));
-const ADMIN_PATH  = _require.resolve(resolve(__dirname, '../lib/admin'));
-const CLERK_PATH  = _require.resolve('@clerk/backend');
-const ROUTER_PATH = _require.resolve(resolve(__dirname, '../routes/local/orgs'));
+const AUTH_PATH        = _require.resolve(resolve(__dirname, '../middleware/auth'));
+const REQUIRE_ROLE_PATH = _require.resolve(resolve(__dirname, '../middleware/requireRole'));
+const DB_PATH          = _require.resolve(resolve(__dirname, '../lib/db'));
+const ADMIN_PATH       = _require.resolve(resolve(__dirname, '../lib/admin'));
+const CLERK_PATH       = _require.resolve('@clerk/backend');
+const ROUTER_PATH      = _require.resolve(resolve(__dirname, '../routes/local/orgs'));
 
 // Module-scoped mocks referenced by lazy closures inside route handlers
 let mockQuery;
@@ -41,6 +42,9 @@ function setupAndBuildApp() {
       req.userId = 'test-user';
       next();
     },
+  });
+  _require.cache[REQUIRE_ROLE_PATH] = fakeMod(REQUIRE_ROLE_PATH, {
+    requireRole: () => (req, res, next) => next(),
   });
   _require.cache[DB_PATH] = fakeMod(DB_PATH, {
     default: { query: mockQuery },

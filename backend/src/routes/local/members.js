@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { requireRole } = require('../../middleware/requireRole');
 const { validate }    = require('../../lib/validate');
 const { inviteMemberSchema, updateRoleSchema } = require('../../schemas/orgs');
 const router = express.Router();
@@ -31,7 +32,7 @@ router.get('/members', requireAuth, async (req, res) => {
 });
 
 // POST /api/orgs/me/invitations
-router.post('/invitations', requireAuth, validate(inviteMemberSchema), async (req, res) => {
+router.post('/invitations', requireAuth, requireRole('admin'), validate(inviteMemberSchema), async (req, res) => {
   if (process.env.SKIP_AUTH === 'true') {
     return res.json({ success: true });
   }
@@ -56,7 +57,7 @@ router.post('/invitations', requireAuth, validate(inviteMemberSchema), async (re
 });
 
 // DELETE /api/orgs/me/members/:userId
-router.delete('/members/:userId', requireAuth, async (req, res) => {
+router.delete('/members/:userId', requireAuth, requireRole('admin'), async (req, res) => {
   if (process.env.SKIP_AUTH === 'true') {
     return res.json({ success: true });
   }
@@ -74,7 +75,7 @@ router.delete('/members/:userId', requireAuth, async (req, res) => {
 });
 
 // PUT /api/orgs/me/members/:userId/role
-router.put('/members/:userId/role', requireAuth, validate(updateRoleSchema), async (req, res) => {
+router.put('/members/:userId/role', requireAuth, requireRole('admin'), validate(updateRoleSchema), async (req, res) => {
   if (process.env.SKIP_AUTH === 'true') {
     return res.json({ success: true });
   }

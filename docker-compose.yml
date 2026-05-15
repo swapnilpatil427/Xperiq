@@ -66,6 +66,37 @@ services:
       - loki
     restart: unless-stopped
 
+  agents:
+    # Start with: docker-compose --profile agents up -d agents
+    # (prod deployments: --profile prod)
+    profiles: ["agents", "prod"]
+    build:
+      context: .
+      dockerfile: agents/Dockerfile
+    image: experient-agents:local
+    container_name: experient-agents
+    env_file:
+      - path: agents/.env
+        required: false          # allows startup without an .env file
+    environment:
+      AGENTS_ENV: ${AGENTS_ENV:-dev}
+      AGENTS_DB_DSN: postgresql://postgres:postgres@postgres:5432/experient
+      AGENTS_INTERNAL_KEY: ${AGENTS_INTERNAL_KEY:-dev-internal-key-change-in-prod}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   loki_data:

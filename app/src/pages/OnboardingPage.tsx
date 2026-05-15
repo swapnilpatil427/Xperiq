@@ -9,6 +9,7 @@ import { useTranslation } from '../lib/i18n';
 import { useAppAuth } from '../lib/auth.tsx';
 import { SignInPage } from './SignInPage';
 import { Button } from '@/components/ui/button';
+import { isEnterpriseMode } from '../lib/features';
 
 // Top-level: branch between Clerk-backed and demo mode
 export function OnboardingPage() {
@@ -171,9 +172,19 @@ function ClerkOnboarding() {
                           className="opacity-0 group-hover:opacity-100 transition-opacity text-primary"
                         />
                       </div>
-                      <h3 className="text-lg font-bold mb-1 font-headline text-on-surface">
-                        {org.name}
-                      </h3>
+                      <div className="flex items-center gap-2 mb-1">
+                        <h3 className="text-lg font-bold font-headline text-on-surface">
+                          {org.name}
+                        </h3>
+                        {isEnterpriseMode(org.membersCount ?? 0, 'free') && (
+                          <span
+                            className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full"
+                            style={{ background: 'linear-gradient(135deg, #059669, #047857)', color: '#fff' }}
+                          >
+                            {t('enterprise.modeBadge')}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs capitalize text-on-surface-variant">{roleLabel}</p>
                     </button>
                   );
