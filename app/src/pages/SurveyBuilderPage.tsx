@@ -1772,6 +1772,10 @@ export function SurveyBuilderPage() {
   );
   // Agent run ID — set when survey was created via agents pipeline; enables copilotRefine
   const [copilotRunId, setCopilotRunId] = useState<string | null>((pending?.runId as string) || null);
+  // Recommendations from the agents pipeline — shown in Crystal on first open
+  const [copilotRecs] = useState<import('../lib/api').Recommendation[]>(
+    (pending?.recommendations as import('../lib/api').Recommendation[]) || []
+  );
   // Auto-open Crystal after AI generation completes
   const autoOpenCrystal = !!(pending?.openCrystal);
 
@@ -1931,6 +1935,19 @@ export function SurveyBuilderPage() {
     return result;
   }, [api, copilotRunId, questions, surveyTypeId, surveyTitle, surveySettings]);
 
+  const handleApplyRecommendation = useCallback(async (action: string) => {
+    if (!copilotRunId) return;
+    const result = await api.applyRecommendation(copilotRunId, action, {
+      orgContext:    undefined,
+      surveyTypeId:  surveyTypeId ?? undefined,
+      intent:        surveySettings.intent || surveyTitle,
+    }) as { questions?: Question[] };
+    if (result.questions?.length) {
+      isDirtyRef.current = true;
+      setQuestions(result.questions.map(mapAiToBuilderQuestion) as Question[]);
+    }
+  }, [api, copilotRunId, surveyTypeId, surveySettings, surveyTitle]);
+
   const buildPayload = () => ({
     title: surveyTitle,
     questions: questions.map(({ id, type, question, required, ...rest }) => {
@@ -2076,7 +2093,7 @@ export function SurveyBuilderPage() {
 
       {/* ── Question Type Palette ── */}
       <aside
-        className="fixed z-30 overflow-hidden bg-white"
+        className="fixed z-30 overflow-hidden bg-white hidden md:block"
         style={{
           left:    'var(--sidebar-width)',
           top:     '4rem',
@@ -2090,8 +2107,8 @@ export function SurveyBuilderPage() {
 
       {/* ── Canvas ── */}
       <div
+        className="builder-canvas"
         style={{
-          marginLeft:   PALETTE_W,
           marginRight:  panelOpen ? PROPS_W : 0,
           paddingBottom: 120,
           transition:   'margin-right 0.3s cubic-bezier(0.4,0,0.2,1)',
@@ -2290,7 +2307,7 @@ export function SurveyBuilderPage() {
 
       {/* ── Properties / Settings Panel ── */}
       <aside
-        className="fixed z-30 overflow-hidden bg-[#fafbfc]"
+        className="fixed z-30 overflow-hidden bg-[#fafbfc] hidden md:block"
         style={{
           right:     0,
           top:       '4rem',
@@ -2334,6 +2351,8 @@ export function SurveyBuilderPage() {
           runId: copilotRunId ?? undefined,
         }}
         onRefine={handleAiCommand}
+        onApplyRecommendation={copilotRunId ? handleApplyRecommendation : undefined}
+        recommendations={copilotRecs.length > 0 ? copilotRecs : undefined}
         initiallyOpen={autoOpenCrystal}
         initialMessage={autoOpenCrystal
           ? `Survey generated! I've built ${questions.length} question${questions.length !== 1 ? 's' : ''} based on your goal. You can ask me to refine any question, add skip logic, reorder, or make any other changes — just tell me what you need.`

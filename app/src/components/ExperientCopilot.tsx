@@ -18,6 +18,15 @@ export interface RefineResult {
   actions?:         CopilotAction[];
 }
 
+export interface Recommendation {
+  action:     string;
+  label:      string;
+  reason:     string;
+  priority:   'high' | 'medium' | 'low';
+  cta:        string;
+  confidence: number;
+}
+
 interface CopilotAction {
   type: string;
   payload?: unknown;
@@ -41,20 +50,23 @@ interface CopilotContext {
 }
 
 interface ChatMessage {
-  role:        'ai' | 'user';
-  text:        string;
-  changes?:    RefineResult['changes'];
-  suggestions?: string[];
-  risk?:       string;
+  role:             'ai' | 'user';
+  text:             string;
+  changes?:         RefineResult['changes'];
+  suggestions?:     string[];
+  risk?:            string;
+  recommendations?: Recommendation[];
 }
 
 export interface ExperientCopilotProps {
-  context?:        CopilotContext;
-  onRefine?:       (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<RefineResult>;
-  onAction?:       (action: CopilotAction) => void;
-  quickCommands?:  string[];
-  initiallyOpen?:  boolean;
-  initialMessage?: string;
+  context?:                 CopilotContext;
+  onRefine?:                (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<RefineResult>;
+  onAction?:                (action: CopilotAction) => void;
+  onApplyRecommendation?:   (action: string) => Promise<void>;
+  recommendations?:         Recommendation[];
+  quickCommands?:           string[];
+  initiallyOpen?:           boolean;
+  initialMessage?:          string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -99,21 +111,36 @@ function buildGreeting({ surveyTitle, questionCount, surveyType, surveySettings,
 // ─────────────────────────────────────────────────────────────────────────────
 
 // onAction is scaffolded for future UI commands (open panels, highlight questions, etc.)
-export function ExperientCopilot({ context = {}, onRefine, onAction, quickCommands, initiallyOpen = false, initialMessage }: ExperientCopilotProps) {
+export function ExperientCopilot({ context = {}, onRefine, onAction, onApplyRecommendation, recommendations, quickCommands, initiallyOpen = false, initialMessage }: ExperientCopilotProps) {
   const [isOpen, setIsOpen] = useState(initiallyOpen);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const msgs: ChatMessage[] = [{ role: 'ai', text: buildGreeting(context) }];
     if (initialMessage) msgs.push({ role: 'ai', text: initialMessage });
+    if (recommendations?.length) {
+      msgs.push({
+        role: 'ai',
+        text: `Here's what I recommend for your survey:`,
+        recommendations,
+      });
+    }
     return msgs;
   });
+  const [applyingRec, setApplyingRec] = useState<string | null>(null);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [loadingStatusIdx, setLoadingStatusIdx] = useState(0);
   const [unread, setUnread] = useState(0);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth < 640);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const commands = quickCommands || (context.isBuilder ? BUILDER_COMMANDS : GENERIC_COMMANDS);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 640);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -185,12 +212,35 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
     }
   }, [input, loading, onRefine, onAction, isOpen, messages]);
 
+  const applyRecommendation = useCallback(async (rec: Recommendation) => {
+    if (!onApplyRecommendation || applyingRec) return;
+    setApplyingRec(rec.action);
+    try {
+      await onApplyRecommendation(rec.action);
+      // Remove the applied recommendation from all messages
+      setMessages((prev) => prev.map((m) =>
+        m.recommendations
+          ? { ...m, recommendations: m.recommendations.filter((r) => r.action !== rec.action) }
+          : m
+      ));
+      setMessages((prev) => [...prev, {
+        role: 'ai',
+        text: `✓ ${rec.label} applied.`,
+      }]);
+      if (!isOpen) setUnread((u) => u + 1);
+    } catch {
+      setMessages((prev) => [...prev, { role: 'ai', text: 'Could not apply that recommendation. Try again.' }]);
+    } finally {
+      setApplyingRec(null);
+    }
+  }, [onApplyRecommendation, applyingRec, isOpen]);
+
   const hasContext = context.surveyTitle || context.questionCount != null;
 
   return (
     <>
       {/* Bubble */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2.5">
+      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-2.5">
         <AnimatePresence>
           {!isOpen && messages.length <= 1 && (
             <motion.div
@@ -200,10 +250,10 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
               transition={{ delay: 1.5, duration: 0.18 }}
               onClick={() => setIsOpen(true)}
               className="cursor-pointer bg-white rounded-2xl px-3.5 py-2.5 flex items-center gap-2"
-              style={{ boxShadow: '0 4px 16px rgba(42,75,217,0.12)', border: '1px solid rgba(42,75,217,0.1)' }}
+              style={{ boxShadow: '0 4px 16px color-mix(in srgb, var(--color-primary) 12%, transparent)', border: '1px solid color-mix(in srgb, var(--color-primary) 10%, transparent)' }}
             >
               <span className="text-xs font-black"
-                style={{ background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
                 Crystal
               </span>
               <kbd className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#f3f4f6] text-[#6b7280] border border-[#e5e7eb]">⌘K</kbd>
@@ -215,7 +265,7 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
           onClick={() => setIsOpen((o) => !o)}
           title="Crystal — Experient Copilot (⌘K)"
           className="relative w-14 h-14 rounded-full flex items-center justify-center transition-transform hover:scale-110 active:scale-95"
-          style={{ background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', boxShadow: '0 6px 24px rgba(79,110,247,0.38)' }}
+          style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))', boxShadow: '0 6px 24px color-mix(in srgb, var(--color-primary) 38%, transparent)' }}
           aria-label="Open Crystal — Experient Copilot"
         >
           <AnimatePresence mode="wait">
@@ -242,37 +292,46 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
       <AnimatePresence>
         {isOpen && (
           <>
+            {/* Backdrop — full screen on mobile, side-only on desktop */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-40 md:hidden"
-              style={{ background: 'rgba(0,0,0,0.18)' }}
+              className="fixed inset-0 z-40 sm:hidden"
+              style={{ background: 'rgba(0,0,0,0.32)' }}
               onClick={() => setIsOpen(false)}
             />
 
             <motion.div
-              initial={{ opacity: 0, x: 24, scale: 0.97 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              exit={{ opacity: 0, x: 24, scale: 0.97 }}
-              transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-              className="fixed bottom-24 right-6 z-50 flex flex-col bg-white rounded-2xl overflow-hidden"
+              initial={isMobile ? { opacity: 0, y: '100%' } : { opacity: 0, x: 24, scale: 0.97 }}
+              animate={isMobile ? { opacity: 1, y: 0 } : { opacity: 1, x: 0, scale: 1 }}
+              exit={isMobile ? { opacity: 0, y: '100%' } : { opacity: 0, x: 24, scale: 0.97 }}
+              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
+              className="fixed z-50 flex flex-col bg-white overflow-hidden
+                         inset-x-0 bottom-0 rounded-t-2xl
+                         sm:inset-x-auto sm:bottom-20 sm:right-4 sm:rounded-2xl sm:w-[430px]
+                         md:bottom-24 md:right-6 md:w-[460px]
+                         lg:w-[500px]"
               style={{
-                width: 380,
-                maxHeight: 'calc(100vh - 140px)',
-                boxShadow: '0 20px 60px -8px rgba(42,75,217,0.14), 0 0 0 1px rgba(42,75,217,0.07)',
+                maxHeight: isMobile ? '88dvh' : 'calc(100vh - 110px)',
+                boxShadow: '0 20px 60px -8px color-mix(in srgb, var(--color-primary) 18%, transparent), 0 0 0 1px color-mix(in srgb, var(--color-primary) 8%, transparent)',
               }}
             >
+              {/* Drag handle — mobile only */}
+              <div className="sm:hidden flex justify-center pt-2.5 pb-1 flex-shrink-0">
+                <div className="w-10 h-1 rounded-full bg-[#e5e7eb]" />
+              </div>
+
               {/* Header */}
-              <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0 border-b" style={{ borderColor: 'rgba(42,75,217,0.10)', background: 'linear-gradient(to bottom, rgba(42,75,217,0.035), transparent)' }}>
+              <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0 border-b" style={{ borderColor: 'color-mix(in srgb, var(--color-primary) 10%, transparent)', background: 'linear-gradient(to bottom, color-mix(in srgb, var(--color-primary) 3.5%, transparent), transparent)' }}>
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                  style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}>
                   <Icon name="diamond" size={16} style={{ color: 'white' }} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 leading-none mb-0.5">
                     <span className="text-sm font-black text-on-surface">Crystal</span>
-                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(42,75,217,0.08)', color: '#2a4bd9' }}>Experient Copilot</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-primary)' }}>Experient Copilot</span>
                   </div>
                   <div className="text-[10px] text-[#9ca3af] font-medium">Survey Intelligence · Builder</div>
                 </div>
@@ -294,15 +353,15 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
 
               {/* Context strip — shows survey + settings + template */}
               {hasContext && (
-                <div className="px-4 py-2.5 border-b flex-shrink-0 bg-[#f8f9ff] border-l-[3px]" style={{ borderBottomColor: 'rgba(42,75,217,0.06)', borderLeftColor: '#2a4bd9' }}>
+                <div className="px-4 py-2.5 border-b flex-shrink-0 bg-[#f8f9ff] border-l-[3px]" style={{ borderBottomColor: 'color-mix(in srgb, var(--color-primary) 6%, transparent)', borderLeftColor: 'var(--color-primary)' }}>
                   <div className="flex items-center gap-2">
                     <Icon name="edit_note" size={13} style={{ color: '#818cf8', flexShrink: 0 }} />
-                    <span className="text-[11px] font-semibold text-[#4338ca] truncate flex-1">
+                    <span className="text-[11px] font-semibold text-primary truncate flex-1">
                       {context.surveyTitle || 'Untitled Survey'}
                     </span>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
                       {context.questionCount != null && (
-                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#eef2ff] text-[#4338ca]">
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-[#eef2ff] text-primary">
                           {context.questionCount}q
                         </span>
                       )}
@@ -322,13 +381,13 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
               )}
 
               {/* Messages */}
-              <ScrollArea className="flex-1 px-4 py-3" style={{ minHeight: 180, maxHeight: 320 }}>
+              <ScrollArea className="flex-1 px-4 py-3" style={{ minHeight: 160 }}>
                 <div className="space-y-3">
                   {messages.map((msg, i) => (
                     <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       {msg.role === 'ai' && (
                         <div className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center"
-                          style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                          style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}>
                           <Icon name="diamond" size={11} style={{ color: 'white' }} />
                         </div>
                       )}
@@ -337,8 +396,8 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                           className="px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed"
                           style={
                             msg.role === 'user'
-                              ? { background: 'linear-gradient(135deg, #2a4bd9, #8329c8)', color: 'white', borderBottomRightRadius: 4 }
-                              : { background: 'rgba(42,75,217,0.04)', color: '#1e1e2e', border: '1px solid rgba(42,75,217,0.10)', borderBottomLeftRadius: 4 }
+                              ? { background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))', color: 'white', borderBottomRightRadius: 4 }
+                              : { background: 'color-mix(in srgb, var(--color-primary) 4%, transparent)', color: '#1e1e2e', border: '1px solid color-mix(in srgb, var(--color-primary) 10%, transparent)', borderBottomLeftRadius: 4 }
                           }
                         >
                           {msg.text}
@@ -371,6 +430,51 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                             )}
                           </div>
                         )}
+                        {/* Recommendation cards */}
+                        {msg.recommendations && msg.recommendations.length > 0 && (
+                          <div className="flex flex-col gap-2 mt-1">
+                            {msg.recommendations.map((rec) => {
+                              const priorityColor = rec.priority === 'high'
+                                ? { bg: '#fef2f2', border: '#fecaca', text: '#dc2626' }
+                                : rec.priority === 'medium'
+                                ? { bg: '#fffbeb', border: '#fde68a', text: '#d97706' }
+                                : { bg: '#f0fdf4', border: '#bbf7d0', text: '#16a34a' };
+                              const isApplying = applyingRec === rec.action;
+                              return (
+                                <div key={rec.action}
+                                  className="rounded-xl p-3 flex flex-col gap-2"
+                                  style={{ background: '#fafbff', border: '1px solid color-mix(in srgb, var(--color-primary) 12%, transparent)' }}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <span className="text-[12px] font-semibold text-[#1e1e2e] leading-snug">{rec.label}</span>
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                                      style={{ background: priorityColor.bg, color: priorityColor.text, border: `1px solid ${priorityColor.border}` }}>
+                                      {rec.priority}
+                                    </span>
+                                  </div>
+                                  <p className="text-[10px] text-[#6b7280] leading-relaxed">{rec.reason}</p>
+                                  {onApplyRecommendation && (
+                                    <button
+                                      onClick={() => applyRecommendation(rec)}
+                                      disabled={!!applyingRec}
+                                      className="self-start text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-all disabled:opacity-40"
+                                      style={{ background: 'color-mix(in srgb, var(--color-primary) 8%, transparent)', color: 'var(--color-primary)', border: '1px solid color-mix(in srgb, var(--color-primary) 18%, transparent)' }}
+                                      onMouseEnter={(e) => { if (!applyingRec) e.currentTarget.style.background = 'color-mix(in srgb, var(--color-primary) 16%, transparent)'; }}
+                                      onMouseLeave={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--color-primary) 8%, transparent)'; }}
+                                    >
+                                      {isApplying ? (
+                                        <span className="flex items-center gap-1.5">
+                                          <span className="w-3 h-3 rounded-full border-2 border-t-transparent animate-spin inline-block" style={{ borderColor: 'var(--color-primary)', borderTopColor: 'transparent' }} />
+                                          Applying…
+                                        </span>
+                                      ) : rec.cta}
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                         {/* Follow-up suggestion chips */}
                         {msg.suggestions && msg.suggestions.length > 0 && (
                           <div className="flex flex-col gap-1 mt-1">
@@ -379,9 +483,9 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                                 onClick={() => send(s)}
                                 disabled={loading}
                                 className="text-left text-[11px] px-2.5 py-1.5 rounded-xl font-medium transition-colors disabled:opacity-40"
-                                style={{ background: 'rgba(42,75,217,0.06)', color: '#2a4bd9', border: '1px solid rgba(42,75,217,0.15)' }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(42,75,217,0.12)'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(42,75,217,0.06)'; }}
+                                style={{ background: 'color-mix(in srgb, var(--color-primary) 6%, transparent)', color: 'var(--color-primary)', border: '1px solid color-mix(in srgb, var(--color-primary) 15%, transparent)' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--color-primary) 12%, transparent)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--color-primary) 6%, transparent)'; }}
                               >
                                 {s}
                               </button>
@@ -394,7 +498,7 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                   {loading && (
                     <div className="flex gap-2 justify-start">
                       <div className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center"
-                        style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                        style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}>
                         <motion.div
                           animate={{ scale: [1, 1.2, 1] }}
                           transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
@@ -404,11 +508,11 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                         </motion.div>
                       </div>
                       <div className="px-4 py-3 rounded-2xl flex flex-col gap-2"
-                        style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.10)', borderBottomLeftRadius: 4 }}>
+                        style={{ background: 'color-mix(in srgb, var(--color-primary) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--color-primary) 10%, transparent)', borderBottomLeftRadius: 4 }}>
                         <div className="flex gap-1 items-center">
                           {[0, 1, 2].map((j) => (
                             <div key={j} className="w-1.5 h-1.5 rounded-full animate-bounce"
-                              style={{ background: '#2a4bd9', animationDelay: `${j * 0.15}s` }} />
+                              style={{ background: 'var(--color-primary)', animationDelay: `${j * 0.15}s` }} />
                           ))}
                         </div>
                         <AnimatePresence mode="wait">
@@ -419,7 +523,7 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                             exit={{ opacity: 0, y: -4 }}
                             transition={{ duration: 0.2 }}
                             className="text-[11px] font-medium"
-                            style={{ color: '#6366f1' }}
+                            style={{ color: 'var(--color-primary)' }}
                           >
                             {LOADING_STATUSES[loadingStatusIdx]}
                           </motion.span>
@@ -433,7 +537,7 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
 
               {/* Quick commands */}
               {messages.length <= 1 && onRefine && (
-                <div className="px-4 py-3 border-t flex-shrink-0" style={{ borderColor: 'rgba(42,75,217,0.06)' }}>
+                <div className="px-4 py-3 border-t flex-shrink-0" style={{ borderColor: 'color-mix(in srgb, var(--color-primary) 6%, transparent)' }}>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-[#9ca3af] mb-2">Try asking</p>
                   <div className="flex flex-col gap-1.5">
                     {commands.slice(0, 4).map((cmd) => (
@@ -442,9 +546,9 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                         onClick={() => send(cmd)}
                         disabled={loading}
                         className="text-left px-3 py-2 text-xs font-medium rounded-xl transition-colors disabled:opacity-40 truncate"
-                        style={{ background: 'rgba(42,75,217,0.06)', color: '#2a4bd9', border: '1px solid rgba(42,75,217,0.12)' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(42,75,217,0.12)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(42,75,217,0.06)'; }}
+                        style={{ background: 'color-mix(in srgb, var(--color-primary) 6%, transparent)', color: 'var(--color-primary)', border: '1px solid color-mix(in srgb, var(--color-primary) 12%, transparent)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--color-primary) 12%, transparent)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'color-mix(in srgb, var(--color-primary) 6%, transparent)'; }}
                       >
                         {cmd}
                       </button>
@@ -457,9 +561,9 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
               <div className="px-4 pb-4 pt-2.5 flex-shrink-0">
                 <div
                   className="flex items-end gap-2 rounded-xl px-3 py-2.5 transition-all"
-                  style={{ background: '#f9fafb', border: '1.5px solid rgba(42,75,217,0.1)' }}
-                  onFocusCapture={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(79,110,247,0.3)'; }}
-                  onBlurCapture={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'rgba(42,75,217,0.1)'; }}
+                  style={{ background: '#f9fafb', border: '1.5px solid color-mix(in srgb, var(--color-primary) 10%, transparent)' }}
+                  onFocusCapture={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'color-mix(in srgb, var(--color-primary) 30%, transparent)'; }}
+                  onBlurCapture={(e) => { (e.currentTarget as HTMLDivElement).style.borderColor = 'color-mix(in srgb, var(--color-primary) 10%, transparent)'; }}
                 >
                   <Textarea
                     ref={inputRef}
@@ -478,7 +582,7 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                     disabled={!input.trim() || loading || !onRefine}
                     className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center transition-all hover:scale-110 active:scale-95 disabled:opacity-35"
                     style={{
-                      background: input.trim() && !loading && onRefine ? '#2a4bd9' : '#e5e7eb',
+                      background: input.trim() && !loading && onRefine ? 'var(--color-primary)' : '#e5e7eb',
                       color: input.trim() && !loading && onRefine ? 'white' : '#9ca3af',
                     }}
                     aria-label="Send"

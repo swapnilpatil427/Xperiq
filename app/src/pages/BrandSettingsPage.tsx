@@ -19,6 +19,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Progress } from '@/components/ui/progress';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { applyBrandTheme, saveBrandTheme, DEFAULT_BRAND_THEME } from '../lib/brandTheme';
+import { useBrand } from '../contexts/brandContext';
 import { PageHeader } from '../components/PageHeader';
 import { usePermissions } from '../lib/permissions';
 import { PermissionDeniedBanner } from '../components/PermissionGate';
@@ -132,12 +133,13 @@ export function BrandSettingsPage() {
     applyBrandTheme(theme);
     saveBrandTheme(theme);
     // Persist to backend
-    api.updateOrgProfile({
+    await api.updateOrgProfile({
       brand_name: brandName,
       brand_colors: { primary: primaryColor, accent: accentColor, secondary: secondaryColor },
       brand_fonts: { heading: fontHeading, body: fontBody },
     }).catch(() => {});
     api.updateOrg({ name: brandName }).catch(() => {});
+    await reloadBrand();
     setBrandSaved(true);
     setTimeout(() => setBrandSaved(false), 2000);
   }
@@ -172,6 +174,7 @@ export function BrandSettingsPage() {
     finally { setLogoUploading(false); }
   }
 
+  const { reloadBrand } = useBrand();
   const { isAdmin } = usePermissions();
 
   const tabs = [

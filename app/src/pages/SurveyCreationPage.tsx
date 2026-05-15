@@ -187,14 +187,15 @@ export function SurveyCreationPage() {
           const resolvedTitle = surveyName.trim() || intent.slice(0, 80);
           navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
             state: {
-              title:        resolvedTitle,
-              questions:    status.questions || [],
-              surveyTypeId: selectedTypeId,
+              title:           resolvedTitle,
+              questions:       status.questions || [],
+              surveyTypeId:    selectedTypeId,
               intent,
-              fromTemplate: selectedType,
-              templateId:   selectedTypeId,
-              runId:        run_id,
-              openCrystal:  true,
+              fromTemplate:    selectedType,
+              templateId:      selectedTypeId,
+              runId:           run_id,
+              recommendations: status.recommendations || [],
+              openCrystal:     true,
             },
           });
           return;

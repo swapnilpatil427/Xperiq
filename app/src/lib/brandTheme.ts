@@ -110,3 +110,35 @@ export function resetBrandTheme() {
     localStorage.removeItem(STORAGE_KEY);
   } catch (_) {}
 }
+
+/** Map of brand font family strings → Google Fonts query segments */
+const GOOGLE_FONTS_MAP: Record<string, string> = {
+  '"Manrope", sans-serif':           'Manrope:ital,wght@0,400;0,600;0,700;0,800',
+  '"Inter", sans-serif':             'Inter:ital,wght@0,400;0,500;0,600;0,700',
+  '"DM Sans", sans-serif':           'DM+Sans:ital,wght@0,400;0,500;0,600;0,700',
+  '"Plus Jakarta Sans", sans-serif': 'Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800',
+  '"Outfit", sans-serif':            'Outfit:wght@400;500;600;700;800',
+  '"Source Sans 3", sans-serif':     'Source+Sans+3:ital,wght@0,400;0,600;0,700',
+};
+
+/**
+ * Dynamically inject a Google Fonts <link> for the given brand fonts.
+ * Skips system/default fonts (Inter, Manrope) since those are already loaded by index.html.
+ * Safe to call multiple times — replaces the previous brand-fonts link.
+ */
+export function injectFonts(heading?: string, body?: string) {
+  const families = new Set<string>();
+  if (heading && GOOGLE_FONTS_MAP[heading]) families.add(GOOGLE_FONTS_MAP[heading]);
+  if (body && GOOGLE_FONTS_MAP[body]) families.add(GOOGLE_FONTS_MAP[body]);
+  if (!families.size) return;
+
+  const existing = document.getElementById('brand-fonts');
+  if (existing) existing.remove();
+
+  const link = document.createElement('link');
+  link.id = 'brand-fonts';
+  link.rel = 'stylesheet';
+  const params = [...families].map((f) => `family=${f}`).join('&');
+  link.href = `https://fonts.googleapis.com/css2?${params}&display=swap`;
+  document.head.appendChild(link);
+}

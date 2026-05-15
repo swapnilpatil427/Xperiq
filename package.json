@@ -1,8 +1,12 @@
 {
   "private": true,
   "name": "experient",
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "scripts": {
     "start":       "npm run dev",
+    "predev":      "node -e \"const [maj,min]=process.versions.node.split('.').map(Number);if(maj<20||(maj===20&&min<19)){console.error('\\n✗ Node '+process.version+' detected. Vite requires Node >=20.19 or >=22.12.\\n  Run: nvm use 22\\n');process.exit(1)}\"",
     "dev":         "docker compose up -d && concurrently --kill-others-on-fail -n \"api,web,agents\" -c \"cyan,magenta,green\" \"npm --prefix backend run dev\" \"npm --prefix app run dev\" \"AGENTS_ENV=dev-paid npm --prefix backend run start:agents\"",
     "infra":       "docker compose up -d",
     "infra:build": "docker compose build postgres prometheus loki grafana",
