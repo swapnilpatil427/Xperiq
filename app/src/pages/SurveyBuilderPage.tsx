@@ -1941,11 +1941,12 @@ export function SurveyBuilderPage() {
       orgContext:    undefined,
       surveyTypeId:  surveyTypeId ?? undefined,
       intent:        surveySettings.intent || surveyTitle,
-    }) as { questions?: Question[] };
+    });
     if (result.questions?.length) {
       isDirtyRef.current = true;
       setQuestions(result.questions.map(mapAiToBuilderQuestion) as Question[]);
     }
+    return { recommendations: result.recommendations };
   }, [api, copilotRunId, surveyTypeId, surveySettings, surveyTitle]);
 
   const buildPayload = () => ({

@@ -16,6 +16,7 @@ export interface RefineResult {
   suggestions?:     string[];
   compliance_risk?: string;
   actions?:         CopilotAction[];
+  recommendations?: Recommendation[];
 }
 
 export interface Recommendation {
@@ -62,7 +63,7 @@ export interface ExperientCopilotProps {
   context?:                 CopilotContext;
   onRefine?:                (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<RefineResult>;
   onAction?:                (action: CopilotAction) => void;
-  onApplyRecommendation?:   (action: string) => Promise<void>;
+  onApplyRecommendation?:   (action: string) => Promise<{ recommendations?: Recommendation[] } | void>;
   recommendations?:         Recommendation[];
   quickCommands?:           string[];
   initiallyOpen?:           boolean;
@@ -199,9 +200,10 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, onApplyReco
       setMessages((prev) => [...prev, {
         role: 'ai',
         text: explanation,
-        changes: isAnswer ? [] : result?.changes,
-        suggestions: result?.suggestions,
-        risk: result?.compliance_risk,
+        changes:         isAnswer ? [] : result?.changes,
+        suggestions:     result?.suggestions,
+        risk:            result?.compliance_risk,
+        recommendations: result?.recommendations?.length ? result.recommendations : undefined,
       }]);
       if (!isOpen) setUnread((u) => u + 1);
     } catch {
@@ -216,7 +218,8 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, onApplyReco
     if (!onApplyRecommendation || applyingRec) return;
     setApplyingRec(rec.action);
     try {
-      await onApplyRecommendation(rec.action);
+      const applyResult = await onApplyRecommendation(rec.action);
+      const followUps = (applyResult as { recommendations?: Recommendation[] })?.recommendations;
       // Remove the applied recommendation from all messages
       setMessages((prev) => prev.map((m) =>
         m.recommendations
@@ -226,6 +229,7 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, onApplyReco
       setMessages((prev) => [...prev, {
         role: 'ai',
         text: `✓ ${rec.label} applied.`,
+        recommendations: followUps?.length ? followUps : undefined,
       }]);
       if (!isOpen) setUnread((u) => u + 1);
     } catch {

@@ -292,7 +292,7 @@ class CopilotOutput(BaseModel):
     """LLM must return exactly this structure."""
     questions:     list[Question]
     explanation:   str = Field(max_length=1200)
-    response_type: Literal["edit", "answer"] = "edit"
+    response_type: Literal["edit", "answer", "recommendations"] = "edit"
     changes:       list[CopilotChange] = Field(default_factory=list)
     suggestions:   list[str]  = Field(default_factory=list, max_length=3)  # follow-up prompts
 
@@ -352,10 +352,12 @@ class RefineRequest(BaseModel):
 
 
 class RefineResponse(BaseModel):
-    questions:   list[Question]
-    explanation: str
-    changes:     list[CopilotChange] = Field(default_factory=list)
-    suggestions: list[str]  = Field(default_factory=list)
+    questions:       list[Question]
+    explanation:     str
+    changes:         list[CopilotChange] = Field(default_factory=list)
+    suggestions:     list[str]  = Field(default_factory=list)
+    recommendations: list[dict] = Field(default_factory=list)
+    response_type:   str        = "edit"
 
 
 class AddQuestionRequest(BaseModel):
@@ -395,6 +397,7 @@ class ApplyRecommendationRequest(BaseModel):
 
 class QuestionsResponse(BaseModel):
     """Generic questions + message response for CRUD endpoints."""
-    questions:   list[Question]
-    message:     str = ""
-    changes:     list[dict] = Field(default_factory=list)
+    questions:       list[Question]
+    message:         str = ""
+    changes:         list[dict] = Field(default_factory=list)
+    recommendations: list[dict] = Field(default_factory=list)

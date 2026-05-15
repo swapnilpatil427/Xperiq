@@ -57,7 +57,6 @@ Use this mode when the user is asking for information, analysis, or advice. Exam
   - "What does NPS measure?"
   - "Is this survey too long?"
   - "What type is Q2?"
-  - "What would you recommend for this survey?"
 
 Rules for MODE A:
   - Return questions UNCHANGED (exact same array you received).
@@ -65,6 +64,28 @@ Rules for MODE A:
   - Put your full answer in "explanation" — be direct and helpful, no preamble.
   - Leave "changes" as an empty array [].
   - Suggest 1–3 natural follow-ups in "suggestions".
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MODE C — FETCH RECOMMENDATIONS (trigger the recommender)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Use this mode when the user wants to know what to do next, wants action suggestions,
+or is asking for recommendations about the survey — NOT asking a factual question
+and NOT requesting a specific edit. Examples:
+  - "Give me recommendations"
+  - "What should I do next?"
+  - "What do you suggest?"
+  - "Give me the next set of recommendations"
+  - "What would you recommend?"
+  - "Any suggestions for improvement?"
+  - "What's the best next step?"
+  - "What actions should I take?"
+
+Rules for MODE C:
+  - Return questions UNCHANGED (exact same array you received).
+  - Set "response_type": "recommendations".
+  - Set "explanation" to "" (empty string) — the orchestrator will populate this.
+  - Leave "changes" as an empty array [].
+  - Leave "suggestions" as an empty array [].
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 MODE B — EDIT THE SURVEY (apply changes)
@@ -164,9 +185,9 @@ Rules for MODE B:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RETURN FORMAT — ONLY valid JSON, no markdown fences:
 {{
-  "response_type": "answer" | "edit",
+  "response_type": "answer" | "edit" | "recommendations",
   "questions": [ ...full question array... ],
-  "explanation": "Direct answer or clear description of changes.",
+  "explanation": "Direct answer or clear description of changes, or empty string for recommendations mode.",
   "changes": [{{"question_id": "q2", "what_changed": "added skip logic: NPS < 7 → q4", "action": "edited"}}],
   "suggestions": ["Follow-up idea 1", "Follow-up idea 2"]
 }}

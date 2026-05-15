@@ -32,7 +32,7 @@ export function useSurveys() {
 
   const updateSurvey = useCallback(async (id: string, data: Partial<Survey>): Promise<void> => {
     setSurveys((prev) => prev.map((s) => (s.id === id ? { ...s, ...data, updated_at: new Date().toISOString() } : s)));
-    await api.updateSurvey(id, data);
+    try { await api.updateSurvey(id, data); } catch { /* optimistic — keep UI state even if API fails */ }
   }, [api]);
 
   const deleteSurvey = useCallback(async (id: string): Promise<void> => {

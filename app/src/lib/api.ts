@@ -47,17 +47,19 @@ export interface Recommendation {
 }
 
 export interface CopilotRefineResult {
-  questions:     Question[];
-  explanation:   string;
-  response_type: 'edit' | 'answer';
-  changes:       CopilotChange[];
-  suggestions:   string[];
+  questions:       Question[];
+  explanation:     string;
+  response_type:   'edit' | 'answer';
+  changes:         CopilotChange[];
+  suggestions:     string[];
+  recommendations?: Recommendation[];
 }
 
 export interface QuestionsResult {
-  questions: Question[];
-  message:   string;
-  changes:   Record<string, unknown>[];
+  questions:       Question[];
+  message:         string;
+  changes:         Record<string, unknown>[];
+  recommendations?: Recommendation[];
 }
 
 export interface Notification {
