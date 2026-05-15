@@ -91,7 +91,11 @@ async function generateSurveyQuestions(intent, surveyTypeId) {
     DEFAULT_MODEL,
     'generate-survey'
   );
-  return JSON.parse(content.trim());
+  try {
+    return JSON.parse(content.trim());
+  } catch {
+    throw new Error('AI returned invalid JSON for survey generation. Please retry.');
+  }
 }
 
 async function analyzeInsights(surveyTitle, responses) {
@@ -116,7 +120,11 @@ async function analyzeInsights(surveyTitle, responses) {
     DEFAULT_MODEL,
     'analyze-insights'
   );
-  return JSON.parse(content.trim());
+  try {
+    return JSON.parse(content.trim());
+  } catch {
+    throw new Error('AI returned invalid JSON for insights analysis. Please retry.');
+  }
 }
 
 async function refineSurveyQuestions(questions, message, context = {}) {
@@ -152,7 +160,11 @@ Return ONLY valid JSON — no markdown:
   );
 
   const cleaned = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    throw new Error('AI returned invalid JSON for survey refinement. Please retry.');
+  }
 }
 
 module.exports = { generateSurveyQuestions, analyzeInsights, refineSurveyQuestions };

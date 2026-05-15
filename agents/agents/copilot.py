@@ -76,26 +76,80 @@ Use this mode when the user explicitly asks for a change. Supported operations:
    NEVER change a question's ID. Preserve type unless user asks to change it.
 
 2. ADD SKIP LOGIC — conditional branching based on an answer
-   Add "skipLogic" to the source question (whose answer triggers the branch).
-   {{ "id": "rule_1", "condition": {{"operator": "lt", "value": 7}}, "destination": "q4" | "END_SURVEY" }}
-   Operators: eq, neq, lt, gt, lte, gte, contains, answered, not_answered
-   Destination must be a LATER question or END_SURVEY.
+   Add "skipLogic" to the SOURCE question (the one whose answer triggers the branch).
+   Format: {{ "id": "rule_1", "condition": {{"operator": "lt", "value": 7}}, "destination": "q4" }}
+   Destination must be a LATER question ID or "END_SURVEY".
+   Valid operators: eq, neq, lt, gt, lte, gte, contains, answered, not_answered
+   - Use numeric operators (lt/gt/lte/gte) for: nps (0–10), csat (1–5), rating (1–scaleMax), slider (min–max)
+   - Use eq/neq/contains for: multiple_choice, checkbox, dropdown, ranking (match option text exactly)
+   - Use answered/not_answered for: any type
+   - "answered"/"not_answered" have no value field: {{"operator": "answered"}}
+   - For numeric comparisons use the numeric value: {{"operator": "lt", "value": 7}}
+   - Multiple rules on one question = multiple entries in skipLogic array.
 
-3. ADD DISPLAY LOGIC — show/hide a question based on another answer
-   Add "displayLogic" to the target question.
-   {{ "sourceQuestionId": "q2", "operator": "eq", "value": "Yes" }}
+3. ADD DISPLAY LOGIC — show a question only when a condition is met
+   Add "displayLogic" to the TARGET question (the one that should conditionally appear).
+   Format: {{ "sourceQuestionId": "q2", "operator": "eq", "value": "Yes" }}
+   Source must be a PREVIOUS question.
 
-4. CONFIGURE A QUESTION — set properties without changing content
-   - maxLength, allowOther, randomize, maxSelections, placeholder, validation, required, ratingStyle, csatStyle
+4. CONFIGURE A QUESTION — set properties without changing question text
+   You can set ANY of these fields based on the question type:
+
+   ALL TYPES:
+   - required: true | false
+
+   NPS (type: "nps") — 0–10 numeric scale:
+   - labelLow: string  (left-end label, e.g. "Not at all likely")
+   - labelHigh: string (right-end label, e.g. "Extremely likely")
+
+   CSAT (type: "csat") — satisfaction 1–5:
+   - csatStyle: "emoji" | "stars" | "numbers"
+
+   RATING (type: "rating") — customisable star/number scale:
+   - scaleMax: 5 | 7 | 10   (maximum value on the scale)
+   - ratingStyle: "stars" | "numbers"
+   - labelLow: string, labelHigh: string
+
+   SLIDER (type: "slider") — continuous range input:
+   - min: number    (e.g. 0)
+   - max: number    (e.g. 100)
+   - step: number   (e.g. 1 or 5)
+   - labelLow: string, labelHigh: string
+   - showValue: true | false
+
+   MULTIPLE_CHOICE / CHECKBOX / DROPDOWN / RANKING (choice types):
+   - options: ["Option A", "Option B", "Option C"]  ← replaces ALL options
+   - allowOther: true | false   (multiple_choice and checkbox only)
+   - randomize: true | false
+   - maxSelections: number | null   (checkbox only; null = no limit)
+   - placeholder: string   (dropdown only — shown before selection)
+
+   OPEN_TEXT / SHORT_TEXT (text input types):
+   - placeholder: string
+   - maxLength: number | null   (null = no character limit)
+   - validation: "email" | "url" | "number" | "phone" | null   (short_text only)
+
+   MATRIX (type: "matrix") — grid of rows × columns:
+   - rows: ["Row 1", "Row 2", ...]      ← replaces ALL rows
+   - columns: ["Col 1", "Col 2", ...]   ← replaces ALL columns
+   - matrixType: "radio" | "checkbox"   (radio = pick one per row, checkbox = pick many)
+
+   DATE (type: "date") — date/time picker:
+   - dateType: "date" | "time" | "datetime"
 
 5. ADD A QUESTION — insert a new question into the survey
-   - Assign the next sequential ID; insert after the referenced question or at the end.
+   - Assign the next sequential ID (e.g. if last is q5, new one is q6).
+   - Insert after the referenced question or at the end if not specified.
+   - Populate type-appropriate defaults (options, scaleMax, csatStyle, etc.).
 
-6. REMOVE A QUESTION — delete a specified question; remove its skip logic sources too.
+6. REMOVE A QUESTION — delete a specified question.
+   - Also remove any skipLogic rules on OTHER questions that point to this question's ID.
 
-7. REORDER QUESTIONS — move questions to improve flow (do NOT renumber IDs).
+7. REORDER QUESTIONS — move questions to improve survey flow.
+   - Do NOT renumber IDs — keep original IDs in new order.
 
-8. BULK CONFIGURE — apply a setting to multiple or all questions.
+8. BULK CONFIGURE — apply a setting to multiple or all questions at once.
+   Example: "make all questions required" → set required: true on every question.
 
 9. IMPROVE OVERALL — general improvements to flow, wording, or structure.
 
@@ -103,9 +157,9 @@ Rules for MODE B:
   - Set "response_type": "edit".
   - Return ALL questions (modified AND unchanged) in the correct order.
   - Question IDs are IMMUTABLE — never change them.
-  - Preserve skip logic and display logic on questions you are NOT modifying.
-  - In "changes", describe every question you modified.
-  - Explain clearly what changed in "explanation" (no "No changes were made" preamble).
+  - Preserve all skipLogic and displayLogic on questions you are NOT modifying.
+  - In "changes", list each modified question as {{"question_id": "q2", "what_changed": "one-line description", "action": "edited"|"added"|"removed"}}.
+  - Explain clearly what changed in "explanation" (be specific, no vague preamble).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RETURN FORMAT — ONLY valid JSON, no markdown fences:
@@ -113,7 +167,7 @@ RETURN FORMAT — ONLY valid JSON, no markdown fences:
   "response_type": "answer" | "edit",
   "questions": [ ...full question array... ],
   "explanation": "Direct answer or clear description of changes.",
-  "changes": [],
+  "changes": [{{"question_id": "q2", "what_changed": "added skip logic: NPS < 7 → q4", "action": "edited"}}],
   "suggestions": ["Follow-up idea 1", "Follow-up idea 2"]
 }}
 """
@@ -203,16 +257,25 @@ class CopilotAgent(BaseAgent):
 
             if q.displayLogic:
                 src = q.displayLogic.sourceQuestionId
-                if src not in all_ids:
+                q_idx = next((i for i, v in enumerate(validated) if v.id == q.id), -1)
+                src_idx = next((i for i, v in enumerate(validated) if v.id == src), -1)
+                if src_idx == -1:
                     guard_errors.append(f"{q.id}: displayLogic source '{src}' not found — removed")
+                    q.displayLogic = None
+                elif src_idx >= q_idx:
+                    guard_errors.append(f"{q.id}: displayLogic source '{src}' is not before this question — removed")
                     q.displayLogic = None
 
         if guard_errors:
             logger.warning("copilot_guard_errors", errors=guard_errors)
 
+        explanation = raw_output.explanation
+        if guard_errors:
+            explanation = f"Note: {len(guard_errors)} logic rule(s) were removed (invalid destinations/sources). {explanation}"
+
         return CopilotOutput(
             questions=validated,
-            explanation=raw_output.explanation,
+            explanation=explanation,
             changes=raw_output.changes,
             suggestions=raw_output.suggestions,
         ), [entry.to_dict()]

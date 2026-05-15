@@ -12,7 +12,7 @@
     "deploy": "firebase deploy --only functions",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start:agents": "cd .. && agents/.venv/bin/python -m uvicorn agents.main:app --host 0.0.0.0 --port 8001",
+    "start:agents": "cd .. && agents/.venv/bin/python -m uvicorn agents.main:app --host 0.0.0.0 --port 8001 --reload",
     "start:full": "concurrently --names 'backend,agents' --prefix-colors 'blue,green' 'npm run start' 'npm run start:agents'"
   },
   "dependencies": {

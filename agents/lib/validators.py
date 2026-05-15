@@ -39,12 +39,16 @@ def validate_questions_semantic(questions: list[Any]) -> list[str]:
     def _get(q: Any, attr: str, default: Any = None) -> Any:
         return q.get(attr, default) if isinstance(q, dict) else getattr(q, attr, default)
 
-    # ── 1. Sequential IDs ─────────────────────────────────────────────────────
-    for i, q in enumerate(questions):
-        expected = f"q{i + 1}"
-        actual   = _get(q, "id", "")
-        if actual != expected:
-            errors.append(f"ID mismatch at position {i+1}: expected '{expected}', got '{actual}'")
+    # ── 1. Unique IDs ─────────────────────────────────────────────────────────
+    seen_ids: set[str] = set()
+    for q in questions:
+        qid = _get(q, "id", "")
+        if not qid:
+            errors.append(f"Question at position {questions.index(q)+1}: missing ID")
+        elif qid in seen_ids:
+            errors.append(f"Duplicate question ID: '{qid}'")
+        else:
+            seen_ids.add(qid)
 
     # ── 2. Options presence ───────────────────────────────────────────────────
     for q in questions:
@@ -106,12 +110,28 @@ def validate_questions_semantic(questions: list[Any]) -> list[str]:
 def fix_question_ids(questions: list[dict]) -> list[dict]:
     """
     Auto-correct non-sequential question IDs (q3→q1, etc.).
+    Also remaps skipLogic destinations and displayLogic sources to new IDs.
     Mutates a copy of the list — never modifies input in-place.
     """
+    old_to_new = {q.get("id", f"q{i+1}"): f"q{i+1}" for i, q in enumerate(questions)}
     result = []
     for i, q in enumerate(questions):
         fixed = dict(q)
         fixed["id"] = f"q{i + 1}"
+        # Remap skip logic destinations
+        if fixed.get("skipLogic"):
+            new_rules = []
+            for rule in fixed["skipLogic"]:
+                rule = dict(rule)
+                if rule.get("destination") in old_to_new:
+                    rule["destination"] = old_to_new[rule["destination"]]
+                new_rules.append(rule)
+            fixed["skipLogic"] = new_rules
+        # Remap display logic source
+        if fixed.get("displayLogic") and fixed["displayLogic"].get("sourceQuestionId") in old_to_new:
+            dl = dict(fixed["displayLogic"])
+            dl["sourceQuestionId"] = old_to_new[dl["sourceQuestionId"]]
+            fixed["displayLogic"] = dl
         result.append(fixed)
     return result
 

@@ -2,6 +2,7 @@ import axios from 'axios';
 import type {
   ListSurveysParams, ListSurveysResult, Survey, SurveyResponse,
   Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
+  CopilotChange,
 } from '../types';
 
 // ── Copilot types ──────────────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ export interface CopilotRefineResult {
   questions:     Question[];
   explanation:   string;
   response_type: 'edit' | 'answer';
-  changes:       Array<{ question_id: string; what_changed: string }>;
+  changes:       CopilotChange[];
   suggestions:   string[];
 }
 
@@ -196,6 +197,7 @@ export function createApiClient(getToken: GetToken) {
     /** Apply a natural-language edit to survey questions ("add skip logic to q3"). */
     copilotRefine: async (runId: string, params: {
       message: string;
+      questions: Question[];
       orgContext?: OrgContext;
       surveyTypeId?: string;
       intent?: string;

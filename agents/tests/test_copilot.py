@@ -207,7 +207,7 @@ async def test_copilot_passes_org_context_to_llm(agent, questions):
     )
 
     captured = {}
-    async def capture_call_agent(agent_name, system, user, output_schema, current_tokens=0):
+    async def capture_call_agent(agent_name, system, user, output_schema, current_tokens=0, prior_messages=None):
         captured["system"] = system
         captured["user"] = user
         return (output, credit)

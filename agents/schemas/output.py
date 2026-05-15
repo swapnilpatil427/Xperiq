@@ -247,6 +247,12 @@ class SkipLogicOutput(BaseModel):
     summary:     str = Field(max_length=400)
 
 
+class CopilotChange(BaseModel):
+    question_id:  str
+    what_changed: str
+    action:       str | None = None   # "added" | "removed" | "edited"
+
+
 # ── Copilot Chat Agent ─────────────────────────────────────────────────────────
 
 class ConversationTurn(BaseModel):
@@ -287,7 +293,7 @@ class CopilotOutput(BaseModel):
     questions:     list[Question]
     explanation:   str = Field(max_length=1200)
     response_type: Literal["edit", "answer"] = "edit"
-    changes:       list[dict] = Field(default_factory=list)  # list of {question_id, what_changed}
+    changes:       list[CopilotChange] = Field(default_factory=list)
     suggestions:   list[str]  = Field(default_factory=list, max_length=3)  # follow-up prompts
 
 
@@ -338,6 +344,7 @@ class RefineRequest(BaseModel):
     """Body for POST /orchestrate/{run_id}/refine — Copilot chat edit."""
     org_id:        str
     message:       str = Field(max_length=2000)
+    questions:     list[Question] | None = None  # current frontend state; overrides DB if provided
     org_context:   OrgContext  = Field(default_factory=OrgContext)
     survey_type_id: str | None = None
     intent:        str = ""
@@ -347,7 +354,7 @@ class RefineRequest(BaseModel):
 class RefineResponse(BaseModel):
     questions:   list[Question]
     explanation: str
-    changes:     list[dict] = Field(default_factory=list)
+    changes:     list[CopilotChange] = Field(default_factory=list)
     suggestions: list[str]  = Field(default_factory=list)
 
 

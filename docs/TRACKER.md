@@ -102,6 +102,22 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 | 2-14 | Frontend: upgrade modal triggered at enterprise feature gates (SSO, white-label, audit log) | 🧪 | `<UpgradeModal>` component with plan branding + pricing |
 | 2-15 | Tests: role middleware unit test (admin/analyst/viewer × each route), permission hook unit test | 🧪 | 12 requireRole tests + 8 permissions/features tests. 42 backend + 110 frontend all pass. |
 
+### Sprint 2C — Copilot Authorization Guardrails ⚠️ SECURITY BACKLOG
+
+**Prerequisite:** Must be completed before any Copilot feature that reads survey responses or insights ships to production. User explicitly flagged as critical.
+
+**The risk:** Crystal/Copilot operates server-side and can access survey data directly. Without authorization checks at the data layer, a user with limited permissions could prompt Crystal to surface surveys or responses they have no right to see — bypassing all RBAC controls.
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| 2C-1 | Backend: verify `runId` ownership — confirm `run.org_id = req.orgId` AND `run.user_id = req.userId` on every copilot route that accepts a `runId` | ⬜ | Currently any authenticated org member can call `/runs/:runId/refine` with any runId |
+| 2C-2 | Backend: add ownership check on `POST /api/ai/analyze-insights` — verify `survey.org_id = req.orgId` before passing response data to the AI model | ⬜ | Survey ID comes from request body and is currently trusted without re-validation |
+| 2C-3 | Agents service (Python): add `check_survey_access(survey_id, user_id, org_id)` guard before fetching survey data for any model context | ⬜ | Must call back to backend API or Postgres; agents service currently has no permission layer |
+| 2C-4 | Backend: when granular user permissions land, scope all Copilot survey/response queries to user's accessible surveys (not full org) | ⬜ | Blocked on Sprint 2 permissions implementation — do this in the same sprint |
+| 2C-5 | Tests: verify a viewer-role user cannot extract restricted survey data via Copilot prompt injection | ⬜ | Test: auth as viewer, call refine with a runId belonging to a restricted survey — expect 403 |
+
+---
+
 ### Sprint 1C — Survey Lifecycle & UX Polish (Completed 2026-05-12)
 
 **Goal:** Every survey state transition (draft → live → paused → closed → deleted) is operable by a non-technical PM from the survey list. No builder required for lifecycle management.

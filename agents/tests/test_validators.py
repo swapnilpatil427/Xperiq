@@ -25,13 +25,24 @@ def test_valid_questions_no_errors():
     assert errors == []
 
 
-def test_non_sequential_ids_flagged():
+def test_non_sequential_ids_allowed():
+    # Non-sequential IDs (e.g. after reorder) are valid — only duplicates are flagged.
     questions = [
         {"id": "q1", "type": "nps", "question": "Recommend?"},
-        {"id": "q3", "type": "open_text", "question": "Anything else?"},   # should be q2
+        {"id": "q3", "type": "open_text", "question": "Anything else?"},
     ]
     errors = validate_questions_semantic(questions)
-    assert any("q3" in e or "q2" in e for e in errors)
+    # No ID error — q1 and q3 are unique even if non-sequential
+    assert not any("q3" in e or "q2" in e or "ID" in e for e in errors)
+
+
+def test_duplicate_ids_flagged():
+    questions = [
+        {"id": "q1", "type": "nps", "question": "Recommend?"},
+        {"id": "q1", "type": "open_text", "question": "Anything else?"},   # duplicate ID
+    ]
+    errors = validate_questions_semantic(questions)
+    assert any("Duplicate" in e or "q1" in e for e in errors)
 
 
 def test_nps_with_options_flagged():

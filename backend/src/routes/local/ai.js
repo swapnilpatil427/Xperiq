@@ -5,6 +5,7 @@ const { generateSurveySchema, analyzeInsightsSchema, refineSurveySchema } = requ
 const { generateSurveyQuestions, analyzeInsights, refineSurveyQuestions } = require('../../lib/openrouter');
 const db = require('../../lib/db');
 const { insightsGenerated } = require('../../lib/metrics');
+const logger = require('../../lib/logger');
 const router = express.Router();
 
 router.post('/generate-survey', requireAuth, validate(generateSurveySchema), async (req, res) => {
@@ -13,7 +14,7 @@ router.post('/generate-survey', requireAuth, validate(generateSurveySchema), asy
     const questions = await generateSurveyQuestions(intent, surveyTypeId);
     res.json({ questions });
   } catch (err) {
-    console.error('AI generate-survey error:', err.message);
+    logger.error({ event: 'ai_generate_survey_error', err: err.message }, 'AI generate-survey error');
     res.json({ questions: getMockQuestions(intent), note: 'Generated from template (AI unavailable)' });
   }
 });
@@ -23,15 +24,15 @@ router.post('/analyze-insights', requireAuth, validate(analyzeInsightsSchema), a
     const { surveyId } = req.body;
 
     const { rows: [survey] } = await db.query(
-      'SELECT * FROM surveys WHERE id = $1 AND org_id = $2',
+      'SELECT * FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL',
       [surveyId, req.orgId]
     );
     if (!survey) return res.status(404).json({ error: 'Survey not found' });
 
     const { rows: responses } = await db.query(
       `SELECT answers, nps_score FROM responses
-       WHERE survey_id = $1 ORDER BY submitted_at DESC LIMIT 200`,
-      [surveyId]
+       WHERE survey_id = $1 AND org_id = $2 ORDER BY submitted_at DESC LIMIT 200`,
+      [surveyId, req.orgId]
     );
     if (!responses.length) return res.status(400).json({ error: 'No responses to analyze' });
 
@@ -47,13 +48,16 @@ router.post('/analyze-insights', requireAuth, validate(analyzeInsightsSchema), a
 
     insightsGenerated.inc({ trigger: 'manual' });
     if (insights.npsScore != null) {
-      await db.query('UPDATE surveys SET nps_score = $1 WHERE id = $2', [insights.npsScore, surveyId]);
+      await db.query(
+        'UPDATE surveys SET nps_score = $1 WHERE id = $2 AND org_id = $3',
+        [insights.npsScore, surveyId, req.orgId]
+      );
     }
 
     res.json({ insights: saved });
   } catch (err) {
-    console.error('AI analyze-insights error:', err.message);
-    res.status(500).json({ error: err.message });
+    logger.error({ event: 'ai_analyze_insights_error', err: err.message }, 'AI analyze-insights error');
+    res.status(500).json({ error: 'Failed to analyze insights. Please try again.' });
   }
 });
 
@@ -64,7 +68,7 @@ router.post('/refine-survey', requireAuth, validate(refineSurveySchema), async (
     const result = await refineSurveyQuestions(questions, message.trim(), context || {});
     res.json(result);
   } catch (err) {
-    console.error('AI refine-survey error:', err.message);
+    logger.error({ event: 'ai_refine_survey_error', err: err.message }, 'AI refine-survey error');
     const { questions } = req.body;
     res.json({ questions, explanation: 'I had trouble with that request — please try rephrasing.' });
   }

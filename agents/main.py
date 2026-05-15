@@ -314,8 +314,15 @@ async def refine_survey(
     body:   RefineRequest,
     _key:   None = Depends(require_internal_key),
 ) -> RefineResponse:
-    row       = await _require_run(run_id, body.org_id)
-    questions = _load_questions(row)
+    row = await _require_run(run_id, body.org_id)
+
+    # Use frontend-provided questions when available — they reflect unsaved manual edits
+    if body.questions:
+        questions = body.questions
+        # Sync current state to agents DB so subsequent calls stay consistent
+        await db.save_run_questions(run_id, _questions_to_dicts(questions))
+    else:
+        questions = _load_questions(row)
 
     if not questions:
         raise HTTPException(status_code=422, detail="Run has no questions yet")
@@ -465,6 +472,10 @@ async def patch_question(
     if target_idx is None:
         raise HTTPException(status_code=404, detail=f"Question {q_id} not found")
 
+    # Security boundary: body.org_id is validated by _require_run above, which calls
+    # db.get_run_by_id(run_id, org_id) — this ensures the run belongs to the org.
+    # The Node.js copilot.js route extracts req.orgId from the verified Clerk JWT and
+    # passes it here, so org_id is always org-scoped before reaching this service.
     # Merge fields — never allow ID or type to be changed via patch (use Refiner for type changes)
     safe_fields = {k: v for k, v in body.fields.items() if k not in ("id",)}
     q_dict = questions[target_idx].model_dump(by_alias=True)

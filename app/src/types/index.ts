@@ -6,9 +6,21 @@ export type QuestionType =
   | 'open_text' | 'short_text'
   | 'matrix' | 'date' | 'statement';
 
+export interface SkipLogicCondition {
+  operator: 'eq' | 'neq' | 'lt' | 'gt' | 'lte' | 'gte' | 'contains' | 'answered' | 'not_answered';
+  value?: string | number | null;
+}
+
 export interface SkipLogicRule {
-  condition: string;
-  target: string;
+  id: string;
+  condition: SkipLogicCondition;
+  destination: string;   // question ID or "END_SURVEY"
+}
+
+export interface DisplayLogic {
+  sourceQuestionId: string;
+  operator: string;
+  value?: string | number | null;
 }
 
 export interface BaseQuestion {
@@ -17,17 +29,17 @@ export interface BaseQuestion {
   question: string;
   required: boolean;
   skipLogic?: SkipLogicRule[];
-  displayLogic?: unknown;
+  displayLogic?: DisplayLogic | null;
 }
 
 export interface NpsQuestion extends BaseQuestion { type: 'nps'; labelLow?: string; labelHigh?: string; }
-export interface CsatQuestion extends BaseQuestion { type: 'csat'; csatStyle?: string; }
-export interface RatingQuestion extends BaseQuestion { type: 'rating'; scaleMax?: number; ratingStyle?: string; labelLow?: string; labelHigh?: string; }
+export interface CsatQuestion extends BaseQuestion { type: 'csat'; csatStyle?: 'emoji' | 'stars' | 'numbers'; }
+export interface RatingQuestion extends BaseQuestion { type: 'rating'; scaleMax?: number; ratingStyle?: 'stars' | 'numbers'; labelLow?: string; labelHigh?: string; }
 export interface SliderQuestion extends BaseQuestion { type: 'slider'; min?: number; max?: number; step?: number; showValue?: boolean; labelLow?: string; labelHigh?: string; }
 export interface ChoiceQuestion extends BaseQuestion { type: 'multiple_choice' | 'checkbox' | 'dropdown' | 'ranking'; options?: string[]; allowOther?: boolean; randomize?: boolean; maxSelections?: number | null; placeholder?: string; }
-export interface TextQuestion extends BaseQuestion { type: 'open_text' | 'short_text'; placeholder?: string; maxLength?: number | null; validation?: unknown; }
-export interface MatrixQuestion extends BaseQuestion { type: 'matrix'; rows?: string[]; columns?: string[]; matrixType?: string; }
-export interface DateQuestion extends BaseQuestion { type: 'date'; dateType?: string; }
+export interface TextQuestion extends BaseQuestion { type: 'open_text' | 'short_text'; placeholder?: string; maxLength?: number | null; validation?: 'email' | 'url' | 'number' | 'phone' | null; }
+export interface MatrixQuestion extends BaseQuestion { type: 'matrix'; rows?: string[]; columns?: string[]; matrixType?: 'radio' | 'checkbox'; }
+export interface DateQuestion extends BaseQuestion { type: 'date'; dateType?: 'date' | 'time' | 'datetime'; }
 export interface StatementQuestion extends BaseQuestion { type: 'statement'; isStatement?: boolean; }
 
 export type Question =
@@ -224,6 +236,14 @@ export interface ListSurveysResult {
     total_responses: number;
     avg_nps: number | null;
   };
+}
+
+// ── Copilot ───────────────────────────────────────────────────────────────────
+
+export interface CopilotChange {
+  question_id?:  string;
+  what_changed?: string;
+  action?:       string;  // "added" | "removed" | "edited"
 }
 
 // ── Breakpoint ────────────────────────────────────────────────────────────────

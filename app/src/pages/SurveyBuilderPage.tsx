@@ -18,7 +18,7 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { ExperientCopilot } from '../components/ExperientCopilot';
-import type { Question, Template } from '../types';
+import type { Question, Template, SkipLogicRule, DisplayLogic } from '../types';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal types
@@ -33,17 +33,8 @@ interface QtypeMeta {
   desc: string;
 }
 
-interface SkipRule {
-  id: string;
-  condition: { operator: string; value: string };
-  destination: string;
-}
-
-interface DisplayLogic {
-  sourceQuestionId: string;
-  operator: string;
-  value: string;
-}
+// Re-use exported types — local aliases for readability
+type SkipRule = SkipLogicRule;
 
 interface SurveySettings {
   description: string;
@@ -140,7 +131,28 @@ function TypePreview({ q }: TypePreviewProps) {
           ))}
         </div>
       );
-    case 'csat':
+    case 'csat': {
+      const csatStyle = ((q as unknown as Record<string, unknown>).csatStyle as string) || 'emoji';
+      if (csatStyle === 'stars') {
+        return (
+          <div className="flex gap-1 mt-3">
+            {Array.from({ length: 5 }, (_, i) => (
+              <Icon key={i} name="star" fill={1} size={22} style={{ color: '#fbbf24' }} />
+            ))}
+          </div>
+        );
+      }
+      if (csatStyle === 'numbers') {
+        return (
+          <div className="flex gap-1.5 mt-3">
+            {[1, 2, 3, 4, 5].map((n) => (
+              <div key={n} className="flex-1 h-8 rounded-lg flex items-center justify-center text-xs font-bold" style={{ background: bg }}>
+                {n}
+              </div>
+            ))}
+          </div>
+        );
+      }
       return (
         <div className="flex gap-3 mt-3">
           {['😠', '😕', '😐', '😊', '😍'].map((e, i) => (
@@ -151,6 +163,7 @@ function TypePreview({ q }: TypePreviewProps) {
           ))}
         </div>
       );
+    }
     case 'rating':
       return (
         <div className="flex gap-1 mt-3">
@@ -606,17 +619,20 @@ function SkipLogicEditor({ q, allQuestions, onChange }: SkipLogicEditorProps) {
     return 'Value…';
   }
 
+  type OpKey = SkipLogicRule['condition']['operator'];
+
   // When operator changes, reset value if it no longer makes sense
   function handleOperatorChange(ruleId: string, newOp: string) {
-    const noVal = newOp === 'answered' || newOp === 'not_answered';
-    updateCond(ruleId, { operator: newOp, value: noVal ? '' : defaultValue() });
+    const op = newOp as OpKey;
+    const noVal = op === 'answered' || op === 'not_answered';
+    updateCond(ruleId, { operator: op, value: noVal ? '' : defaultValue() });
   }
 
   const addRule = () => onChange([
     ...rules,
     {
       id:          `sl_${Date.now()}`,
-      condition:   { operator: defaultOperator(), value: defaultValue() },
+      condition:   { operator: defaultOperator() as OpKey, value: defaultValue() },
       destination: others[0]?.id || 'END_SURVEY',
     },
   ]);
@@ -658,7 +674,7 @@ function SkipLogicEditor({ q, allQuestions, onChange }: SkipLogicEditorProps) {
             {needsValue && (
               isChoiceType && qOptions.length > 0 ? (
                 <Select
-                  value={rule.condition.value}
+                  value={String(rule.condition.value ?? '')}
                   onValueChange={(v: string) => updateCond(rule.id, { value: v })}
                 >
                   <SelectTrigger className="w-full text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground">
@@ -673,7 +689,7 @@ function SkipLogicEditor({ q, allQuestions, onChange }: SkipLogicEditorProps) {
               ) : (
                 <Input
                   type={NUMERIC_TYPES.has(q.type) ? 'number' : 'text'}
-                  value={rule.condition.value}
+                  value={String(rule.condition.value ?? '')}
                   onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCond(rule.id, { value: e.target.value })}
                   placeholder={valuePlaceholder()}
                   className="w-full text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground focus-visible:ring-1"
@@ -770,7 +786,7 @@ function DisplayLogicEditor({ q, allQuestions, onChange }: DisplayLogicEditorPro
         </SelectContent>
       </Select>
       {dl.operator !== 'answered' && (
-        <Input type="text" value={dl.value} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...dl, value: e.target.value })}
+        <Input type="text" value={String(dl.value ?? '')} onChange={(e: React.ChangeEvent<HTMLInputElement>) => onChange({ ...dl, value: e.target.value })}
           placeholder="Value…" className="w-full text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground focus-visible:ring-1" />
       )}
     </div>
@@ -821,7 +837,14 @@ function PropertiesPanel({ q, allQuestions, onUpdate, onClose }: PropertiesPanel
           <Label className="text-[10px] font-black uppercase tracking-widest block mb-1.5 text-muted-foreground">Question Type</Label>
           <Select value={q.type} onValueChange={(newType: string) => {
             const fresh = createQuestion(newType) as Question;
-            onUpdate(q.id, { ...fresh, id: q.id, question: q.question, required: q.required, skipLogic: (qAny.skipLogic as Question['skipLogic']) || [], displayLogic: qAny.displayLogic } as Partial<Question>);
+            onUpdate(q.id, {
+              ...fresh,
+              id: q.id,
+              question: q.question,
+              required: q.required,
+              skipLogic: [],      // clear — logic conditions were for old type
+              displayLogic: null, // clear — source conditions may be incompatible
+            } as Partial<Question>);
           }}>
             <SelectTrigger className="w-full text-sm h-10 rounded-[10px] bg-white border-[#dfe3e6] text-foreground">
               <SelectValue />
@@ -1749,6 +1772,8 @@ export function SurveyBuilderPage() {
   );
   // Agent run ID — set when survey was created via agents pipeline; enables copilotRefine
   const [copilotRunId, setCopilotRunId] = useState<string | null>((pending?.runId as string) || null);
+  // Auto-open Crystal after AI generation completes
+  const autoOpenCrystal = !!(pending?.openCrystal);
 
   const fromTemplate = (pending?.fromTemplate as Template) || null;
 
@@ -1791,6 +1816,7 @@ export function SurveyBuilderPage() {
   const [mode,        setMode]        = useState<'build' | 'preview' | 'logic'>('build');
   const [saving,           setSaving]           = useState(false);
   const [saved,            setSaved]            = useState(false);
+  const [saveError,        setSaveError]        = useState<string | null>(null);
   const [launching,        setLaunching]        = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [publishSuccessUrl, setPublishSuccessUrl] = useState<string | null>(null);
@@ -1861,7 +1887,17 @@ export function SurveyBuilderPage() {
       const next = [...prev];
       const [moved] = next.splice(fromIndex, 1);
       next.splice(toIndex, 0, moved);
-      return next;
+      // Remove skip logic rules that are now backward (destination is before source)
+      return next.map((q, idx) => {
+        const qAny = q as unknown as Record<string, unknown>;
+        const skipLogic = qAny.skipLogic as SkipRule[] | undefined;
+        if (!skipLogic?.length) return q;
+        const forwardIds = new Set(next.slice(idx + 1).map(fq => fq.id));
+        forwardIds.add('END_SURVEY');
+        const validRules = skipLogic.filter(r => forwardIds.has(r.destination));
+        if (validRules.length === skipLogic.length) return q;
+        return { ...q, skipLogic: validRules } as Question;
+      });
     });
   }, []);
 
@@ -1874,6 +1910,7 @@ export function SurveyBuilderPage() {
       // Use agent pipeline when a run is available — returns changes/suggestions/compliance_risk
       result = await api.copilotRefine(copilotRunId, {
         message,
+        questions,
         surveyTypeId: surveyTypeId ?? undefined,
         intent: surveySettings.intent || surveyTitle,
         conversationHistory,
@@ -1936,8 +1973,17 @@ export function SurveyBuilderPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    try { await doSave(); setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    finally { setSaving(false); }
+    setSaveError(null);
+    try {
+      await doSave();
+      isDirtyRef.current = false;
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Save failed. Try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   useEffect(() => {
@@ -1945,9 +1991,15 @@ export function SurveyBuilderPage() {
     if (autosaveRef.current) clearTimeout(autosaveRef.current);
     autosaveRef.current = setTimeout(async () => {
       setAutoSaving(true);
-      try { await doSave(); setAutoSavedAt(new Date()); }
-      catch (err) { console.error('[autosave] failed:', err); }
-      finally { setAutoSaving(false); }
+      try {
+        await doSave();
+        isDirtyRef.current = false;
+        setAutoSavedAt(new Date());
+      } catch (err) {
+        console.error('[autosave] failed:', err);
+      } finally {
+        setAutoSaving(false);
+      }
     }, 30_000);
     return () => {
       if (autosaveRef.current) clearTimeout(autosaveRef.current);
@@ -1956,16 +2008,24 @@ export function SurveyBuilderPage() {
 
   const handleLaunch = async () => {
     setLaunching(true);
+    setSaveError(null);
     try {
       const survey = await doSave() as { id?: string } | null;
+      isDirtyRef.current = false;
       const id = survey?.id || surveyId;
       if (id) {
         const result = await publishSurvey(id) as { publishToken?: string } | null;
-        const token = result?.publishToken || `mock-${id}`;
-        setShowPublishModal(false);
-        setPublishSuccessUrl(`${window.location.origin}/s/${token}`);
+        const token = result?.publishToken;
+        if (token) {
+          setShowPublishModal(false);
+          setPublishSuccessUrl(`${window.location.origin}/s/${token}`);
+        }
       }
-    } finally { setLaunching(false); }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Publish failed. Try again.');
+    } finally {
+      setLaunching(false);
+    }
   };
 
   // ── Layout constants ──────────────────────────────────────────────────────
@@ -2054,51 +2114,60 @@ export function SurveyBuilderPage() {
               />
             }
             actions={
-              <div className="flex items-center gap-2">
-                {surveyId && !autoSaving && autoSavedAt && (
-                  <span className="text-xs text-muted-foreground hidden sm:block">
-                    {`${t('builder.autosaved')} ${autoSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
-                  </span>
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-2">
+                  {surveyId && !autoSaving && autoSavedAt && !saveError && (
+                    <span className="text-xs text-muted-foreground hidden sm:block">
+                      {`${t('builder.autosaved')} ${autoSavedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                    </span>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => { setSettingsOpen((v) => !v); setSelectedId(null); }}
+                    className={cn(
+                      'rounded-full gap-1.5',
+                      settingsOpen
+                        ? 'bg-[rgba(42,75,217,0.08)] text-[var(--color-primary)] border-[rgba(42,75,217,0.2)] hover:bg-[rgba(42,75,217,0.12)]'
+                        : 'bg-[#f5f7f9] text-[#595c5e] border-[#dfe3e6] hover:bg-[#eef1f3]'
+                    )}
+                  >
+                    <Icon name="settings" size={15} />{t('builder.settings.settingsButton')}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSave}
+                    disabled={saving || autoSaving || launching}
+                    className={cn(
+                      'rounded-full flex items-center gap-1.5 active:scale-95',
+                      saveError
+                        ? 'bg-[var(--color-error,#ef4444)] text-white border-[var(--color-error,#ef4444)] hover:opacity-90'
+                        : saved
+                          ? 'bg-[var(--color-success)] text-white border-[var(--color-success)] hover:opacity-90'
+                          : 'bg-[#eef1f3] text-[#595c5e] border-[#dfe3e6] hover:bg-[#dfe3e6]'
+                    )}
+                  >
+                    {(saving || autoSaving)
+                      ? <><Spinner size={14} color="#595c5e" />{autoSaving ? t('builder.autosaving') : t('common.saving')}</>
+                      : saveError
+                        ? <><Icon name="error" size={15} />Save failed</>
+                        : <><Icon name={saved ? 'check' : 'save'} size={15} />{saved ? t('common.saved') : t('common.save')}</>
+                    }
+                  </Button>
+                  <Button
+                    variant="success"
+                    size="sm"
+                    onClick={() => setShowPublishModal(true)}
+                    disabled={saving || launching}
+                    className="rounded-full gap-1.5 shadow-[0_8px_20px_-4px_rgba(5,150,105,0.3)]"
+                  >
+                    <Icon name="rocket_launch" size={15} />Launch
+                  </Button>
+                </div>
+                {saveError && (
+                  <span className="text-xs text-red-500 pr-1">{saveError}</span>
                 )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => { setSettingsOpen((v) => !v); setSelectedId(null); }}
-                  className={cn(
-                    'rounded-full gap-1.5',
-                    settingsOpen
-                      ? 'bg-[rgba(42,75,217,0.08)] text-[var(--color-primary)] border-[rgba(42,75,217,0.2)] hover:bg-[rgba(42,75,217,0.12)]'
-                      : 'bg-[#f5f7f9] text-[#595c5e] border-[#dfe3e6] hover:bg-[#eef1f3]'
-                  )}
-                >
-                  <Icon name="settings" size={15} />{t('builder.settings.settingsButton')}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleSave}
-                  disabled={saving || autoSaving || launching}
-                  className={cn(
-                    'rounded-full flex items-center gap-1.5 active:scale-95',
-                    saved
-                      ? 'bg-[var(--color-success)] text-white border-[var(--color-success)] hover:opacity-90'
-                      : 'bg-[#eef1f3] text-[#595c5e] border-[#dfe3e6] hover:bg-[#dfe3e6]'
-                  )}
-                >
-                  {(saving || autoSaving)
-                    ? <><Spinner size={14} color="#595c5e" />{autoSaving ? t('builder.autosaving') : t('common.saving')}</>
-                    : <><Icon name={saved ? 'check' : 'save'} size={15} />{saved ? t('common.saved') : t('common.save')}</>
-                  }
-                </Button>
-                <Button
-                  variant="success"
-                  size="sm"
-                  onClick={() => setShowPublishModal(true)}
-                  disabled={saving || launching}
-                  className="rounded-full gap-1.5 shadow-[0_8px_20px_-4px_rgba(5,150,105,0.3)]"
-                >
-                  <Icon name="rocket_launch" size={15} />Launch
-                </Button>
               </div>
             }
           />
@@ -2265,6 +2334,11 @@ export function SurveyBuilderPage() {
           runId: copilotRunId ?? undefined,
         }}
         onRefine={handleAiCommand}
+        initiallyOpen={autoOpenCrystal}
+        initialMessage={autoOpenCrystal
+          ? `Survey generated! I've built ${questions.length} question${questions.length !== 1 ? 's' : ''} based on your goal. You can ask me to refine any question, add skip logic, reorder, or make any other changes — just tell me what you need.`
+          : undefined
+        }
       />
     </>
   );

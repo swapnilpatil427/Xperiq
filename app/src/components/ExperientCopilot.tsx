@@ -49,15 +49,24 @@ interface ChatMessage {
 }
 
 export interface ExperientCopilotProps {
-  context?:       CopilotContext;
-  onRefine?:      (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<RefineResult>;
-  onAction?:      (action: CopilotAction) => void;
-  quickCommands?: string[];
+  context?:        CopilotContext;
+  onRefine?:       (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<RefineResult>;
+  onAction?:       (action: CopilotAction) => void;
+  quickCommands?:  string[];
+  initiallyOpen?:  boolean;
+  initialMessage?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
+
+const LOADING_STATUSES = [
+  'Reading your survey…',
+  'Analyzing the request…',
+  'Preparing changes…',
+  'Almost ready…',
+];
 
 const BUILDER_COMMANDS = [
   'Add a follow-up "why?" after the first question',
@@ -90,13 +99,16 @@ function buildGreeting({ surveyTitle, questionCount, surveyType, surveySettings,
 // ─────────────────────────────────────────────────────────────────────────────
 
 // onAction is scaffolded for future UI commands (open panels, highlight questions, etc.)
-export function ExperientCopilot({ context = {}, onRefine, onAction, quickCommands }: ExperientCopilotProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>(() => [
-    { role: 'ai', text: buildGreeting(context) },
-  ]);
+export function ExperientCopilot({ context = {}, onRefine, onAction, quickCommands, initiallyOpen = false, initialMessage }: ExperientCopilotProps) {
+  const [isOpen, setIsOpen] = useState(initiallyOpen);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const msgs: ChatMessage[] = [{ role: 'ai', text: buildGreeting(context) }];
+    if (initialMessage) msgs.push({ role: 'ai', text: initialMessage });
+    return msgs;
+  });
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingStatusIdx, setLoadingStatusIdx] = useState(0);
   const [unread, setUnread] = useState(0);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -125,6 +137,14 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
   useEffect(() => {
     if (isOpen) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isOpen]);
+
+  useEffect(() => {
+    if (!loading) { setLoadingStatusIdx(0); return; }
+    const interval = setInterval(() => {
+      setLoadingStatusIdx((i) => Math.min(i + 1, LOADING_STATUSES.length - 1));
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const send = useCallback(async (text?: string) => {
     const msg = (text || input).trim();
@@ -375,15 +395,35 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                     <div className="flex gap-2 justify-start">
                       <div className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center"
                         style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
-                        <Icon name="diamond" size={11} style={{ color: 'white' }} />
+                        <motion.div
+                          animate={{ scale: [1, 1.2, 1] }}
+                          transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                          className="flex items-center justify-center"
+                        >
+                          <Icon name="diamond" size={11} style={{ color: 'white' }} />
+                        </motion.div>
                       </div>
-                      <div className="px-4 py-3 rounded-2xl" style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.10)', borderBottomLeftRadius: 4 }}>
+                      <div className="px-4 py-3 rounded-2xl flex flex-col gap-2"
+                        style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.10)', borderBottomLeftRadius: 4 }}>
                         <div className="flex gap-1 items-center">
                           {[0, 1, 2].map((j) => (
                             <div key={j} className="w-1.5 h-1.5 rounded-full animate-bounce"
                               style={{ background: '#2a4bd9', animationDelay: `${j * 0.15}s` }} />
                           ))}
                         </div>
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={loadingStatusIdx}
+                            initial={{ opacity: 0, y: 4 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            transition={{ duration: 0.2 }}
+                            className="text-[11px] font-medium"
+                            style={{ color: '#6366f1' }}
+                          >
+                            {LOADING_STATUSES[loadingStatusIdx]}
+                          </motion.span>
+                        </AnimatePresence>
                       </div>
                     </div>
                   )}

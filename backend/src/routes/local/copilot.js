@@ -79,7 +79,7 @@ router.get('/runs/:runId/status', async (req, res) => {
 
 router.post('/runs/:runId/refine', async (req, res) => {
   const { runId } = req.params;
-  const { message, orgContext, surveyTypeId, intent, conversationHistory } = req.body;
+  const { message, questions, orgContext, surveyTypeId, intent, conversationHistory } = req.body;
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'message is required' });
@@ -89,6 +89,7 @@ router.post('/runs/:runId/refine', async (req, res) => {
     const result = await agentsClient.refineRun(runId, {
       orgId:               req.orgId,
       message:             message.trim(),
+      questions:           Array.isArray(questions) ? questions : undefined,
       orgContext:          orgContext    || {},
       surveyTypeId:        surveyTypeId || null,
       intent:              intent       || '',
