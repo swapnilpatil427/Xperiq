@@ -44,7 +44,7 @@ function buildGreeting({ surveyType, questionCount }: IrisChatContext): string {
   if (questionCount) {
     return `I see you're building ${surveyType ? `a ${surveyType} survey` : 'a survey'} with ${questionCount} question${questionCount !== 1 ? 's' : ''}. Tell me what to change — I can add, reorder, tweak logic, or anything else.`;
   }
-  return `Hi, I'm Iris — your Experient AI. I can help you build and refine surveys. What would you like to create?`;
+  return `Hi, I'm Crystal — your Experient Copilot. I can help you build and refine surveys. What would you like to create?`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -181,7 +181,7 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 | 4-2 | Backend: model selection by plan tier | ⬜ | |
 | 4-3 | Backend: AI request queue with retry + exponential backoff | ⬜ | |
 | 4-4 | Backend: AI response caching (24h, Firestore) | ⬜ | |
-| 4-5 | Frontend: AI Copilot real streaming in `SurveyBuilderPage` (SSE) | ⬜ | |
+| 4-5 | Frontend: Crystal (Experient Copilot) real streaming in `SurveyBuilderPage` (SSE) | ⬜ | |
 | 4-6 | Backend: `POST /api/ai/improve-question` | ⬜ | |
 | 4-7 | Backend: `POST /api/ai/suggest-followup` | ⬜ | |
 | 4-8 | Backend: `POST /api/ai/translate-survey` | ⬜ | |

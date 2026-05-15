@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Experient — Insights · Spatial Canvas</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#2a4bd9", "primary-container": "#879aff",
+          "secondary": "#00647c", "secondary-container": "#82deff",
+          "tertiary": "#8329c8", "tertiary-container": "#d299ff",
+          "on-surface": "#2c2f31", "on-surface-variant": "#595c5e",
+          "outline-variant": "#abadaf",
+          "success": "#059669", "warning": "#d97706", "error": "#b41340",
+        },
+        fontFamily: { headline: ["Manrope"], body: ["Inter"] },
+      },
+    },
+  }
+</script>
+<style>
+  body {
+    font-family: Inter, sans-serif;
+    color: #2c2f31;
+    background: #0b0f10;
+    min-height: 100vh;
+    position: relative;
+    overflow-x: hidden;
+  }
+  h1, h2, h3, .headline { font-family: Manrope, sans-serif; letter-spacing: -0.02em; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* Three.js stand-in: deep gradient + animated layered orbs + starfield */
+  .spatial-canvas {
+    position: fixed; inset: 0; z-index: 0;
+    background:
+      radial-gradient(circle at 15% 25%, rgba(42,75,217,0.45), transparent 50%),
+      radial-gradient(circle at 85% 15%, rgba(131,41,200,0.35), transparent 55%),
+      radial-gradient(circle at 70% 80%, rgba(0,100,124,0.30), transparent 60%),
+      radial-gradient(circle at 30% 75%, rgba(135,154,255,0.25), transparent 50%),
+      linear-gradient(180deg, #0a0e2e 0%, #1a0d2e 50%, #0a1626 100%);
+    overflow: hidden;
+  }
+  .stars {
+    position: absolute; inset: 0;
+    background-image:
+      radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.7), transparent),
+      radial-gradient(1px 1px at 60% 70%, rgba(255,255,255,0.5), transparent),
+      radial-gradient(1px 1px at 80% 20%, rgba(255,255,255,0.6), transparent),
+      radial-gradient(1.5px 1.5px at 40% 60%, rgba(135,154,255,0.6), transparent),
+      radial-gradient(1px 1px at 10% 80%, rgba(255,255,255,0.4), transparent),
+      radial-gradient(1.5px 1.5px at 90% 90%, rgba(210,153,255,0.5), transparent),
+      radial-gradient(1px 1px at 55% 10%, rgba(130,222,255,0.6), transparent),
+      radial-gradient(1px 1px at 25% 50%, rgba(255,255,255,0.5), transparent);
+    background-size: 300px 300px, 250px 250px, 350px 350px, 400px 400px, 280px 280px, 320px 320px, 220px 220px, 380px 380px;
+    background-position: 0 0, 100px 100px, 50px 200px, 200px 50px, 150px 300px, 300px 150px, 100px 250px, 250px 100px;
+    animation: starfield 240s linear infinite;
+  }
+  @keyframes starfield { from { background-position: 0 0, 100px 100px, 50px 200px, 200px 50px, 150px 300px, 300px 150px, 100px 250px, 250px 100px; } to { background-position: 800px 0, 900px 100px, 850px 200px, 1000px 50px, 950px 300px, 1100px 150px, 900px 250px, 1050px 100px; } }
+
+  /* Floating gems (semantic — each = one insight cluster) */
+  .gem {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(40px);
+    opacity: 0.7;
+    animation: float-gem 12s ease-in-out infinite;
+  }
+  .gem-1 { left: 8%; top: 30%; width: 280px; height: 280px; background: radial-gradient(circle, #879aff, transparent); animation-delay: 0s; }
+  .gem-2 { left: 75%; top: 18%; width: 200px; height: 200px; background: radial-gradient(circle, #d299ff, transparent); animation-delay: -3s; }
+  .gem-3 { left: 60%; top: 70%; width: 240px; height: 240px; background: radial-gradient(circle, #82deff, transparent); animation-delay: -6s; }
+  .gem-4 { left: 15%; top: 75%; width: 180px; height: 180px; background: radial-gradient(circle, #ff8aa7, transparent); animation-delay: -9s; }
+  @keyframes float-gem {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(30px, -20px) scale(1.05); }
+    66% { transform: translate(-20px, 30px) scale(0.95); }
+  }
+
+  /* Crystalline center (icosahedron stand-in) */
+  .crystal {
+    position: absolute;
+    left: 50%; top: 40%;
+    transform: translate(-50%, -50%);
+    width: 320px; height: 320px;
+    background: conic-gradient(from 45deg, #879aff, #d299ff, #82deff, #879aff);
+    clip-path: polygon(50% 0%, 100% 30%, 100% 70%, 50% 100%, 0% 70%, 0% 30%);
+    filter: blur(2px) drop-shadow(0 0 60px rgba(135,154,255,0.5));
+    opacity: 0.35;
+    animation: crystal-spin 80s linear infinite;
+  }
+  @keyframes crystal-spin { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
+
+  /* Grid floor */
+  .grid-floor {
+    position: absolute;
+    inset: 60% 0 0 0;
+    background-image:
+      linear-gradient(rgba(135,154,255,0.10) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(135,154,255,0.10) 1px, transparent 1px);
+    background-size: 60px 60px;
+    transform: perspective(800px) rotateX(60deg);
+    transform-origin: top;
+    mask-image: linear-gradient(to bottom, black, transparent 70%);
+  }
+
+  /* Glass card (over dark canvas) */
+  .glass-dark {
+    background: rgba(255,255,255,0.07);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #f2f1ff;
+  }
+  .glass-light {
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255,255,255,0.6);
+    color: #2c2f31;
+  }
+  .holographic { position: relative; overflow: hidden; }
+  .holographic::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(135,154,255,0.30), transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(210,153,255,0.30), transparent 50%);
+    background-size: 200% 200%; opacity: 0.7;
+    animation: aurora 12s ease-in-out infinite;
+  }
+  @keyframes aurora { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+
+  .citation-chip {
+    display: inline-flex; padding: 1px 7px; margin: 0 1px;
+    border-radius: 999px; font-size: 10px; font-weight: 700;
+    background: rgba(135,154,255,0.25); color: #d299ff;
+  }
+
+  @keyframes pulse-glow { 0%,100% { opacity: 1; box-shadow: 0 0 16px rgba(130,222,255,0.6); } 50% { opacity: 0.7; box-shadow: 0 0 24px rgba(130,222,255,0.9); } }
+  .pulse-dot { animation: pulse-glow 2.5s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+  <!-- Canvas -->
+  <div class="spatial-canvas">
+    <div class="stars"></div>
+    <div class="crystal"></div>
+    <div class="grid-floor"></div>
+    <div class="gem gem-1"></div>
+    <div class="gem gem-2"></div>
+    <div class="gem gem-3"></div>
+    <div class="gem gem-4"></div>
+  </div>
+
+  <!-- Top bar -->
+  <header class="relative z-10 backdrop-blur-xl bg-black/20 border-b border-white/10">
+    <div class="max-w-7xl mx-auto px-8 py-3 flex items-center justify-between text-white">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary-container to-tertiary-container"></div>
+        <span class="font-headline font-extrabold tracking-tight">Experient</span>
+        <span class="text-white/30">/</span>
+        <span class="text-white/70">Onboarding Survey · May 2026</span>
+      </div>
+      <div class="flex items-center gap-3 text-xs">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-secondary-container/20 text-secondary-container">
+          <span class="w-1.5 h-1.5 rounded-full bg-secondary-container pulse-dot"></span>
+          <span class="font-bold">Live</span>
+          <span class="text-white/60">· 312 responses</span>
+        </div>
+        <div class="px-3 py-1.5 rounded-full bg-white/10 flex items-center gap-1.5">
+          <span class="material-symbols-outlined" style="font-size:16px;">view_quilt</span>
+          <select class="bg-transparent font-bold focus:outline-none cursor-pointer">
+            <option style="background:#0a0e2e;">Spatial Canvas</option>
+            <option style="background:#0a0e2e;">Editorial Brief</option>
+            <option style="background:#0a0e2e;">Mission Cockpit</option>
+            <option style="background:#0a0e2e;">Conversation</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Page content -->
+  <main class="relative z-10 max-w-7xl mx-auto px-8 pt-16 pb-12 text-white">
+
+    <!-- Hero metric panel -->
+    <section class="grid grid-cols-12 gap-6 mb-8">
+      <!-- NPS large -->
+      <div class="col-span-7 glass-dark rounded-3xl p-10 holographic">
+        <div class="relative z-10">
+          <div class="text-[11px] font-black uppercase tracking-[0.2em] text-secondary-container mb-3">Net Promoter Score · Live</div>
+          <div class="flex items-end gap-6">
+            <div class="flex items-baseline gap-3">
+              <span class="headline text-[140px] leading-none font-black bg-gradient-to-br from-white via-primary-container to-tertiary-container bg-clip-text text-transparent">47</span>
+              <span class="text-white/60 font-bold text-lg">±5 · n=312</span>
+            </div>
+            <div class="pb-6 flex-1">
+              <!-- Sparkline -->
+              <svg viewBox="0 0 320 60" class="w-full">
+                <defs>
+                  <linearGradient id="sp1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#82deff"/><stop offset="1" stop-color="#82deff" stop-opacity="0"/></linearGradient>
+                </defs>
+                <path d="M0,45 L40,40 L80,42 L120,30 L160,33 L200,22 L240,28 L280,20 L320,15"
+                      stroke="#82deff" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+                <path d="M0,45 L40,40 L80,42 L120,30 L160,33 L200,22 L240,28 L280,20 L320,15 L320,60 L0,60 Z"
+                      fill="url(#sp1)" opacity="0.5"/>
+              </svg>
+              <div class="flex items-center justify-between text-[10px] font-bold text-white/50 mt-1">
+                <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span><span>May</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 mt-6 pt-6 border-t border-white/15">
+            <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/20 text-success">
+              <span class="material-symbols-outlined" style="font-size:14px;">trending_up</span>
+              <span class="font-bold text-xs">+2 / 7d</span>
+            </div>
+            <div class="text-xs text-white/70">CI [42, 52] · 90% adjusted-Wald · <span class="text-white/50">90 days history</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Top action right -->
+      <div class="col-span-5 rounded-3xl p-10 relative overflow-hidden holographic" style="background: linear-gradient(135deg, #2a4bd9, #8329c8 70%, #d299ff 100%);">
+        <div class="relative z-10">
+          <div class="text-[11px] font-black uppercase tracking-[0.2em] text-white/80 mb-3">Top action · Prescriptive</div>
+          <h2 class="headline text-3xl font-black leading-tight mb-3 text-white">Fix the email verification loop</h2>
+          <p class="text-white/85 text-sm leading-relaxed mb-5">
+            Projected to raise NPS by <strong>+3.2 ±1.8</strong>. Cited by 18 respondents
+            <span class="citation-chip">r1188</span><span class="citation-chip">r1234</span><span class="citation-chip">r1492</span>.
+          </p>
+          <div class="flex items-center gap-2">
+            <button class="px-4 py-2.5 rounded-xl bg-white text-primary text-sm font-bold flex items-center gap-2 hover:scale-105 transition">
+              <span class="material-symbols-outlined" style="font-size:18px;">flag</span> Create ticket
+            </button>
+            <button class="px-4 py-2.5 rounded-xl bg-white/15 backdrop-blur text-white text-sm font-bold flex items-center gap-2">
+              <span class="material-symbols-outlined" style="font-size:18px;">format_quote</span> 18 quotes
+            </button>
+          </div>
+          <div class="mt-4 flex items-center gap-3 text-xs text-white/70">
+            <span class="font-bold">Conf 89</span><span>·</span><span>n=189</span><span>·</span><span>Method: uplift estimate</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Constellation panel -->
+    <section class="mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="headline text-2xl font-black">Insight constellation</h2>
+          <p class="text-sm text-white/60">Each gem behind a card holds its citation evidence. Hover to focus.</p>
+        </div>
+        <div class="flex items-center gap-1 text-xs">
+          <button class="px-3 py-1.5 rounded-full bg-white/15 font-bold">All 18</button>
+          <button class="px-3 py-1.5 rounded-full hover:bg-white/10 text-white/60">Drivers</button>
+          <button class="px-3 py-1.5 rounded-full hover:bg-white/10 text-white/60">Voice</button>
+          <button class="px-3 py-1.5 rounded-full hover:bg-white/10 text-white/60">Anomalies</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-12 gap-5">
+        <!-- Driver card -->
+        <div class="col-span-6 glass-dark rounded-2xl p-7">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-tertiary-container pulse-dot"></span>
+              <span class="text-[10px] font-black uppercase tracking-[0.2em] text-tertiary-container">Driver · Diagnostic</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-full bg-success/20 text-success text-[10px] font-black">CONF 89</span>
+          </div>
+          <h3 class="headline text-xl font-black mb-3">"Support response time" is the #1 driver of NPS</h3>
+          <p class="text-sm text-white/80 mb-4 leading-relaxed">
+            Moved from <strong>4th to 1st</strong> position over 30 days
+            <span class="citation-chip">r983</span><span class="citation-chip">r1234</span>.
+          </p>
+          <div class="bg-white/5 rounded-xl p-3 mb-4">
+            <div class="flex items-center gap-3">
+              <span class="text-xs font-bold w-32 truncate">Support time</span>
+              <div class="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
+                <div class="h-full bg-gradient-to-r from-secondary-container to-tertiary-container" style="width:78%;"></div>
+              </div>
+              <span class="text-[10px] font-black mono">0.31</span>
+            </div>
+            <div class="flex items-center gap-3 mt-1.5">
+              <span class="text-xs text-white/60 w-32 truncate">Onboarding</span>
+              <div class="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
+                <div class="h-full bg-white/40" style="width:55%;"></div>
+              </div>
+              <span class="text-[10px] font-black mono text-white/70">0.22</span>
+            </div>
+            <div class="flex items-center gap-3 mt-1.5">
+              <span class="text-xs text-white/60 w-32 truncate">Pricing</span>
+              <div class="flex-1 h-2 rounded-full bg-white/10 overflow-hidden">
+                <div class="h-full bg-white/30" style="width:38%;"></div>
+              </div>
+              <span class="text-[10px] font-black mono text-white/70">0.15</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold flex items-center gap-1.5"><span class="material-symbols-outlined" style="font-size:14px;">format_quote</span> 8 quotes</button>
+            <button class="px-3 py-1.5 rounded-lg bg-white/10 text-white text-xs font-bold flex items-center gap-1.5"><span class="material-symbols-outlined" style="font-size:14px;">help</span> Why?</button>
+          </div>
+        </div>
+
+        <!-- Anomaly -->
+        <div class="col-span-6 glass-dark rounded-2xl p-7 border-l-4 border-warning">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-warning" style="font-size:16px;">warning</span>
+              <span class="text-[10px] font-black uppercase tracking-[0.2em] text-warning">Anomaly · Spike</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-full bg-warning/20 text-warning text-[10px] font-black">CONF 92</span>
+          </div>
+          <h3 class="headline text-xl font-black mb-3">NPS dropped 12 points on May 10</h3>
+          <p class="text-sm text-white/80 mb-4 leading-relaxed">
+            Outside 95% prediction interval. Correlates with "login error" topic spike in same 24h
+            <span class="citation-chip">r2104</span><span class="citation-chip">r2111</span>.
+          </p>
+          <div class="bg-white/5 rounded-xl p-3 mb-4">
+            <div class="flex items-end justify-between gap-1.5 h-14">
+              <div class="flex-1 rounded-t bg-primary-container/70" style="height:62%"></div>
+              <div class="flex-1 rounded-t bg-primary-container/70" style="height:65%"></div>
+              <div class="flex-1 rounded-t bg-primary-container/70" style="height:58%"></div>
+              <div class="flex-1 rounded-t bg-warning" style="height:25%"></div>
+              <div class="flex-1 rounded-t bg-warning/60" style="height:35%"></div>
+              <div class="flex-1 rounded-t bg-primary-container/70" style="height:54%"></div>
+              <div class="flex-1 rounded-t bg-primary-container/70" style="height:60%"></div>
+            </div>
+          </div>
+          <button class="w-full px-3 py-2 rounded-lg bg-white/10 text-white text-xs font-bold">See the 14 responses →</button>
+        </div>
+
+        <!-- Voice topic -->
+        <div class="col-span-4 glass-dark rounded-2xl p-6">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-secondary-container" style="font-size:16px;">forum</span>
+              <span class="text-[10px] font-black uppercase tracking-[0.2em] text-secondary-container">Voice · Topic</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-full bg-warning/20 text-warning text-[10px] font-black">CONF 76</span>
+          </div>
+          <h3 class="headline text-base font-black mb-2">Onboarding friction · 102 mentions</h3>
+          <p class="text-xs text-white/70 italic mb-2">"I spent 15 minutes verifying my email"</p>
+          <div class="text-[10px] text-white/50">r1188 · NPS 2 · frustration</div>
+        </div>
+
+        <!-- Predict -->
+        <div class="col-span-4 glass-dark rounded-2xl p-6">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-primary-container" style="font-size:16px;">insights</span>
+              <span class="text-[10px] font-black uppercase tracking-[0.2em] text-primary-container">Predict · Forecast</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-full bg-primary-container/20 text-primary-container text-[10px] font-black">CONF 81</span>
+          </div>
+          <h3 class="headline text-base font-black mb-2">NPS at 500: <span class="text-secondary-container">51 ±4</span></h3>
+          <p class="text-xs text-white/70">Reached by Friday at current velocity.</p>
+        </div>
+
+        <!-- Segment -->
+        <div class="col-span-4 glass-dark rounded-2xl p-6">
+          <div class="flex items-center justify-between mb-3">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-tertiary-container" style="font-size:16px;">groups</span>
+              <span class="text-[10px] font-black uppercase tracking-[0.2em] text-tertiary-container">Segment · Contrast</span>
+            </div>
+            <span class="px-2 py-0.5 rounded-full bg-success/20 text-success text-[10px] font-black">CONF 87</span>
+          </div>
+          <h3 class="headline text-base font-black mb-2">Enterprise 62 vs SMB 31</h3>
+          <p class="text-xs text-white/70">31-point gap; SMB driver shifted to "feature parity".</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Ask anything bar -->
+    <section>
+      <div class="glass-light rounded-2xl p-5 holographic">
+        <div class="flex items-center gap-4 relative z-10">
+          <div class="w-12 h-12 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, #2a4bd9, #8329c8);">
+            <span class="material-symbols-outlined text-white" style="font-size:24px;">auto_awesome</span>
+          </div>
+          <div class="flex-1">
+            <div class="text-[10px] font-black uppercase tracking-widest text-tertiary mb-0.5">⌘K · Ask Insights</div>
+            <div class="text-sm font-bold text-on-surface">"Why did NPS dip on May 10?" · "Which segment is at risk?" · "Send Slack summary"</div>
+          </div>
+          <kbd class="px-3 py-1.5 rounded-lg bg-on-surface/5 text-xs font-bold">⌘K</kbd>
+        </div>
+      </div>
+    </section>
+
+    <!-- Live tick -->
+    <div class="text-center text-xs text-white/40 mt-8 font-bold tracking-widest uppercase">
+      Live · 3 insights in last 60s · Last full scan 2m ago ↻
+    </div>
+
+  </main>
+
+</body>
+</html>

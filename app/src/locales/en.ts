@@ -20,6 +20,17 @@ const en = {
     poweredBy: 'Powered by',
     poweredByCore: 'Powered by Experient Core Intelligence v4.2',
     aiAware: 'AI-aware',
+    crystal: {
+      name: 'Crystal',
+      tagline: 'Experient Copilot',
+      fullName: 'Crystal — Experient Copilot',
+      description: 'The smartest experience management AI in the industry.',
+      shortDescription: 'Ask anything. Get cited answers in seconds.',
+      greeting: "Hi, I'm Crystal — Experient's AI copilot. Tell me what you'd like to do and I'll handle it.",
+      cmdK: '⌘K · Ask Crystal',
+      askPlaceholderSingle: '"Why did NPS dip?" · "What would raise CSAT most?"',
+      askPlaceholderAll: '"Which survey has the highest churn risk?"',
+    },
   },
 
   nav: {
@@ -129,9 +140,16 @@ const en = {
       description: 'Positive trajectory in Checkout Flow',
     },
     aiObservation: {
-      heading: 'AI Observation',
+      heading: 'Crystal · Experient Copilot',
       quote: "Users are reporting friction in the onboarding stage. High correlation with 'Documentation' mentions.",
       tags: ['Friction', 'Onboarding'],
+    },
+    crystal: {
+      sectionTag: 'Experient Copilot',
+      headline: 'Meet Crystal.',
+      subheadline: 'The smartest experience management AI in the industry.',
+      description: 'Crystal is your always-on AI copilot — embedded in every survey, insight, and workflow. Ask questions in plain language. Get cited answers, anomaly alerts, and prescriptive actions in seconds.',
+      cta: 'Meet Crystal — Get Early Access',
     },
     intelligenceLayer: 'Intelligence Layer',
     layerDescription: 'The AI-aware experience layer for modern enterprises',
@@ -445,7 +463,8 @@ const en = {
     autosaved: 'Autosaved',
     questionTitlePlaceholder: 'Enter your question title here...',
     aiCopilot: {
-      heading: 'AI Copilot',
+      heading: 'Crystal',
+      tagline: 'Experient Copilot',
       suggestion: "I've analyzed your survey flow. Would you like me to optimize the sequence?",
       improveWording: 'Improve all wording',
       addFollowupLogic: 'Add follow-up logic',
@@ -566,7 +585,7 @@ const en = {
   },
 
   insights: {
-    pageTitle: 'Topic Analysis',
+    pageTitle: 'Intelligence',
     dateFilter: 'Last 30 Days',
     topicHeading: 'Identified Intelligence Layers',
     topicDescription: 'Experient AI mapped {count} customer data points to these core themes',
@@ -604,7 +623,7 @@ const en = {
   },
 
   advancedInsights: {
-    pageTitle: 'Topic Analysis',
+    pageTitle: 'Intelligence',
     dateFilter: 'Last 30 Days',
     extractedTopics: 'Extracted Topics',
     topicsDescription: 'Core themes identified across {count} responses',
@@ -625,6 +644,55 @@ const en = {
     globalActionRename: 'Rename Topic',
     globalActionGroup: "Group into 'Themes'",
     recommendedThemes: 'Recommended Themes',
+  },
+
+  insightsBrief: {
+    pageTitle: 'Recent Briefs',
+    subtitle: 'AI-generated narrative summaries of your survey intelligence',
+    currentBrief: 'Current brief',
+    history: 'Brief history',
+    audience: { exec: 'Executive', technical: 'Technical' },
+    exportPdf: 'Export PDF',
+    sendSlack: 'Send to Slack',
+    scheduledDelivery: 'Scheduled delivery',
+  },
+
+  insightsMetrics: {
+    pageTitle: 'Live Metrics',
+    subtitle: 'Real-time NPS, CSAT, response velocity and driver analysis',
+    npsTimeSeries: 'NPS — 90-day trend',
+    csatDistribution: 'CSAT distribution',
+    responseVelocity: 'Response velocity',
+    driverImpact: 'Driver impact map',
+    actionBacklog: 'Prescriptive action backlog',
+    configureAlerts: 'Configure alerts',
+  },
+
+  insightsFindings: {
+    pageTitle: 'Deeper Findings',
+    subtitle: 'All AI-surfaced drivers, anomalies, voice-of-customer and predictive signals',
+    tabs: {
+      all: 'All',
+      drivers: 'Drivers',
+      voice: 'Voice',
+      anomalies: 'Anomalies',
+      predictive: 'Predictive',
+    },
+    pinned: 'Pinned findings',
+    compareMode: 'Compare mode',
+  },
+
+  insightsSurfaced: {
+    pageTitle: 'Auto-surfaced Findings',
+    subtitle: 'Everything Crystal surfaced recently — unfiltered and in full',
+    severityAll: 'All',
+    severityCritical: 'Critical',
+    severityActionable: 'Actionable',
+    severityInfo: 'Informational',
+    findingDetail: 'Finding detail',
+    aiReasoning: 'Crystal\'s reasoning',
+    surfacingFrequency: 'Surfacing frequency',
+    notificationPrefs: 'Notification preferences',
   },
 
   collection: {

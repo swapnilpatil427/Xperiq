@@ -256,10 +256,10 @@ export function LandingPage() {
                     className="w-8 h-8 rounded-xl flex items-center justify-center"
                     style={{ background: 'linear-gradient(135deg, #879aff, #8329c8)' }}
                   >
-                    <Icon name="psychology" fill={1} size={18} className="text-white" />
+                    <Icon name="diamond" fill={1} size={18} className="text-white" />
                   </div>
                   <span className="text-sm font-bold font-headline text-on-surface">
-                    {t('landing.aiObservation.heading')}
+                    Crystal · Experient Copilot
                   </span>
                   <span className="ml-auto w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 </div>
@@ -445,6 +445,252 @@ export function LandingPage() {
           </div>
         </section>
       </main>
+
+      {/* ── Meet Crystal ─────────────────────────────────────── */}
+      <section
+        className="relative z-10 overflow-hidden"
+        style={{
+          background:
+            'radial-gradient(ellipse at 30% 50%, rgba(42,75,217,0.08) 0%, transparent 60%),' +
+            'radial-gradient(ellipse at 70% 50%, rgba(131,41,200,0.06) 0%, transparent 60%),' +
+            'linear-gradient(180deg, #f5f7f9 0%, #eae8ff 50%, #f5f7f9 100%)',
+        }}
+      >
+        <div className="max-w-screen-2xl mx-auto px-6 py-28">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+
+            {/* ── Left: Crystal visual ── */}
+            <motion.div
+              className="flex justify-center order-2 lg:order-1"
+              initial={{ opacity: 0, scale: 0.85 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8, ease: [0.34, 1.56, 0.64, 1] }}
+            >
+              <div className="relative">
+                {/* Glow pedestal */}
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    width: 320,
+                    height: 80,
+                    bottom: -24,
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'radial-gradient(ellipse, rgba(131,41,200,0.35), transparent 70%)',
+                    filter: 'blur(20px)',
+                  }}
+                />
+                {/* Crystal */}
+                <div
+                  className="relative mx-auto"
+                  style={{ width: 280, height: 280, filter: 'drop-shadow(0 32px 64px rgba(42,75,217,0.25))' }}
+                >
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background:
+                        'conic-gradient(from 0deg at 50% 50%, #879aff 0%, #d299ff 25%, #82deff 50%, #d299ff 75%, #879aff 100%)',
+                      clipPath: 'polygon(50% 0%, 100% 30%, 100% 70%, 50% 100%, 0% 70%, 0% 30%)',
+                      animation: 'spin-slow 20s linear infinite',
+                      filter: 'blur(0.5px)',
+                    }}
+                  />
+                  <div
+                    className="absolute"
+                    style={{
+                      inset: '18%',
+                      background:
+                        'conic-gradient(from 180deg at 50% 50%, #ffffff 0%, #879aff 33%, #d299ff 66%, #ffffff 100%)',
+                      clipPath: 'polygon(50% 0%, 100% 30%, 100% 70%, 50% 100%, 0% 70%, 0% 30%)',
+                      animation: 'spin-slow 10s linear infinite reverse',
+                      opacity: 0.75,
+                    }}
+                  />
+                  <div
+                    className="absolute"
+                    style={{
+                      inset: '38%',
+                      background: 'radial-gradient(circle, #ffffff, #82deff)',
+                      borderRadius: '50%',
+                      filter: 'blur(5px)',
+                      animation: 'pulse-glow 2.5s ease-in-out infinite',
+                    }}
+                  />
+                </div>
+
+                {/* Floating query bubble — top right */}
+                <motion.div
+                  className="absolute -right-4 top-6 max-w-[200px] p-3.5 rounded-2xl rounded-tl-sm text-sm bg-white"
+                  style={{ boxShadow: '0 8px 32px -4px rgba(42,75,217,0.18)', border: '1px solid rgba(165,180,252,0.3)' }}
+                  initial={{ opacity: 0, x: 20, y: -10 }}
+                  whileInView={{ opacity: 1, x: 0, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6, delay: 0.4, ease: [0.34, 1.56, 0.64, 1] }}
+                >
+                  <p className="text-xs font-semibold text-[#374151]">"Why did NPS drop last week?"</p>
+                  <div className="flex items-center gap-1 mt-1.5">
+                    <div
+                      className="w-4 h-4 rounded-full flex items-center justify-center"
+                      style={{ background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)' }}
+                    >
+                      <Icon name="diamond" size={10} style={{ color: 'white' }} />
+                    </div>
+                    <span className="text-[10px] font-bold" style={{ background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                      Crystal answers in 2s
+                    </span>
+                  </div>
+                </motion.div>
+
+                {/* Floating answer bubble — bottom left */}
+                <motion.div
+                  className="absolute -left-6 bottom-10 max-w-[220px] p-3.5 rounded-2xl rounded-br-sm text-sm"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(79,110,247,0.1), rgba(155,81,224,0.08))',
+                    border: '1px solid rgba(165,180,252,0.4)',
+                    backdropFilter: 'blur(12px)',
+                  }}
+                  initial={{ opacity: 0, x: -20, y: 10 }}
+                  whileInView={{ opacity: 1, x: 0, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.6, delay: 0.6, ease: [0.34, 1.56, 0.64, 1] }}
+                >
+                  <p className="text-[11px] font-semibold text-[#374151] leading-snug">
+                    Fix email verification loop →{' '}
+                    <span className="font-black text-emerald-700">+3.2 NPS</span>
+                  </p>
+                  <p className="text-[10px] text-[#6b7280] mt-1">Cited by 18 respondents · CONF 89</p>
+                </motion.div>
+
+                {/* Floating metric bubble — top left */}
+                <motion.div
+                  className="absolute -left-2 top-16 p-3 rounded-xl bg-white"
+                  style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.08)', border: '1px solid rgba(171,173,175,0.15)' }}
+                  initial={{ opacity: 0, x: -16 }}
+                  whileInView={{ opacity: 1, x: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 0.5, delay: 0.7, ease: [0.34, 1.56, 0.64, 1] }}
+                >
+                  <div className="text-[10px] font-black uppercase tracking-widest text-[#9ca3af]">NPS</div>
+                  <div className="text-2xl font-black font-headline text-gradient">51</div>
+                  <div className="text-[10px] text-emerald-600 font-bold">↑ +4 this week</div>
+                </motion.div>
+              </div>
+            </motion.div>
+
+            {/* ── Right: Copy ── */}
+            <motion.div
+              className="order-1 lg:order-2 space-y-8"
+              variants={stagger}
+              initial="hidden"
+              whileInView="visible"
+              viewport={{ once: true }}
+            >
+              <motion.div variants={fadeUp} custom={0}>
+                <div
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold tracking-widest uppercase"
+                  style={{ background: 'rgba(131,41,200,0.08)', border: '1px solid rgba(131,41,200,0.2)', color: '#8329c8' }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
+                  Experient Copilot
+                </div>
+              </motion.div>
+
+              <div className="space-y-3">
+                <motion.h2
+                  className="text-5xl lg:text-[3.5rem] font-extrabold tracking-tighter leading-[1.05] font-headline text-on-surface"
+                  variants={fadeUp}
+                  custom={1}
+                >
+                  Meet{' '}
+                  <span
+                    style={{
+                      background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)',
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                    }}
+                  >
+                    Crystal.
+                  </span>
+                </motion.h2>
+                <motion.p
+                  className="text-2xl font-bold text-[#374151] leading-snug"
+                  variants={fadeUp}
+                  custom={2}
+                >
+                  The smartest experience<br />management AI in the industry.
+                </motion.p>
+                <motion.p
+                  className="text-lg leading-relaxed text-[#47527a]"
+                  variants={fadeUp}
+                  custom={3}
+                >
+                  Crystal is your always-on AI copilot — embedded in every survey, insight, and
+                  workflow. Ask questions in plain language. Get cited answers, anomaly alerts, and
+                  prescriptive actions in seconds.
+                </motion.p>
+              </div>
+
+              <motion.div className="space-y-4" variants={stagger}>
+                {[
+                  {
+                    icon: 'forum',
+                    title: 'Ask anything, get cited answers',
+                    desc: '"Why did NPS drop?" → Crystal cites real respondents and confidence scores.',
+                  },
+                  {
+                    icon: 'auto_awesome',
+                    title: 'Build surveys from a description',
+                    desc: 'Describe your goal in one sentence. Crystal writes the full survey in seconds.',
+                  },
+                  {
+                    icon: 'warning',
+                    title: 'Surface risks before they become crises',
+                    desc: 'Crystal detects anomalies and predicts churn risk — automatically, continuously.',
+                  },
+                  {
+                    icon: 'flag',
+                    title: 'Act, not just answer',
+                    desc: 'Create tickets, share to Slack, trigger workflows — all from Crystal\'s interface.',
+                  },
+                ].map((item) => (
+                  <motion.div
+                    key={item.title}
+                    className="flex items-start gap-4"
+                    variants={fadeUp}
+                  >
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ background: 'linear-gradient(135deg, rgba(79,110,247,0.12), rgba(155,81,224,0.1))' }}
+                    >
+                      <Icon name={item.icon} size={18} className="text-primary" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm text-on-surface">{item.title}</div>
+                      <p className="text-sm text-[#47527a] mt-0.5">{item.desc}</p>
+                    </div>
+                  </motion.div>
+                ))}
+              </motion.div>
+
+              <motion.div variants={fadeUp} custom={8}>
+                <Button
+                  onClick={() => navigate(ROUTES.ONBOARDING)}
+                  size="lg"
+                  className="font-bold text-white rounded-xl"
+                  style={{
+                    background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)',
+                    boxShadow: '0 12px 32px -8px rgba(79,110,247,0.45)',
+                  }}
+                >
+                  <Icon name="diamond" fill={1} size={18} />
+                  Meet Crystal — Get Early Access
+                </Button>
+              </motion.div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
 
       {/* ── Footer ──────────────────────────────────────────── */}
       <footer className="w-full border-t font-body bg-[#f8fafc] border-[#e2e8f0]">

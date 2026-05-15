@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Experient — Insights · Editorial Brief</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    darkMode: "class",
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#2a4bd9", "primary-dim": "#173dcd", "primary-container": "#879aff",
+          "secondary": "#00647c", "secondary-container": "#82deff",
+          "tertiary": "#8329c8", "tertiary-container": "#d299ff",
+          "surface": "#f5f7f9", "surface-bright": "#f5f7f9", "surface-dim": "#d0d5d8",
+          "surface-container": "#e5e9eb", "surface-container-low": "#eef1f3",
+          "surface-container-high": "#dfe3e6", "surface-container-lowest": "#ffffff",
+          "on-surface": "#2c2f31", "on-surface-variant": "#595c5e",
+          "outline": "#747779", "outline-variant": "#abadaf",
+          "success": "#059669", "warning": "#d97706", "error": "#b41340",
+        },
+        fontFamily: { headline: ["Manrope", "sans-serif"], body: ["Inter", "sans-serif"] },
+        borderRadius: { DEFAULT: "0.75rem", sm: "0.375rem", lg: "1rem", xl: "1.25rem", "2xl": "1.5rem" },
+      },
+    },
+  }
+</script>
+<style>
+  body { font-family: Inter, sans-serif; background: #f5f7f9; color: #2c2f31; }
+  h1, h2, h3, h4, .headline { font-family: Manrope, sans-serif; letter-spacing: -0.02em; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+  .glass-card-premium {
+    background: rgba(255,255,255,0.72);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    border: 1px solid rgba(255,255,255,0.5);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  .tactile-ether {
+    background:
+      radial-gradient(circle at 8% 12%, rgba(135,154,255,0.10), transparent 40%),
+      radial-gradient(circle at 92% 8%, rgba(130,222,255,0.10), transparent 45%),
+      radial-gradient(circle at 50% 100%, rgba(210,153,255,0.08), transparent 50%),
+      #f5f7f9;
+  }
+  .grid-pattern {
+    background-image:
+      linear-gradient(rgba(42,75,217,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(42,75,217,0.04) 1px, transparent 1px);
+    background-size: 64px 64px;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+  }
+  .holographic {
+    position: relative; overflow: hidden;
+  }
+  .holographic::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(circle at 20% 30%, rgba(135,154,255,0.18), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(210,153,255,0.18), transparent 40%),
+      radial-gradient(circle at 50% 50%, rgba(130,222,255,0.10), transparent 50%);
+    background-size: 200% 200%; opacity: 0.6;
+    animation: aurora 12s ease-in-out infinite;
+  }
+  @keyframes aurora { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+  .soft-extrusion {
+    box-shadow: 0 10px 30px -10px rgba(0,0,0,0.10), inset 0 2px 4px rgba(255,255,255,0.8);
+  }
+  @keyframes float-orb { 0%,100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-8px) rotate(6deg); } }
+  .orb-anim { animation: float-orb 6s ease-in-out infinite; }
+  @keyframes pulse-glow { 0%,100% { opacity: 0.7; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } }
+  .pulse-glow { animation: pulse-glow 3s ease-in-out infinite; }
+  .citation-chip {
+    display: inline-flex; align-items: center; padding: 1px 7px; margin: 0 1px;
+    border-radius: 999px; font-family: Inter; font-size: 10px; font-weight: 700;
+    background: rgba(42,75,217,0.10); color: #2a4bd9; cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .citation-chip:hover { background: rgba(42,75,217,0.18); }
+  .gradient-hero {
+    background: linear-gradient(135deg, #2a4bd9 0%, #8329c8 100%);
+  }
+  .confidence-bar { height: 4px; border-radius: 999px; background: linear-gradient(90deg, #2a4bd9, #57d2f9); }
+  .ci-bar { height: 6px; border-radius: 999px; background: linear-gradient(90deg, rgba(42,75,217,0.15), rgba(42,75,217,0.4), rgba(42,75,217,0.15)); position: relative; }
+  .ci-marker { position: absolute; top: -3px; width: 2px; height: 12px; background: #2a4bd9; }
+</style>
+</head>
+<body class="tactile-ether min-h-screen">
+
+  <!-- Top bar -->
+  <header class="sticky top-0 z-40 backdrop-blur-xl bg-surface/70 border-b border-outline-variant/20">
+    <div class="max-w-7xl mx-auto px-8 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-tertiary"></div>
+        <span class="font-headline font-extrabold tracking-tight">Experient</span>
+        <span class="text-outline">/</span>
+        <span class="text-on-surface-variant">Onboarding Survey · May 2026</span>
+      </div>
+      <div class="flex items-center gap-3 text-xs">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 text-success">
+          <span class="w-1.5 h-1.5 rounded-full bg-success pulse-glow"></span>
+          <span class="font-bold">Live</span>
+          <span class="text-on-surface-variant">· 312 responses · last scan 12s ago</span>
+        </div>
+        <div class="px-3 py-1.5 rounded-full glass-card-premium text-on-surface-variant flex items-center gap-1.5">
+          <span class="material-symbols-outlined" style="font-size:16px;">view_quilt</span>
+          <select class="bg-transparent font-bold focus:outline-none cursor-pointer">
+            <option>Editorial Brief</option>
+            <option>Spatial Canvas</option>
+            <option>Mission Cockpit</option>
+            <option>Conversation</option>
+          </select>
+        </div>
+        <button class="px-3 py-1.5 rounded-full glass-card-premium flex items-center gap-1.5">
+          <span class="material-symbols-outlined" style="font-size:16px;">tune</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Hero: Brief -->
+  <section class="grid-pattern">
+    <div class="max-w-7xl mx-auto px-8 pt-10 pb-6">
+      <div class="flex items-start gap-6 mb-6">
+        <!-- compact orb (placeholder for HeroCanvas in compact mode) -->
+        <div class="w-32 h-32 rounded-2xl gradient-hero holographic orb-anim flex items-center justify-center soft-extrusion flex-shrink-0">
+          <span class="material-symbols-outlined text-white" style="font-size:44px;">diamond</span>
+        </div>
+        <div class="pt-2">
+          <div class="text-xs font-bold uppercase tracking-widest text-tertiary mb-2">TODAY'S BRIEF · GENERATED 12s AGO</div>
+          <h1 class="headline text-4xl md:text-5xl font-black tracking-tight leading-tight max-w-3xl">
+            NPS held steady at 47 with a recovered 12-point dip; <span class="text-tertiary">support response time</span> is now the #1 driver of detractor sentiment.
+          </h1>
+        </div>
+      </div>
+
+      <div class="glass-card-premium rounded-2xl p-7 max-w-4xl">
+        <p class="text-base leading-relaxed font-medium">
+          NPS held steady at <strong>47</strong>
+          <span class="citation-chip">[r1102]</span><span class="citation-chip">[r1188]</span>
+          with a brief 12-point dip on May 10
+          <span class="citation-chip">[r2104]</span><span class="citation-chip">[r2107]</span>
+          now recovered. The dominant driver of detractor sentiment remains <strong>support response time</strong>, which moved from 4th to 1st position in the last 30 days
+          <span class="citation-chip">[r983]</span><span class="citation-chip">[r1234]</span>.
+          The single highest-leverage action this week is <strong>fixing the email verification loop</strong> — cited by 18 respondents, projected to raise NPS by <strong>+3.2 ±1.8</strong>
+          <span class="citation-chip">[r1188]</span><span class="citation-chip">[r1234]</span><span class="citation-chip">[r1492]</span>.
+        </p>
+        <div class="flex items-center gap-3 mt-5 pt-5 border-t border-outline-variant/30">
+          <div class="text-xs">
+            <span class="font-bold">Confidence 89</span>
+            <span class="text-on-surface-variant">· 9 cited responses · n=312</span>
+          </div>
+          <div class="flex-1"></div>
+          <button class="px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/30 text-xs font-bold flex items-center gap-1.5 hover:bg-white">
+            <span class="material-symbols-outlined" style="font-size:14px;">slack</span> Send to Slack
+          </button>
+          <button class="px-3 py-1.5 rounded-lg bg-surface-container-lowest border border-outline-variant/30 text-xs font-bold flex items-center gap-1.5 hover:bg-white">
+            <span class="material-symbols-outlined" style="font-size:14px;">picture_as_pdf</span> Export brief
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Metric tiles -->
+  <section class="max-w-7xl mx-auto px-8 pt-2 pb-6">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- NPS -->
+      <div class="glass-card-premium rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">NPS</span>
+          <span class="text-[10px] font-bold text-success flex items-center gap-1">
+            <span class="material-symbols-outlined" style="font-size:14px;">trending_up</span> +2 / 7d
+          </span>
+        </div>
+        <div class="flex items-baseline gap-2 mb-2">
+          <span class="headline text-5xl font-black">47</span>
+          <span class="text-on-surface-variant text-sm font-medium">±5 · n=312</span>
+        </div>
+        <div class="ci-bar mb-3"><div class="ci-marker" style="left:46%;"></div></div>
+        <svg viewBox="0 0 200 40" class="w-full h-10">
+          <path d="M0,30 L20,25 L40,28 L60,18 L80,22 L100,15 L120,20 L140,12 L160,18 L180,22 L200,15"
+                stroke="#2a4bd9" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M0,30 L20,25 L40,28 L60,18 L80,22 L100,15 L120,20 L140,12 L160,18 L180,22 L200,15 L200,40 L0,40 Z"
+                fill="url(#g1)" opacity="0.2"/>
+          <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a4bd9"/><stop offset="1" stop-color="#2a4bd9" stop-opacity="0"/></linearGradient></defs>
+        </svg>
+      </div>
+
+      <!-- CSAT -->
+      <div class="glass-card-premium rounded-2xl p-6">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">CSAT</span>
+          <span class="text-[10px] font-bold text-on-surface-variant">stable</span>
+        </div>
+        <div class="flex items-baseline gap-2 mb-2">
+          <span class="headline text-5xl font-black">4.2</span>
+          <span class="text-on-surface-variant text-sm font-medium">/ 5 · ±0.2</span>
+        </div>
+        <div class="ci-bar mb-3"><div class="ci-marker" style="left:84%;"></div></div>
+        <div class="flex items-end gap-1.5 h-10">
+          <div class="flex-1 rounded-t bg-secondary-container/40" style="height:25%;"></div>
+          <div class="flex-1 rounded-t bg-secondary-container/60" style="height:38%;"></div>
+          <div class="flex-1 rounded-t bg-secondary-container/80" style="height:55%;"></div>
+          <div class="flex-1 rounded-t bg-secondary" style="height:78%;"></div>
+          <div class="flex-1 rounded-t bg-gradient-to-t from-secondary to-primary" style="height:92%;"></div>
+        </div>
+      </div>
+
+      <!-- Top action (holographic gradient hero) -->
+      <div class="rounded-2xl p-6 holographic gradient-hero text-white relative">
+        <div class="flex items-center justify-between mb-3 relative z-10">
+          <span class="text-[10px] font-black uppercase tracking-widest opacity-90">Top action · prescriptive</span>
+          <span class="px-2 py-0.5 rounded-full bg-white/20 text-[10px] font-bold">CONF 89</span>
+        </div>
+        <h3 class="headline text-xl font-black leading-tight mb-2 relative z-10">
+          Fix "email verification loop"
+        </h3>
+        <p class="text-sm font-medium opacity-90 mb-3 relative z-10">
+          Projected to raise NPS <strong>+3.2 ±1.8</strong>. Cited by 18 respondents.
+        </p>
+        <div class="flex items-center gap-2 relative z-10">
+          <button class="px-3 py-2 rounded-lg bg-white/95 text-primary text-xs font-bold flex items-center gap-1.5 hover:bg-white">
+            <span class="material-symbols-outlined" style="font-size:14px;">flag</span> Create ticket
+          </button>
+          <button class="px-3 py-2 rounded-lg bg-white/10 backdrop-blur text-white text-xs font-bold flex items-center gap-1.5 hover:bg-white/20">
+            <span class="material-symbols-outlined" style="font-size:14px;">format_quote</span> 24 quotes
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Deeper findings (bento) -->
+  <section class="max-w-7xl mx-auto px-8 pb-6">
+    <div class="flex items-end justify-between mb-4">
+      <h2 class="headline text-2xl font-black">Deeper findings</h2>
+      <div class="flex items-center gap-1 text-xs">
+        <button class="px-2.5 py-1 rounded-full bg-primary/10 text-primary font-bold">All</button>
+        <button class="px-2.5 py-1 rounded-full text-on-surface-variant hover:bg-surface-container">Drivers</button>
+        <button class="px-2.5 py-1 rounded-full text-on-surface-variant hover:bg-surface-container">Voice</button>
+        <button class="px-2.5 py-1 rounded-full text-on-surface-variant hover:bg-surface-container">Anomalies</button>
+        <button class="px-2.5 py-1 rounded-full text-on-surface-variant hover:bg-surface-container">Predictive</button>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
+      <!-- Driver (large) -->
+      <div class="lg:col-span-7 glass-card-premium rounded-2xl p-6 soft-extrusion">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-tertiary"></span>
+            <span class="text-[10px] font-black uppercase tracking-widest text-tertiary">DRIVER · DIAGNOSTIC</span>
+          </div>
+          <div class="flex items-center gap-2 text-[10px] font-bold">
+            <span class="px-2 py-0.5 rounded-full bg-success/10 text-success">CONF 89</span>
+            <span class="text-on-surface-variant">n=189</span>
+          </div>
+        </div>
+        <h3 class="headline text-xl font-black leading-tight mb-3">
+          "Support response time" is the #1 driver of NPS
+        </h3>
+        <p class="text-sm leading-relaxed mb-4">
+          Its importance jumped from <strong>4th to 1st</strong> position in the last 30 days
+          <span class="citation-chip">[r983]</span><span class="citation-chip">[r1234]</span><span class="citation-chip">[r1492]</span>. Detractors mention support delay in 47% of cases.
+        </p>
+        <!-- driver bars -->
+        <div class="space-y-2 mb-4">
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-bold w-44 truncate">Support response time</span>
+            <div class="flex-1 h-3 rounded-full bg-surface-container relative">
+              <div class="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-primary to-tertiary" style="width:78%;"></div>
+              <div class="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-black text-white">0.31</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-bold w-44 truncate text-on-surface-variant">Onboarding speed</span>
+            <div class="flex-1 h-3 rounded-full bg-surface-container relative">
+              <div class="absolute inset-y-0 left-0 rounded-full bg-primary/60" style="width:55%;"></div>
+              <div class="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-black">0.22</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-bold w-44 truncate text-on-surface-variant">Pricing transparency</span>
+            <div class="flex-1 h-3 rounded-full bg-surface-container relative">
+              <div class="absolute inset-y-0 left-0 rounded-full bg-primary/40" style="width:38%;"></div>
+              <div class="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-black">0.15</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="text-xs font-bold w-44 truncate text-on-surface-variant">Mobile reliability</span>
+            <div class="flex-1 h-3 rounded-full bg-surface-container relative">
+              <div class="absolute inset-y-0 left-0 rounded-full bg-primary/30" style="width:24%;"></div>
+              <div class="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] font-black">0.10</div>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-3 pt-4 border-t border-outline-variant/20">
+          <button class="px-3 py-2 rounded-lg bg-primary text-white text-xs font-bold flex items-center gap-1.5">
+            <span class="material-symbols-outlined" style="font-size:14px;">format_quote</span> 8 quotes
+          </button>
+          <button class="px-3 py-2 rounded-lg bg-surface-container text-on-surface text-xs font-bold flex items-center gap-1.5">
+            <span class="material-symbols-outlined" style="font-size:14px;">help</span> Why this insight?
+          </button>
+          <div class="flex-1"></div>
+          <button class="w-8 h-8 rounded-lg bg-surface-container hover:bg-surface-container-high flex items-center justify-center">
+            <span class="material-symbols-outlined" style="font-size:16px;">thumb_up</span>
+          </button>
+          <button class="w-8 h-8 rounded-lg bg-surface-container hover:bg-surface-container-high flex items-center justify-center">
+            <span class="material-symbols-outlined" style="font-size:16px;">push_pin</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Anomaly card -->
+      <div class="lg:col-span-5 glass-card-premium rounded-2xl p-6 soft-extrusion border-l-4 border-warning">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-warning" style="font-size:16px;">warning</span>
+            <span class="text-[10px] font-black uppercase tracking-widest text-warning">ANOMALY · DETECTED</span>
+          </div>
+          <span class="px-2 py-0.5 rounded-full bg-warning/10 text-warning text-[10px] font-black">CONF 92</span>
+        </div>
+        <h3 class="headline text-lg font-black leading-tight mb-3">
+          NPS dropped 12 points on May 10
+        </h3>
+        <p class="text-sm leading-relaxed mb-4">
+          Outside the 95% prediction interval. Likely linked to a spike of "login error" mentions in same 24h window
+          <span class="citation-chip">[r2104]</span><span class="citation-chip">[r2111]</span><span class="citation-chip">[r2114]</span>.
+        </p>
+        <div class="bg-surface-container-lowest rounded-xl p-3 mb-4">
+          <div class="flex items-end justify-between gap-1 h-16">
+            <div class="flex-1 rounded-t bg-primary/60" style="height:62%"></div>
+            <div class="flex-1 rounded-t bg-primary/60" style="height:65%"></div>
+            <div class="flex-1 rounded-t bg-primary/60" style="height:58%"></div>
+            <div class="flex-1 rounded-t bg-warning" style="height:25%"></div>
+            <div class="flex-1 rounded-t bg-warning/60" style="height:35%"></div>
+            <div class="flex-1 rounded-t bg-primary/60" style="height:54%"></div>
+            <div class="flex-1 rounded-t bg-primary/60" style="height:60%"></div>
+          </div>
+          <div class="flex items-center justify-between mt-1 text-[9px] text-on-surface-variant">
+            <span>May 7</span><span>May 10</span><span>May 13</span>
+          </div>
+        </div>
+        <button class="w-full px-3 py-2 rounded-lg bg-surface-container text-xs font-bold flex items-center justify-center gap-1.5">
+          <span class="material-symbols-outlined" style="font-size:14px;">timeline</span> See the 14 responses
+        </button>
+      </div>
+
+      <!-- Voice topic -->
+      <div class="lg:col-span-5 glass-card-premium rounded-2xl p-6 soft-extrusion">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-secondary" style="font-size:16px;">forum</span>
+            <span class="text-[10px] font-black uppercase tracking-widest text-secondary">VOICE · TOPIC</span>
+          </div>
+          <span class="px-2 py-0.5 rounded-full bg-secondary/10 text-secondary text-[10px] font-black">CONF 76</span>
+        </div>
+        <h3 class="headline text-lg font-black leading-tight mb-3">
+          "Onboarding friction" is the largest topic cluster
+        </h3>
+        <div class="space-y-2 mb-3 text-xs">
+          <div class="flex items-center gap-2">
+            <div class="flex-1 flex items-center gap-2"><span class="font-bold">Email verification loop</span><span class="text-on-surface-variant">24 mentions</span></div>
+            <span class="px-1.5 py-0.5 rounded bg-error/10 text-error text-[9px] font-bold">92% NEG</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex-1 flex items-center gap-2"><span class="font-bold">Password reset confusion</span><span class="text-on-surface-variant">18</span></div>
+            <span class="px-1.5 py-0.5 rounded bg-error/10 text-error text-[9px] font-bold">78% NEG</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="flex-1 flex items-center gap-2"><span class="font-bold">Profile setup steps</span><span class="text-on-surface-variant">12</span></div>
+            <span class="px-1.5 py-0.5 rounded bg-warning/10 text-warning text-[9px] font-bold">52% NEG</span>
+          </div>
+        </div>
+        <div class="bg-surface-container-lowest rounded-xl p-3 mb-3">
+          <p class="text-xs italic">"I spent 15 minutes in the verification loop, then gave up."</p>
+          <p class="text-[10px] text-on-surface-variant mt-1">— r1188 · NPS 2 · frustration</p>
+        </div>
+        <button class="w-full px-3 py-2 rounded-lg bg-secondary/10 text-secondary text-xs font-bold flex items-center justify-center gap-1.5">
+          Explore all 102 quotes →
+        </button>
+      </div>
+
+      <!-- Predictive -->
+      <div class="lg:col-span-7 glass-card-premium rounded-2xl p-6 soft-extrusion">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <span class="material-symbols-outlined text-primary" style="font-size:16px;">insights</span>
+            <span class="text-[10px] font-black uppercase tracking-widest text-primary">PREDICTIVE · FORECAST</span>
+          </div>
+          <span class="px-2 py-0.5 rounded-full bg-primary/10 text-primary text-[10px] font-black">CONF 81</span>
+        </div>
+        <h3 class="headline text-lg font-black leading-tight mb-3">
+          Projected NPS at 500 responses: <span class="text-primary">51 ±4</span> by Friday
+        </h3>
+        <p class="text-sm leading-relaxed mb-4">
+          Based on response velocity and current sentiment trend, NPS is forecast to rise into the mid-50s as Promoters disproportionately complete the survey in late waves
+          <span class="citation-chip">[r2401]</span><span class="citation-chip">[r2415]</span>.
+        </p>
+        <!-- Forecast chart -->
+        <svg viewBox="0 0 600 100" class="w-full">
+          <defs><linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#879aff"/><stop offset="1" stop-color="#879aff" stop-opacity="0"/></linearGradient></defs>
+          <!-- past -->
+          <path d="M0,75 L60,60 L120,65 L180,50 L240,55 L300,45 L360,42"
+                stroke="#2a4bd9" stroke-width="2.5" fill="none"/>
+          <!-- forecast band -->
+          <path d="M360,42 L420,38 L480,32 L540,28 L600,26 L600,46 L540,50 L480,54 L420,58 L360,42 Z"
+                fill="url(#g2)" opacity="0.6"/>
+          <path d="M360,42 L420,38 L480,32 L540,28 L600,26"
+                stroke="#8329c8" stroke-width="2.5" stroke-dasharray="4 4" fill="none"/>
+          <line x1="360" y1="0" x2="360" y2="100" stroke="#abadaf" stroke-dasharray="2 4" />
+          <text x="368" y="14" font-size="9" fill="#595c5e" font-family="Inter" font-weight="700">NOW</text>
+        </svg>
+        <div class="flex items-center justify-between mt-2 text-[10px] text-on-surface-variant font-bold">
+          <span>312 resp</span><span>350</span><span>400</span><span>450</span><span>500 (Friday)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ask Insights -->
+    <div class="mt-6 glass-card-premium rounded-2xl p-5 holographic">
+      <div class="flex items-center gap-3 relative z-10">
+        <div class="w-10 h-10 rounded-xl gradient-hero flex items-center justify-center">
+          <span class="material-symbols-outlined text-white" style="font-size:22px;">auto_awesome</span>
+        </div>
+        <div class="flex-1">
+          <div class="text-[10px] font-black uppercase tracking-widest text-tertiary mb-0.5">⌘K · ASK INSIGHTS</div>
+          <div class="font-bold text-on-surface-variant">Ask anything — <span class="italic">"Why did NPS dip on May 10?"</span> · <span class="italic">"What would raise CSAT most?"</span></div>
+        </div>
+        <kbd class="px-2 py-1 rounded bg-surface-container-lowest border border-outline-variant/30 text-xs font-bold">⌘K</kbd>
+      </div>
+    </div>
+  </section>
+
+  <footer class="max-w-7xl mx-auto px-8 py-6 text-center text-xs text-on-surface-variant">
+    <span class="font-bold">Live</span> · 3 insights in last 60s · Last full scan 2m ago ·
+    <span class="underline cursor-pointer">View all 18 insights</span>
+  </footer>
+
+</body>
+</html>

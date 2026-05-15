@@ -335,7 +335,7 @@ Credits are the universal currency. Every action consumes credits. No seat licen
 - [ ] **4-2** Backend: add model selection logic based on org plan tier (free → Llama, paid → Claude Haiku, enterprise → Claude Sonnet)
 - [ ] **4-3** Backend: AI request queue with retry logic — wrap all OpenRouter calls with exponential backoff, 3 retries
 - [ ] **4-4** Backend: AI response caching — cache identical prompts in Firestore for 24h to reduce API costs
-- [ ] **4-5** Frontend: AI Copilot panel in `SurveyBuilderPage` — real streaming responses (use SSE endpoint)
+- [ ] **4-5** Frontend: Crystal (Experient Copilot) panel in `SurveyBuilderPage` — real streaming responses (use SSE endpoint)
 - [ ] **4-6** Backend: `POST /api/ai/improve-question` — take existing question, return improved version with explanation
 - [ ] **4-7** Backend: `POST /api/ai/suggest-followup` — given a question type and response pattern, suggest a follow-up question
 - [ ] **4-8** Backend: `POST /api/ai/translate-survey` — translate all question text to target language (consumes translation credits)

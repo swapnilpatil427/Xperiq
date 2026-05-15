@@ -10,6 +10,10 @@ import { SurveyBuilderPage } from './pages/SurveyBuilderPage';
 import { ResponseDashboardPage } from './pages/ResponseDashboardPage';
 import { InsightsDashboardPage } from './pages/InsightsDashboardPage';
 import { AdvancedInsightsPage } from './pages/AdvancedInsightsPage';
+import { InsightsBriefPage } from './pages/insights/InsightsBriefPage';
+import { InsightsMetricsPage } from './pages/insights/InsightsMetricsPage';
+import { InsightsFindingsPage } from './pages/insights/InsightsFindingsPage';
+import { InsightsSurfacedPage } from './pages/insights/InsightsSurfacedPage';
 import { ResponseCollectionPage } from './pages/ResponseCollectionPage';
 import { BrandSettingsPage } from './pages/BrandSettingsPage';
 import { TemplateLibraryPage } from './pages/TemplateLibraryPage';
@@ -62,6 +66,10 @@ export default function App() {
             <Route path={ROUTES.RESPONSE_DASHBOARD} element={<ErrorBoundary inline><ResponseDashboardPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS}           element={<ErrorBoundary inline><InsightsDashboardPage /></ErrorBoundary>} />
             <Route path={ROUTES.ADVANCED_INSIGHTS}  element={<ErrorBoundary inline><AdvancedInsightsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHTS_BRIEF}     element={<ErrorBoundary inline><InsightsBriefPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHTS_METRICS}   element={<ErrorBoundary inline><InsightsMetricsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHTS_FINDINGS}  element={<ErrorBoundary inline><InsightsFindingsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHTS_SURFACED}  element={<ErrorBoundary inline><InsightsSurfacedPage /></ErrorBoundary>} />
             <Route path={ROUTES.RESPONDENTS}        element={<ErrorBoundary inline><ResponseCollectionPage /></ErrorBoundary>} />
             <Route path={ROUTES.TEMPLATES}          element={<ErrorBoundary inline><TemplateLibraryPage /></ErrorBoundary>} />
             <Route path={ROUTES.TEMPLATE_EDITOR}    element={<ErrorBoundary inline><TemplateEditorPage /></ErrorBoundary>} />

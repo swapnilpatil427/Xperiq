@@ -82,7 +82,7 @@ function buildGreeting({ surveyTitle, questionCount, surveyType, surveySettings,
     msg += ' Tell me what to change and I\'ll apply it instantly.';
     return msg;
   }
-  return `Hi, I'm your Experient Copilot. Tell me what you'd like to do and I'll handle it.`;
+  return `Hi, I'm Crystal — Experient's AI copilot. Tell me what you'd like to do and I'll handle it.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
             >
               <span className="text-xs font-black"
                 style={{ background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                Experient Copilot
+                Crystal
               </span>
               <kbd className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-[#f3f4f6] text-[#6b7280] border border-[#e5e7eb]">⌘K</kbd>
             </motion.div>
@@ -193,10 +193,10 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
 
         <button
           onClick={() => setIsOpen((o) => !o)}
-          title="Experient Copilot (⌘K)"
+          title="Crystal — Experient Copilot (⌘K)"
           className="relative w-14 h-14 rounded-full flex items-center justify-center transition-transform hover:scale-110 active:scale-95"
           style={{ background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', boxShadow: '0 6px 24px rgba(79,110,247,0.38)' }}
-          aria-label="Open Experient Copilot"
+          aria-label="Open Crystal — Experient Copilot"
         >
           <AnimatePresence mode="wait">
             <motion.span
@@ -243,19 +243,18 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                 boxShadow: '0 20px 60px -8px rgba(42,75,217,0.14), 0 0 0 1px rgba(42,75,217,0.07)',
               }}
             >
-              {/* Header — white with gradient accents */}
-              <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0 border-b" style={{ borderColor: 'rgba(42,75,217,0.08)' }}>
+              {/* Header */}
+              <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0 border-b" style={{ borderColor: 'rgba(42,75,217,0.10)', background: 'linear-gradient(to bottom, rgba(42,75,217,0.035), transparent)' }}>
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, #eef2ff, #f3e8ff)' }}>
-                  <Icon name="auto_awesome" fill={1} size={16}
-                    style={{ color: 'transparent', backgroundImage: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} />
+                  style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                  <Icon name="diamond" size={16} style={{ color: 'white' }} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-extrabold font-headline leading-tight"
-                    style={{ background: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                    Experient Copilot
+                  <div className="flex items-center gap-1.5 leading-none mb-0.5">
+                    <span className="text-sm font-black text-on-surface">Crystal</span>
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(42,75,217,0.08)', color: '#2a4bd9' }}>Experient Copilot</span>
                   </div>
-                  <div className="text-[10px] text-[#9ca3af] font-medium">AI · Survey Intelligence</div>
+                  <div className="text-[10px] text-[#9ca3af] font-medium">Survey Intelligence · Builder</div>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <div className="flex items-center gap-1.5">
@@ -309,9 +308,8 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                     <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       {msg.role === 'ai' && (
                         <div className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center"
-                          style={{ background: 'linear-gradient(135deg, #eef2ff, #f3e8ff)' }}>
-                          <Icon name="auto_awesome" size={11}
-                            style={{ backgroundImage: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} />
+                          style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                          <Icon name="diamond" size={11} style={{ color: 'white' }} />
                         </div>
                       )}
                       <div className="flex flex-col gap-1.5 max-w-[84%]">
@@ -319,8 +317,8 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                           className="px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed"
                           style={
                             msg.role === 'user'
-                              ? { background: '#eff2ff', color: '#312e81', borderBottomRightRadius: 4 }
-                              : { background: '#f8f9fc', color: '#374151', borderBottomLeftRadius: 4 }
+                              ? { background: 'linear-gradient(135deg, #2a4bd9, #8329c8)', color: 'white', borderBottomRightRadius: 4 }
+                              : { background: 'rgba(42,75,217,0.04)', color: '#1e1e2e', border: '1px solid rgba(42,75,217,0.10)', borderBottomLeftRadius: 4 }
                           }
                         >
                           {msg.text}
@@ -361,9 +359,9 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                                 onClick={() => send(s)}
                                 disabled={loading}
                                 className="text-left text-[11px] px-2.5 py-1.5 rounded-xl font-medium transition-colors disabled:opacity-40"
-                                style={{ background: '#f0f5ff', color: '#4338ca', border: '1px solid #c7d2fe' }}
-                                onMouseEnter={(e) => { e.currentTarget.style.background = '#e0e7ff'; }}
-                                onMouseLeave={(e) => { e.currentTarget.style.background = '#f0f5ff'; }}
+                                style={{ background: 'rgba(42,75,217,0.06)', color: '#2a4bd9', border: '1px solid rgba(42,75,217,0.15)' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(42,75,217,0.12)'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(42,75,217,0.06)'; }}
                               >
                                 {s}
                               </button>
@@ -376,15 +374,14 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                   {loading && (
                     <div className="flex gap-2 justify-start">
                       <div className="w-6 h-6 rounded-full flex-shrink-0 mt-0.5 flex items-center justify-center"
-                        style={{ background: 'linear-gradient(135deg, #eef2ff, #f3e8ff)' }}>
-                        <Icon name="auto_awesome" size={11}
-                          style={{ backgroundImage: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} />
+                        style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                        <Icon name="diamond" size={11} style={{ color: 'white' }} />
                       </div>
-                      <div className="px-4 py-3 rounded-2xl" style={{ background: '#f8f9fc', borderBottomLeftRadius: 4 }}>
+                      <div className="px-4 py-3 rounded-2xl" style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.10)', borderBottomLeftRadius: 4 }}>
                         <div className="flex gap-1 items-center">
                           {[0, 1, 2].map((j) => (
                             <div key={j} className="w-1.5 h-1.5 rounded-full animate-bounce"
-                              style={{ background: '#a5b4fc', animationDelay: `${j * 0.15}s` }} />
+                              style={{ background: '#2a4bd9', animationDelay: `${j * 0.15}s` }} />
                           ))}
                         </div>
                       </div>
@@ -404,10 +401,10 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                         key={cmd}
                         onClick={() => send(cmd)}
                         disabled={loading}
-                        className="text-left px-3 py-2 text-xs font-medium rounded-xl text-[#4338ca] transition-colors disabled:opacity-40 truncate"
-                        style={{ background: '#f0f5ff' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = '#e0e7ff'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = '#f0f5ff'; }}
+                        className="text-left px-3 py-2 text-xs font-medium rounded-xl transition-colors disabled:opacity-40 truncate"
+                        style={{ background: 'rgba(42,75,217,0.06)', color: '#2a4bd9', border: '1px solid rgba(42,75,217,0.12)' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(42,75,217,0.12)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(42,75,217,0.06)'; }}
                       >
                         {cmd}
                       </button>
