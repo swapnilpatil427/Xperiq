@@ -1,5 +1,12 @@
+require('./polyfill-fetch'); // global fetch for Node < 18 — before Clerk/Sentry
 require('./instrument'); // Sentry — must be the very first require
-require('dotenv').config();
+
+// Load root .env first (shared secrets: AGENTS_INTERNAL_KEY, AI keys, DB, etc.)
+// then backend/.env for any backend-only overrides. First-loaded value wins unless
+// override:true, so root sets the authoritative shared values.
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+require('dotenv').config(); // backend/.env (CWD = backend/ when run via npm start)
 
 const Sentry  = require('@sentry/node');
 const express = require('express');
@@ -32,6 +39,7 @@ app.use('/api/workflows',   apiLimiter, require(`${dir}/workflows`));
 app.use('/api/org-profile', apiLimiter, require(`${dir}/orgProfile`));
 app.use('/api/orgs',       apiLimiter, require(`${dir}/orgs`));
 app.use('/api/orgs/me',    apiLimiter, require(`${dir}/members`));
+app.use('/api/copilot',    apiLimiter, require(`${dir}/copilot`));
 
 // ── Observability endpoints ───────────────────────────────────────────────────
 app.get('/api/health', (req, res) =>

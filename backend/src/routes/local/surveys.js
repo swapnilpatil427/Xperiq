@@ -1,5 +1,6 @@
 const express = require('express');
 const { requireAuth } = require('../../middleware/auth');
+const { requireRole } = require('../../middleware/requireRole');
 const { validate } = require('../../lib/validate');
 const { createSurveySchema, updateSurveySchema } = require('../../schemas/surveys');
 const db = require('../../lib/db');
@@ -169,7 +170,7 @@ router.get('/:id', requireAuth, async (req, res) => {
 
 // ── CREATE ────────────────────────────────────────────────────────────────────
 // Only survey-run fields are accepted; template-level data stays on the template.
-router.post('/', requireAuth, validate(createSurveySchema), async (req, res) => {
+router.post('/', requireAuth, requireRole('analyst'), validate(createSurveySchema), async (req, res) => {
   try {
     const {
       title,
@@ -208,7 +209,7 @@ router.post('/', requireAuth, validate(createSurveySchema), async (req, res) => 
 
 // ── UPDATE ────────────────────────────────────────────────────────────────────
 // Handles field updates and lifecycle status transitions.
-router.put('/:id', requireAuth, validate(updateSurveySchema), async (req, res) => {
+router.put('/:id', requireAuth, requireRole('analyst'), validate(updateSurveySchema), async (req, res) => {
   try {
     const {
       title,
@@ -256,7 +257,7 @@ router.put('/:id', requireAuth, validate(updateSurveySchema), async (req, res) =
 
 // ── SOFT DELETE ───────────────────────────────────────────────────────────────
 // Marks as deleted; data is retained for audit / accidental-delete recovery.
-router.delete('/:id', requireAuth, async (req, res) => {
+router.delete('/:id', requireAuth, requireRole('analyst'), async (req, res) => {
   try {
     const { rowCount } = await db.query(
       `UPDATE surveys SET deleted_at = NOW(), updated_at = NOW(), updated_by = $3
@@ -272,7 +273,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
 // ── PUBLISH ───────────────────────────────────────────────────────────────────
 // Sets published_at only on first publish (COALESCE preserves original timestamp on re-publish).
-router.post('/:id/publish', requireAuth, async (req, res) => {
+router.post('/:id/publish', requireAuth, requireRole('analyst'), async (req, res) => {
   try {
     // Guard: must have at least one question before going live.
     const { rows: [check] } = await db.query(

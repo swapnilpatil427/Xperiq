@@ -101,6 +101,9 @@ export function SurveyCreationPage() {
   const [launching, setLaunching] = useState<boolean>(false);
   const [launchResult, setLaunchResult] = useState<LaunchResult | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+  // Agents pipeline state
+  const [copilotRunId, setCopilotRunId] = useState<string | null>(null);
+  const [agentsDone, setAgentsDone] = useState<string[]>([]);  // completed agent names
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const api = useApi();
 
@@ -155,13 +158,49 @@ export function SurveyCreationPage() {
   async function handleGenerate() {
     if (!intent.trim()) return;
     setStep(2);
+    setAgentsDone([]);
+    setCopilotRunId(null);
+
+    // Try agents pipeline first; fall back to legacy if unavailable
     try {
-      const result = await api.generateSurvey(intent, selectedTypeId ?? undefined) as { questions: Question[] };
-      setQuestions(result.questions || []);
+      const { run_id } = await api.startRun({
+        intent: intent.trim(),
+        surveyTypeId: selectedTypeId ?? undefined,
+      });
+      setCopilotRunId(run_id);
+
+      // Poll until completed or failed (max 45s)
+      const deadline = Date.now() + 45_000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const status = await api.getRunStatus(run_id);
+        // Accumulate completed agents from stream_events
+        const done = status.stream_events
+          .filter((e) => e.event === 'agent_complete' && e.agent)
+          .map((e) => e.agent as string);
+        setAgentsDone(done);
+        if (status.status === 'completed') {
+          setQuestions((status.questions as Question[]) || []);
+          setStep(3);
+          return;
+        }
+        if (status.status === 'failed') {
+          setStep(3);
+          setQuestions([]);
+          return;
+        }
+      }
+      // Timed out — go to review with whatever we have
       setStep(3);
     } catch {
+      // Agents service unavailable — fall back to legacy endpoint
+      try {
+        const result = await api.generateSurvey(intent, selectedTypeId ?? undefined) as { questions: Question[] };
+        setQuestions(result.questions || []);
+      } catch {
+        setQuestions([]);
+      }
       setStep(3);
-      setQuestions([]);
     }
   }
 
@@ -366,18 +405,51 @@ export function SurveyCreationPage() {
                 {t('create.generating.description')}
               </p>
             </div>
-            <div className="flex gap-2">
-              {GENERATING_STEPS.map((label, i) => (
-                <div key={label} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-primary bg-white"
-                  style={{
-                    boxShadow: '0 4px 12px rgba(42,75,217,0.12)',
-                    animation: `fadeIn 0.5s ${i * 0.3}s both`,
-                  }}>
-                  <Icon name="check_circle" fill={1} size={12} />
-                  {label}
-                </div>
-              ))}
-            </div>
+            {/* Agent pipeline progress — shown when using agents service */}
+            {copilotRunId ? (
+              <div className="flex flex-wrap justify-center gap-2 max-w-sm">
+                {[
+                  { name: 'creator',     label: 'Survey Creator',   icon: 'edit_note' },
+                  { name: 'qc',          label: 'Quality Check',    icon: 'fact_check' },
+                  { name: 'compliance',  label: 'Compliance',       icon: 'shield' },
+                  { name: 'recommender', label: 'Recommendations',  icon: 'auto_awesome' },
+                ].map(({ name, label, icon }) => {
+                  const done = agentsDone.includes(name);
+                  const running = !done && agentsDone.length === ['creator','qc','compliance','recommender'].indexOf(name);
+                  return (
+                    <div key={name} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold"
+                      style={{
+                        background: done ? '#f0fdf4' : running ? '#eff2ff' : '#f3f4f6',
+                        color: done ? '#16a34a' : running ? '#4f6ef7' : '#9ca3af',
+                        border: `1px solid ${done ? '#bbf7d0' : running ? '#c7d2fe' : '#e5e7eb'}`,
+                        boxShadow: running ? '0 4px 12px rgba(42,75,217,0.12)' : 'none',
+                        transition: 'all 0.3s ease',
+                      }}>
+                      {done
+                        ? <Icon name="check_circle" fill={1} size={12} />
+                        : running
+                        ? <span className="w-3 h-3 rounded-full border-2 border-[#4f6ef7] border-t-transparent animate-spin inline-block" />
+                        : <Icon name={icon} size={12} />
+                      }
+                      {label}
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                {GENERATING_STEPS.map((label, i) => (
+                  <div key={label} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold text-primary bg-white"
+                    style={{
+                      boxShadow: '0 4px 12px rgba(42,75,217,0.12)',
+                      animation: `fadeIn 0.5s ${i * 0.3}s both`,
+                    }}>
+                    <Icon name="check_circle" fill={1} size={12} />
+                    {label}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -523,6 +595,7 @@ export function SurveyCreationPage() {
                               intent,
                               fromTemplate: selectedType,
                               templateId: selectedTypeId,
+                              runId: copilotRunId,
                             },
                           });
                         }}

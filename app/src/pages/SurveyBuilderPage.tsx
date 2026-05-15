@@ -547,69 +547,160 @@ function SkipLogicEditor({ q, allQuestions, onChange }: SkipLogicEditorProps) {
   const qAny = q as unknown as Record<string, unknown>;
   const rules: SkipRule[]  = (qAny.skipLogic as SkipRule[]) || [];
   const others  = allQuestions.filter((x) => x.id !== q.id);
-  const OPERATORS = [
-    { value: 'eq',          label: 'equals' },
-    { value: 'neq',         label: 'not equals' },
-    { value: 'lt',          label: 'less than' },
-    { value: 'lte',         label: 'less than or equal' },
-    { value: 'gt',          label: 'greater than' },
-    { value: 'gte',         label: 'greater than or equal' },
-    { value: 'contains',    label: 'contains' },
-    { value: 'answered',    label: 'is answered' },
-    { value: 'not_answered',label: 'is not answered' },
-  ];
+
+  // Operators available per question type category
+  const NUMERIC_OPS   = ['lt', 'lte', 'gt', 'gte', 'eq', 'neq', 'answered', 'not_answered'];
+  const CHOICE_OPS    = ['eq', 'neq', 'contains', 'answered', 'not_answered'];
+  const TEXT_OPS      = ['answered', 'not_answered', 'contains', 'eq', 'neq'];
+  const DEFAULT_OPS   = ['eq', 'neq', 'answered', 'not_answered'];
+
+  const NUMERIC_TYPES = new Set(['nps', 'rating', 'slider', 'csat']);
+  const CHOICE_TYPES  = new Set(['multiple_choice', 'checkbox', 'dropdown', 'ranking']);
+  const TEXT_TYPES    = new Set(['open_text', 'short_text']);
+
+  const ALL_OP_LABELS: Record<string, string> = {
+    eq:          'equals',
+    neq:         'not equals',
+    lt:          'less than',
+    lte:         'less than or equal',
+    gt:          'greater than',
+    gte:         'greater than or equal',
+    contains:    'contains',
+    answered:    'is answered',
+    not_answered:'is not answered',
+  };
+
+  function getOpsForType(type: string): string[] {
+    if (NUMERIC_TYPES.has(type))  return NUMERIC_OPS;
+    if (CHOICE_TYPES.has(type))   return CHOICE_OPS;
+    if (TEXT_TYPES.has(type))     return TEXT_OPS;
+    return DEFAULT_OPS;
+  }
+
+  const availableOps = getOpsForType(q.type);
+  const qOptions: string[] = (qAny.options as string[]) || [];
+  const isChoiceType = CHOICE_TYPES.has(q.type);
+
+  // Smart default operator when adding a new rule
+  function defaultOperator(): string {
+    if (NUMERIC_TYPES.has(q.type)) return 'lt';
+    if (CHOICE_TYPES.has(q.type))  return 'eq';
+    return 'answered';
+  }
+
+  // Smart default value when adding a new rule
+  function defaultValue(): string {
+    if (q.type === 'nps')    return '7';
+    if (q.type === 'rating') return String((qAny.scaleMax as number) ?? 3);
+    if (q.type === 'slider') return String((qAny.min as number) ?? 0);
+    if (qOptions.length > 0) return qOptions[0];
+    return '';
+  }
+
+  // Numeric hint placeholder
+  function valuePlaceholder(): string {
+    if (q.type === 'nps')    return '0–10';
+    if (q.type === 'rating') return `1–${(qAny.scaleMax as number) ?? 5}`;
+    if (q.type === 'slider') return `${(qAny.min as number) ?? 0}–${(qAny.max as number) ?? 100}`;
+    if (q.type === 'csat')   return '1–5';
+    return 'Value…';
+  }
+
+  // When operator changes, reset value if it no longer makes sense
+  function handleOperatorChange(ruleId: string, newOp: string) {
+    const noVal = newOp === 'answered' || newOp === 'not_answered';
+    updateCond(ruleId, { operator: newOp, value: noVal ? '' : defaultValue() });
+  }
 
   const addRule = () => onChange([
     ...rules,
-    { id: `sl_${Date.now()}`, condition: { operator: 'lt', value: '7' }, destination: others[0]?.id || 'END_SURVEY' },
+    {
+      id:          `sl_${Date.now()}`,
+      condition:   { operator: defaultOperator(), value: defaultValue() },
+      destination: others[0]?.id || 'END_SURVEY',
+    },
   ]);
-  const removeRule = (id: string) => onChange(rules.filter((r) => r.id !== id));
-  const updateRule = (id: string, patch: Partial<SkipRule>) => onChange(rules.map((r) => r.id === id ? { ...r, ...patch } : r));
-  const updateCond = (id: string, patch: Partial<SkipRule['condition']>) => onChange(rules.map((r) => r.id === id ? { ...r, condition: { ...r.condition, ...patch } } : r));
+  const removeRule  = (id: string) => onChange(rules.filter((r) => r.id !== id));
+  const updateRule  = (id: string, patch: Partial<SkipRule>) => onChange(rules.map((r) => r.id === id ? { ...r, ...patch } : r));
+  const updateCond  = (id: string, patch: Partial<SkipRule['condition']>) => onChange(rules.map((r) => r.id === id ? { ...r, condition: { ...r.condition, ...patch } } : r));
 
   const noValueNeeded = (op: string) => op === 'answered' || op === 'not_answered';
 
   return (
     <div className="space-y-3">
-      {rules.map((rule) => (
-        <div key={rule.id} className="rounded-xl p-3 space-y-2 bg-[rgba(42,75,217,0.04)] border border-[rgba(42,75,217,0.12)]">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--color-primary)]">If answer…</span>
-            <Button variant="ghost" size="icon" onClick={() => removeRule(rule.id)} className="h-6 w-6 rounded">
-              <Icon name="close" size={14} className="text-destructive" />
-            </Button>
-          </div>
-          <Select value={rule.condition.operator} onValueChange={(v: string) => updateCond(rule.id, { operator: v })}>
-            <SelectTrigger className="w-full text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {OPERATORS.map((op) => <SelectItem key={op.value} value={op.value}>{op.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          {!noValueNeeded(rule.condition.operator) && (
-            <Input type="text" value={rule.condition.value} onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCond(rule.id, { value: e.target.value })}
-              placeholder="Value…"
-              className="w-full text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground focus-visible:ring-1" />
-          )}
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-black uppercase tracking-widest text-[var(--color-primary)]">Then…</span>
-            <Select value={rule.destination} onValueChange={(v: string) => updateRule(rule.id, { destination: v })}>
-              <SelectTrigger className="flex-1 text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground">
+      {rules.map((rule) => {
+        const needsValue = !noValueNeeded(rule.condition.operator);
+        return (
+          <div key={rule.id} className="rounded-xl p-3 space-y-2 bg-[rgba(42,75,217,0.04)] border border-[rgba(42,75,217,0.12)]">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--color-primary)]">If answer…</span>
+              <Button variant="ghost" size="icon" onClick={() => removeRule(rule.id)} className="h-6 w-6 rounded">
+                <Icon name="close" size={14} className="text-destructive" />
+              </Button>
+            </div>
+
+            {/* Operator selector — filtered to relevant operators for this question type */}
+            <Select
+              value={availableOps.includes(rule.condition.operator) ? rule.condition.operator : availableOps[0]}
+              onValueChange={(v: string) => handleOperatorChange(rule.id, v)}
+            >
+              <SelectTrigger className="w-full text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {others.map((x) => (
-                  <SelectItem key={x.id} value={x.id}>
-                    Jump to Q{allQuestions.indexOf(x) + 1}: {x.question.slice(0, 40) || `(Q${allQuestions.indexOf(x) + 1})`}
-                  </SelectItem>
+                {availableOps.map((op) => (
+                  <SelectItem key={op} value={op}>{ALL_OP_LABELS[op]}</SelectItem>
                 ))}
-                <SelectItem value="END_SURVEY">End survey</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Value input — options dropdown for choice types, plain input for others */}
+            {needsValue && (
+              isChoiceType && qOptions.length > 0 ? (
+                <Select
+                  value={rule.condition.value}
+                  onValueChange={(v: string) => updateCond(rule.id, { value: v })}
+                >
+                  <SelectTrigger className="w-full text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground">
+                    <SelectValue placeholder="Select option…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {qOptions.map((opt: string) => (
+                      <SelectItem key={opt} value={opt}>{opt}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Input
+                  type={NUMERIC_TYPES.has(q.type) ? 'number' : 'text'}
+                  value={rule.condition.value}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateCond(rule.id, { value: e.target.value })}
+                  placeholder={valuePlaceholder()}
+                  className="w-full text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground focus-visible:ring-1"
+                />
+              )
+            )}
+
+            {/* Destination selector */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black uppercase tracking-widest text-[var(--color-primary)]">Then…</span>
+              <Select value={rule.destination} onValueChange={(v: string) => updateRule(rule.id, { destination: v })}>
+                <SelectTrigger className="flex-1 text-xs h-8 rounded-lg bg-[#f5f7f9] border-[#dfe3e6] text-foreground">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {others.map((x) => (
+                    <SelectItem key={x.id} value={x.id}>
+                      Jump to Q{allQuestions.indexOf(x) + 1}: {x.question.slice(0, 40) || `(Q${allQuestions.indexOf(x) + 1})`}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value="END_SURVEY">End survey</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
       <Button
         variant="outline"
         onClick={addRule}
@@ -1656,6 +1747,8 @@ export function SurveyBuilderPage() {
   const [surveyId,     setSurveyId]     = useState<string | null>(
     surveyIdParam && surveyIdParam !== 'new' ? surveyIdParam : ((pending?.id as string) || null)
   );
+  // Agent run ID — set when survey was created via agents pipeline; enables copilotRefine
+  const [copilotRunId, setCopilotRunId] = useState<string | null>((pending?.runId as string) || null);
 
   const fromTemplate = (pending?.fromTemplate as Template) || null;
 
@@ -1772,17 +1865,34 @@ export function SurveyBuilderPage() {
     });
   }, []);
 
-  const handleAiCommand = useCallback(async (message: string) => {
-    const rawResult = await api.refineSurvey(questions, message, {
-      surveyTypeId,
-      intent: surveySettings.intent || surveyTitle,
-      description: surveySettings.description,
-      templateId: surveySettings.templateId,
-    });
-    const result = rawResult as unknown as Record<string, unknown>;
-    if (result.questions) { isDirtyRef.current = true; setQuestions((result.questions as Question[]).map(mapAiToBuilderQuestion) as Question[]); }
+  const handleAiCommand = useCallback(async (
+    message: string,
+    conversationHistory: Array<{ role: 'user' | 'assistant'; content: string }> = [],
+  ) => {
+    let result: Record<string, unknown>;
+    if (copilotRunId) {
+      // Use agent pipeline when a run is available — returns changes/suggestions/compliance_risk
+      result = await api.copilotRefine(copilotRunId, {
+        message,
+        surveyTypeId: surveyTypeId ?? undefined,
+        intent: surveySettings.intent || surveyTitle,
+        conversationHistory,
+      }) as unknown as Record<string, unknown>;
+    } else {
+      // Legacy fallback for surveys created without the agents pipeline
+      result = await api.refineSurvey(questions, message, {
+        surveyTypeId,
+        intent: surveySettings.intent || surveyTitle,
+        description: surveySettings.description,
+        templateId: surveySettings.templateId,
+      }) as unknown as Record<string, unknown>;
+    }
+    if (result.questions && result.response_type !== 'answer') {
+      isDirtyRef.current = true;
+      setQuestions((result.questions as Question[]).map(mapAiToBuilderQuestion) as Question[]);
+    }
     return result;
-  }, [api, questions, surveyTypeId, surveyTitle, surveySettings]);
+  }, [api, copilotRunId, questions, surveyTypeId, surveyTitle, surveySettings]);
 
   const buildPayload = () => ({
     title: surveyTitle,
@@ -2152,6 +2262,7 @@ export function SurveyBuilderPage() {
           surveySettings,
           templateInfo: fromTemplate ? { label: fromTemplate.label } : undefined,
           isBuilder: true,
+          runId: copilotRunId ?? undefined,
         }}
         onRefine={handleAiCommand}
       />

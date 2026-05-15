@@ -8,10 +8,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface RefineResult {
-  questions?: unknown[];
-  explanation?: string;
-  actions?: CopilotAction[];
+export interface RefineResult {
+  questions?:       unknown[];
+  explanation?:     string;
+  response_type?:   'edit' | 'answer';
+  changes?:         Array<{ question_id?: string; what_changed?: string; action?: string }>;
+  suggestions?:     string[];
+  compliance_risk?: string;
+  actions?:         CopilotAction[];
 }
 
 interface CopilotAction {
@@ -20,10 +24,12 @@ interface CopilotAction {
 }
 
 interface CopilotContext {
-  surveyTitle?: string;
+  surveyTitle?:  string;
   questionCount?: number;
-  surveyType?: string;
-  isBuilder?: boolean;
+  surveyType?:   string;
+  isBuilder?:    boolean;
+  runId?:        string;     // agent run ID — enables CRUD endpoints
+  complianceRisk?: string;   // "low" | "medium" | "high"
   surveySettings?: {
     intent?: string;
     description?: string;
@@ -35,14 +41,17 @@ interface CopilotContext {
 }
 
 interface ChatMessage {
-  role: 'ai' | 'user';
-  text: string;
+  role:        'ai' | 'user';
+  text:        string;
+  changes?:    RefineResult['changes'];
+  suggestions?: string[];
+  risk?:       string;
 }
 
 export interface ExperientCopilotProps {
-  context?: CopilotContext;
-  onRefine?: (message: string) => Promise<RefineResult>;
-  onAction?: (action: CopilotAction) => void;
+  context?:       CopilotContext;
+  onRefine?:      (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<RefineResult>;
+  onAction?:      (action: CopilotAction) => void;
   quickCommands?: string[];
 }
 
@@ -124,15 +133,29 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
     setMessages((prev) => [...prev, { role: 'user', text: msg }]);
     setLoading(true);
     try {
-      const result = await onRefine(msg);
-      // Scaffold: if the result includes actions, dispatch them to the page
+      // Build conversation history from prior messages (exclude initial greeting, map 'ai'→'assistant')
+      const history = messages
+        .slice(1)           // skip the greeting
+        .slice(-8)          // last 4 exchanges (8 messages)
+        .map((m) => ({
+          role: (m.role === 'ai' ? 'assistant' : 'user') as 'user' | 'assistant',
+          content: m.text,
+        }));
+      const result = await onRefine(msg, history);
       if (result?.actions?.length && onAction) {
         result.actions.forEach((action) => onAction(action));
       }
+      const isAnswer = result?.response_type === 'answer';
       const count = result?.questions?.length;
       const explanation = result?.explanation
-        || (count ? `✓ Applied — survey updated to ${count} question${count !== 1 ? 's' : ''}.` : '✓ Done! Changes applied.');
-      setMessages((prev) => [...prev, { role: 'ai', text: explanation }]);
+        || (isAnswer ? '' : count ? `✓ Applied — survey updated to ${count} question${count !== 1 ? 's' : ''}.` : '✓ Done! Changes applied.');
+      setMessages((prev) => [...prev, {
+        role: 'ai',
+        text: explanation,
+        changes: isAnswer ? [] : result?.changes,
+        suggestions: result?.suggestions,
+        risk: result?.compliance_risk,
+      }]);
       if (!isOpen) setUnread((u) => u + 1);
     } catch {
       setMessages((prev) => [...prev, { role: 'ai', text: 'Something went wrong. Please try again.' }]);
@@ -140,7 +163,7 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
       setLoading(false);
       if (isOpen) setTimeout(() => inputRef.current?.focus(), 50);
     }
-  }, [input, loading, onRefine, onAction, isOpen]);
+  }, [input, loading, onRefine, onAction, isOpen, messages]);
 
   const hasContext = context.surveyTitle || context.questionCount != null;
 
@@ -291,15 +314,62 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, quickComman
                             style={{ backgroundImage: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} />
                         </div>
                       )}
-                      <div
-                        className="max-w-[84%] px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed"
-                        style={
-                          msg.role === 'user'
-                            ? { background: '#eff2ff', color: '#312e81', borderBottomRightRadius: 4 }
-                            : { background: '#f8f9fc', color: '#374151', borderBottomLeftRadius: 4 }
-                        }
-                      >
-                        {msg.text}
+                      <div className="flex flex-col gap-1.5 max-w-[84%]">
+                        <div
+                          className="px-3.5 py-2.5 rounded-2xl text-sm leading-relaxed"
+                          style={
+                            msg.role === 'user'
+                              ? { background: '#eff2ff', color: '#312e81', borderBottomRightRadius: 4 }
+                              : { background: '#f8f9fc', color: '#374151', borderBottomLeftRadius: 4 }
+                          }
+                        >
+                          {msg.text}
+                        </div>
+                        {/* Compliance risk badge */}
+                        {msg.risk && msg.risk !== 'low' && (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg self-start"
+                            style={{ background: msg.risk === 'high' ? '#fef2f2' : '#fffbeb', border: `1px solid ${msg.risk === 'high' ? '#fecaca' : '#fde68a'}` }}>
+                            <Icon name="warning" size={11} style={{ color: msg.risk === 'high' ? '#ef4444' : '#f59e0b' }} />
+                            <span className="text-[10px] font-semibold" style={{ color: msg.risk === 'high' ? '#dc2626' : '#d97706' }}>
+                              {msg.risk === 'high' ? 'High compliance risk' : 'Review compliance'}
+                            </span>
+                          </div>
+                        )}
+                        {/* Change summary chips */}
+                        {msg.changes && msg.changes.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-0.5">
+                            {msg.changes.slice(0, 4).map((c, ci) => (
+                              <span key={ci} className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                                style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+                                {c.action === 'removed' ? '− ' : c.action === 'added' ? '+ ' : '✎ '}
+                                {c.what_changed || `q${(c.question_id || '').slice(-4)}`}
+                              </span>
+                            ))}
+                            {msg.changes.length > 4 && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                                style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' }}>
+                                +{msg.changes.length - 4} more
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {/* Follow-up suggestion chips */}
+                        {msg.suggestions && msg.suggestions.length > 0 && (
+                          <div className="flex flex-col gap-1 mt-1">
+                            {msg.suggestions.slice(0, 3).map((s, si) => (
+                              <button key={si}
+                                onClick={() => send(s)}
+                                disabled={loading}
+                                className="text-left text-[11px] px-2.5 py-1.5 rounded-xl font-medium transition-colors disabled:opacity-40"
+                                style={{ background: '#f0f5ff', color: '#4338ca', border: '1px solid #c7d2fe' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = '#e0e7ff'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = '#f0f5ff'; }}
+                              >
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

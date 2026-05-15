@@ -11,7 +11,9 @@
     "dev": "nodemon src/index.js",
     "deploy": "firebase deploy --only functions",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "start:agents": "cd .. && agents/.venv/bin/python -m uvicorn agents.main:app --host 0.0.0.0 --port 8001",
+    "start:full": "concurrently --names 'backend,agents' --prefix-colors 'blue,green' 'npm run start' 'npm run start:agents'"
   },
   "dependencies": {
     "@clerk/backend": "^1.0.0",
@@ -28,11 +30,13 @@
     "pino": "^9.0.0",
     "pino-loki": "^2.3.0",
     "prom-client": "^15.1.0",
+    "undici": "^6.25.0",
     "uuid": "^9.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.6",
+    "concurrently": "^8.2.2",
     "light-my-request": "^6.6.0",
     "nodemon": "^3.1.0",
     "pino-pretty": "^11.0.0",

@@ -13,7 +13,18 @@ const MAX_HITS  = 5;
 function makeRedisStore(redisUrl) {
   const Redis = require('ioredis');
   const client = new Redis(redisUrl, { lazyConnect: true, enableOfflineQueue: false });
-  client.connect().catch((err) => console.error('[rateLimiter] Redis connect error:', err));
+
+  // Register error listener to prevent Node.js "Unhandled error event" process crash.
+  // Log only once — ioredis retries on a backoff schedule and floods the console otherwise.
+  let _warned = false;
+  client.on('error', (err) => {
+    if (!_warned) {
+      console.warn(`[rateLimiter] Redis unavailable (${err.message}) — falling back to in-memory rate limiting (not shared across processes)`);
+      _warned = true;
+    }
+  });
+
+  client.connect().catch(() => {}); // errors surfaced via 'error' listener above
 
   return {
     async increment(key, windowMs) {
@@ -60,7 +71,7 @@ const store = process.env.REDIS_URL
   : makeMemoryStore();
 
 if (!process.env.REDIS_URL) {
-  console.warn('[rateLimiter] REDIS_URL not set — using in-memory store. Not suitable for multi-instance deployments.');
+  console.warn('[rateLimiter] REDIS_URL not set — using in-memory store (run `npm run infra` or `npm start` to start Redis)');
 }
 
 // ── Middleware factory ────────────────────────────────────────────────────────

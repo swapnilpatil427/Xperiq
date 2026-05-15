@@ -20,6 +20,8 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { applyBrandTheme, saveBrandTheme, DEFAULT_BRAND_THEME } from '../lib/brandTheme';
 import { PageHeader } from '../components/PageHeader';
+import { usePermissions } from '../lib/permissions';
+import { PermissionDeniedBanner } from '../components/PermissionGate';
 
 const DEMO_TEAM_MEMBERS = [
   {
@@ -170,10 +172,12 @@ export function BrandSettingsPage() {
     finally { setLogoUploading(false); }
   }
 
+  const { isAdmin } = usePermissions();
+
   const tabs = [
     { key: 'General',      label: t('settings.tabs.general') },
     { key: 'Organization', label: 'Organization' },
-    { key: 'API Keys',     label: t('settings.tabs.apiKeys') },
+    ...(isAdmin ? [{ key: 'API Keys', label: t('settings.tabs.apiKeys') }] : []),
   ];
 
   const quickActions = [
@@ -627,7 +631,10 @@ export function BrandSettingsPage() {
             )}
 
             {/* ── API Keys Tab ── */}
-            {activeTab === 'API Keys' && (
+            {activeTab === 'API Keys' && !isAdmin && (
+              <div className="mt-8"><PermissionDeniedBanner /></div>
+            )}
+            {activeTab === 'API Keys' && isAdmin && (
               <Card
                 className="p-8 bg-white rounded-2xl border-0 mt-8"
                 style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}

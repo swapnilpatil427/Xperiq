@@ -14,6 +14,7 @@ import { useTranslation } from '../lib/i18n';
 import { Badge }   from '@/components/ui/badge';
 import { Button }  from '@/components/ui/button';
 import { PageHeader } from '../components/PageHeader';
+import { usePermissions } from '../lib/permissions';
 import type { Survey, SurveyStatus } from '../types';
 
 // ── constants ─────────────────────────────────────────────────────────────────
@@ -169,6 +170,7 @@ export function SurveysListPage() {
   const { t }    = useTranslation();
   const navigate = useNavigate();
   useSetPageTitle(t('surveys.pageTitle'));
+  const { isAnalyst } = usePermissions();
   const api      = useApi();
 
   // ── list state
@@ -282,14 +284,18 @@ export function SurveysListPage() {
                   className="rounded-xl font-headline text-on-surface-variant gap-1.5">
                   <Icon name="library_books" size={16} />{t('nav.templates')}
                 </Button>
-                <Button variant="gradient" size="sm" onClick={() => navigate(ROUTES.CREATE)}
-                  className="rounded-xl font-headline">
-                  <Icon name="auto_awesome" size={16} />{t('surveys.createWithAI')}
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => navigate(ROUTES.CREATE, { state: { mode: 'manual' } })}
-                  className="rounded-xl font-headline text-on-surface">
-                  <Icon name="add" size={16} />{t('surveys.manual')}
-                </Button>
+                {isAnalyst && (
+                  <Button variant="gradient" size="sm" onClick={() => navigate(ROUTES.CREATE)}
+                    className="rounded-xl font-headline">
+                    <Icon name="auto_awesome" size={16} />{t('surveys.createWithAI')}
+                  </Button>
+                )}
+                {isAnalyst && (
+                  <Button variant="outline" size="sm" onClick={() => navigate(ROUTES.CREATE, { state: { mode: 'manual' } })}
+                    className="rounded-xl font-headline text-on-surface">
+                    <Icon name="add" size={16} />{t('surveys.manual')}
+                  </Button>
+                )}
               </div>
             }
             className="mb-0"
@@ -550,10 +556,12 @@ export function SurveysListPage() {
                                 </DropdownMenuItem>
                               )}
                               {(survey.status === 'active' || survey.status === 'paused') && <DropdownMenuSeparator />}
-                              <DropdownMenuItem className="text-[#b41340] focus:text-[#b41340] focus:bg-[#fff0f0] gap-2"
-                                onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteTarget({ id: survey.id, title: survey.title, responseCount }); }}>
-                                <Icon name="delete" size={15} />{t('surveys.actions.delete')}
-                              </DropdownMenuItem>
+                              {isAnalyst && (
+                                <DropdownMenuItem className="text-[#b41340] focus:text-[#b41340] focus:bg-[#fff0f0] gap-2"
+                                  onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteTarget({ id: survey.id, title: survey.title, responseCount }); }}>
+                                  <Icon name="delete" size={15} />{t('surveys.actions.delete')}
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </div>
