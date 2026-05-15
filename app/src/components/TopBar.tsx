@@ -211,7 +211,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
                 </button>
               )}
             </div>
-            <SheetDescription className="sr-only">Copilot and survey activity notifications</SheetDescription>
+            <SheetDescription className="sr-only">Crystal and survey activity notifications</SheetDescription>
           </SheetHeader>
           <ScrollArea className="flex-1">
             {loading ? (
@@ -231,7 +231,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
                     style={{ backgroundImage: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} />
                 </div>
                 <p className="text-sm text-[#6b7280]">No notifications yet</p>
-                <p className="text-xs text-[#d1d5db]">Copilot activity will appear here</p>
+                <p className="text-xs text-[#d1d5db]">Crystal activity will appear here</p>
               </div>
             ) : (
               <div className="divide-y" style={{ borderColor: 'rgba(42,75,217,0.05)' }}>

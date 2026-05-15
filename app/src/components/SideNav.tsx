@@ -6,6 +6,7 @@ import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useCrystalPanel } from '../contexts/crystalPanel';
 
 const NAV_ITEMS = [
   { key: 'nav.surveys',     icon: 'poll',         path: ROUTES.SURVEYS },
@@ -27,6 +28,7 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
+  const { openCrystal, isOpen: crystalOpen } = useCrystalPanel();
 
   function isActive(path: string) {
     return location.pathname === path || location.pathname.startsWith(path + '/');
@@ -100,6 +102,54 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
               </button>
             );
           })}
+
+          {/* ◆ Crystal — Experient Copilot */}
+          {isExpanded ? (
+            <button
+              onClick={() => {
+                if (location.pathname !== ROUTES.INSIGHTS) navigate(ROUTES.INSIGHTS);
+                openCrystal();
+              }}
+              className={`sidenav-item${crystalOpen ? ' active active-bar' : ''}`}
+              style={crystalOpen ? { background: 'rgba(42,75,217,0.06)' } : undefined}
+            >
+              <span
+                className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0 text-white text-[11px]"
+                style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
+              >
+                ◆
+              </span>
+              <span className="truncate font-semibold">Crystal</span>
+              <span className="ml-auto text-[9px] font-bold text-on-surface-variant/70 font-mono">⌘K</span>
+              {crystalOpen && <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
+            </button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => {
+                    if (location.pathname !== ROUTES.INSIGHTS) navigate(ROUTES.INSIGHTS);
+                    openCrystal();
+                  }}
+                  className={`sidenav-item-collapsed${crystalOpen ? ' active' : ''}`}
+                  aria-label="Crystal — Experient Copilot (⌘K)"
+                >
+                  <span
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[11px] font-bold"
+                    style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
+                  >
+                    ◆
+                  </span>
+                  {crystalOpen && (
+                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-3/5 rounded-r-full bg-gradient-to-b from-primary to-tertiary" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="font-semibold text-xs">
+                Crystal · Experient Copilot
+              </TooltipContent>
+            </Tooltip>
+          )}
 
           {/* Divider before Settings */}
           <div className={`my-2 ${isExpanded ? 'mx-2' : 'mx-1'} divider-gradient`} />

@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Experient — Insights · Conversation Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#2a4bd9", "primary-container": "#879aff",
+          "secondary": "#00647c", "secondary-container": "#82deff",
+          "tertiary": "#8329c8", "tertiary-container": "#d299ff",
+          "surface": "#f5f7f9", "surface-bright": "#f5f7f9",
+          "surface-container": "#e5e9eb", "surface-container-low": "#eef1f3",
+          "surface-container-high": "#dfe3e6", "surface-container-lowest": "#ffffff",
+          "on-surface": "#2c2f31", "on-surface-variant": "#595c5e",
+          "outline-variant": "#abadaf",
+          "success": "#059669", "warning": "#d97706", "error": "#b41340",
+        },
+        fontFamily: { headline: ["Manrope"], body: ["Inter"] },
+      },
+    },
+  }
+</script>
+<style>
+  body {
+    font-family: Inter, sans-serif;
+    background:
+      radial-gradient(circle at 50% 0%, rgba(135,154,255,0.15), transparent 50%),
+      radial-gradient(circle at 50% 100%, rgba(210,153,255,0.10), transparent 50%),
+      #f5f7f9;
+    color: #2c2f31; min-height: 100vh;
+  }
+  h1, h2, h3, .headline { font-family: Manrope, sans-serif; letter-spacing: -0.02em; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+
+  /* Crystal — single 3D focal element */
+  .crystal-wrap {
+    position: relative;
+    width: 220px; height: 220px;
+    margin: 0 auto;
+    filter: drop-shadow(0 20px 50px rgba(42,75,217,0.25));
+  }
+  .crystal {
+    position: absolute; inset: 0;
+    background: conic-gradient(from 0deg at 50% 50%,
+      #879aff 0%, #d299ff 25%, #82deff 50%, #d299ff 75%, #879aff 100%);
+    clip-path: polygon(50% 0%, 100% 30%, 100% 70%, 50% 100%, 0% 70%, 0% 30%);
+    animation: spin-crystal 24s linear infinite;
+    filter: blur(0.5px);
+  }
+  .crystal-inner {
+    position: absolute; inset: 22%;
+    background: conic-gradient(from 180deg at 50% 50%,
+      #ffffff 0%, #879aff 33%, #d299ff 66%, #ffffff 100%);
+    clip-path: polygon(50% 0%, 100% 30%, 100% 70%, 50% 100%, 0% 70%, 0% 30%);
+    animation: spin-crystal 12s linear infinite reverse;
+    opacity: 0.7;
+  }
+  .crystal-core {
+    position: absolute; inset: 40%;
+    background: radial-gradient(circle, #ffffff, #82deff);
+    border-radius: 50%;
+    filter: blur(6px);
+    animation: pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes spin-crystal { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes pulse { 0%,100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(1.15); opacity: 1; } }
+
+  .glass-card {
+    background: rgba(255,255,255,0.75);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255,255,255,0.6);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.05), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  .bubble-you {
+    background: linear-gradient(135deg, #2a4bd9, #8329c8);
+    color: white;
+  }
+  .bubble-ai {
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(24px);
+    border: 1px solid rgba(255,255,255,0.6);
+  }
+  .citation-chip {
+    display: inline-flex; padding: 1px 7px; margin: 0 1px;
+    border-radius: 999px; font-size: 10px; font-weight: 700;
+    background: rgba(42,75,217,0.12); color: #2a4bd9; cursor: pointer;
+  }
+  .citation-chip:hover { background: rgba(42,75,217,0.22); }
+  @keyframes fadeUp { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: translateY(0); } }
+  .fade-up { animation: fadeUp 0.5s cubic-bezier(0.22,1,0.36,1) both; }
+  @keyframes typing { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+  .typing-dot { animation: typing 1.2s ease-in-out infinite; }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+</style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <header class="sticky top-0 z-40 backdrop-blur-xl bg-surface/70 border-b border-outline-variant/20">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-tertiary"></div>
+        <span class="font-headline font-extrabold tracking-tight">Experient</span>
+        <span class="text-outline-variant">/</span>
+        <span class="text-on-surface-variant text-sm">Onboarding Survey · May 2026 · 312 responses</span>
+      </div>
+      <div class="flex items-center gap-3 text-xs">
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-success/10 text-success">
+          <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+          <span class="font-bold">Live</span>
+        </div>
+        <div class="px-3 py-1.5 rounded-full glass-card flex items-center gap-1.5">
+          <span class="material-symbols-outlined" style="font-size:16px;">view_quilt</span>
+          <select class="bg-transparent font-bold focus:outline-none cursor-pointer">
+            <option>Conversation</option><option>Editorial</option><option>Spatial</option><option>Cockpit</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-6 pt-12 pb-32">
+
+    <!-- Crystal -->
+    <div class="text-center mb-6">
+      <div class="crystal-wrap">
+        <div class="crystal"></div>
+        <div class="crystal-inner"></div>
+        <div class="crystal-core"></div>
+      </div>
+      <h1 class="headline text-3xl font-black mt-4">Ask anything about this survey</h1>
+      <p class="text-on-surface-variant mt-2 text-sm">Every answer cites real customer quotes. Numbers come from analytics tools, not the LLM.</p>
+    </div>
+
+    <!-- Input bar -->
+    <div class="glass-card rounded-2xl p-2 mb-8 flex items-center gap-2">
+      <button class="w-10 h-10 rounded-xl bg-surface-container hover:bg-surface-container-high flex items-center justify-center">
+        <span class="material-symbols-outlined text-on-surface-variant" style="font-size:20px;">mic</span>
+      </button>
+      <input type="text" placeholder="Type a question — &quot;why did NPS dip?&quot; or &quot;which segment is at risk?&quot;"
+             class="flex-1 px-3 py-2.5 bg-transparent focus:outline-none placeholder-on-surface-variant/70 text-on-surface" />
+      <button class="px-4 py-2.5 rounded-xl bg-gradient-to-br from-primary to-tertiary text-white text-sm font-bold flex items-center gap-1.5 hover:shadow-lg">
+        <span class="material-symbols-outlined" style="font-size:16px;">arrow_upward</span>
+        Ask
+      </button>
+    </div>
+
+    <!-- Suggested prompts -->
+    <div class="flex flex-wrap gap-2 mb-10">
+      <button class="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-container-high text-xs font-bold flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-tertiary" style="font-size:14px;">trending_down</span>
+        Why did NPS drop on May 10?
+      </button>
+      <button class="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-container-high text-xs font-bold flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-warning" style="font-size:14px;">warning</span>
+        Which segment is at highest churn risk?
+      </button>
+      <button class="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-container-high text-xs font-bold flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-success" style="font-size:14px;">lightbulb</span>
+        What action would raise CSAT most?
+      </button>
+      <button class="px-3 py-1.5 rounded-full bg-surface-container hover:bg-surface-container-high text-xs font-bold flex items-center gap-1.5">
+        <span class="material-symbols-outlined text-primary" style="font-size:14px;">compare</span>
+        Compare this to last quarter
+      </button>
+    </div>
+
+    <!-- Conversation -->
+    <section class="space-y-6 fade-up">
+      <div class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant text-center">— CONVERSATION —</div>
+
+      <!-- User bubble -->
+      <div class="flex justify-end fade-up">
+        <div class="bubble-you rounded-2xl rounded-br-sm px-5 py-3 max-w-[80%]">
+          <div class="text-[10px] font-bold uppercase tracking-widest opacity-80 mb-0.5">You · 2 min ago</div>
+          <div class="text-sm font-medium">Why did NPS drop on May 10?</div>
+        </div>
+      </div>
+
+      <!-- AI answer -->
+      <div class="flex gap-3 fade-up">
+        <div class="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center" style="background: linear-gradient(135deg, #2a4bd9, #8329c8);">
+          <span class="material-symbols-outlined text-white" style="font-size:18px;">diamond</span>
+        </div>
+        <div class="bubble-ai rounded-2xl rounded-bl-sm px-5 py-4 max-w-[85%]">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-tertiary mb-1.5">Crystal · just now · Conf 84</div>
+          <p class="text-sm leading-relaxed mb-3">
+            NPS dropped <strong>12 points (47 → 35)</strong> on May 10, outside the 95% prediction interval <strong class="mono">[42–52]</strong>
+            <span class="citation-chip">[r2104]</span><span class="citation-chip">[r2107]</span>.
+          </p>
+          <p class="text-sm leading-relaxed mb-3">
+            Two signals correlate:
+          </p>
+          <ul class="text-sm leading-relaxed space-y-1.5 mb-3 pl-4">
+            <li>• A spike of <strong>14 responses</strong> mentioning "login error" in the same 24h window <span class="citation-chip">[r2104]</span><span class="citation-chip">[r2111]</span><span class="citation-chip">[r2114]</span></li>
+            <li>• Average response sentiment dropped from <strong>+0.12 to −0.41</strong> (effect size large; p&lt;0.01)</li>
+          </ul>
+          <p class="text-sm leading-relaxed mb-4">
+            Likely root cause: the <strong>2026-05-10 14:12 UTC login outage</strong> (cross-referenced with your incident log).
+          </p>
+
+          <!-- Mini chart in bubble -->
+          <div class="bg-surface-container-low rounded-xl p-3 mb-4">
+            <div class="text-[10px] font-bold text-on-surface-variant mb-2 uppercase tracking-widest">NPS · May 7 to May 14</div>
+            <div class="flex items-end justify-between gap-1.5 h-16">
+              <div class="flex-1 rounded-t bg-primary/60" style="height:62%"></div>
+              <div class="flex-1 rounded-t bg-primary/60" style="height:65%"></div>
+              <div class="flex-1 rounded-t bg-primary/60" style="height:58%"></div>
+              <div class="flex-1 rounded-t bg-warning relative" style="height:25%">
+                <span class="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-black text-warning">35</span>
+              </div>
+              <div class="flex-1 rounded-t bg-warning/60" style="height:35%"></div>
+              <div class="flex-1 rounded-t bg-primary/60" style="height:54%"></div>
+              <div class="flex-1 rounded-t bg-primary/60" style="height:60%"></div>
+            </div>
+            <div class="flex items-center justify-between mt-1 text-[9px] text-on-surface-variant font-bold">
+              <span>May 7</span><span>10</span><span>14</span>
+            </div>
+          </div>
+
+          <!-- Method box -->
+          <div class="text-[11px] text-on-surface-variant bg-surface-container-low rounded-lg px-3 py-2 mb-4">
+            <span class="font-bold">Method:</span> Bayesian online changepoint detection (run-length posterior) + topic correlation against simultaneous responses. Verifier model: claude-haiku-4.5 → supported.
+          </div>
+
+          <!-- Action row -->
+          <div class="flex flex-wrap items-center gap-2 pt-3 border-t border-outline-variant/20">
+            <button class="px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-bold flex items-center gap-1.5">
+              <span class="material-symbols-outlined" style="font-size:14px;">format_quote</span> Show the 14 quotes
+            </button>
+            <button class="px-3 py-1.5 rounded-lg bg-surface-container text-xs font-bold flex items-center gap-1.5">
+              <span class="material-symbols-outlined" style="font-size:14px;">push_pin</span> Pin this answer
+            </button>
+            <button class="px-3 py-1.5 rounded-lg bg-surface-container text-xs font-bold flex items-center gap-1.5">
+              <span class="material-symbols-outlined" style="font-size:14px;">flag</span> Create ticket
+            </button>
+            <button class="px-3 py-1.5 rounded-lg bg-surface-container text-xs font-bold flex items-center gap-1.5">
+              <span class="material-symbols-outlined" style="font-size:14px;">slack</span> Send to Slack
+            </button>
+            <div class="flex-1"></div>
+            <button class="w-7 h-7 rounded bg-surface-container hover:bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined" style="font-size:14px;">thumb_up</span></button>
+            <button class="w-7 h-7 rounded bg-surface-container hover:bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined" style="font-size:14px;">thumb_down</span></button>
+            <button class="w-7 h-7 rounded bg-surface-container hover:bg-surface-container-high flex items-center justify-center"><span class="material-symbols-outlined" style="font-size:14px;">help</span></button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Follow-up suggested -->
+      <div class="flex justify-end items-center gap-2">
+        <span class="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">Follow up</span>
+        <button class="px-3 py-1.5 rounded-full bg-tertiary/10 text-tertiary text-xs font-bold hover:bg-tertiary/20">
+          Did the outage affect Enterprise customers more?
+        </button>
+        <button class="px-3 py-1.5 rounded-full bg-tertiary/10 text-tertiary text-xs font-bold hover:bg-tertiary/20">
+          How long did recovery take?
+        </button>
+      </div>
+
+      <!-- Typing indicator (next response) -->
+      <div class="flex gap-3 fade-up" style="display:none;">
+        <div class="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center" style="background: linear-gradient(135deg, #2a4bd9, #8329c8);">
+          <span class="material-symbols-outlined text-white" style="font-size:18px;">diamond</span>
+        </div>
+        <div class="bubble-ai rounded-2xl rounded-bl-sm px-5 py-4">
+          <div class="flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-tertiary typing-dot"></span>
+            <span class="w-2 h-2 rounded-full bg-tertiary typing-dot"></span>
+            <span class="w-2 h-2 rounded-full bg-tertiary typing-dot"></span>
+            <span class="text-[11px] text-on-surface-variant ml-2 font-bold">Calling compute_kda, retrieve_quotes…</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Auto-surfaced today -->
+    <section class="mt-16">
+      <div class="flex items-center gap-3 mb-5">
+        <div class="h-px flex-1 bg-outline-variant/30"></div>
+        <span class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant">AUTO-SURFACED TODAY</span>
+        <div class="h-px flex-1 bg-outline-variant/30"></div>
+      </div>
+
+      <div class="space-y-3">
+        <div class="glass-card rounded-2xl p-5 flex items-start gap-4 hover:scale-[1.01] transition cursor-pointer">
+          <span class="material-symbols-outlined text-tertiary mt-1" style="font-size:22px;">lightbulb</span>
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-[10px] font-black uppercase tracking-widest text-tertiary">DRIVER · 2h AGO</span>
+              <span class="px-1.5 rounded bg-success/10 text-success text-[9px] font-black">CONF 89</span>
+            </div>
+            <div class="font-bold text-sm mb-1">"Email verification loop" is now the top driver of detractor sentiment</div>
+            <p class="text-xs text-on-surface-variant">+3.2 NPS projected if fixed · 18 cited quotes · n=189</p>
+          </div>
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">arrow_forward</span>
+        </div>
+
+        <div class="glass-card rounded-2xl p-5 flex items-start gap-4 hover:scale-[1.01] transition cursor-pointer">
+          <span class="material-symbols-outlined text-success mt-1" style="font-size:22px;">trending_up</span>
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-[10px] font-black uppercase tracking-widest text-success">TREND · 4h AGO</span>
+              <span class="px-1.5 rounded bg-success/10 text-success text-[9px] font-black">CONF 91</span>
+            </div>
+            <div class="font-bold text-sm mb-1">Response velocity 2.3× normal — likely the email campaign you launched yesterday</div>
+            <p class="text-xs text-on-surface-variant">Sustained for 36h · 142 new responses · sentiment baseline +0.18 vs +0.05 average</p>
+          </div>
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">arrow_forward</span>
+        </div>
+
+        <div class="glass-card rounded-2xl p-5 flex items-start gap-4 hover:scale-[1.01] transition cursor-pointer border-l-4 border-error">
+          <span class="material-symbols-outlined text-error mt-1" style="font-size:22px;">balance</span>
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-[10px] font-black uppercase tracking-widest text-error">META · BIAS WARNING · 6h AGO</span>
+            </div>
+            <div class="font-bold text-sm mb-1">73% of responses are from Enterprise tier — aggregate NPS may overstate SMB experience</div>
+            <p class="text-xs text-on-surface-variant">Recommend stratified view or post-stratification weighting · see bias panel</p>
+          </div>
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">arrow_forward</span>
+        </div>
+
+        <div class="glass-card rounded-2xl p-5 flex items-start gap-4 hover:scale-[1.01] transition cursor-pointer">
+          <span class="material-symbols-outlined text-primary mt-1" style="font-size:22px;">insights</span>
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="text-[10px] font-black uppercase tracking-widest text-primary">PREDICT · 8h AGO</span>
+              <span class="px-1.5 rounded bg-primary/10 text-primary text-[9px] font-black">CONF 81</span>
+            </div>
+            <div class="font-bold text-sm mb-1">Projected NPS at 500 responses: 51 ±4 by Friday</div>
+            <p class="text-xs text-on-surface-variant">Prophet + 1000-bootstrap CI · Promoters disproportionately complete in late waves</p>
+          </div>
+          <span class="material-symbols-outlined text-on-surface-variant" style="font-size:18px;">arrow_forward</span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Floating credit / status -->
+  <div class="fixed bottom-6 right-6 z-50 glass-card rounded-2xl px-4 py-3 text-xs">
+    <div class="flex items-center gap-3">
+      <span class="material-symbols-outlined text-success" style="font-size:18px;">bolt</span>
+      <div>
+        <div class="font-bold text-on-surface">142 / 10,000 credits today</div>
+        <div class="text-on-surface-variant">~$0.029 spent · ~$0.0002/insight</div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

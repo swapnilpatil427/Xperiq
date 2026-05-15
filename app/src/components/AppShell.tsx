@@ -8,6 +8,7 @@ import { BottomNav } from './BottomNav';
 import { AppFooter } from './AppFooter';
 import { useSidebarState } from '../hooks/useSidebarState';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { CrystalPanelProvider, useCrystalPanel } from '../contexts/crystalPanel';
 
 const pageVariants: Variants = {
   initial: { opacity: 0, y: 10 },
@@ -15,10 +16,12 @@ const pageVariants: Variants = {
   exit:    { opacity: 0, y: -6, transition: { duration: 0.16, ease: [0.4, 0, 1, 1] } },
 };
 
-export function AppShell() {
+// Inner shell — consumes CrystalPanelProvider so ⌘K can call toggleCrystal.
+function AppShellInner() {
   const { isExpanded, toggle, setExpanded } = useSidebarState();
   const breakpoint = useBreakpoint();
   const location = useLocation();
+  const { toggleCrystal } = useCrystalPanel();
 
   const isMobile = breakpoint === 'mobile';
   const isTablet = breakpoint === 'tablet';
@@ -27,6 +30,20 @@ export function AppShell() {
   useEffect(() => {
     if (isTablet) setExpanded(false);
   }, [isTablet]);
+
+  // Global ⌘K / Ctrl+K shortcut to toggle Crystal panel
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        // Don't intercept ⌘K inside the survey builder (ExperientCopilot owns it there)
+        if (isBuilder) return;
+        e.preventDefault();
+        toggleCrystal();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [isBuilder, toggleCrystal]);
 
   const sidebarWidth = isMobile ? '0px' : isExpanded ? '16rem' : '3.5rem';
 
@@ -71,5 +88,13 @@ export function AppShell() {
 
       {isMobile && !isBuilder && <BottomNav />}
     </div>
+  );
+}
+
+export function AppShell() {
+  return (
+    <CrystalPanelProvider>
+      <AppShellInner />
+    </CrystalPanelProvider>
   );
 }

@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Experient — Insights · Mission Cockpit</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          "primary": "#2a4bd9", "primary-dim": "#173dcd", "primary-container": "#879aff",
+          "secondary": "#00647c", "secondary-container": "#82deff",
+          "tertiary": "#8329c8", "tertiary-container": "#d299ff",
+          "surface": "#f5f7f9", "surface-bright": "#f5f7f9",
+          "surface-container": "#e5e9eb", "surface-container-low": "#eef1f3",
+          "surface-container-high": "#dfe3e6", "surface-container-lowest": "#ffffff",
+          "on-surface": "#2c2f31", "on-surface-variant": "#595c5e",
+          "outline-variant": "#abadaf",
+          "success": "#059669", "warning": "#d97706", "error": "#b41340",
+        },
+        fontFamily: { headline: ["Manrope"], body: ["Inter"], mono: ["JetBrains Mono"] },
+      },
+    },
+  }
+</script>
+<style>
+  body { font-family: Inter, sans-serif; background: #eef1f3; color: #2c2f31; }
+  h1, h2, h3, .headline { font-family: Manrope, sans-serif; letter-spacing: -0.02em; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 500, 'GRAD' 0, 'opsz' 20; }
+  .soft-extrusion { box-shadow: 0 4px 12px -4px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9); }
+  .holographic { position: relative; overflow: hidden; }
+  .holographic::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: radial-gradient(circle at 30% 30%, rgba(135,154,255,0.20), transparent 50%), radial-gradient(circle at 70% 70%, rgba(210,153,255,0.20), transparent 50%);
+    background-size: 200% 200%; opacity: 0.7; animation: aurora 10s ease-in-out infinite;
+  }
+  @keyframes aurora { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+  @keyframes pulse-dot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.5; transform: scale(1.4); } }
+  .pulse-dot { animation: pulse-dot 1.5s ease-in-out infinite; }
+  @keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  .fresh {
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+    background-size: 200% 100%; animation: shimmer 2.5s ease-out;
+  }
+  .tile {
+    background: #ffffff;
+    border-radius: 12px;
+    border: 1px solid rgba(171,173,175,0.18);
+  }
+  .row-hover:hover { background: #f5f7f9; }
+  .sev-red { border-left: 3px solid #b41340; }
+  .sev-amber { border-left: 3px solid #d97706; }
+  .sev-blue { border-left: 3px solid #2a4bd9; }
+  .sev-purple { border-left: 3px solid #8329c8; }
+  .sev-teal { border-left: 3px solid #00647c; }
+  .sparkbar { display:inline-block; width:3px; margin-right:1px; background: currentColor; opacity: 0.6; vertical-align:bottom; }
+  .ci-mini { height: 4px; border-radius: 999px; background: linear-gradient(90deg, rgba(42,75,217,0.15), rgba(42,75,217,0.4), rgba(42,75,217,0.15)); position: relative; }
+  .ci-mini-marker { position: absolute; top: -2px; width: 2px; height: 8px; background: #2a4bd9; }
+</style>
+</head>
+<body class="min-h-screen">
+
+  <!-- Compact top bar -->
+  <header class="bg-white border-b border-outline-variant/30 sticky top-0 z-40">
+    <div class="px-5 py-2 flex items-center gap-4 text-xs">
+      <div class="flex items-center gap-2">
+        <div class="w-6 h-6 rounded bg-gradient-to-br from-primary to-tertiary"></div>
+        <span class="font-headline font-black tracking-tight text-base">Experient</span>
+      </div>
+      <span class="text-outline-variant">/</span>
+      <span class="font-bold">Onboarding Survey · May 2026</span>
+      <span class="text-on-surface-variant">312 responses · 84% completion · 4d left</span>
+      <div class="flex-1"></div>
+      <div class="flex items-center gap-2 px-2.5 py-1 rounded-full bg-success/10 text-success">
+        <span class="w-1.5 h-1.5 rounded-full bg-success pulse-dot"></span>
+        <span class="font-bold mono">LIVE · 12s</span>
+      </div>
+      <div class="flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container">
+        <span class="material-symbols-outlined" style="font-size:14px;">view_quilt</span>
+        <select class="bg-transparent font-bold text-xs focus:outline-none cursor-pointer">
+          <option>Cockpit</option><option>Editorial</option><option>Spatial</option><option>Conversation</option>
+        </select>
+      </div>
+      <button class="w-7 h-7 rounded bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined" style="font-size:14px;">notifications</span></button>
+      <button class="w-7 h-7 rounded bg-surface-container flex items-center justify-center"><span class="material-symbols-outlined" style="font-size:14px;">tune</span></button>
+    </div>
+    <!-- KPI strip -->
+    <div class="px-5 py-3 bg-gradient-to-b from-white to-transparent grid grid-cols-5 gap-3">
+      <div class="tile soft-extrusion px-4 py-3 flex items-center gap-3">
+        <div>
+          <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-0.5">NPS</div>
+          <div class="flex items-baseline gap-1.5">
+            <span class="headline text-3xl font-black">47</span>
+            <span class="text-on-surface-variant text-xs mono">±5</span>
+          </div>
+          <div class="ci-mini mt-1.5" style="width:80px;"><div class="ci-mini-marker" style="left:46%;"></div></div>
+        </div>
+        <div class="flex-1"></div>
+        <div class="text-success text-xs flex flex-col items-end">
+          <span class="font-bold">+2</span>
+          <div class="text-[9px] mono">7d</div>
+        </div>
+        <div class="text-primary" style="line-height:0;">
+          <span class="sparkbar" style="height:10px;"></span><span class="sparkbar" style="height:14px;"></span><span class="sparkbar" style="height:12px;"></span><span class="sparkbar" style="height:18px;"></span><span class="sparkbar" style="height:16px;"></span><span class="sparkbar" style="height:22px;"></span><span class="sparkbar" style="height:20px;"></span>
+        </div>
+      </div>
+      <div class="tile soft-extrusion px-4 py-3 flex items-center gap-3">
+        <div>
+          <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-0.5">CSAT</div>
+          <div class="flex items-baseline gap-1.5"><span class="headline text-3xl font-black">4.2</span><span class="text-xs mono">/5</span></div>
+          <div class="ci-mini mt-1.5" style="width:80px;"><div class="ci-mini-marker" style="left:84%;"></div></div>
+        </div>
+        <div class="flex-1"></div>
+        <div class="text-on-surface-variant text-xs">→</div>
+      </div>
+      <div class="tile soft-extrusion px-4 py-3 flex items-center gap-3">
+        <div>
+          <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-0.5">CES</div>
+          <div class="flex items-baseline gap-1.5"><span class="headline text-3xl font-black">2.4</span><span class="text-xs mono">/7</span></div>
+          <div class="ci-mini mt-1.5" style="width:80px;"><div class="ci-mini-marker" style="left:34%;"></div></div>
+        </div>
+        <div class="flex-1"></div>
+        <div class="text-success text-xs font-bold">low</div>
+      </div>
+      <div class="tile soft-extrusion px-4 py-3">
+        <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-0.5">RESPONSE COUNT</div>
+        <div class="flex items-baseline gap-1.5"><span class="headline text-3xl font-black">312</span><span class="text-xs mono">/ 500</span></div>
+        <div class="h-1 rounded-full bg-surface-container mt-2 overflow-hidden">
+          <div class="h-full bg-gradient-to-r from-primary to-tertiary" style="width:62%;"></div>
+        </div>
+      </div>
+      <div class="tile soft-extrusion holographic px-4 py-3 text-white" style="background: linear-gradient(135deg, #2a4bd9, #8329c8);">
+        <div class="text-[9px] font-black uppercase tracking-widest opacity-90 mb-0.5 relative z-10">TOP ACTION · +3.2 NPS</div>
+        <div class="font-headline font-black text-sm leading-tight relative z-10">Fix email verification loop</div>
+        <div class="flex items-center gap-2 mt-1 text-[10px] font-bold relative z-10">
+          <span>18 cited</span><span class="opacity-70">·</span><span>CONF 89</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- 3-column workspace -->
+  <main class="p-3 grid gap-3" style="grid-template-columns: 1.4fr 1.1fr 0.7fr;">
+
+    <!-- Priority Feed -->
+    <section class="tile soft-extrusion">
+      <div class="px-4 py-2 border-b border-outline-variant/20 flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary" style="font-size:18px;">priority_high</span>
+        <span class="font-headline font-black uppercase tracking-widest text-[10px]">Priority Feed</span>
+        <span class="px-1.5 py-0.5 rounded bg-surface-container text-[9px] font-black mono">18</span>
+        <div class="flex-1"></div>
+        <div class="flex items-center gap-1 text-[10px]">
+          <button class="px-2 py-0.5 rounded bg-primary/10 text-primary font-bold">All</button>
+          <button class="px-2 py-0.5 rounded text-on-surface-variant hover:bg-surface-container">L1</button>
+          <button class="px-2 py-0.5 rounded text-on-surface-variant hover:bg-surface-container">L2</button>
+          <button class="px-2 py-0.5 rounded text-on-surface-variant hover:bg-surface-container">L3</button>
+          <button class="px-2 py-0.5 rounded text-on-surface-variant hover:bg-surface-container">L4</button>
+        </div>
+      </div>
+
+      <div class="divide-y divide-outline-variant/15">
+        <!-- Anomaly -->
+        <div class="row-hover sev-amber px-4 py-3">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-warning mt-0.5" style="font-size:18px;">warning</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-[9px] font-black uppercase tracking-widest text-warning">ANOMALY · SPIKE</span>
+                <span class="text-[9px] mono text-on-surface-variant">12s ago</span>
+                <span class="px-1.5 rounded bg-warning/10 text-warning text-[9px] font-black">CONF 92</span>
+              </div>
+              <div class="font-bold text-sm leading-tight mb-1">NPS dropped 12 points on May 10 — likely login-error correlation</div>
+              <div class="text-[11px] text-on-surface-variant flex items-center gap-2">
+                <span>14 quotes</span><span>·</span><span>n=312</span><span>·</span><span>outside 95% PI</span>
+              </div>
+            </div>
+            <button class="text-[10px] font-bold text-primary whitespace-nowrap">See →</button>
+          </div>
+        </div>
+
+        <!-- Driver -->
+        <div class="row-hover sev-purple px-4 py-3">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-tertiary mt-0.5" style="font-size:18px;">local_fire_department</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-[9px] font-black uppercase tracking-widest text-tertiary">DRIVER · DIAGNOSTIC</span>
+                <span class="text-[9px] mono text-on-surface-variant">2m ago</span>
+                <span class="px-1.5 rounded bg-success/10 text-success text-[9px] font-black">CONF 89</span>
+              </div>
+              <div class="font-bold text-sm leading-tight mb-1">"Support response time" — #1 driver of NPS (importance 0.31)</div>
+              <div class="text-[11px] text-on-surface-variant flex items-center gap-2">
+                <span class="mono">[0.24, 0.38]</span><span>·</span><span>moved 4th → 1st in 30d</span><span>·</span><span>8 quotes</span>
+              </div>
+            </div>
+            <button class="text-[10px] font-bold text-primary whitespace-nowrap">See →</button>
+          </div>
+        </div>
+
+        <!-- Voice -->
+        <div class="row-hover sev-teal px-4 py-3">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-secondary mt-0.5" style="font-size:18px;">forum</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-[9px] font-black uppercase tracking-widest text-secondary">VOICE · TOPIC</span>
+                <span class="text-[9px] mono text-on-surface-variant">5m ago</span>
+                <span class="px-1.5 rounded bg-warning/10 text-warning text-[9px] font-black">CONF 76</span>
+              </div>
+              <div class="font-bold text-sm leading-tight mb-1">"Email verification loop" — 24 quotes, 62% frustration</div>
+              <div class="text-[11px] text-on-surface-variant italic">"I spent 15 minutes in the verification loop"</div>
+            </div>
+            <button class="text-[10px] font-bold text-primary whitespace-nowrap">See →</button>
+          </div>
+        </div>
+
+        <!-- Prescriptive -->
+        <div class="row-hover sev-blue px-4 py-3 fresh">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-primary mt-0.5" style="font-size:18px;">flag</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-[9px] font-black uppercase tracking-widest text-primary">ACTION · PRESCRIPTIVE</span>
+                <span class="text-[9px] mono text-on-surface-variant">8m ago</span>
+                <span class="px-1.5 rounded bg-success/10 text-success text-[9px] font-black">CONF 89</span>
+                <span class="px-1.5 rounded bg-primary/10 text-primary text-[9px] font-black">+3.2 NPS</span>
+              </div>
+              <div class="font-bold text-sm leading-tight mb-1">Fix email verification loop → projected NPS gain +3.2 ±1.8</div>
+              <div class="text-[11px] flex items-center gap-2">
+                <button class="px-2 py-0.5 rounded bg-primary text-white text-[10px] font-bold">Create ticket</button>
+                <span class="text-on-surface-variant">18 cited respondents</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Predictive -->
+        <div class="row-hover sev-blue px-4 py-3">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-primary mt-0.5" style="font-size:18px;">insights</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-[9px] font-black uppercase tracking-widest text-primary">PREDICT · FORECAST</span>
+                <span class="text-[9px] mono text-on-surface-variant">15m ago</span>
+                <span class="px-1.5 rounded bg-primary/10 text-primary text-[9px] font-black">CONF 81</span>
+              </div>
+              <div class="font-bold text-sm leading-tight mb-1">NPS at 500 responses projected at 51 ±4 by Friday</div>
+              <div class="text-[11px] text-on-surface-variant mono">Prophet · 1000-bootstrap CI</div>
+            </div>
+            <button class="text-[10px] font-bold text-primary whitespace-nowrap">See →</button>
+          </div>
+        </div>
+
+        <!-- Segment contrast -->
+        <div class="row-hover sev-purple px-4 py-3">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-tertiary mt-0.5" style="font-size:18px;">groups</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-[9px] font-black uppercase tracking-widest text-tertiary">SEGMENT · CONTRAST</span>
+                <span class="text-[9px] mono text-on-surface-variant">22m ago</span>
+                <span class="px-1.5 rounded bg-success/10 text-success text-[9px] font-black">CONF 87</span>
+              </div>
+              <div class="font-bold text-sm leading-tight mb-1">Enterprise NPS 62; SMB 31 — 31-point gap</div>
+              <div class="text-[11px] text-on-surface-variant">SMB driver shifted to "feature parity"</div>
+            </div>
+            <button class="text-[10px] font-bold text-primary whitespace-nowrap">See →</button>
+          </div>
+        </div>
+
+        <!-- Bias warning -->
+        <div class="row-hover sev-red px-4 py-3">
+          <div class="flex items-start gap-3">
+            <span class="material-symbols-outlined text-error mt-0.5" style="font-size:18px;">balance</span>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 mb-0.5">
+                <span class="text-[9px] font-black uppercase tracking-widest text-error">META · SAMPLE WARNING</span>
+                <span class="text-[9px] mono text-on-surface-variant">31m ago</span>
+              </div>
+              <div class="font-bold text-sm leading-tight mb-1">73% of responses from Enterprise — aggregate NPS may overstate SMB</div>
+              <div class="text-[11px] text-on-surface-variant">Suggest re-weighting; see bias panel</div>
+            </div>
+            <button class="text-[10px] font-bold text-primary whitespace-nowrap">See →</button>
+          </div>
+        </div>
+
+        <!-- Streaming placeholder -->
+        <div class="px-4 py-3 flex items-center gap-3 text-on-surface-variant">
+          <span class="material-symbols-outlined pulse-dot text-primary" style="font-size:16px;">radio_button_checked</span>
+          <span class="text-[11px] font-bold mono">+ 6 more · streaming</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Voice column -->
+    <section class="tile soft-extrusion">
+      <div class="px-4 py-2 border-b border-outline-variant/20 flex items-center gap-2">
+        <span class="material-symbols-outlined text-secondary" style="font-size:18px;">forum</span>
+        <span class="font-headline font-black uppercase tracking-widest text-[10px]">Voice</span>
+        <span class="px-1.5 py-0.5 rounded bg-surface-container text-[9px] font-black mono">12 topics · 489 verbatims</span>
+      </div>
+
+      <div class="px-4 py-3 border-b border-outline-variant/15">
+        <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-2">TOPIC CLUSTERS</div>
+        <div class="space-y-1.5">
+          <div class="flex items-center gap-2 row-hover py-1 rounded px-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+            <span class="text-xs font-bold flex-1 truncate">Onboarding friction</span>
+            <span class="text-[10px] mono text-on-surface-variant">102</span>
+            <span class="px-1.5 rounded bg-error/10 text-error text-[9px] font-black">NEG 76%</span>
+          </div>
+          <div class="flex items-center gap-2 row-hover py-1 rounded px-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-error"></span>
+            <span class="text-xs font-bold flex-1 truncate">Pricing transparency</span>
+            <span class="text-[10px] mono text-on-surface-variant">47</span>
+            <span class="px-1.5 rounded bg-error/10 text-error text-[9px] font-black">NEG 62%</span>
+          </div>
+          <div class="flex items-center gap-2 row-hover py-1 rounded px-1 bg-primary/5">
+            <span class="w-1.5 h-1.5 rounded-full bg-warning"></span>
+            <span class="text-xs font-bold flex-1 truncate">Support response time</span>
+            <span class="text-[10px] mono text-on-surface-variant">32</span>
+            <span class="px-1.5 rounded bg-warning/10 text-warning text-[9px] font-black">NEU 51%</span>
+          </div>
+          <div class="flex items-center gap-2 row-hover py-1 rounded px-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-error pulse-dot"></span>
+            <span class="text-xs font-bold flex-1 truncate">Email verification loop</span>
+            <span class="text-[10px] mono text-on-surface-variant">24</span>
+            <span class="px-1.5 rounded bg-error/10 text-error text-[9px] font-black">CRITICAL</span>
+          </div>
+          <div class="flex items-center gap-2 row-hover py-1 rounded px-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-warning"></span>
+            <span class="text-xs font-bold flex-1 truncate">Mobile crashes</span>
+            <span class="text-[10px] mono text-on-surface-variant">19</span>
+            <span class="px-1.5 rounded bg-warning/10 text-warning text-[9px] font-black">NEG 55%</span>
+          </div>
+          <div class="flex items-center gap-2 row-hover py-1 rounded px-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-warning"></span>
+            <span class="text-xs font-bold flex-1 truncate">Feature parity</span>
+            <span class="text-[10px] mono text-on-surface-variant">18</span>
+          </div>
+          <div class="flex items-center gap-2 row-hover py-1 rounded px-1">
+            <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
+            <span class="text-xs font-bold flex-1 truncate">Documentation clarity</span>
+            <span class="text-[10px] mono text-on-surface-variant">12</span>
+            <span class="px-1.5 rounded bg-success/10 text-success text-[9px] font-black">POS 68%</span>
+          </div>
+        </div>
+        <button class="mt-2 text-[10px] font-bold text-primary">+ 5 more · refine clusters →</button>
+      </div>
+
+      <div class="px-4 py-3 border-b border-outline-variant/15">
+        <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-2">EMOTION DISTRIBUTION</div>
+        <div class="space-y-1.5 text-[11px]">
+          <div class="flex items-center gap-2"><span class="w-20 text-on-surface-variant">frustration</span><div class="flex-1 h-2 rounded-full bg-surface-container relative overflow-hidden"><div class="absolute inset-y-0 left-0 bg-error" style="width:38%;"></div></div><span class="mono w-10 text-right font-bold">38%</span></div>
+          <div class="flex items-center gap-2"><span class="w-20 text-on-surface-variant">disappoint.</span><div class="flex-1 h-2 rounded-full bg-surface-container relative overflow-hidden"><div class="absolute inset-y-0 left-0 bg-warning" style="width:22%;"></div></div><span class="mono w-10 text-right font-bold">22%</span></div>
+          <div class="flex items-center gap-2"><span class="w-20 text-on-surface-variant">anger</span><div class="flex-1 h-2 rounded-full bg-surface-container relative overflow-hidden"><div class="absolute inset-y-0 left-0 bg-error/70" style="width:12%;"></div></div><span class="mono w-10 text-right font-bold">12%</span></div>
+          <div class="flex items-center gap-2"><span class="w-20 text-on-surface-variant">confusion</span><div class="flex-1 h-2 rounded-full bg-surface-container relative overflow-hidden"><div class="absolute inset-y-0 left-0 bg-warning/70" style="width:11%;"></div></div><span class="mono w-10 text-right font-bold">11%</span></div>
+          <div class="flex items-center gap-2"><span class="w-20 text-on-surface-variant">gratitude</span><div class="flex-1 h-2 rounded-full bg-surface-container relative overflow-hidden"><div class="absolute inset-y-0 left-0 bg-success" style="width:9%;"></div></div><span class="mono w-10 text-right font-bold">9%</span></div>
+          <div class="flex items-center gap-2"><span class="w-20 text-on-surface-variant">curiosity</span><div class="flex-1 h-2 rounded-full bg-surface-container relative overflow-hidden"><div class="absolute inset-y-0 left-0 bg-secondary" style="width:8%;"></div></div><span class="mono w-10 text-right font-bold">8%</span></div>
+        </div>
+      </div>
+
+      <div class="px-4 py-3">
+        <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-2">INTENT SIGNALS</div>
+        <div class="grid grid-cols-2 gap-2 text-[11px]">
+          <div class="bg-error/5 rounded px-2 py-1.5 flex items-center justify-between"><span class="font-bold text-error">churn-intent</span><span class="mono font-black">12</span></div>
+          <div class="bg-primary/5 rounded px-2 py-1.5 flex items-center justify-between"><span class="font-bold text-primary">suggestion</span><span class="mono font-black">31</span></div>
+          <div class="bg-warning/5 rounded px-2 py-1.5 flex items-center justify-between"><span class="font-bold text-warning">complaint</span><span class="mono font-black">67</span></div>
+          <div class="bg-success/5 rounded px-2 py-1.5 flex items-center justify-between"><span class="font-bold text-success">praise</span><span class="mono font-black">8</span></div>
+          <div class="bg-secondary/5 rounded px-2 py-1.5 flex items-center justify-between"><span class="font-bold text-secondary">question</span><span class="mono font-black">9</span></div>
+          <div class="bg-tertiary/5 rounded px-2 py-1.5 flex items-center justify-between"><span class="font-bold text-tertiary">urgent</span><span class="mono font-black">5</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Timeline / events column -->
+    <section class="tile soft-extrusion">
+      <div class="px-4 py-2 border-b border-outline-variant/20 flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary" style="font-size:18px;">timeline</span>
+        <span class="font-headline font-black uppercase tracking-widest text-[10px]">Timeline</span>
+      </div>
+
+      <div class="px-4 py-3 space-y-3 text-[11px]">
+        <div>
+          <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">SCAN CADENCE</div>
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-success pulse-dot"></span><span class="font-bold">Live</span><span class="text-on-surface-variant mono">12s</span></div>
+            <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-primary"></span><span class="font-bold">Topic recluster</span><span class="text-on-surface-variant mono">30s</span></div>
+            <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-tertiary"></span><span class="font-bold">Full DAG</span><span class="text-on-surface-variant mono">2m ago</span></div>
+            <div class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-outline-variant"></span><span class="text-on-surface-variant">Predictions</span><span class="text-on-surface-variant mono">5m</span></div>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-outline-variant/15">
+          <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">RECENT EVENTS</div>
+          <div class="space-y-2.5">
+            <div>
+              <div class="flex items-center gap-1.5"><span class="text-warning">⚠</span><span class="font-bold">NPS drop −12</span></div>
+              <div class="text-on-surface-variant mono pl-4">May 10 · 14:12</div>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5"><span class="text-primary">⚡</span><span class="font-bold">Email campaign</span></div>
+              <div class="text-on-surface-variant mono pl-4">May 14 · 09:00</div>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5"><span class="text-tertiary">📈</span><span class="font-bold">Regime change</span></div>
+              <div class="text-on-surface-variant mono pl-4">Mar 22 · driver shift</div>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5"><span class="text-success">✓</span><span class="font-bold">Verification fix</span></div>
+              <div class="text-on-surface-variant mono pl-4">Apr 1 · −60% topic</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="pt-3 border-t border-outline-variant/15">
+          <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">CREDITS BURNED</div>
+          <div class="flex items-baseline gap-1.5"><span class="headline text-2xl font-black">142</span><span class="text-on-surface-variant text-xs">/ 10,000 today</span></div>
+          <div class="h-1 rounded-full bg-surface-container mt-1 overflow-hidden">
+            <div class="h-full bg-success" style="width:1.4%;"></div>
+          </div>
+          <div class="text-[10px] text-on-surface-variant mt-1 mono">~$0.029 spent · 99.5% of budget left</div>
+        </div>
+
+        <div class="pt-3 border-t border-outline-variant/15">
+          <div class="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-1.5">TRUST AT A GLANCE</div>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between text-[11px]"><span>Citation validity</span><span class="font-black mono text-success">99.7%</span></div>
+            <div class="flex items-center justify-between text-[11px]"><span>Verifier pass rate</span><span class="font-black mono text-success">98.4%</span></div>
+            <div class="flex items-center justify-between text-[11px]"><span>Avg n / insight</span><span class="font-black mono">147</span></div>
+            <div class="flex items-center justify-between text-[11px]"><span>Reproducibility</span><span class="font-black mono text-success">✓</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Cmd+K floating -->
+  <div class="fixed bottom-4 left-1/2 -translate-x-1/2 z-50">
+    <button class="px-5 py-2.5 rounded-full bg-on-surface text-surface text-xs font-bold flex items-center gap-2 shadow-2xl hover:bg-primary">
+      <span class="material-symbols-outlined" style="font-size:16px;">auto_awesome</span>
+      Ask anything — <span class="opacity-50">"why did NPS dip?"</span>
+      <kbd class="ml-2 px-1.5 py-0.5 rounded bg-white/20 text-[10px]">⌘K</kbd>
+    </button>
+  </div>
+
+</body>
+</html>
