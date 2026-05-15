@@ -83,7 +83,7 @@ function NotificationItem({ n, onRead }: { n: Notification; onRead: (id: string)
         <p className="text-[10px] text-[#d1d5db] mt-1">{label}</p>
       </div>
       {!n.read && (
-        <div className="w-2 h-2 rounded-full bg-[#4f6ef7] flex-shrink-0 mt-2" />
+        <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-2" />
       )}
     </button>
   );
@@ -172,7 +172,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
             </div>
             <div
               className="rounded-xl p-4 text-sm space-y-2"
-              style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.1)' }}
+              style={{ background: 'color-mix(in srgb, var(--color-primary) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--color-primary) 10%, transparent)' }}
             >
               {[
                 ['Survey generation', '~10 credits'],
@@ -199,13 +199,13 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
       {/* Notifications Sheet */}
       <Sheet open={notifOpen} onOpenChange={handleNotifOpen}>
         <SheetContent side="right" className="w-96 p-0 flex flex-col">
-          <SheetHeader className="px-5 py-4 border-b flex-shrink-0" style={{ borderColor: 'rgba(42,75,217,0.08)' }}>
+          <SheetHeader className="px-5 py-4 border-b flex-shrink-0" style={{ borderColor: 'color-mix(in srgb, var(--color-primary) 8%, transparent)' }}>
             <div className="flex items-center justify-between">
               <SheetTitle className="font-headline text-base">Notifications</SheetTitle>
               {notifications.some((n) => !n.read) && (
                 <button
                   onClick={markAllRead}
-                  className="text-xs text-[#4f6ef7] font-semibold hover:underline"
+                  className="text-xs font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}
                 >
                   Mark all read
                 </button>
@@ -228,13 +228,13 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
                 <div className="w-12 h-12 rounded-full flex items-center justify-center"
                   style={{ background: 'linear-gradient(135deg, #eef2ff, #f3e8ff)' }}>
                   <Icon name="notifications" size={22}
-                    style={{ backgroundImage: 'linear-gradient(135deg, #4f6ef7, #9b51e0)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} />
+                    style={{ backgroundImage: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }} />
                 </div>
                 <p className="text-sm text-[#6b7280]">No notifications yet</p>
                 <p className="text-xs text-[#d1d5db]">Crystal activity will appear here</p>
               </div>
             ) : (
-              <div className="divide-y" style={{ borderColor: 'rgba(42,75,217,0.05)' }}>
+              <div className="divide-y" style={{ borderColor: 'color-mix(in srgb, var(--color-primary) 5%, transparent)' }}>
                 {notifications.map((n) => (
                   <NotificationItem key={n.id} n={n} onRead={markRead} />
                 ))}

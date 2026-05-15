@@ -29,7 +29,7 @@ class SkipLogicRule(BaseModel):
 
 class DisplayLogic(BaseModel):
     sourceQuestionId: str
-    operator:         str
+    operator:         Literal["eq", "neq", "lt", "gt", "lte", "gte", "contains", "answered", "not_answered"]
     value:            Any = None
 
 
@@ -37,16 +37,16 @@ class Question(BaseModel):
     id:       str
     type:     QuestionType
     question: str
-    required: bool = True
+    required: bool = False
 
     # Scale types (nps / rating / slider)
     labelLow:    str | None = None
     labelHigh:   str | None = None
     scaleMax:    int | None = None         # 5 | 7 | 10
-    ratingStyle: str | None = None         # "stars" | "numbers"
+    ratingStyle: Literal["stars", "numbers"] | None = None
 
     # CSAT
-    csatStyle:   str | None = None         # "emoji" | "stars" | "numbers"
+    csatStyle:   Literal["emoji", "stars", "numbers"] | None = None
 
     # Slider
     min:         float | None = None
@@ -63,15 +63,18 @@ class Question(BaseModel):
     # Text types
     placeholder: str | None = None
     maxLength:   int | None = None
-    validation:  str | None = None
+    validation:  Literal["email", "url", "number", "phone"] | None = None
 
     # Matrix
     rows:       list[str] | None = None
     columns:    list[str] | None = None
-    matrixType: str | None = None   # "radio" | "checkbox"
+    matrixType: Literal["radio", "checkbox"] | None = None
 
     # Date
-    dateType:   str | None = None   # "date" | "time" | "datetime"
+    dateType:   Literal["date", "time", "datetime"] | None = None
+
+    # Statement
+    isStatement: bool | None = None
 
     # Logic
     skipLogic:    list[SkipLogicRule] | None = None

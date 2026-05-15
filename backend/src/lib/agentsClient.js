@@ -93,13 +93,14 @@ async function getRunStatus(runId, orgId) {
  * @param {string}   [params.intent]       - original survey creation intent
  * @returns {Promise<{ questions, explanation, changes, suggestions }>}
  */
-async function refineRun(runId, { orgId, message, orgContext = {}, surveyTypeId, intent = '', conversationHistory = [] }) {
+async function refineRun(runId, { orgId, message, questions, orgContext = {}, surveyTypeId, intent = '', conversationHistory = [] }) {
   logger.info({ runId, orgId, message: message.slice(0, 60) }, 'agents:refineRun');
   return _fetch(`/orchestrate/${runId}/refine`, {
     method: 'POST',
     body: JSON.stringify({
       org_id:               orgId,
       message,
+      questions:            questions || null,
       org_context:          orgContext,
       survey_type_id:       surveyTypeId || null,
       intent,

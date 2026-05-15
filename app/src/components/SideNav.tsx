@@ -111,11 +111,11 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
                 openCrystal();
               }}
               className={`sidenav-item${crystalOpen ? ' active active-bar' : ''}`}
-              style={crystalOpen ? { background: 'rgba(42,75,217,0.06)' } : undefined}
+              style={crystalOpen ? { background: 'color-mix(in srgb, var(--color-primary) 6%, transparent)' } : undefined}
             >
               <span
                 className="w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0 text-white text-[11px]"
-                style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
+                style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}
               >
                 ◆
               </span>
@@ -136,7 +136,7 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
                 >
                   <span
                     className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[11px] font-bold"
-                    style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
+                    style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}
                   >
                     ◆
                   </span>
@@ -251,7 +251,7 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
                 <button
                   onClick={() => navigate(ROUTES.CREATE)}
                   className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold transition-transform hover:scale-105 active:scale-95"
-                  style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)', boxShadow: '0 6px 20px rgba(42,75,217,0.4)' }}
+                  style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))', boxShadow: '0 6px 20px color-mix(in srgb, var(--color-primary) 40%, transparent)' }}
                   aria-label={t('nav.createNewSurvey')}
                 >
                   <Icon name="add" size={18} />

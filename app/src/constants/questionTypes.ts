@@ -40,9 +40,12 @@ export function createQuestion(type: string) {
   return { ...base, ...(defaults[type] || {}) };
 }
 
-// Maps AI-generated question objects (4-type schema) → full 13-type builder schema.
+// Maps AI-generated question objects → full builder schema.
+// Spreads ALL AI fields over type defaults so skipLogic, displayLogic, csatStyle,
+// scaleMax, ratingStyle, matrixType, etc. are never silently discarded.
+// Null-guards on array/object fields prevent LLM null from overwriting array defaults.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function mapAiToBuilderQuestion(q: Record<string, any>) {
+export function mapAiToBuilderQuestion(q: Record<string, any>): import('../types').Question {
   const typeMap: Record<string, string> = {
     nps: 'nps', rating: 'rating', multiple_choice: 'multiple_choice', open_text: 'open_text',
     csat: 'csat', slider: 'slider', checkbox: 'checkbox', dropdown: 'dropdown',
@@ -52,13 +55,18 @@ export function mapAiToBuilderQuestion(q: Record<string, any>) {
   const base = createQuestion(type);
   return {
     ...base,
-    id:       q.id   || base.id,
-    question: q.question || base.question,
-    required: q.required ?? base.required,
-    ...(q.options    && { options:   q.options   as unknown[] }),
-    ...(q.rows       && { rows:      q.rows      as unknown[] }),
-    ...(q.columns    && { columns:   q.columns   as unknown[] }),
-    ...(q.labelLow   && { labelLow:  q.labelLow  as string }),
-    ...(q.labelHigh  && { labelHigh: q.labelHigh as string }),
-  };
+    ...q,
+    type,
+    id:           q.id       || base.id,
+    question:     q.question || base.question,
+    required:     q.required ?? base.required,
+    // Guard array/object fields — null from LLM must not override array defaults
+    skipLogic:    Array.isArray(q.skipLogic)   ? q.skipLogic   : (base as any).skipLogic ?? [],
+    displayLogic: q.displayLogic !== undefined  ? q.displayLogic : null,
+    // Guard type-specific fields — null must not override defaults
+    ...(q.csatStyle   != null ? { csatStyle:   q.csatStyle }   : {}),
+    ...(q.ratingStyle != null ? { ratingStyle: q.ratingStyle } : {}),
+    ...(q.matrixType  != null ? { matrixType:  q.matrixType }  : {}),
+    ...(q.dateType    != null ? { dateType:    q.dateType }    : {}),
+  } as import('../types').Question;
 }

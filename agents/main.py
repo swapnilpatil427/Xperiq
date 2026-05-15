@@ -126,6 +126,30 @@ def _questions_to_dicts(questions: list[Question]) -> list[dict]:
     return [q.model_dump(by_alias=True, exclude_none=True) for q in questions]
 
 
+async def _fresh_recommendations(
+    questions: list[Question],
+    row: dict,
+    org_context: OrgContext,
+    survey_type_id: str | None,
+    session_action: str,
+) -> list[dict]:
+    """Run the recommender on updated questions. Returns [] on any error so callers never fail."""
+    try:
+        inp = RecommenderInput(
+            questions=questions,
+            qc_score=float(row.get("qc_score") or 5.0),
+            intent=row.get("intent", ""),
+            org_context=org_context,
+            survey_type_id=survey_type_id,
+            session_actions=[SessionAction(action=session_action, context="applied via Copilot")],
+        )
+        output, _ = await recommender_agent.run(inp)
+        return [r.model_dump() for r in output.recommendations]
+    except Exception as exc:
+        logger.warning("recommender_failed", session_action=session_action, error=str(exc))
+        return []
+
+
 # ── Recommendation action dispatcher ─────────────────────────────────────────────
 
 _REFINE_ACTIONS   = {"refine_question", "review_in_builder"}
@@ -314,8 +338,15 @@ async def refine_survey(
     body:   RefineRequest,
     _key:   None = Depends(require_internal_key),
 ) -> RefineResponse:
-    row       = await _require_run(run_id, body.org_id)
-    questions = _load_questions(row)
+    row = await _require_run(run_id, body.org_id)
+
+    # Use frontend-provided questions when available — they reflect unsaved manual edits
+    if body.questions:
+        questions = body.questions
+        # Sync current state to agents DB so subsequent calls stay consistent
+        await db.save_run_questions(run_id, _questions_to_dicts(questions))
+    else:
+        questions = _load_questions(row)
 
     if not questions:
         raise HTTPException(status_code=422, detail="Run has no questions yet")
@@ -330,15 +361,40 @@ async def refine_survey(
     )
     output, _ = await copilot_agent.run(inp)
 
+    # MODE C — the LLM classified this as a recommendation request.
+    # Don't apply survey changes; run the recommender and return cards instead.
+    if output.response_type == "recommendations":
+        recommendations = await _fresh_recommendations(
+            questions, row, inp.org_context, body.survey_type_id,
+            session_action="view_recommendations",
+        )
+        logger.info("copilot_recommendations_requested", run_id=run_id, org_id=body.org_id)
+        return RefineResponse(
+            questions=questions,
+            explanation="Here are my recommendations for your survey:",
+            changes=[],
+            suggestions=[],
+            recommendations=recommendations,
+            response_type="answer",
+        )
+
+    # MODE B — survey edit applied.
     await db.save_run_questions(run_id, _questions_to_dicts(output.questions))
     logger.info("copilot_refine", run_id=run_id, org_id=body.org_id,
                 changes=len(output.changes))
+
+    recommendations = await _fresh_recommendations(
+        output.questions, row, inp.org_context, body.survey_type_id,
+        session_action="general_refine",
+    )
 
     return RefineResponse(
         questions=output.questions,
         explanation=output.explanation,
         changes=output.changes,
         suggestions=output.suggestions,
+        recommendations=recommendations,
+        response_type=output.response_type,
     )
 
 
@@ -465,6 +521,10 @@ async def patch_question(
     if target_idx is None:
         raise HTTPException(status_code=404, detail=f"Question {q_id} not found")
 
+    # Security boundary: body.org_id is validated by _require_run above, which calls
+    # db.get_run_by_id(run_id, org_id) — this ensures the run belongs to the org.
+    # The Node.js copilot.js route extracts req.orgId from the verified Clerk JWT and
+    # passes it here, so org_id is always org-scoped before reaching this service.
     # Merge fields — never allow ID or type to be changed via patch (use Refiner for type changes)
     safe_fields = {k: v for k, v in body.fields.items() if k not in ("id",)}
     q_dict = questions[target_idx].model_dump(by_alias=True)
@@ -544,10 +604,16 @@ async def apply_recommendation(
 
     logger.info("recommendation_applied", run_id=run_id, action=action_id, org_id=body.org_id)
 
+    recommendations = await _fresh_recommendations(
+        updated, row, body.org_context, body.survey_type_id,
+        session_action=action_id,
+    )
+
     return QuestionsResponse(
         questions=updated,
         message=message,
         changes=[{"action": action_id, "applied": True}],
+        recommendations=recommendations,
     )
 
 

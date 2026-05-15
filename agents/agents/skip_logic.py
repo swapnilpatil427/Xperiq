@@ -37,8 +37,13 @@ RULES:
 2. skipLogic goes on the SOURCE question (the one whose answer triggers the branch).
    Each rule: {{ "id": "rule_N", "condition": {{"operator": "...", "value": ...}}, "destination": "qX" | "END_SURVEY" }}
    Valid operators: eq, neq, lt, gt, lte, gte, contains, answered, not_answered
+   - Use numeric operators (lt/gt/lte/gte) for: nps (0–10), csat (1–5), rating (1–scaleMax), slider (min–max)
+   - Use eq/neq/contains for: multiple_choice, checkbox, dropdown, ranking (match option text exactly)
+   - Use answered/not_answered for: any type — these have NO value field: {{"operator": "answered"}}
+   - For numeric comparisons use the numeric value: {{"operator": "lt", "value": 7}}
 3. displayLogic goes on the TARGET question (the one that conditionally appears).
    Format: {{ "sourceQuestionId": "qX", "operator": "eq", "value": "Yes" }}
+   Source must be a PREVIOUS question.
 4. Destinations must be a LATER question ID or "END_SURVEY" — NEVER a previous question.
 5. If a question already has skipLogic, APPEND new rules rather than replacing them (unless the request says to replace).
 6. Return ALL questions (with changes applied). Unchanged questions must be returned exactly as given.
@@ -143,10 +148,15 @@ class SkipLogicAgent(BaseAgent):
         if guard_errors:
             logger.warning("skip_logic_guard_errors", errors=guard_errors)
 
+        summary = raw_output.summary
+        if guard_errors:
+            removed_count = len(guard_errors)
+            summary = f"{summary} Note: {removed_count} rule(s) were removed due to invalid destinations."
+
         return SkipLogicOutput(
             questions=validated,
             changes=raw_output.changes,
-            summary=raw_output.summary,
+            summary=summary,
         ), [entry.to_dict()]
 
 

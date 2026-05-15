@@ -22,7 +22,7 @@ const COST_PER_1K = {
   'gpt-4o-mini':      0.00015,
 };
 
-async function chat(messages, model = DEFAULT_MODEL, operation = 'chat') {
+async function chat(messages, model = DEFAULT_MODEL, operation = 'chat', maxTokens = 1500) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) throw new Error('OPENROUTER_API_KEY not set');
 
@@ -38,7 +38,7 @@ async function chat(messages, model = DEFAULT_MODEL, operation = 'chat') {
         'HTTP-Referer': 'https://experient.app',
         'X-Title': 'Experient',
       },
-      body: JSON.stringify({ model, messages, max_tokens: 1500 }),
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
     });
 
     if (!res.ok) {
@@ -91,7 +91,11 @@ async function generateSurveyQuestions(intent, surveyTypeId) {
     DEFAULT_MODEL,
     'generate-survey'
   );
-  return JSON.parse(content.trim());
+  try {
+    return JSON.parse(content.trim());
+  } catch {
+    throw new Error('AI returned invalid JSON for survey generation. Please retry.');
+  }
 }
 
 async function analyzeInsights(surveyTitle, responses) {
@@ -116,7 +120,11 @@ async function analyzeInsights(surveyTitle, responses) {
     DEFAULT_MODEL,
     'analyze-insights'
   );
-  return JSON.parse(content.trim());
+  try {
+    return JSON.parse(content.trim());
+  } catch {
+    throw new Error('AI returned invalid JSON for insights analysis. Please retry.');
+  }
 }
 
 async function refineSurveyQuestions(questions, message, context = {}) {
@@ -148,11 +156,22 @@ Return ONLY valid JSON — no markdown:
       { role: 'user',   content: `Survey type: ${context.surveyTypeId || 'general'}\nGoal: ${context.intent || ''}\n\nCurrent questions:\n${JSON.stringify(questions, null, 2)}\n\nChange request: "${message}"` },
     ],
     DEFAULT_MODEL,
-    'refine-survey'
+    'refine-survey',
+    4000,
   );
 
   const cleaned = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
-  return JSON.parse(cleaned);
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    // Truncated response means the model hit the token limit mid-JSON
+    const truncated = cleaned.length > 200;
+    throw new Error(
+      truncated
+        ? 'AI response was truncated — survey may be too large to refine in one pass. Try a more targeted request.'
+        : 'AI returned invalid JSON for survey refinement. Please retry.',
+    );
+  }
 }
 
 module.exports = { generateSurveyQuestions, analyzeInsights, refineSurveyQuestions };

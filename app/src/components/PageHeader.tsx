@@ -82,8 +82,8 @@ export function PageHeader({ crumbs = [], title, subtitle, actions, className = 
 
       {/* Title row — only rendered when title or actions are provided */}
       {(title || actions) && (
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
             {title && (
               <h1 className="text-2xl md:text-[1.75rem] font-extrabold tracking-tight font-headline text-on-surface leading-tight">
                 {title}
@@ -96,7 +96,7 @@ export function PageHeader({ crumbs = [], title, subtitle, actions, className = 
             )}
           </div>
           {actions && (
-            <div className="flex items-center gap-3 flex-shrink-0 pt-0.5">
+            <div className="flex items-center gap-2 flex-wrap pt-0.5">
               {actions}
             </div>
           )}

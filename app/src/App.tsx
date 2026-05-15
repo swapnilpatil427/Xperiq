@@ -24,6 +24,7 @@ import { SignInPage } from './pages/SignInPage';
 import { SurveyFillPage } from './pages/SurveyFillPage';
 import { ErrorPage } from './pages/ErrorPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { BrandProvider } from './contexts/brandContext';
 
 function ProtectedRoute() {
   const { isSignedIn, isLoaded } = useAppAuth();
@@ -34,7 +35,7 @@ function ProtectedRoute() {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="w-8 h-8 rounded-full border-2 animate-spin"
-          style={{ borderColor: 'rgba(42,75,217,0.2)', borderTopColor: '#2a4bd9' }} />
+          style={{ borderColor: 'color-mix(in srgb, var(--color-primary) 20%, transparent)', borderTopColor: 'var(--color-primary)' }} />
       </div>
     );
   }
@@ -59,7 +60,7 @@ export default function App() {
 
           {/* All app pages: wrapped in AppShell + inline boundary per page
               so a single page crash never breaks the nav or other pages */}
-          <Route element={<AppShell />}>
+          <Route element={<BrandProvider><AppShell /></BrandProvider>}>
             <Route path={ROUTES.BUILDER}            element={<ErrorBoundary inline><SurveyBuilderPage /></ErrorBoundary>} />
             <Route path={ROUTES.SURVEYS}            element={<ErrorBoundary inline><SurveysListPage /></ErrorBoundary>} />
             <Route path={ROUTES.CREATE}             element={<ErrorBoundary inline><SurveyCreationPage /></ErrorBoundary>} />

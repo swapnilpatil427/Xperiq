@@ -119,32 +119,28 @@ describe('useSurveys — successful API load', () => {
   });
 });
 
-// ── API failure fallback ──────────────────────────────────────────────────────
+// ── API failure error state ───────────────────────────────────────────────────
 
-describe('useSurveys — API failure fallback', () => {
-  it('falls back to MOCK data when the API throws', async () => {
+describe('useSurveys — API failure error state', () => {
+  it('sets error message when the API throws', async () => {
     mockListSurveys.mockRejectedValue(new Error('Network error'));
     const { result } = renderHook(() => useSurveys());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.surveys.length).toBeGreaterThan(0);
+    expect(result.current.error).toBe('Network error');
   });
 
-  it('keeps error = null even on API failure (graceful degradation)', async () => {
+  it('returns empty surveys array on API failure', async () => {
     mockListSurveys.mockRejectedValue(new Error('Timeout'));
     const { result } = renderHook(() => useSurveys());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.error).toBeNull();
+    expect(result.current.surveys).toEqual([]);
   });
 
-  it('MOCK fallback surveys all have required fields', async () => {
+  it('sets loading = false after API failure', async () => {
     mockListSurveys.mockRejectedValue(new Error('Network error'));
     const { result } = renderHook(() => useSurveys());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    result.current.surveys.forEach((s) => {
-      expect(s.id).toBeTruthy();
-      expect(s.title).toBeTruthy();
-      expect(s.status).toBeTruthy();
-    });
+    expect(result.current.loading).toBe(false);
   });
 });
 
@@ -184,37 +180,34 @@ describe('useSurveys — createSurvey', () => {
     expect(mockListSurveys).toHaveBeenCalledTimes(2);
   });
 
-  it('returns a mock survey when the API create fails', async () => {
+  it('throws when the API create fails', async () => {
     mockListSurveys.mockResolvedValue(EMPTY_LIST_RESULT);
     mockCreateSurvey.mockRejectedValue(new Error('API unavailable'));
 
     const { result } = renderHook(() => useSurveys());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    let created: Survey | undefined;
-    await act(async () => {
-      created = await result.current.createSurvey({ title: 'Fallback Survey', status: 'draft' });
-    });
-
-    expect(created).toBeDefined();
-    expect(created?.title).toBe('Fallback Survey');
-    expect(created?.status).toBe('draft');
-    expect(created?.id).toBeTruthy();
+    await expect(
+      act(async () => {
+        await result.current.createSurvey({ title: 'Will Fail', status: 'draft' });
+      })
+    ).rejects.toThrow('API unavailable');
   });
 
-  it('adds fallback survey to the list when API create fails', async () => {
+  it('does not add a survey to the list when create fails', async () => {
     mockListSurveys.mockResolvedValue(EMPTY_LIST_RESULT);
     mockCreateSurvey.mockRejectedValue(new Error('API error'));
 
     const { result } = renderHook(() => useSurveys());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    await act(async () => {
-      await result.current.createSurvey({ title: 'Optimistic Survey' });
-    });
+    try {
+      await act(async () => {
+        await result.current.createSurvey({ title: 'Ghost Survey' });
+      });
+    } catch { /* expected */ }
 
-    const titles = result.current.surveys.map((s) => s.title);
-    expect(titles).toContain('Optimistic Survey');
+    expect(result.current.surveys).toHaveLength(0);
   });
 });
 
@@ -387,7 +380,7 @@ describe('useSurveys — publishSurvey', () => {
     expect(result.current.surveys.find((s) => s.id === 's1')?.status).toBe('active');
   });
 
-  it('returns a mock token and marks status "active" when API publish fails', async () => {
+  it('throws when the API publish fails', async () => {
     const survey = makeSurvey({ id: 's1', status: 'draft' });
     mockListSurveys.mockResolvedValue(makeListResult([survey]));
     mockPublishSurvey.mockRejectedValue(new Error('API error'));
@@ -395,13 +388,26 @@ describe('useSurveys — publishSurvey', () => {
     const { result } = renderHook(() => useSurveys());
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    let published: { publishToken: string } | undefined;
-    await act(async () => {
-      published = await result.current.publishSurvey('s1');
-    });
+    await expect(
+      act(async () => {
+        await result.current.publishSurvey('s1');
+      })
+    ).rejects.toThrow('API error');
+  });
 
-    expect(published?.publishToken).toBe('mock-s1');
-    expect(result.current.surveys.find((s) => s.id === 's1')?.status).toBe('active');
+  it('does not update survey status when publish fails', async () => {
+    const survey = makeSurvey({ id: 's1', status: 'draft' });
+    mockListSurveys.mockResolvedValue(makeListResult([survey]));
+    mockPublishSurvey.mockRejectedValue(new Error('API error'));
+
+    const { result } = renderHook(() => useSurveys());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    try {
+      await act(async () => { await result.current.publishSurvey('s1'); });
+    } catch { /* expected */ }
+
+    expect(result.current.surveys.find((s) => s.id === 's1')?.status).toBe('draft');
   });
 
   it('calls publishSurvey API with the correct survey id', async () => {

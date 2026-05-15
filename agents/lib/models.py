@@ -24,7 +24,7 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
-AgentName = Literal["creator", "qc", "qc_validator", "compliance", "recommender", "skip-logic"]
+AgentName = Literal["creator", "qc", "qc_validator", "compliance", "recommender", "skip-logic", "copilot"]
 EnvName   = Literal["dev", "dev-paid", "staging", "prod"]
 
 _VALID_ENVS = {"dev", "dev-paid", "staging", "prod"}
@@ -52,6 +52,7 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
         "compliance":   ModelConfig("qwen/qwen3-coder:free",                     max_tokens=600,  temperature=0.1),
         "recommender":  ModelConfig("nvidia/nemotron-3-super-120b-a12b:free",    max_tokens=500,  temperature=0.4),
         "skip-logic":   ModelConfig("meta-llama/llama-3.3-70b-instruct:free",    max_tokens=1200, temperature=0.1),
+        "copilot":      ModelConfig("meta-llama/llama-3.3-70b-instruct:free",    max_tokens=1500, temperature=0.3),
     },
 
     # ── dev-paid ─────────────────────────────────────────────────────────────────
@@ -66,6 +67,7 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
         "compliance":   ModelConfig("google/gemini-2.0-flash-lite-001",         max_tokens=600,  temperature=0.1),
         "recommender":  ModelConfig("deepseek/deepseek-chat-v3-0324",           max_tokens=500,  temperature=0.4),
         "skip-logic":   ModelConfig("google/gemini-2.5-flash",                  max_tokens=1200, temperature=0.1),
+        "copilot":      ModelConfig("google/gemini-2.5-flash",                  max_tokens=1500, temperature=0.3),
     },
 
     # ── staging ──────────────────────────────────────────────────────────────────
@@ -108,6 +110,12 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
             "claude-haiku-4-5-20251001",
             max_tokens=1200,
             temperature=0.1,
+            use_anthropic_sdk=True,
+        ),
+        "copilot":      ModelConfig(
+            "claude-haiku-4-5-20251001",
+            max_tokens=1500,
+            temperature=0.3,
             use_anthropic_sdk=True,
         ),
     },
@@ -153,6 +161,12 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
             "claude-haiku-4-5-20251001",
             max_tokens=1200,
             temperature=0.1,
+            use_anthropic_sdk=True,
+        ),
+        "copilot":      ModelConfig(
+            "claude-haiku-4-5-20251001",
+            max_tokens=1500,
+            temperature=0.3,
             use_anthropic_sdk=True,
         ),
     },
