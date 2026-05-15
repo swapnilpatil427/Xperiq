@@ -61,10 +61,12 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-          cache-dependency-path: backend/package-lock.json
+          cache-dependency-path: backend/package.json
 
       - name: Install dependencies
-        run: npm ci
+        # Regenerate lockfile on Ubuntu so optional native deps and registry URLs
+        # match the CI runner (avoids corporate-registry lockfiles from local dev).
+        run: rm -f package-lock.json && npm install
 
       - name: Syntax check
         run: find src -name "*.js" | xargs node --check
