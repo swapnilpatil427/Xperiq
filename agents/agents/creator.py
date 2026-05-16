@@ -27,6 +27,7 @@ from agents.lib.openrouter import call_agent
 from agents.lib.validators import fix_question_ids, validate_questions_semantic
 from agents.schemas.output import CreatorInput, CreatorOutput, OrgContext
 from agents.schemas.question import Question
+from agents.agents.insight_experts import check_survey_bias, evaluate_survey
 
 _SYSTEM_TEMPLATE = """\
 You are an expert enterprise survey designer working inside Experient Copilot.
@@ -241,6 +242,75 @@ class SurveyCreatorAgent(BaseAgent):
         except Exception as e:
             logger.error("creator_question_rebuild_error", error=str(e))
             validated_questions = raw_output.questions  # fall back to raw output
+
+        # ── Post-LLM expert passes (parallel) ────────────────────────────────
+        # Run bias detection + survey evaluation concurrently.
+        # Both are fail-safe — failures log a warning and don't block output.
+
+        import asyncio as _asyncio
+
+        question_dicts = [q.model_dump(by_alias=True) if hasattr(q, "model_dump") else vars(q)
+                          for q in validated_questions]
+
+        bias_result  = None
+        eval_result  = None
+        try:
+            bias_task = check_survey_bias(question_dicts)
+            eval_task = evaluate_survey(
+                questions=question_dicts,
+                intent=input_data.intent,
+                survey_type=input_data.survey_type_id or "general",
+            )
+            bias_result, eval_result = await _asyncio.gather(
+                bias_task, eval_task, return_exceptions=True,
+            )
+        except Exception as exc:
+            logger.warning("creator_expert_passes_failed", error=str(exc))
+
+        if isinstance(bias_result, Exception):
+            logger.warning("creator_bias_check_failed", error=str(bias_result))
+            bias_result = None
+        if isinstance(eval_result, Exception):
+            logger.warning("creator_survey_eval_failed", error=str(eval_result))
+            eval_result = None
+
+        if bias_result and bias_result.biased_questions:
+            logger.warning(
+                "creator_bias_detected",
+                count=len(bias_result.biased_questions),
+                bias_score=bias_result.overall_bias_score,
+                questions=[b.get("question_id") for b in bias_result.biased_questions],
+            )
+
+        if eval_result:
+            logger.info(
+                "creator_survey_eval",
+                quality=eval_result.quality_score,
+                balance=eval_result.balance_score,
+                coverage=eval_result.coverage_score,
+                flow=eval_result.flow_score,
+            )
+
+        # Surface bias issues as additional QC-style semantic errors so the
+        # caller (graph.py revision loop) can include them in the next pass.
+        extra_errors = semantic_errors[:]
+        if bias_result:
+            for b in bias_result.biased_questions:
+                extra_errors.append({
+                    "type": "bias",
+                    "question_id": b.get("question_id"),
+                    "issue_type": b.get("issue_type"),
+                    "message": b.get("description", ""),
+                    "suggestion": b.get("suggestion", ""),
+                    "severity": "warning",
+                })
+
+        if extra_errors and extra_errors != semantic_errors:
+            logger.warning(
+                "creator_combined_validation_errors",
+                total=len(extra_errors),
+                revision=input_data.revision_count,
+            )
 
         return CreatorOutput(
             questions=validated_questions,

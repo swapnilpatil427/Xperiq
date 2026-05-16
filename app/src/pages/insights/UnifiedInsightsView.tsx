@@ -11,15 +11,16 @@
 //   • Contributing surveys strip: meta.cross_survey category (backend v1.1)
 //   • All citations use the [rXXX] format from INSIGHT_TAXONOMY.md
 
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useMemo, type ReactNode } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Icon } from '../../components/Icon';
 import { Button } from '@/components/ui/button';
-import type { Insight, Survey } from '../../types';
+import type { Insight, Survey, AgenticInsight } from '../../types';
 import type { SurveyScope } from '../../components/SurveyScopePicker';
 import { useCrystalPanel } from '../../contexts/crystalPanel';
-import { ROUTES } from '../../constants/routes';
+import { ROUTES, toPath } from '../../constants/routes';
+import { useTranslation } from '../../lib/i18n';
 import {
   GlassCard,
   CitationChip,
@@ -28,6 +29,27 @@ import {
   LayerBadge,
   LiveDot,
 } from './shared';
+
+// Pipeline nodes — must match InsightsDashboardPage.INSIGHT_NODES order
+const PIPELINE_NODES = [
+  { id: 'ingest',   label: 'Loading Responses',  icon: 'download'            },
+  { id: 'embed',    label: 'Building Embeddings', icon: 'memory'              },
+  { id: 'metrics',  label: 'Computing Metrics',   icon: 'analytics'           },
+  { id: 'absa',     label: 'Sentiment Analysis',  icon: 'sentiment_satisfied' },
+  { id: 'cluster',  label: 'Clustering Topics',   icon: 'hub'                 },
+  { id: 'topics',   label: 'Discovering Topics',  icon: 'topic'               },
+  { id: 'narrate',  label: 'Narrating Insights',  icon: 'edit_note'           },
+  { id: 'verify',   label: 'Verifying Claims',    icon: 'fact_check'          },
+  { id: 'evaluate', label: 'Evaluating Quality',  icon: 'verified'            },
+  { id: 'publish',  label: 'Publishing Results',  icon: 'publish'             },
+] as const;
+
+const LAYER_CONFIG: Record<AgenticInsight['layer'], { label: string; color: string; bg: string }> = {
+  descriptive:  { label: 'Descriptive',  color: '#0369a1', bg: '#e0f2fe' },
+  diagnostic:   { label: 'Diagnostic',   color: '#7c3aed', bg: '#ede9fe' },
+  predictive:   { label: 'Predictive',   color: '#d97706', bg: '#fef3c7' },
+  prescriptive: { label: 'Prescriptive', color: '#059669', bg: '#d1fae5' },
+};
 
 // ── Animation variants ────────────────────────────────────────────────────
 const stagger = {
@@ -48,13 +70,53 @@ interface ViewProps {
   insights: Insight | null;
   scope: SurveyScope;
   surveys: Survey[];
+  agenticInsights?: AgenticInsight[];
+  agenticLoading?: boolean;
+  generating?: boolean;
+  nodesDone?: string[];
+  genError?: string | null;
+  onGenerate?: () => void;
+  focusSurvey?: Survey;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-export function UnifiedInsightsView({ insights, scope, surveys }: ViewProps) {
+export function UnifiedInsightsView({
+  insights,
+  scope,
+  surveys,
+  agenticInsights = [],
+  agenticLoading = false,
+  generating = false,
+  nodesDone = [],
+  genError,
+  onGenerate,
+  focusSurvey,
+}: ViewProps) {
+  const { t } = useTranslation();
   const isAll = scope === 'all';
   const { openCrystal } = useCrystalPanel();
   const [askQuery, setAskQuery] = useState('');
+  const [filterLayer,    setFilterLayer]    = useState<AgenticInsight['layer'] | 'all'>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+
+  const availableLayers = useMemo(() => {
+    const present = new Set(agenticInsights.map((i) => i.layer));
+    return (['descriptive', 'diagnostic', 'predictive', 'prescriptive'] as const).filter((l) => present.has(l));
+  }, [agenticInsights]);
+
+  const availableCategories = useMemo(() => {
+    const cats = [...new Set(agenticInsights.map((i) => i.category).filter(Boolean))];
+    return cats.sort();
+  }, [agenticInsights]);
+
+  const filteredInsights = useMemo(() => {
+    return agenticInsights.filter((ins) => {
+      if (filterLayer    !== 'all' && ins.layer    !== filterLayer)    return false;
+      if (filterCategory !== 'all' && ins.category !== filterCategory) return false;
+      return true;
+    });
+  }, [agenticInsights, filterLayer, filterCategory]);
+
   const nps = insights?.nps_score ?? 47;
   const activeSurveys = surveys.filter((s) => s.status === 'active' && !s.deleted_at);
   const activeCount = activeSurveys.length;
@@ -62,18 +124,602 @@ export function UnifiedInsightsView({ insights, scope, surveys }: ViewProps) {
   const leadSurvey = activeSurveys[0];
   const displayNps = isAll ? 51 : nps;
 
+  // Determine which pipeline node is currently running (first not-done node)
+  const activeNodeIdx = generating
+    ? PIPELINE_NODES.findIndex((n) => !nodesDone.includes(n.id))
+    : -1;
+
+  const responseCount = focusSurvey?.response_count ?? 0;
+
+  // Empty-state kind — drives the UX treatment below
+  type EmptyKind = 'no_responses' | 'insufficient' | 'low_confidence' | 'ready' | 'failed';
+  const emptyKind: EmptyKind = !isAll && !generating && !agenticLoading && agenticInsights.length === 0
+    ? genError
+      ? 'failed'
+      : responseCount === 0
+        ? 'no_responses'
+        : responseCount < 5
+          ? 'insufficient'
+          : responseCount < 30
+            ? 'low_confidence'
+            : 'ready'
+    : 'ready'; // sentinel — not shown when this doesn't apply
+
+  const showEmptyState = !isAll && !generating && !agenticLoading && agenticInsights.length === 0;
+  const hasAgenticData = agenticInsights.length > 0;
+
   return (
-    <div className="space-y-12">
+    <div className="space-y-6">
 
       {/* ════════════════════════════════════════════════════════════════════
-          § 1  CRYSTAL HERO — dark cinematic section (full-bleed)
-          Crystal centerpiece, ask bar, suggested prompts, live badge.
+          GENERATING OVERLAY — light-theme pipeline progress
+          Renders as an inset panel above the page content (not a modal).
       ════════════════════════════════════════════════════════════════════ */}
-      <motion.section
-        variants={stagger}
-        initial="hidden"
-        animate="visible"
-        className="relative -mx-6 md:-mx-8 overflow-hidden rounded-3xl"
+      <AnimatePresence>
+        {generating && (
+          <motion.div
+            key="gen-overlay"
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.97 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <GlassCard className="p-8 text-center border-2 border-primary/20">
+              {/* Pulsing orb */}
+              <div className="flex justify-center mb-6">
+                <div className="relative w-20 h-20">
+                  <div
+                    className="absolute inset-0 rounded-full"
+                    style={{
+                      background: 'linear-gradient(135deg, #2a4bd9, #8329c8)',
+                      animation: 'pulse-glow 2s ease-in-out infinite',
+                    }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <Icon name="psychology" size={32} style={{ color: 'white' }} />
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="text-xl font-black font-headline mb-1">
+                Generating insights
+                {focusSurvey && <span className="text-primary"> · {focusSurvey.title}</span>}
+              </h3>
+              <p className="text-sm text-on-surface-variant mb-8">
+                Crystal is analyzing {(focusSurvey?.response_count ?? 0).toLocaleString()} responses
+                through the full intelligence pipeline.
+              </p>
+
+              {/* Pipeline node badges */}
+              <div className="flex flex-wrap justify-center gap-2 max-w-2xl mx-auto mb-4">
+                {PIPELINE_NODES.map((node, idx) => {
+                  const done = nodesDone.includes(node.id);
+                  const active = idx === activeNodeIdx;
+                  return (
+                    <motion.div
+                      key={node.id}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: idx * 0.04 }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all duration-300"
+                      style={
+                        done
+                          ? { background: '#d1fae5', borderColor: '#059669', color: '#047857' }
+                          : active
+                          ? { background: '#eff2ff', borderColor: '#2a4bd9', color: '#2a4bd9', boxShadow: '0 0 0 3px rgba(42,75,217,0.15)' }
+                          : { background: 'var(--color-surface-container)', borderColor: 'var(--color-outline-variant)', color: 'var(--color-on-surface-variant)' }
+                      }
+                    >
+                      <Icon
+                        name={done ? 'check_circle' : active ? node.icon : node.icon}
+                        size={13}
+                        style={active ? { animation: 'spin 1.5s linear infinite' } : undefined}
+                      />
+                      {node.label}
+                    </motion.div>
+                  );
+                })}
+              </div>
+
+              <p className="text-xs text-on-surface-variant">
+                {nodesDone.length} of {PIPELINE_NODES.length} stages complete · Usually takes 30–90s
+              </p>
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          AGENTIC INSIGHTS SECTION — real pipeline results (light theme)
+          Shown only when scope is a single survey and insights exist.
+      ════════════════════════════════════════════════════════════════════ */}
+      {!isAll && hasAgenticData && !generating && (
+        <div className="space-y-6">
+          {/* Compact Crystal ask bar — light theme, no bleed */}
+          <GlassCard className="p-4">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (askQuery.trim()) { openCrystal(askQuery.trim()); setAskQuery(''); }
+              }}
+              className="flex items-center gap-3"
+            >
+              <Icon name="psychology" size={20} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+              <input
+                type="text"
+                value={askQuery}
+                onChange={(e) => setAskQuery(e.target.value)}
+                placeholder='"Why did NPS dip on May 10?" — ask Crystal anything about this survey'
+                className="flex-1 px-2 py-1.5 bg-transparent focus:outline-none text-sm placeholder:text-on-surface-variant/50"
+              />
+              <Button
+                type="submit"
+                size="sm"
+                className="text-xs font-bold text-white border-0 flex-shrink-0"
+                style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
+              >
+                <Icon name="arrow_upward" size={14} />
+                Ask Crystal
+              </Button>
+            </form>
+          </GlassCard>
+
+          {/* ── Insight filters ───────────────────────────────────────────── */}
+          {(availableLayers.length > 1 || availableCategories.length > 1) && (
+            <div className="space-y-2 px-1">
+              {availableLayers.length > 1 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-12 shrink-0">
+                    {t('surveyInsights.filters.layerLabel')}
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <FilterPill
+                      active={filterLayer === 'all'}
+                      onClick={() => setFilterLayer('all')}
+                    >
+                      {t('surveyInsights.filters.all')} ({agenticInsights.length})
+                    </FilterPill>
+                    {availableLayers.map((layer) => {
+                      const cfg   = LAYER_CONFIG[layer];
+                      const count = agenticInsights.filter((i) => i.layer === layer).length;
+                      return (
+                        <FilterPill
+                          key={layer}
+                          active={filterLayer === layer}
+                          activeColor={cfg.color}
+                          activeBg={cfg.bg}
+                          onClick={() => setFilterLayer(filterLayer === layer ? 'all' : layer)}
+                        >
+                          {cfg.label} ({count})
+                        </FilterPill>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {availableCategories.length > 1 && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-12 shrink-0">
+                    {t('surveyInsights.filters.typeLabel')}
+                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    <FilterPill
+                      active={filterCategory === 'all'}
+                      onClick={() => setFilterCategory('all')}
+                    >
+                      {t('surveyInsights.filters.all')}
+                    </FilterPill>
+                    {availableCategories.map((cat) => {
+                      const count = agenticInsights.filter((i) => i.category === cat).length;
+                      return (
+                        <FilterPill
+                          key={cat}
+                          active={filterCategory === cat}
+                          onClick={() => setFilterCategory(filterCategory === cat ? 'all' : cat)}
+                        >
+                          {prettifyCategory(cat)} ({count})
+                        </FilterPill>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <motion.section
+            variants={stagger}
+            initial="hidden"
+            animate="visible"
+            className="space-y-4"
+          >
+            <SectionLabel
+              icon="auto_awesome"
+              label={
+                filterLayer !== 'all' || filterCategory !== 'all'
+                  ? `${filteredInsights.length} of ${agenticInsights.length} AI insights`
+                  : `${agenticInsights.length} AI insights generated`
+              }
+            />
+
+            {filteredInsights.length === 0 ? (
+              <div className="py-12 text-center">
+                <p className="text-sm text-on-surface-variant mb-3">
+                  {t('surveyInsights.filters.noResults')}
+                </p>
+                <button
+                  onClick={() => { setFilterLayer('all'); setFilterCategory('all'); }}
+                  className="text-xs font-bold text-primary hover:underline"
+                >
+                  {t('surveyInsights.filters.clearFilters')}
+                </button>
+              </div>
+            ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredInsights.map((insight, i) => {
+              const layer = LAYER_CONFIG[insight.layer] ?? LAYER_CONFIG.descriptive;
+              return (
+                <motion.div
+                  key={insight.id}
+                  variants={rise}
+                  custom={i}
+                  className="card-tilt"
+                >
+                  <GlassCard className="p-6 h-full flex flex-col gap-3">
+                    {/* Layer badge + confidence */}
+                    <div className="flex items-center justify-between">
+                      <span
+                        className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wide"
+                        style={{ background: layer.bg, color: layer.color }}
+                      >
+                        {layer.label}
+                      </span>
+                      <ConfidenceChip value={Math.round(insight.trust_score * 100)} />
+                    </div>
+
+                    {/* Headline */}
+                    <h3 className="text-base font-black font-headline leading-snug">
+                      {insight.headline}
+                    </h3>
+
+                    {/* Narrative */}
+                    <p className="text-sm text-on-surface-variant leading-relaxed flex-1">
+                      {insight.narrative.length > 180
+                        ? insight.narrative.slice(0, 180) + '…'
+                        : insight.narrative}
+                    </p>
+
+                    {/* Citations */}
+                    {insight.citations_json.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {insight.citations_json.slice(0, 4).map((c) => (
+                          <CitationChip
+                            key={c.response_id}
+                            id={c.response_id}
+                            title={c.quote}
+                          />
+                        ))}
+                        {insight.citations_json.length > 4 && (
+                          <span className="text-[10px] text-on-surface-variant font-bold self-center ml-1">
+                            +{insight.citations_json.length - 4} more
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Recommended action */}
+                    {insight.recommended_action && (
+                      <div className="mt-1 p-3 rounded-xl bg-primary/5 border border-primary/15">
+                        <div className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">
+                          Recommended action
+                        </div>
+                        <p className="text-xs font-bold text-on-surface">
+                          {insight.recommended_action.label}
+                        </p>
+                        {insight.recommended_action.target && (
+                          <p className="text-[10px] text-on-surface-variant mt-0.5">
+                            Target: {insight.recommended_action.target}
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-outline-variant/20">
+                      <Button size="sm" variant="ghost" className="text-xs gap-1 px-2">
+                        <Icon name="thumb_up" size={13} /> Helpful
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-xs gap-1 px-2">
+                        <Icon name="push_pin" size={13} /> Pin
+                      </Button>
+                      <div className="flex-1" />
+                      <span className="text-[10px] text-on-surface-variant font-mono">
+                        {insight.category}
+                      </span>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+              );
+              })}
+            </div>
+            )}
+          </motion.section>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          EMPTY STATE — single survey selected, no insights yet (light theme)
+          State-aware: no_responses / insufficient / low_confidence / ready / failed
+      ════════════════════════════════════════════════════════════════════ */}
+      <AnimatePresence mode="wait">
+        {showEmptyState && (
+          <motion.div
+            key={emptyKind}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <GlassCard className="p-10 md:p-12 text-center">
+
+              {/* State orb — color/style varies by state */}
+              <div className="flex justify-center mb-7">
+                <EmptyOrb kind={emptyKind} />
+              </div>
+
+              {/* Headline */}
+              <h3 className="text-2xl font-black font-headline mb-2 leading-tight">
+                {emptyKind === 'no_responses'   && t('surveyInsights.empty.noResponses.title')}
+                {emptyKind === 'insufficient'   && t('surveyInsights.empty.insufficient.title', { count: responseCount })}
+                {emptyKind === 'low_confidence' && t('surveyInsights.empty.lowConfidence.title')}
+                {emptyKind === 'ready'          && t('surveyInsights.empty.ready.title')}
+                {emptyKind === 'failed'         && t('surveyInsights.empty.failed.title')}
+              </h3>
+
+              {/* Confidence / status badge */}
+              {(emptyKind === 'low_confidence' || emptyKind === 'insufficient') && (
+                <div className="flex justify-center mb-3">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-800 ring-1 ring-amber-200">
+                    <Icon name="warning" size={12} />
+                    {emptyKind === 'insufficient'
+                      ? t('surveyInsights.empty.insufficient.warning')
+                      : t('surveyInsights.empty.lowConfidence.badge', { count: responseCount })}
+                  </span>
+                </div>
+              )}
+              {emptyKind === 'ready' && (
+                <div className="flex justify-center mb-3">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200">
+                    <Icon name="verified" size={12} />
+                    {t('surveyInsights.empty.ready.badge', { count: responseCount })}
+                  </span>
+                </div>
+              )}
+              {emptyKind === 'failed' && (
+                <div className="flex justify-center mb-3">
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-700 ring-1 ring-red-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                    Generation failed
+                  </span>
+                </div>
+              )}
+
+              {/* Body copy */}
+              <p className="text-on-surface-variant text-sm max-w-md mx-auto mb-3 leading-relaxed">
+                {emptyKind === 'no_responses'   && t('surveyInsights.empty.noResponses.body')}
+                {emptyKind === 'insufficient'   && t('surveyInsights.empty.insufficient.body', { count: responseCount, remaining: 5 - responseCount })}
+                {emptyKind === 'low_confidence' && t('surveyInsights.empty.lowConfidence.body', { count: responseCount })}
+                {emptyKind === 'ready'          && t('surveyInsights.empty.ready.body', { count: responseCount })}
+                {emptyKind === 'failed'         && t('surveyInsights.empty.failed.body')}
+              </p>
+
+              {/* Progress bar — shown for insufficient state */}
+              {emptyKind === 'insufficient' && (
+                <div className="flex justify-center mb-6">
+                  <div className="flex items-center gap-2 max-w-xs w-full">
+                    <div className="flex-1 flex gap-1">
+                      {Array.from({ length: 5 }).map((_, i) => (
+                        <div
+                          key={i}
+                          className="flex-1 h-2 rounded-full transition-all duration-500"
+                          style={{
+                            background: i < responseCount ? '#2a4bd9' : 'var(--color-outline-variant)',
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-xs font-bold text-on-surface-variant whitespace-nowrap">
+                      {responseCount} / 5
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Error detail */}
+              {emptyKind === 'failed' && genError && (
+                <div className="mb-6 mx-auto max-w-md p-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700 flex items-start gap-2 text-left">
+                  <Icon name="error_outline" size={16} style={{ marginTop: 2, flexShrink: 0 }} />
+                  <div>
+                    <p className="font-bold mb-0.5">Error details</p>
+                    <p className="font-mono text-xs break-all">{genError}</p>
+                    <p className="text-xs mt-2 text-red-600/70">
+                      {t('surveyInsights.empty.failed.devHint')}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* CTAs — hierarchy changes by state */}
+              <div className="flex flex-wrap justify-center gap-3 mb-8">
+                {/* Primary CTA */}
+                {emptyKind === 'no_responses' && focusSurvey && (
+                  <Link to={ROUTES.RESPONDENTS}>
+                    <Button size="lg" className="font-bold text-white border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                      <Icon name="share" size={16} />
+                      {t('surveyInsights.empty.noResponses.cta')}
+                    </Button>
+                  </Link>
+                )}
+
+                {emptyKind === 'insufficient' && focusSurvey && (
+                  <>
+                    {/* Collecting more is the encouraged path — primary */}
+                    <Link to={ROUTES.RESPONDENTS}>
+                      <Button size="lg" className="font-bold text-white border-0 shadow-md" style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                        <Icon name="share" size={16} />
+                        {t('surveyInsights.empty.insufficient.cta')}
+                      </Button>
+                    </Link>
+                    {/* Generate anyway is secondary — outlined, de-emphasized */}
+                    <Button size="lg" variant="outline" onClick={onGenerate} className="font-bold">
+                      <Icon name="auto_awesome" size={16} />
+                      {t('surveyInsights.empty.insufficient.ctaGenerate')}
+                    </Button>
+                  </>
+                )}
+
+                {(emptyKind === 'low_confidence' || emptyKind === 'ready') && (
+                  <Button
+                    size="lg"
+                    onClick={onGenerate}
+                    className="font-bold text-white border-0 shadow-lg"
+                    style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
+                  >
+                    <Icon name="auto_awesome" size={18} />
+                    {emptyKind === 'low_confidence'
+                      ? t('surveyInsights.empty.lowConfidence.cta')
+                      : t('surveyInsights.empty.ready.cta')}
+                  </Button>
+                )}
+
+                {emptyKind === 'failed' && (
+                  <Button
+                    size="lg"
+                    onClick={onGenerate}
+                    className="font-bold text-white border-0 shadow-md"
+                    style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
+                  >
+                    <Icon name="refresh" size={16} />
+                    {t('surveyInsights.empty.failed.cta')}
+                  </Button>
+                )}
+
+                {/* Secondary CTA */}
+                {focusSurvey && emptyKind !== 'insufficient' && (
+                  <Link
+                    to={emptyKind === 'no_responses'
+                      ? ROUTES.RESPONDENTS
+                      : toPath(ROUTES.RESPONSE_DASHBOARD, { surveyId: focusSurvey.id })}
+                  >
+                    <Button size="lg" variant="outline" className="font-bold">
+                      <Icon name={emptyKind === 'no_responses' ? 'open_in_new' : 'table_rows'} size={16} />
+                      {emptyKind === 'no_responses'
+                        ? t('surveyInsights.empty.noResponses.ctaSecondary')
+                        : emptyKind === 'failed'
+                          ? t('surveyInsights.empty.failed.ctaSecondary')
+                          : emptyKind === 'low_confidence'
+                            ? t('surveyInsights.empty.lowConfidence.ctaSecondary')
+                            : t('surveyInsights.empty.ready.ctaSecondary')}
+                    </Button>
+                  </Link>
+                )}
+              </div>
+
+              {/* Runtime hint — shown when generation is possible */}
+              {(emptyKind === 'low_confidence' || emptyKind === 'ready' || emptyKind === 'failed') && (
+                <p className="text-xs text-on-surface-variant/60 mb-8">
+                  {t('surveyInsights.empty.runtime')}
+                </p>
+              )}
+
+              {/* Capabilities grid — shown when generation is likely to succeed (5+ responses) */}
+              {(emptyKind === 'low_confidence' || emptyKind === 'ready') && (
+                <div className="border-t border-outline-variant/20 pt-8">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant mb-4">
+                    What Crystal will surface
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-left">
+                    {([
+                      { icon: 'sentiment_satisfied', labelKey: 'sentiment' as const, descKey: 'sentimentDesc' as const },
+                      { icon: 'hub',                 labelKey: 'topics'    as const, descKey: 'topicsDesc'    as const },
+                      { icon: 'insights',            labelKey: 'forecast'  as const, descKey: 'forecastDesc'  as const },
+                      { icon: 'flag',                labelKey: 'actions'   as const, descKey: 'actionsDesc'   as const },
+                    ] as const).map((item) => (
+                      <div
+                        key={item.labelKey}
+                        className="p-3 rounded-xl border border-outline-variant/30 bg-surface-container/50"
+                      >
+                        <Icon name={item.icon} size={20} style={{ color: '#2a4bd9', marginBottom: 6 }} />
+                        <div className="text-xs font-black">
+                          {t(`surveyInsights.empty.capabilities.${item.labelKey}`)}
+                        </div>
+                        <div className="text-[10px] text-on-surface-variant">
+                          {t(`surveyInsights.empty.capabilities.${item.descKey}`)}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* "What you'll get" teaser for insufficient state */}
+              {emptyKind === 'insufficient' && (
+                <div className="border-t border-outline-variant/20 pt-6">
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant mb-3">
+                    What you'll unlock at 5+ responses
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {['Sentiment analysis', 'Topic clusters', 'NPS trends', 'Predictions', 'Recommended actions'].map((cap) => (
+                      <span key={cap} className="px-2.5 py-1 rounded-full text-xs bg-muted text-on-surface-variant border border-outline-variant/30">
+                        {cap}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+            </GlassCard>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Error banner — when data exists but re-generation failed */}
+      {genError && !showEmptyState && (
+        <div className="p-4 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700 flex items-start gap-3">
+          <Icon name="error_outline" size={18} style={{ marginTop: 1, flexShrink: 0 }} />
+          <div className="flex-1">
+            <p className="font-bold mb-0.5">Re-generation failed</p>
+            <p>{genError}</p>
+          </div>
+          <Button size="sm" variant="outline" onClick={onGenerate} className="text-xs border-red-200 text-red-700 hover:bg-red-100 flex-shrink-0">
+            <Icon name="refresh" size={14} /> Retry
+          </Button>
+        </div>
+      )}
+
+      {/* ════════════════════════════════════════════════════════════════════
+          ALL-SURVEYS demo content — wrapped so it never renders for single survey
+      ════════════════════════════════════════════════════════════════════ */}
+      {isAll && (
+        <>
+          {/* SAMPLE DATA banner */}
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800">
+            <Icon name="science" size={16} />
+            <span className="text-xs font-black uppercase tracking-wide">Sample data</span>
+            <span className="text-xs text-amber-700">
+              — Metrics below are illustrative. Pick a single survey from the dropdown to see your real AI insights.
+            </span>
+          </div>
+
+          {/* ════════════════════════════════════════════════════════════════
+              § 1  CRYSTAL HERO — dark cinematic section
+          ════════════════════════════════════════════════════════════════ */}
+          <motion.section
+            variants={stagger}
+            initial="hidden"
+            animate="visible"
+            className="relative overflow-hidden rounded-2xl"
         style={{
           background:
             'radial-gradient(ellipse at 25% 0%, rgba(42,75,217,0.45) 0%, transparent 55%),' +
@@ -746,11 +1392,13 @@ export function UnifiedInsightsView({ insights, scope, surveys }: ViewProps) {
         />
       </section>
 
-      {/* Footer */}
-      <footer className="text-center text-xs text-on-surface-variant pb-4">
-        <LiveDot />{' '}
-        <span className="font-bold ml-1">Live</span> · 3 insights in last 60s · Last full scan 2m ago
-      </footer>
+          {/* Footer */}
+          <footer className="text-center text-xs text-on-surface-variant pb-4">
+            <LiveDot />{' '}
+            <span className="font-bold ml-1">Live</span> · 3 insights in last 60s · Last full scan 2m ago
+          </footer>
+        </>
+      )}
     </div>
   );
 }
@@ -758,6 +1406,52 @@ export function UnifiedInsightsView({ insights, scope, surveys }: ViewProps) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Sub-components
 // ═══════════════════════════════════════════════════════════════════════════
+
+// ── Insight filter pill ───────────────────────────────────────────────────
+function FilterPill({
+  children, active, onClick, activeColor, activeBg,
+}: {
+  children: ReactNode;
+  active: boolean;
+  onClick: () => void;
+  activeColor?: string;
+  activeBg?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="px-2.5 py-1 rounded-full text-xs font-bold transition-all border"
+      style={
+        active
+          ? {
+              background:   activeBg      ?? 'var(--color-primary)',
+              color:        activeColor   ?? 'white',
+              borderColor:  activeColor   ?? 'var(--color-primary)',
+            }
+          : {
+              background:   'transparent',
+              color:        'var(--color-on-surface-variant)',
+              borderColor:  'var(--color-outline-variant)',
+            }
+      }
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── Category label formatter ───────────────────────────────────────────────
+function prettifyCategory(cat: string): string {
+  const MAP: Record<string, string> = {
+    'voice.topic':  'Topics',
+    'metric.nps':   'NPS',
+    'metric.csat':  'CSAT',
+    'metric.ces':   'CES',
+    'meta.bias':    'Bias',
+    'meta.cross':   'Cross-survey',
+  };
+  return MAP[cat] ?? (cat.split('.').pop()?.replace(/_/g, ' ') ?? cat);
+}
 
 // ── Crystal centerpiece — CSS layered hexagons, spins continuously ────────
 function Crystal() {
@@ -851,6 +1545,41 @@ function DarkPromptChip({ icon, label, onClick }: { icon?: string; label: string
       {icon && <Icon name={icon} size={13} style={{ color: 'rgba(255,255,255,0.7)' }} />}
       {label}
     </button>
+  );
+}
+
+// ── Empty state orb — color/animation varies by state ────────────────────
+function EmptyOrb({ kind }: { kind: 'no_responses' | 'insufficient' | 'low_confidence' | 'ready' | 'failed' }) {
+  const config = {
+    no_responses:   { from: '#94a3b8', to: '#cbd5e1', icon: 'inbox',        iconColor: '#64748b' },
+    insufficient:   { from: '#f59e0b', to: '#fbbf24', icon: 'hourglass_top', iconColor: '#b45309' },
+    low_confidence: { from: '#2a4bd9', to: '#8329c8', icon: 'psychology',    iconColor: 'white'   },
+    ready:          { from: '#2a4bd9', to: '#8329c8', icon: 'auto_awesome',  iconColor: 'white'   },
+    failed:         { from: '#f43f5e', to: '#e11d48', icon: 'error_outline', iconColor: 'white'   },
+  }[kind];
+
+  const isPulsing = kind === 'low_confidence' || kind === 'ready';
+  const isDashed  = kind === 'no_responses';
+
+  return (
+    <motion.div
+      animate={isPulsing ? { scale: [1, 1.06, 1] } : {}}
+      transition={{ repeat: Infinity, duration: 2.8, ease: 'easeInOut' }}
+      className="relative w-24 h-24"
+    >
+      <div
+        className="absolute inset-0 rounded-full flex items-center justify-center"
+        style={{
+          background: isDashed
+            ? 'transparent'
+            : `linear-gradient(135deg, ${config.from}, ${config.to})`,
+          border: isDashed ? `2px dashed ${config.from}` : 'none',
+          boxShadow: isPulsing ? `0 0 40px -8px ${config.from}88` : 'none',
+        }}
+      >
+        <Icon name={config.icon} size={36} style={{ color: isDashed ? config.from : config.iconColor }} />
+      </div>
+    </motion.div>
   );
 }
 

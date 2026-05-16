@@ -1,12 +1,20 @@
 const logger = require('../lib/logger');
 const { httpDuration, httpTotal } = require('../lib/metrics');
 
-// Collapse UUIDs and numeric IDs so Prometheus cardinality stays low
+// Collapse UUIDs and numeric IDs so Prometheus cardinality stays low.
+// Use req.originalUrl (always the full path) rather than req.path which Express
+// temporarily mutates to the prefix-stripped path when middleware fires under
+// app.use('/mount', middleware). If the middleware returns 429 without calling
+// next(), req.url is never restored, so req.path would read as "/" for any
+// request whose path exactly equals the mount point (e.g. GET /api/surveys).
 function normalizeRoute(req) {
-  const base = (req.route ? req.baseUrl + req.route.path : req.path)
+  const raw = req.route
+    ? req.baseUrl + req.route.path
+    : (req.originalUrl || req.path).split('?')[0]; // strip query string
+  return raw
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ':id')
-    .replace(/\/\d+/g, '/:id');
-  return base || 'unknown';
+    .replace(/\/\d+/g, '/:id')
+    || 'unknown';
 }
 
 function httpLogger(req, res, next) {

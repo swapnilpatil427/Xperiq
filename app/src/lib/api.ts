@@ -2,7 +2,7 @@ import axios from 'axios';
 import type {
   ListSurveysParams, ListSurveysResult, Survey, SurveyResponse,
   Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
-  CopilotChange,
+  CopilotChange, AgenticInsight, InsightRunStatus, SurveyTopic,
 } from '../types';
 
 // ── Copilot types ──────────────────────────────────────────────────────────────
@@ -140,6 +140,17 @@ export function createApiClient(getToken: GetToken) {
     },
     publishSurvey: async (id: string) => {
       const res = await http.post<{ publishToken: string; publishedAt: string }>(`/api/surveys/${id}/publish`, {});
+      return res.data;
+    },
+
+    generateSampleResponses: async (surveyId: string, opts: {
+      count?: number;
+      personaMix?: 'realistic' | 'critical' | 'positive' | 'mixed';
+    }) => {
+      const res = await http.post<{ count: number; message: string }>(
+        `/api/surveys/${surveyId}/generate-sample-responses`,
+        opts,
+      );
       return res.data;
     },
 
@@ -386,7 +397,75 @@ export function createApiClient(getToken: GetToken) {
       const res = await http.post<{ status: string }>(`/api/workflows/${id}/toggle`, {});
       return res.data;
     },
+
+    // ── Survey Insights (v2 — agentic) ────────────────────────────────────────
+
+    listInsights: async (surveyId: string, opts: { timeWindow?: string } = {}): Promise<{ insights: AgenticInsight[]; run_status?: string }> => {
+      const params = new URLSearchParams();
+      if (opts.timeWindow && opts.timeWindow !== 'all_time') params.set('time_window', opts.timeWindow);
+      const qs = params.toString();
+      const url = `/api/insights/${surveyId}/list${qs ? '?' + qs : ''}`;
+      const res = await http.get<{ insights: AgenticInsight[]; run_status?: string }>(url);
+      return res.data;
+    },
+
+    triggerInsightGeneration: async (surveyId: string): Promise<{ run_id: string; status: string }> => {
+      const res = await http.post<{ run_id: string; status: string }>(`/api/insights/${surveyId}/generate`, {});
+      return res.data;
+    },
+
+    getInsightRunStatus: async (surveyId: string): Promise<{ run_id: string; status: string; stream_events: unknown[] }> => {
+      const res = await http.get<{ run_id: string; status: string; stream_events: unknown[] }>(`/api/insights/${surveyId}/run-status`);
+      return res.data;
+    },
+
+    updateInsightFeedback: async (insightId: string, feedback: { thumbs?: 'up' | 'down' | null; pinned?: boolean; dismissed?: boolean }): Promise<void> => {
+      await http.post(`/api/insights/${insightId}/feedback`, feedback);
+    },
+
+    askInsights: async (surveyId: string, question: string): Promise<{ answer: string; citations: AgenticInsight[] }> => {
+      const res = await http.post<{ answer: string; citations: AgenticInsight[] }>(`/api/insights/${surveyId}/ask`, { question });
+      return res.data;
+    },
+
+    listTopics: async (surveyId: string): Promise<{ topics: SurveyTopic[] }> => {
+      const res = await http.get<{ topics: SurveyTopic[] }>(`/api/insights/${surveyId}/topics`);
+      return res.data;
+    },
+
+    crystalChat: async (surveyId: string, message: string): Promise<{
+      answer: string;
+      suggestions: string[];
+      insight_refs: string[];
+      thread_key: string;
+    }> => {
+      const res = await http.post<{
+        answer: string;
+        suggestions: string[];
+        insight_refs: string[];
+        thread_key: string;
+      }>(`/api/insights/${surveyId}/crystal`, { message });
+      return res.data;
+    },
+
+    getCrystalHistory: async (surveyId: string): Promise<{
+      messages: Array<{ role: string; content: string; created_at: string }>;
+      updated_at: string | null;
+    }> => {
+      const res = await http.get<{
+        messages: Array<{ role: string; content: string; created_at: string }>;
+        updated_at: string | null;
+      }>(`/api/insights/${surveyId}/crystal/history`);
+      return res.data;
+    },
+
+    clearCrystalHistory: async (surveyId: string): Promise<void> => {
+      await http.delete(`/api/insights/${surveyId}/crystal/history`);
+    },
   };
 }
+
+// Re-export for consumers that import InsightRunStatus from api.ts
+export type { InsightRunStatus };
 
 export type ApiClient = ReturnType<typeof createApiClient>;

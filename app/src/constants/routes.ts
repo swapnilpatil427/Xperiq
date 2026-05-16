@@ -8,6 +8,8 @@ export const ROUTES = {
   CREATE:             '/app/surveys/create',
   BUILDER:            '/app/surveys/:surveyId/build',
   RESPONSE_DASHBOARD: '/app/surveys/:surveyId/responses',
+  SURVEY_INSIGHTS:    '/app/surveys/:surveyId/insights',
+  SAMPLE_RESPONSES:   '/app/surveys/:surveyId/sample-responses',
   INSIGHTS:           '/app/insights',
   ADVANCED_INSIGHTS:  '/app/insights/advanced',
   INSIGHTS_BRIEF:     '/app/insights/brief',

@@ -5,6 +5,10 @@ const { validate } = require('../../lib/validate');
 const { createSurveySchema, updateSurveySchema } = require('../../schemas/surveys');
 const db = require('../../lib/db');
 const { surveysCreated } = require('../../lib/metrics');
+const logger = require('../../lib/logger');
+const agentsClient = require('../../lib/agentsClient');
+const { publishResponseEvent } = require('../../lib/redisStream');
+const { maybeAutoAnalyze }     = require('../../triggers/autoAnalyze');
 const router = express.Router();
 
 // Migrate: add only what is intrinsic to a survey run.
@@ -22,6 +26,7 @@ async function ensureColumns() {
     'ADD COLUMN IF NOT EXISTS paused_at TIMESTAMPTZ',
     'ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ',
     'ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ',
+    'ADD COLUMN IF NOT EXISTS insight_schedule_enabled BOOLEAN NOT NULL DEFAULT TRUE',
   ];
   for (const col of cols) {
     await db.query(`ALTER TABLE surveys ${col}`).catch(() => {});
@@ -299,6 +304,94 @@ router.post('/:id/publish', requireAuth, requireRole('analyst'), async (req, res
     if (!rows.length) return res.status(404).json({ error: 'Survey not found' });
     res.json({ publishToken: rows[0].publish_token, publishedAt: rows[0].published_at });
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Generate sample responses via AI agent ────────────────────────────────────
+// POST /api/surveys/:id/generate-sample-responses
+// Generates synthetic survey responses, stores them in the DB, and optionally
+// triggers insight generation. The generated responses are indistinguishable
+// from real ones in the DB — useful for demos, testing, and pre-launch seeding.
+router.post('/:id/generate-sample-responses', requireAuth, async (req, res) => {
+  try {
+    const { id: surveyId } = req.params;
+    const { count = 20, personaMix = 'realistic' } = req.body;
+
+    // Validate inputs
+    const parsedCount = Math.min(100, Math.max(1, parseInt(count, 10) || 20));
+    const validMixes  = ['realistic', 'critical', 'positive', 'mixed'];
+    const mix         = validMixes.includes(personaMix) ? personaMix : 'realistic';
+
+    // Verify survey belongs to this org
+    const { rows: [survey] } = await db.query(
+      `SELECT id, title, intent, questions FROM surveys
+       WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      [surveyId, req.orgId]
+    );
+    if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+    const questions = Array.isArray(survey.questions) ? survey.questions : [];
+    if (questions.length === 0) {
+      return res.status(400).json({ error: 'Survey has no questions to generate responses for' });
+    }
+
+    // Call agents service — synchronous; may take 10-60s for large counts
+    let generated;
+    try {
+      generated = await agentsClient.generateSampleResponses({
+        surveyId,
+        orgId:        req.orgId,
+        surveyTitle:  survey.title,
+        surveyIntent: survey.intent || null,
+        questions,
+        count:        parsedCount,
+        personaMix:   mix,
+      });
+    } catch (agentErr) {
+      logger.error({ err: agentErr.message, surveyId }, 'generate_sample_responses:agents_error');
+      return res.status(502).json({ error: 'AI service failed to generate responses. Please try again.' });
+    }
+
+    const responseRows = generated.responses || [];
+    if (responseRows.length === 0) {
+      return res.status(502).json({ error: 'AI service returned no responses. Please try again.' });
+    }
+
+    // Bulk-insert generated responses
+    let inserted = 0;
+    const insertedIds = [];
+    for (const resp of responseRows) {
+      const answers  = Array.isArray(resp.answers) ? resp.answers : [];
+      const npsScore = resp.nps_score != null ? parseInt(resp.nps_score, 10) : null;
+      try {
+        const { rows: [row] } = await db.query(
+          `INSERT INTO responses (survey_id, org_id, answers, nps_score)
+           VALUES ($1, $2, $3, $4) RETURNING id`,
+          [surveyId, req.orgId, JSON.stringify(answers), Number.isFinite(npsScore) ? npsScore : null]
+        );
+        insertedIds.push(row.id);
+        inserted++;
+      } catch (insertErr) {
+        logger.warn({ err: insertErr.message, surveyId }, 'generate_sample_responses:insert_warn');
+      }
+    }
+
+    // Publish to stream so the consumer triggers insight generation automatically
+    if (inserted > 0) {
+      if (process.env.REDIS_URL) {
+        for (const responseId of insertedIds) {
+          publishResponseEvent({ surveyId, orgId: req.orgId, responseId }).catch(() => {});
+        }
+      } else {
+        maybeAutoAnalyze(surveyId, req.orgId).catch(() => {});
+      }
+    }
+
+    logger.info({ surveyId, orgId: req.orgId, requested: parsedCount, inserted }, 'sample_responses_generated');
+    res.json({ count: inserted, message: `Generated ${inserted} sample responses for "${survey.title}".` });
+  } catch (err) {
+    logger.error({ err: err.message }, 'generate_sample_responses:error');
     res.status(500).json({ error: err.message });
   }
 });

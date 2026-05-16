@@ -78,6 +78,11 @@ async function chat(messages, model = DEFAULT_MODEL, operation = 'chat', maxToke
   }
 }
 
+// Strip optional markdown code fences that some models emit despite being told not to.
+function stripJson(raw) {
+  return raw.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+}
+
 async function generateSurveyQuestions(intent, surveyTypeId) {
   const typeHint = surveyTypeId ? ` The survey type is: ${surveyTypeId}.` : '';
   const content = await chat(
@@ -92,7 +97,7 @@ async function generateSurveyQuestions(intent, surveyTypeId) {
     'generate-survey'
   );
   try {
-    return JSON.parse(content.trim());
+    return JSON.parse(stripJson(content));
   } catch {
     throw new Error('AI returned invalid JSON for survey generation. Please retry.');
   }
@@ -121,7 +126,7 @@ async function analyzeInsights(surveyTitle, responses) {
     'analyze-insights'
   );
   try {
-    return JSON.parse(content.trim());
+    return JSON.parse(stripJson(content));
   } catch {
     throw new Error('AI returned invalid JSON for insights analysis. Please retry.');
   }
@@ -160,7 +165,7 @@ Return ONLY valid JSON — no markdown:
     4000,
   );
 
-  const cleaned = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '');
+  const cleaned = stripJson(content);
   try {
     return JSON.parse(cleaned);
   } catch {

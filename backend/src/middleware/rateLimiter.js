@@ -110,16 +110,31 @@ const responseSubmitLimiter = makeRateLimiter({
   keyFn: (req) => `submit:${req.ip}:${req.params.surveyId}`,
 });
 
-// General API: 200 requests per IP per 15 min (authenticated endpoints).
-const apiLimiter = makeRateLimiter({
-  max: 200,
-  keyFn: (req) => `api:${req.ip}`,
-});
+// ── Dev bypass ────────────────────────────────────────────────────────────────
+// When SKIP_AUTH=true the whole app is running behind a single dev identity.
+// All requests share one IP (127.0.0.1) so any meaningful rate limit would be
+// exhausted almost immediately during active development.
+// Rate limiting is a production concern — skip it entirely in local dev.
+const _skipRateLimit = process.env.SKIP_AUTH === 'true';
 
-// AI endpoints: 20 requests per IP per 15 min (LLM calls are expensive).
-const aiLimiter = makeRateLimiter({
-  max: 20,
-  keyFn: (req) => `ai:${req.ip}`,
-});
+function _noopMiddleware(_req, _res, next) { next(); }
+
+// General API: 500 requests per org per 15 min (authenticated endpoints).
+// Key includes orgId (from auth) rather than raw IP so multi-tenant prod
+// instances don't share a pool, and dev is keyed to the dev-org identity.
+const apiLimiter = _skipRateLimit
+  ? _noopMiddleware
+  : makeRateLimiter({
+      max: 500,
+      keyFn: (req) => `api:${req.orgId || req.ip}`,
+    });
+
+// AI endpoints: 30 requests per org per 15 min (LLM calls are expensive).
+const aiLimiter = _skipRateLimit
+  ? _noopMiddleware
+  : makeRateLimiter({
+      max: 30,
+      keyFn: (req) => `ai:${req.orgId || req.ip}`,
+    });
 
 module.exports = { makeRateLimiter, responseSubmitLimiter, apiLimiter, aiLimiter };

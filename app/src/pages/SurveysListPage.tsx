@@ -530,7 +530,7 @@ export function SurveysListPage() {
                             </Button>
                           )}
                           <Button variant="ghost" size="sm"
-                            onClick={(e: React.MouseEvent) => { e.stopPropagation(); navigate(ROUTES.INSIGHTS); }}
+                            onClick={(e: React.MouseEvent) => { e.stopPropagation(); navigate(`${ROUTES.INSIGHTS}?survey=${survey.id}`); }}
                             className="rounded-xl bg-[rgba(42,75,217,0.08)] text-primary hover:bg-[rgba(42,75,217,0.14)]">
                             <Icon name="insights" size={14} />{t('surveys.actions.insights')}
                           </Button>
@@ -548,7 +548,12 @@ export function SurveysListPage() {
                                 <Icon name="more_vert" size={16} />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end" className="w-48">
+                            <DropdownMenuContent align="end" className="w-52">
+                              <DropdownMenuItem className="text-on-surface gap-2"
+                                onClick={(e: React.MouseEvent) => { e.stopPropagation(); navigate(toPath(ROUTES.SAMPLE_RESPONSES, { surveyId: survey.id })); }}>
+                                <Icon name="auto_awesome" size={15} className="text-primary" />{t('surveys.actions.generateResponses')}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
                               {(survey.status === 'active' || survey.status === 'paused') && (
                                 <DropdownMenuItem className="text-[#6b7280] gap-2"
                                   onClick={(e: React.MouseEvent) => { e.stopPropagation(); setCloseTarget({ id: survey.id, title: survey.title, responseCount }); }}>

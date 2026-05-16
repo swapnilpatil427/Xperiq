@@ -82,10 +82,16 @@ async def call_agent_anthropic(
         "input_schema": raw_schema,
     }
 
+    # Wrap system prompt as a content block with cache_control so Anthropic caches it
+    # for up to 5 minutes. When node_narrate calls _narrate() 5-8 times with the same
+    # system prompt, only the first call charges full input tokens; subsequent calls
+    # get a ~90% discount on the cached portion.
+    system_block = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
     create_kwargs: dict[str, Any] = {
         "model":       config.model,
         "max_tokens":  config.max_tokens,
-        "system":      system,
+        "system":      system_block,
         "tools":       [tool],
         "tool_choice": {"type": "tool", "name": tool_name},
         "messages":    [{"role": "user", "content": user}],

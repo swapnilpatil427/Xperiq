@@ -11,7 +11,7 @@ import React from 'react';
 import { Icon } from '../../components/Icon';
 
 // ── Citation chip ────────────────────────────────────────────────────────────
-export function CitationChip({ id, dark = false }: { id: string; dark?: boolean }) {
+export function CitationChip({ id, dark = false, title }: { id: string; dark?: boolean; title?: string }) {
   return (
     <button
       type="button"
@@ -21,7 +21,7 @@ export function CitationChip({ id, dark = false }: { id: string; dark?: boolean 
           ? 'bg-white/15 text-[#d299ff] hover:bg-white/25'
           : 'bg-primary/10 text-primary hover:bg-primary/20')
       }
-      title={`Open quote ${id}`}
+      title={title ?? `Open quote ${id}`}
     >
       [{id}]
     </button>

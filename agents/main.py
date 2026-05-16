@@ -69,6 +69,17 @@ from agents.lib.validators import fix_question_ids
 _compiled_graph: Any = None
 
 
+async def _run_scheduler_bg() -> None:
+    """Thin wrapper so scheduler errors don't crash the lifespan."""
+    try:
+        from agents.scheduler import run_scheduler
+        await run_scheduler()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.error("scheduler_crashed", error=str(exc))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _compiled_graph
@@ -76,8 +87,28 @@ async def lifespan(app: FastAPI):
     async with get_checkpointer() as checkpointer:
         from agents.graph import build_graph
         _compiled_graph = build_graph(checkpointer)
+
+        # Optional inline scheduler (for single-process deploys)
+        _scheduler_task = None
+        if os.getenv("ENABLE_SCHEDULER", "").lower() == "true":
+            _scheduler_task = asyncio.create_task(_run_scheduler_bg())
+            logger.info("inline_scheduler_started")
+
+        if os.getenv("ENABLE_STREAM_CONSUMER", "false").lower() == "true":
+            from agents.consumers.response_stream import run_response_stream_consumer
+            asyncio.create_task(run_response_stream_consumer())
+            logger.info("stream_consumer_enabled")
+
         logger.info("agents_service_ready", env=os.getenv("AGENTS_ENV", "dev"))
         yield
+
+        if _scheduler_task:
+            _scheduler_task.cancel()
+            try:
+                await _scheduler_task
+            except asyncio.CancelledError:
+                pass
+
     await db.close_pool()
     logger.info("agents_service_shutdown")
 
@@ -617,6 +648,83 @@ async def apply_recommendation(
     )
 
 
+# ── Insight generation ───────────────────────────────────────────────────────────
+
+@app.post("/insights/generate", summary="Kick off insight generation for a survey")
+async def generate_insights(
+    request: Request,
+    _: None = Depends(require_internal_key),
+) -> dict:
+    body      = await request.json()
+    survey_id = body.get("survey_id")
+    org_id    = body.get("org_id")
+    run_id    = body.get("run_id")
+    trigger   = body.get("trigger", "schedule")
+    if not all([survey_id, org_id, run_id]):
+        raise HTTPException(status_code=422, detail="survey_id, org_id, run_id required")
+
+    from agents.graphs.insights import run_insight_generation
+    task = asyncio.create_task(run_insight_generation(survey_id, org_id, run_id, trigger))
+    task.add_done_callback(
+        lambda t: logger.warning("insight_task_unhandled_error", run_id=run_id, error=str(t.exception()))
+        if t.exception() else None
+    )
+    return {"status": "started", "run_id": run_id}
+
+
+# ── Sample response generation ────────────────────────────────────────────────────
+
+@app.post("/responses/generate", summary="Generate synthetic sample responses for a survey")
+async def generate_sample_responses(
+    request: Request,
+    _: None = Depends(require_internal_key),
+) -> dict:
+    """
+    Generates realistic synthetic survey responses using the response_gen agent.
+
+    Body:
+      survey_id, org_id, survey_title, survey_intent, questions, count, persona_mix
+
+    Returns:
+      { responses: [{answers, nps_score, persona}], count: int }
+    """
+    from agents.agents.response_generator import ResponseGenInput, response_generator_agent
+
+    body = await request.json()
+    try:
+        inp = ResponseGenInput(**body)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if not inp.questions:
+        raise HTTPException(status_code=422, detail="Survey has no questions")
+
+    responses, _ = await response_generator_agent.run(inp)
+    return {"responses": responses, "count": len(responses)}
+
+
+# ── Crystal: stateful conversational analyst ─────────────────────────────────────
+
+@app.post("/insights/crystal", summary="Stateful Crystal AI analyst for the insights page")
+async def crystal_chat(request: Request, _: None = Depends(require_internal_key)) -> dict:
+    """Stateful Crystal AI analyst for the insights page."""
+    from agents.agents.crystal import crystal_agent, CrystalInput
+
+    body = await request.json()
+    try:
+        inp = CrystalInput(**body)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    output, _ = await crystal_agent.run(inp)
+    return {
+        "answer":       output.answer,
+        "suggestions":  output.suggestions,
+        "insight_refs": output.insight_refs,
+        "citations":    output.citations,
+    }
+
+
 # ── Agent registry ───────────────────────────────────────────────────────────────
 
 @app.get("/agents/registry", summary="List all agent manifests (active + stubs)")
@@ -658,4 +766,5 @@ if __name__ == "__main__":
         port=int(os.getenv("AGENTS_PORT", "8001")),
         reload=os.getenv("AGENTS_ENV", "dev") == "dev",
         log_level="info",
+        loop="asyncio",   # uvloop has a signal-handling bug with Python 3.14
     )
