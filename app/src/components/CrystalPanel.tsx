@@ -9,8 +9,9 @@ import { Icon } from './Icon';
 import { Button } from '@/components/ui/button';
 import { useCrystalPanel } from '../contexts/crystalPanel';
 import { GlassCard, CitationChip, ConfidenceChip } from '../pages/insights/shared';
+import { useApi } from '../hooks/useApi';
 import type { SurveyScope } from './SurveyScopePicker';
-import type { Insight, Survey } from '../types';
+import type { Insight, Survey, AgenticInsight, SurveyTopic } from '../types';
 
 interface Message {
   id: string;
@@ -18,14 +19,16 @@ interface Message {
   content: string;
   timestamp: Date;
   confidence?: number;
-  citations?: string[];
-  showMiniChart?: boolean;
+  citations?: string[];       // insight_refs from the real API
+  suggestions?: string[];     // follow-up prompts from the real API
 }
 
 interface CrystalPanelProps {
   scope: SurveyScope;
   surveys: Survey[];
   insights: Insight | null;
+  agenticInsights?: AgenticInsight[];
+  topics?: SurveyTopic[];
 }
 
 const SINGLE_PROMPTS = [
@@ -42,7 +45,7 @@ const ALL_PROMPTS = [
   { icon: 'lightbulb', label: 'Top portfolio action right now?' },
 ];
 
-export function CrystalPanel({ scope, surveys, insights }: CrystalPanelProps) {
+export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], topics = [] }: CrystalPanelProps) {
   const { isOpen, initialQuery, closeCrystal } = useCrystalPanel();
   const [isExpanded, setIsExpanded] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -51,15 +54,25 @@ export function CrystalPanel({ scope, surveys, insights }: CrystalPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastSubmittedQuery = useRef('');
+  const api = useApi();
 
   const isAll = scope === 'all';
   const activeSurveys = surveys.filter((s) => s.status === 'active' && !s.deleted_at);
   const focusSurvey = !isAll ? surveys.find((s) => s.id === scope) : null;
-  const nps = insights?.nps_score ?? (isAll ? 51 : 47);
+
+  // Prefer real agentic NPS over legacy insights fallback
+  const npsInsight = agenticInsights.find(
+    (i) => i.category === 'nps' && i.metric_json?.name === 'nps',
+  );
+  const nps = npsInsight?.metric_json?.value ?? insights?.nps_score ?? (isAll ? 51 : 47);
+
+  // Response count from agentic trust data or survey metadata
+  const responseCount = agenticInsights[0]?.trust_json?.sample_size ?? focusSurvey?.response_count ?? 0;
+
   const prompts = isAll ? ALL_PROMPTS : SINGLE_PROMPTS;
 
   const submitQuery = useCallback(
-    (query: string) => {
+    async (query: string) => {
       if (!query.trim() || isThinking) return;
       lastSubmittedQuery.current = query;
       setMessages((prev) => [
@@ -68,26 +81,55 @@ export function CrystalPanel({ scope, surveys, insights }: CrystalPanelProps) {
       ]);
       setIsThinking(true);
 
-      // Simulated Crystal response — replace with /api/insights/ask in v1.1
-      setTimeout(() => {
+      // All-surveys scope: no surveyId to call against
+      if (isAll) {
         setMessages((prev) => [
           ...prev,
           {
             id: crypto.randomUUID(),
             role: 'crystal',
-            content: buildDemoResponse(query, isAll),
+            content: 'Select a specific survey from the scope picker to get real AI-powered answers. Crystal works best when focused on a single survey\'s responses.',
             timestamp: new Date(),
-            confidence: 84,
-            citations: ['r2104', 'r2107', 'r1492'],
-            showMiniChart:
-              query.toLowerCase().includes('nps') &&
-              (query.toLowerCase().includes('drop') || query.toLowerCase().includes('dip')),
+            suggestions: ['Switch to a specific survey →'],
           },
         ]);
         setIsThinking(false);
-      }, 1800);
+        return;
+      }
+
+      try {
+        const { answer, suggestions, insight_refs } = await api.crystalChat(scope, query);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'crystal',
+            content: answer,
+            timestamp: new Date(),
+            citations: insight_refs,
+            suggestions,
+          },
+        ]);
+      } catch (err) {
+        const isServiceDown = err instanceof Error && (
+          err.message.includes('fetch') || err.message.includes('503') || err.message.includes('502')
+        );
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'crystal',
+            content: isServiceDown
+              ? 'The agents service isn\'t reachable right now. Make sure it\'s running on :8001 and try again.'
+              : 'Something went wrong. Please try your question again.',
+            timestamp: new Date(),
+          },
+        ]);
+      } finally {
+        setIsThinking(false);
+      }
     },
-    [isAll, isThinking],
+    [isAll, isThinking, api, scope],
   );
 
   // Auto-submit when panel opens with a pre-loaded query
@@ -211,7 +253,7 @@ export function CrystalPanel({ scope, surveys, insights }: CrystalPanelProps) {
                   {isAll
                     ? `Ask across ${activeSurveys.length} active surveys · Portfolio NPS ${nps}`
                     : focusSurvey
-                      ? `${focusSurvey.title} · ${(focusSurvey.response_count ?? 0).toLocaleString()} responses · NPS ${nps}`
+                      ? `${focusSurvey.title} · ${responseCount.toLocaleString()} responses · NPS ${nps}${topics.length > 0 ? ` · ${topics.length} topics` : ''}`
                       : 'Ask anything about this survey'}
                 </div>
               </div>
@@ -265,7 +307,7 @@ export function CrystalPanel({ scope, surveys, insights }: CrystalPanelProps) {
                     msg.role === 'user' ? (
                       <UserBubble key={msg.id} message={msg} />
                     ) : (
-                      <CrystalBubble key={msg.id} message={msg} />
+                      <CrystalBubble key={msg.id} message={msg} onFollowUp={submitQuery} />
                     ),
                   )}
                   {isThinking && <ThinkingBubble />}
@@ -448,7 +490,7 @@ function UserBubble({ message }: { message: Message }) {
 }
 
 // ── Crystal answer bubble ─────────────────────────────────────────────────────
-function CrystalBubble({ message }: { message: Message }) {
+function CrystalBubble({ message, onFollowUp }: { message: Message; onFollowUp: (q: string) => void }) {
   return (
     <div className="flex gap-3">
       <div
@@ -463,12 +505,24 @@ function CrystalBubble({ message }: { message: Message }) {
           {message.confidence !== undefined && <ConfidenceChip value={message.confidence} />}
         </div>
         <p className="text-sm leading-relaxed mb-3">{message.content}</p>
-        {message.showMiniChart && <MiniNPSChart />}
         {message.citations && message.citations.length > 0 && (
           <div className="flex flex-wrap items-center gap-1 mt-3 pt-3 border-t border-outline-variant/20">
             <span className="text-[10px] text-on-surface-variant font-bold mr-1">Sources</span>
             {message.citations.map((c) => (
               <CitationChip key={c} id={c} />
+            ))}
+          </div>
+        )}
+        {message.suggestions && message.suggestions.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-outline-variant/20">
+            {message.suggestions.map((s) => (
+              <button
+                key={s}
+                onClick={() => onFollowUp(s)}
+                className="px-2.5 py-1 rounded-full text-[11px] font-bold border border-primary/30 text-primary hover:bg-primary/5 transition-colors"
+              >
+                {s}
+              </button>
             ))}
           </div>
         )}
@@ -529,64 +583,7 @@ function ThinkingBubble() {
   );
 }
 
-// ── NPS mini chart (shown for NPS-drop questions) ────────────────────────────
-function MiniNPSChart() {
-  return (
-    <div className="rounded-xl p-3 bg-muted/50 mb-3">
-      <div className="text-[10px] font-bold text-on-surface-variant mb-2 uppercase tracking-widest">
-        NPS · May 7 – May 14
-      </div>
-      <div className="flex items-end justify-between gap-1.5 h-14">
-        {[62, 65, 58, 25, 35, 54, 60].map((h, i) => (
-          <div key={i} className="flex-1 relative">
-            <div
-              className="w-full rounded-t"
-              style={{
-                height: `${h}%`,
-                background:
-                  i === 3 ? '#d97706' : i === 4 ? 'rgba(217,119,6,0.55)' : 'rgba(42,75,217,0.55)',
-              }}
-            />
-            {i === 3 && (
-              <span className="absolute -top-4 left-1/2 -translate-x-1/2 text-[9px] font-black text-amber-600">
-                35
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-      <div className="flex items-center justify-between mt-1 text-[9px] text-on-surface-variant font-bold">
-        <span>May 7</span>
-        <span>May 10 ▲</span>
-        <span>May 14</span>
-      </div>
-    </div>
-  );
-}
+// Removed: MiniNPSChart (was hardcoded fake data tied to buildDemoResponse)
+// Removed: buildDemoResponse (was returning identical hardcoded text for any unrecognized query)
+// Crystal now calls the real /api/insights/:surveyId/crystal endpoint.
 
-// ── Demo response generator (replace with /api/insights/ask in v1.1) ─────────
-function buildDemoResponse(query: string, isAll: boolean): string {
-  const q = query.toLowerCase();
-  if (q.includes('nps') && (q.includes('drop') || q.includes('dip'))) {
-    return 'NPS dropped 12 points (47 → 35) on May 10, outside the 95% prediction interval [42–52]. A spike of 14 responses mentioning "login error" hit in the same 24h window, and average sentiment moved from +0.12 to −0.41 (p<0.01). Likely root cause: the 2026-05-10 14:12 UTC login outage.';
-  }
-  if (q.includes('churn')) {
-    return 'Highest churn-risk segment: Enterprise tier, onboarding cohort (< 30 days old). 23% are detractors vs. 11% baseline. Primary driver: "email verification loop" appears in 67% of their negative verbatims. Recommended action: route this segment to priority support.';
-  }
-  if (q.includes('csat') || q.includes('raise')) {
-    return 'The single highest-leverage action to raise CSAT: fix the email verification loop. Projected CSAT lift +0.3 points, NPS +3.2 ±1.8. Cited by 24 respondents across 3 surveys. This sits in the top-right quadrant of impact × feasibility.';
-  }
-  if (q.includes('last quarter') || q.includes('compare')) {
-    return 'vs. last quarter: NPS +4 pts (47 vs. 43), CSAT flat (4.2 vs. 4.1). Response velocity is 2.3× higher this quarter — likely attributed to your email campaign. The onboarding friction cluster is new this quarter (was absent Q1); all other top-5 drivers are stable.';
-  }
-  if (isAll && (q.includes('theme') || q.includes('3+'))) {
-    return 'Three themes appear in 4+ of your surveys: (1) "pricing transparency" — 4 surveys; (2) "onboarding friction" — 4 surveys; (3) "support response time" — 3 surveys. These are your highest-confidence portfolio signals. Addressing pricing transparency is projected to lift portfolio NPS by +1.4 ±0.7.';
-  }
-  if (isAll && q.includes('segment')) {
-    return '73% of responses across your portfolio are from Enterprise tier. This over-represents NPS for that segment and under-represents SMB (17% of responses vs. ~40% of ARR). Recommend post-stratification weighting or a dedicated SMB survey track.';
-  }
-  if (isAll && q.includes('portfolio')) {
-    return 'Top portfolio action: fix the email verification loop — it appears as a top driver in 3 of your 7 active surveys. Single change projected to lift portfolio NPS +1.4 ±0.7. Second: improve first-response SLA in support (currently 6h, benchmark 2h).';
-  }
-  return `Based on current data across ${isAll ? 'your portfolio' : 'this survey'}: support response time is the #1 driver of detractor sentiment (31% of explained NPS variance). Fixing the email verification loop is projected to add +3.2 NPS points and is the highest-confidence action this week.`;
-}

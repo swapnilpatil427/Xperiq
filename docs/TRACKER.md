@@ -1,5 +1,5 @@
 # Experient — Work Tracker
-# Updated: 2026-05-14
+# Updated: 2026-05-15
 
 > **How to use:** Tell Claude "mark P0-1 done and tested" or "start Sprint 1" and the tracker updates automatically.
 > Status key: ⬜ Not started · 🔄 In progress · ✅ Done · 🧪 Done + Tested · ⏭️ Skipped
@@ -527,6 +527,43 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 
 ---
 
+## Phase 2: AI Insights Pipeline (v2)
+
+> Database migration: `supabase/migrations/20240518000000_insights_v2.sql`
+> Deployment guide: `docs/GCP_DEPLOY.md`
+
+### Completed Features ✅
+
+| Feature | Status | Notes |
+|---|---|---|
+| Real text embeddings via OpenAI text-embedding-3-small + pgvector RAG for narration context | ✅ | 1536-dim vectors, IVFFlat index, cosine similarity search |
+| Enhanced topic discovery with canonical LLM labeling and new-topic detection | ✅ | `survey_topics` table; `is_new` flag; alias deduplication |
+| Effort score computation (linguistic analysis, 1-7 scale) | ✅ | CES-style `effort_score NUMERIC(4,2)` on survey_topics |
+| Time-windowed insights (all_time, last_30d, last_7d) | ✅ | `time_window` column on insights + unique index per window |
+| L3 Predictive insights: response volume trend extrapolation + NPS trajectory | ✅ | `trending` field (up/down/stable/new); metric_json carries trajectory |
+| Dynamic trust score computation (sample size, coverage, consistency, grounding) | ✅ | `trust_json` with four sub-dimensions on insights table |
+| Redis Streams pub/sub for streaming response → incremental insight trigger | ✅ | `insight_stream_offsets` table for consumer offset recovery |
+| Crystal AI chat with thread persistence and full survey context | ✅ | `crystal_threads` table with messages JSONB + context_snapshot |
+| Pin/dismiss insight cards with undo | ✅ | `user_state_json` on insights: pinned, dismissed, thumbs, notes |
+| Response trend sparkline in KPI row | ✅ | `trending` field on survey_topics; time-series data in metric_json |
+| Topic sentiment visualization in Voice tab | ✅ | `sentiment_score` + `dominant_emotion` per topic |
+| Crystal drawer with conversation history | ✅ | Thread persistence via crystal_threads; messages array |
+
+### GCP Deployment Tasks 🔜
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| GCP-1 | Cloud SQL (Postgres 15 + pgvector extension) setup | 🔜 | See `docs/GCP_DEPLOY.md` §2 — db-g1-small, us-central1 |
+| GCP-2 | Cloud Run deployment for agents service + backend | 🔜 | Two services: `experient-backend` + `experient-agents` |
+| GCP-3 | Google Cloud Pub/Sub replacing Redis Streams (env: EVENT_BUS=pubsub) | 🔜 | Topic: `insight-events`; subscription: `insight-consumers` |
+| GCP-4 | Cloud Scheduler for periodic insight generation (every 5 min paid / hourly free) | 🔜 | Calls `/scheduler/tick` on agents service |
+| GCP-5 | Secret Manager for ANTHROPIC_API_KEY, OPENAI_API_KEY, AGENTS_INTERNAL_KEY | 🔜 | All secrets via `--set-secrets` on Cloud Run |
+| GCP-6 | VPC connector for Cloud Run → Cloud SQL private connection | 🔜 | Avoids public IP; required for db-g1-small tier |
+| GCP-7 | Artifact Registry for Docker images | 🔜 | Region: us-central1; repos: backend + agents |
+| GCP-8 | Cloud Monitoring dashboards: insight pipeline latency, LLM cost per run, error rate | 🔜 | Three dashboards; alert policies on error rate >1% |
+
+---
+
 ## Completed Tasks Log
 
 *Tasks move here once marked 🧪 Done + Tested. Serves as a verified changelog.*
@@ -558,3 +595,4 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 | 2026-05-13 | P0-3 + P0-4 complete: Vitest 4.1.6 + React Testing Library installed. vitest.config.ts created (jsdom env). 102 unit tests written across 4 files — i18n (27), routes (22), thresholds (24), useSurveys (29, mock API). All 102 pass. `npm test` script added. |
 | 2026-05-13 | P0-8 complete: ErrorBoundary enhanced with `inline` prop. 12 AppShell pages wrapped with compact inline boundary (nav stays functional on page crash). 4 public pages wrapped with full-screen boundary. Top-level catch-all kept. P0-6 complete: .github/workflows/ci.yml created — lint + tsc + vitest on every push/PR to main. coverage/ gitignored, eslint ignores coverage/. Full CI sim: lint ✓ typecheck ✓ 102 tests ✓. |
 | 2026-05-12 | Survey backend fully rewritten: clean data model (templateId only, no template fields on survey), full audit trail (created_at/updated_at/updated_by/published_at/paused_at/closed_at/deleted_at), soft delete, status lifecycle timestamps, COALESCE publish. Org profile backend (org_profiles table, GET+PUT upsert). Fixed optimistic update bug for updated_at. Survey builder: settings panel shows template info read-only + editable fields (description/intent/thankYouMessage). Fixed SurveyCreationPage: "Edit in Builder" passes correct navigation state (intent/fromTemplate/templateId), "Launch Survey" now directly creates+publishes and shows success modal with share URL. All 13 question types implemented in fill page. Brand settings persisted to backend. 3D page transition animations (Framer Motion AnimatePresence + rotateX). Survey question card slide animations in fill page. LoadingStates components (Spinner, OverlayLoader, SurveyListSkeleton). Skeleton loading in SurveysListPage. Overlay loader for publish in builder. i18n strings added for all new UI text. |
+| 2026-05-15 | AI Insights Pipeline v2 (end-to-end): LangGraph DAG (ingest→embed→metrics→extract_texts→absa→cluster→topics→narrate→verify→publish). Real text embeddings via OpenAI text-embedding-3-small + pgvector RAG (cosine similarity). Enhanced topic discovery with canonical LLM labeling, Levenshtein fuzzy dedup, effort score (1-7 CES scale), per-topic sentiment/emotion/trending. Time-windowed insights (all_time/last_30d/last_7d) stored per window. L3 Predictive insights: OLS trend regression, anomaly detection, NPS trajectory. Dynamic trust scores (statistical/coverage/consistency/grounding). Crystal AI chat (stateful, thread persisted in crystal_threads, conversation history, citation IDs, suggestion chips). Redis Streams pub/sub: insight_events stream, XADD/XREADGROUP/XACK consumer, smart batching (10 responses or 5-min threshold). New backend routes: GET /topics, POST+GET+DELETE /crystal. UI: TrendSparkline SVG, TopicSentimentCard, CrystalDrawer (framer-motion slide-in), pin/dismiss with undo, timeWindow selector. Migration: 20240518000000_insights_v2.sql (survey_topics, crystal_threads, insight_stream_offsets, time_window column, IVFFlat index). Redis added to docker-compose.yml. Incremental migration runner (scripts/migrate.js) with fingerprint-based detection for pre-applied migrations. npm start auto-runs migrations. Fixed: migration 'already exists' error (fingerprinting), Redis blank error log (safe property access + SILENT_CODES set + deduplication). |

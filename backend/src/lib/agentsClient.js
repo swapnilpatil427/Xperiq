@@ -12,7 +12,13 @@ const logger = require('./logger');
 
 const AGENTS_URL          = process.env.AGENTS_URL          || 'http://localhost:8001';
 const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY || 'dev-internal-key-change-in-prod';
-const TIMEOUT_MS          = 12_000; // 12s — just for the HTTP handshake; agents run async
+
+// Fast timeout: non-LLM operations (status polls, CRUD edits, registry)
+const DEFAULT_TIMEOUT_MS = 12_000;
+// LLM timeout: full model inference (copilot refine, skip-logic, recommendations).
+// Free-tier models can take 15–30s; retry-after backoff adds up to ~8s per attempt.
+// 90s covers one full inference + one rate-limit retry without blocking the request forever.
+const LLM_TIMEOUT_MS = 90_000;
 
 function _headers() {
   return {
@@ -21,9 +27,9 @@ function _headers() {
   };
 }
 
-async function _fetch(path, opts = {}) {
+async function _fetch(path, opts = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer      = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer      = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${AGENTS_URL}${path}`, {
       ...opts,
@@ -43,6 +49,11 @@ async function _fetch(path, opts = {}) {
     clearTimeout(timer);
     throw err;
   }
+}
+
+// Response generation: ceil(count/5) LLM batches × ~15s each + 30s buffer, capped at 5 min.
+function _responseGenTimeout(count) {
+  return Math.min(Math.ceil(count / 5) * 15_000 + 30_000, 300_000);
 }
 
 
@@ -106,7 +117,7 @@ async function refineRun(runId, { orgId, message, questions, orgContext = {}, su
       intent,
       conversation_history: conversationHistory,
     }),
-  });
+  }, LLM_TIMEOUT_MS);
 }
 
 
@@ -126,7 +137,7 @@ async function addSkipLogic(runId, { orgId, request, orgContext = {} }) {
   return _fetch(`/orchestrate/${runId}/skip-logic`, {
     method: 'POST',
     body: JSON.stringify({ org_id: orgId, request, org_context: orgContext }),
-  });
+  }, LLM_TIMEOUT_MS);
 }
 
 
@@ -211,7 +222,41 @@ async function applyRecommendation(runId, actionId, {
       survey_type_id: surveyTypeId || null,
       intent,
     }),
-  });
+  }, LLM_TIMEOUT_MS);
+}
+
+
+// ── Sample response generation ─────────────────────────────────────────────────
+
+/**
+ * Generate synthetic sample responses for a survey.
+ * @param {object} params
+ * @param {string}   params.surveyId
+ * @param {string}   params.orgId
+ * @param {string}   params.surveyTitle
+ * @param {string}   [params.surveyIntent]
+ * @param {Array}    params.questions       - survey question objects
+ * @param {number}   [params.count]         - number of responses (default 20)
+ * @param {string}   [params.personaMix]    - "realistic" | "critical" | "positive" | "mixed"
+ * @returns {Promise<{ responses: Array, count: number }>}
+ */
+async function generateSampleResponses({
+  surveyId, orgId, surveyTitle, surveyIntent, questions, count = 20, personaMix = 'realistic',
+}) {
+  const timeoutMs = _responseGenTimeout(count);
+  logger.info({ surveyId, orgId, count, personaMix, timeoutMs }, 'agents:generateSampleResponses');
+  return _fetch('/responses/generate', {
+    method: 'POST',
+    body: JSON.stringify({
+      survey_id:     surveyId,
+      org_id:        orgId,
+      survey_title:  surveyTitle,
+      survey_intent: surveyIntent || null,
+      questions,
+      count,
+      persona_mix:   personaMix,
+    }),
+  }, timeoutMs);
 }
 
 
@@ -248,6 +293,8 @@ module.exports = {
   reorderQuestions,
   // Recommendation
   applyRecommendation,
+  // Sample responses
+  generateSampleResponses,
   // Discovery
   getAgentRegistry,
   isHealthy,

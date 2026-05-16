@@ -77,22 +77,21 @@ class TestDevEnv:
             cfg = _ROUTING["dev"][agent]
             assert cfg.temperature is not None, f"dev/{agent} temperature must be set (no thinking)"
 
-    def test_five_different_providers(self):
-        """Each dev agent uses a different provider for independent rate-limit pools."""
-        providers = set()
-        for agent in ALL_AGENTS:
-            model = _ROUTING["dev"][agent].model
-            provider = model.split("/")[0]
-            providers.add(provider)
-        assert len(providers) == 5, (
-            f"Dev should use 5 different providers, got {len(providers)}: {providers}"
+    def test_two_pools(self):
+        """Dev uses two DeepSeek free models for independent rate-limit pools.
+        Pool A: deepseek-r1:free (reasoning roles). Pool B: deepseek-v4-flash:free (fast roles).
+        """
+        models_used = set(_ROUTING["dev"][agent].model for agent in ALL_AGENTS)
+        assert len(models_used) >= 2, (
+            f"Dev should use at least 2 different free models, got {len(models_used)}: {models_used}"
         )
 
     def test_cross_vendor_qc(self):
-        creator_provider = _ROUTING["dev"]["creator"].model.split("/")[0]
-        qc_provider      = _ROUTING["dev"]["qc"].model.split("/")[0]
-        assert creator_provider != qc_provider, (
-            f"Dev QC and Creator use same provider '{creator_provider}' — breaks cross-vendor review"
+        """QC and creator must use different model pools to avoid self-confirmation bias."""
+        creator_model = _ROUTING["dev"]["creator"].model
+        qc_model      = _ROUTING["dev"]["qc"].model
+        assert creator_model != qc_model, (
+            f"Dev QC and Creator use same model '{creator_model}' — breaks cross-pool separation"
         )
 
 
@@ -126,72 +125,73 @@ class TestDevPaidEnv:
 
 
 # ── Staging env ───────────────────────────────────────────────────────────────
+# Strategy: Chinese/Google models via OpenRouter — no Anthropic SDK.
+# Creator = DeepSeek R1 (reasoning). QC = Gemini (cross-vendor). Narrate/crystal = Gemini.
 
 class TestStagingEnv:
-    def test_creator_uses_anthropic_sdk(self):
-        assert _ROUTING["staging"]["creator"].use_anthropic_sdk
+    def test_no_anthropic_sdk(self):
+        """Staging now uses OpenRouter Chinese/Google models — no Anthropic SDK."""
+        for agent in ALL_AGENTS:
+            assert not _ROUTING["staging"][agent].use_anthropic_sdk, (
+                f"staging/{agent} should not use Anthropic SDK (moved to OpenRouter)"
+            )
 
-    def test_creator_uses_thinking(self):
-        assert _ROUTING["staging"]["creator"].use_thinking
-
-    def test_creator_temperature_allowed(self):
-        """Sonnet 4.6 supports adaptive thinking WITH temperature (unlike Opus 4.7)."""
-        cfg = _ROUTING["staging"]["creator"]
-        assert cfg.temperature is not None, (
-            "Sonnet 4.6 allows temperature with adaptive thinking — should be set"
+    def test_creator_is_deepseek_or_high_quality(self):
+        model = _ROUTING["staging"]["creator"].model
+        assert any(p in model.lower() for p in ("deepseek", "gemini", "qwen", "moonshot")), (
+            f"staging creator should be a Chinese/Google model, got '{model}'"
         )
 
-    def test_qc_does_not_use_anthropic_sdk(self):
-        """QC must stay on OpenRouter (Gemini) for cross-vendor independence."""
-        assert not _ROUTING["staging"]["qc"].use_anthropic_sdk
-
-    def test_support_agents_use_anthropic_sdk(self):
-        for agent in ("qc_validator", "compliance", "recommender"):
-            assert _ROUTING["staging"][agent].use_anthropic_sdk, (
-                f"staging/{agent} should use Anthropic SDK"
-            )
+    def test_creator_temperature_set(self):
+        cfg = _ROUTING["staging"]["creator"]
+        assert cfg.temperature is not None, "staging creator should have temperature set"
 
     def test_no_free_models(self):
         for agent in ALL_AGENTS:
             model = _ROUTING["staging"][agent].model
             assert not model.endswith(":free"), f"staging/{agent} should not use free tier model"
 
-    def test_creator_is_sonnet(self):
-        model = _ROUTING["staging"]["creator"].model
-        assert "sonnet" in model.lower(), f"staging creator should be Sonnet, got '{model}'"
-
     def test_cross_vendor_qc(self):
-        creator_provider = "anthropic"  # SDK means Anthropic
-        qc_model         = _ROUTING["staging"]["qc"].model
-        assert "anthropic" not in qc_model.lower() and "claude" not in qc_model.lower(), (
-            "staging QC must not be an Anthropic model — cross-vendor rule"
+        """QC must use a different provider than creator."""
+        creator_provider = _ROUTING["staging"]["creator"].model.split("/")[0]
+        qc_provider      = _ROUTING["staging"]["qc"].model.split("/")[0]
+        assert creator_provider != qc_provider, (
+            f"staging QC and Creator should use different providers, both got '{creator_provider}'"
         )
+
+    def test_insight_roles_have_sufficient_tokens(self):
+        for agent in ("insight_narrate", "insight_topics", "insight_expert"):
+            assert _ROUTING["staging"][agent].max_tokens >= 1500, (
+                f"staging/{agent} needs at least 1500 tokens for quality XM insights"
+            )
+
+    def test_no_openai_models(self):
+        for agent in ALL_AGENTS:
+            model = _ROUTING["staging"][agent].model
+            assert not model.startswith("openai/"), f"staging/{agent} should not use OpenAI"
 
 
 # ── Prod env ──────────────────────────────────────────────────────────────────
+# Strategy: Best Chinese/Google via OpenRouter — DeepSeek R1 for reasoning,
+# Gemini 2.5 Flash for narration/synthesis, DeepSeek Chat for cross-vendor QA.
 
 class TestProdEnv:
-    def test_creator_uses_anthropic_sdk(self):
-        assert _ROUTING["prod"]["creator"].use_anthropic_sdk
+    def test_no_anthropic_sdk(self):
+        """Prod now uses OpenRouter Chinese/Google models — no Anthropic SDK."""
+        for agent in ALL_AGENTS:
+            assert not _ROUTING["prod"][agent].use_anthropic_sdk, (
+                f"prod/{agent} should not use Anthropic SDK (moved to OpenRouter)"
+            )
 
-    def test_creator_uses_thinking(self):
-        assert _ROUTING["prod"]["creator"].use_thinking
-
-    def test_creator_temperature_is_none(self):
-        """Opus 4.7 with adaptive thinking must omit temperature."""
-        assert _ROUTING["prod"]["creator"].temperature is None
-
-    def test_creator_is_opus(self):
+    def test_creator_is_deepseek_or_high_quality(self):
         model = _ROUTING["prod"]["creator"].model
-        assert "opus" in model.lower(), f"prod creator should be Opus, got '{model}'"
+        assert any(p in model.lower() for p in ("deepseek", "gemini", "qwen", "moonshot")), (
+            f"prod creator should be a Chinese/Google model, got '{model}'"
+        )
 
-    def test_qc_does_not_use_anthropic_sdk(self):
-        """QC must stay on OpenRouter (Gemini) for cross-vendor independence."""
-        assert not _ROUTING["prod"]["qc"].use_anthropic_sdk
-
-    def test_support_agents_use_anthropic_sdk(self):
-        for agent in ("qc_validator", "compliance", "recommender"):
-            assert _ROUTING["prod"][agent].use_anthropic_sdk
+    def test_creator_temperature_set(self):
+        cfg = _ROUTING["prod"]["creator"]
+        assert cfg.temperature is not None, "prod creator should have temperature set"
 
     def test_no_free_models(self):
         for agent in ALL_AGENTS:
@@ -199,14 +199,27 @@ class TestProdEnv:
             assert not model.endswith(":free")
 
     def test_cross_vendor_qc(self):
-        qc_model = _ROUTING["prod"]["qc"].model
-        assert "claude" not in qc_model.lower() and "anthropic" not in qc_model.lower(), (
-            "prod QC must not be an Anthropic model — cross-vendor rule"
+        """QC must use a different provider than creator."""
+        creator_provider = _ROUTING["prod"]["creator"].model.split("/")[0]
+        qc_provider      = _ROUTING["prod"]["qc"].model.split("/")[0]
+        assert creator_provider != qc_provider, (
+            f"prod QC and Creator should use different providers, both got '{creator_provider}'"
         )
 
     def test_max_tokens_reasonable(self):
         creator_tokens = _ROUTING["prod"]["creator"].max_tokens
         assert creator_tokens >= 2048, "prod creator needs enough tokens for a full survey"
+
+    def test_no_openai_models(self):
+        for agent in ALL_AGENTS:
+            model = _ROUTING["prod"][agent].model
+            assert not model.startswith("openai/"), f"prod/{agent} should not use OpenAI"
+
+    def test_insight_roles_have_sufficient_tokens(self):
+        for agent in ("insight_narrate", "insight_topics", "insight_expert"):
+            assert _ROUTING["prod"][agent].max_tokens >= 1500, (
+                f"prod/{agent} needs at least 1500 tokens for quality XM insights"
+            )
 
 
 # ── Token limits ──────────────────────────────────────────────────────────────
@@ -269,24 +282,16 @@ class TestGetModel:
 # ── Key requirements ──────────────────────────────────────────────────────────
 
 class TestKeyRequirements:
-    def test_dev_does_not_require_anthropic_key(self):
-        with patch.dict(os.environ, {"AGENTS_ENV": "dev"}):
-            assert not requires_anthropic_key()
-
-    def test_dev_paid_does_not_require_anthropic_key(self):
-        with patch.dict(os.environ, {"AGENTS_ENV": "dev-paid"}):
-            assert not requires_anthropic_key()
-
-    def test_staging_requires_anthropic_key(self):
-        with patch.dict(os.environ, {"AGENTS_ENV": "staging"}):
-            assert requires_anthropic_key()
-
-    def test_prod_requires_anthropic_key(self):
-        with patch.dict(os.environ, {"AGENTS_ENV": "prod"}):
-            assert requires_anthropic_key()
+    @pytest.mark.parametrize("env", ALL_ENVS)
+    def test_no_env_requires_anthropic_key(self, env):
+        """All envs now route through OpenRouter — no Anthropic SDK in any env."""
+        with patch.dict(os.environ, {"AGENTS_ENV": env}):
+            assert not requires_anthropic_key(), (
+                f"{env} should not require Anthropic key — all agents use OpenRouter now"
+            )
 
     @pytest.mark.parametrize("env", ALL_ENVS)
     def test_all_envs_require_openrouter_key(self, env):
-        """QC uses OpenRouter in every env — OPENROUTER_API_KEY always needed."""
+        """All envs use OpenRouter — OPENROUTER_API_KEY always needed."""
         with patch.dict(os.environ, {"AGENTS_ENV": env}):
             assert requires_openrouter_key()

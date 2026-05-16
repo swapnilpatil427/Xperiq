@@ -8,6 +8,8 @@ import { SurveysListPage } from './pages/SurveysListPage';
 import { SurveyCreationPage } from './pages/SurveyCreationPage';
 import { SurveyBuilderPage } from './pages/SurveyBuilderPage';
 import { ResponseDashboardPage } from './pages/ResponseDashboardPage';
+import { SurveyInsightsPage }    from './pages/SurveyInsightsPage';
+import { SampleResponsesPage }  from './pages/SampleResponsesPage';
 import { InsightsDashboardPage } from './pages/InsightsDashboardPage';
 import { AdvancedInsightsPage } from './pages/AdvancedInsightsPage';
 import { InsightsBriefPage } from './pages/insights/InsightsBriefPage';
@@ -65,6 +67,8 @@ export default function App() {
             <Route path={ROUTES.SURVEYS}            element={<ErrorBoundary inline><SurveysListPage /></ErrorBoundary>} />
             <Route path={ROUTES.CREATE}             element={<ErrorBoundary inline><SurveyCreationPage /></ErrorBoundary>} />
             <Route path={ROUTES.RESPONSE_DASHBOARD} element={<ErrorBoundary inline><ResponseDashboardPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SURVEY_INSIGHTS}    element={<ErrorBoundary inline><SurveyInsightsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SAMPLE_RESPONSES}   element={<ErrorBoundary inline><SampleResponsesPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS}           element={<ErrorBoundary inline><InsightsDashboardPage /></ErrorBoundary>} />
             <Route path={ROUTES.ADVANCED_INSIGHTS}  element={<ErrorBoundary inline><AdvancedInsightsPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS_BRIEF}     element={<ErrorBoundary inline><InsightsBriefPage /></ErrorBoundary>} />

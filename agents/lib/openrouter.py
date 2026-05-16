@@ -121,6 +121,7 @@ def _log_rate_limit_headers(headers: "httpx.Headers", model: str) -> None:
 async def _raw_call(
     messages: list[dict[str, str]],
     config: ModelConfig,
+    use_json_mode: bool = True,
 ) -> tuple[str, dict[str, Any]]:
     """Single HTTP call to OpenRouter. Returns (content_str, usage_dict)."""
     if not _API_KEY:
@@ -137,13 +138,14 @@ async def _raw_call(
         all_counts=dict(_request_counts),
     )
 
-    payload = {
-        "model":           config.model,
-        "messages":        messages,
-        "max_tokens":      config.max_tokens,
-        "temperature":     config.temperature,
-        "response_format": {"type": "json_object"},
+    payload: dict[str, Any] = {
+        "model":       config.model,
+        "messages":    messages,
+        "max_tokens":  config.max_tokens,
+        "temperature": config.temperature,
     }
+    if use_json_mode:
+        payload["response_format"] = {"type": "json_object"}
 
     headers = {
         "Authorization": f"Bearer {_API_KEY}",
@@ -204,12 +206,27 @@ async def _retry_loop(
     Runs up to _MAX_HTTP_ATTEMPTS. Wait uses Retry-After if the header is
     present, otherwise pure exponential backoff. Non-retryable errors (4xx
     bad model ID, auth failure) are raised immediately without retrying.
+
+    Special case: "JSON mode is not enabled for this model" (provider 400).
+    This means the model doesn't support response_format=json_object. We
+    disable JSON mode for the remainder of the call rather than giving up.
     """
     last_err: Exception | None = None
+    use_json_mode = True
     for attempt in range(_MAX_HTTP_ATTEMPTS):
         try:
-            return await _raw_call(messages, config)
+            return await _raw_call(messages, config, use_json_mode=use_json_mode)
         except OpenRouterError as e:
+            if "json mode is not enabled" in str(e).lower():
+                # Model doesn't advertise response_format support — drop the flag
+                # and retry immediately (don't count as a backoff attempt).
+                logger.warning(
+                    "openrouter_json_mode_fallback",
+                    model=config.model,
+                    note="response_format dropped; retrying without JSON mode",
+                )
+                use_json_mode = False
+                continue
             if not e.retryable:
                 raise
             last_err = e
@@ -244,8 +261,12 @@ async def _call_with_backoff(
 
 
 def _strip_markdown_fences(text: str) -> str:
-    """Remove ```json ... ``` wrappers that models sometimes emit despite instructions."""
-    return re.sub(r"^```(?:json)?\s*|\s*```\s*$", "", text.strip(), flags=re.DOTALL)
+    """Remove ```json...``` wrappers and <think>...</think> blocks that models emit."""
+    # Strip Qwen 3 / DeepSeek-R1 chain-of-thought thinking blocks
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # Strip markdown code fences
+    text = re.sub(r"^```(?:json)?\s*|\s*```\s*$", "", text.strip(), flags=re.DOTALL)
+    return text.strip()
 
 
 async def call_agent(

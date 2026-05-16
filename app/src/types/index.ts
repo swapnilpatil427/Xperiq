@@ -162,7 +162,8 @@ export interface SentimentBreakdown {
   negative: number;
 }
 
-export interface Insight {
+/** @deprecated Use AgenticInsight instead */
+export interface LegacyInsight {
   id?: string;
   survey_id?: string;
   org_id?: string;
@@ -174,6 +175,91 @@ export interface Insight {
   response_count?: number;
   triggered_by?: string;
   created_at?: string;
+}
+
+/** Backward-compat alias */
+export type Insight = LegacyInsight;
+
+// ── New Insight types (v2 — per-survey agentic insights) ──────────────────────
+
+export interface InsightMetric {
+  name:    string;
+  value:   number | null;
+  ci_low?: number | null;
+  ci_high?: number | null;
+  unit?:   string;
+  scale?:  number;
+  distribution?: Record<string, number>;
+}
+
+export interface InsightCitation {
+  response_id: string;
+  quote:       string;
+  sentiment:   'positive' | 'neutral' | 'negative';
+  relevance:   number;
+  emotion:     string;
+}
+
+export interface InsightTrust {
+  statistical:  number;
+  coverage:     number;
+  consistency:  number;
+  grounding:    number;
+  below_minimum_sample: boolean;
+  sample_size:  number;
+}
+
+export interface InsightRecommendedAction {
+  type:   string;
+  label:  string;
+  target?: string;
+}
+
+export interface InsightAudit {
+  model:           string;
+  embedding_model: string;
+  temperature:     number;
+  seed:            number;
+  verifier_pass:   boolean;
+  verifier_notes:  string;
+  prompt_hash:     string;
+  run_id:          string;
+}
+
+export interface AgenticInsight {
+  id:            string;
+  survey_id:     string;
+  org_id:        string;
+  run_id:        string;
+  layer:         'descriptive' | 'diagnostic' | 'predictive' | 'prescriptive';
+  category:      string;
+  question_type?: string;
+  segment_json?:  Record<string, unknown>;
+  headline:      string;
+  narrative:     string;
+  recommended_action?: InsightRecommendedAction | null;
+  metric_json?:  InsightMetric | null;
+  citations_json: InsightCitation[];
+  trust_score:   number;
+  trust_json:    InsightTrust;
+  priority:      number;
+  insight_hash:  string;
+  audit_json:    InsightAudit;
+  user_state_json: {
+    pinned?:    boolean;
+    dismissed?: boolean;
+    thumbs?:    'up' | 'down' | null;
+  };
+  generated_at: string;
+  superseded_at?: string | null;
+}
+
+export interface InsightRunStatus {
+  run_id:    string;
+  status:    'running' | 'completed' | 'failed';
+  progress?: number;
+  stream_events: Array<{ event: string; agent: string; data: Record<string, unknown>; timestamp: string }>;
+  insights_count?: number;
 }
 
 // ── Org Profile ───────────────────────────────────────────────────────────────
@@ -236,6 +322,21 @@ export interface ListSurveysResult {
     total_responses: number;
     avg_nps: number | null;
   };
+}
+
+// ── Survey Topics ─────────────────────────────────────────────────────────────
+
+export interface SurveyTopic {
+  id: string;
+  name: string;
+  aliases: string[];
+  is_new: boolean;
+  volume: number;
+  sentiment_score: number | null;  // -1 to 1
+  dominant_emotion: string | null;
+  effort_score: number | null;  // 1-7
+  trending: 'up' | 'down' | 'stable' | 'new' | null;
+  first_seen_at: string;
 }
 
 // ── Copilot ───────────────────────────────────────────────────────────────────

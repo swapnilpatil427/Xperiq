@@ -33,6 +33,7 @@ app.use('/api/public',      require(`${dir}/public`));
 app.use('/api/surveys',     apiLimiter, require(`${dir}/surveys`));
 app.use('/api/surveys',     apiLimiter, require(`${dir}/responses`));
 app.use('/api/surveys',     apiLimiter, require(`${dir}/insights`));
+app.use('/api/insights',    apiLimiter, require(`${dir}/insights`));
 app.use('/api/templates',   apiLimiter, require(`${dir}/templates`));
 app.use('/api/ai',          apiLimiter, aiLimiter, require(`${dir}/ai`));
 app.use('/api/workflows',   apiLimiter, require(`${dir}/workflows`));
