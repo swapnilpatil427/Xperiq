@@ -1968,6 +1968,7 @@ export function SurveyBuilderPage() {
     intent:            surveySettings.intent || null,
     thank_you_message: surveySettings.thankYouMessage || null,
     template_id:       surveySettings.templateId || null,
+    metadata:          (pending?.metadata as Record<string, unknown>) || undefined,
   });
 
   const doSave = async () => {
@@ -2024,7 +2025,7 @@ export function SurveyBuilderPage() {
     };
   }, [questions, surveyTitle, surveySettings]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleLaunch = async () => {
+  const handleLaunch = async (launchSettings: import('../components/SurveyActionModal').LaunchSettings) => {
     setLaunching(true);
     setSaveError(null);
     try {
@@ -2032,7 +2033,13 @@ export function SurveyBuilderPage() {
       isDirtyRef.current = false;
       const id = survey?.id || surveyId;
       if (id) {
-        const result = await publishSurvey(id) as { publishToken?: string } | null;
+        const result = await publishSurvey(id, {
+          maxResponses: launchSettings.maxResponses ? parseInt(launchSettings.maxResponses, 10) : null,
+          autoCloseAt:  launchSettings.autoCloseAt ? new Date(launchSettings.autoCloseAt).toISOString() : null,
+          allowMultipleResponses: launchSettings.allowMultiple,
+          passwordProtected: launchSettings.passwordProtected,
+          password: launchSettings.password || undefined,
+        }) as { publishToken?: string } | null;
         const token = result?.publishToken;
         if (token) {
           setShowPublishModal(false);

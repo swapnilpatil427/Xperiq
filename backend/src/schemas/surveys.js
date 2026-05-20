@@ -49,6 +49,11 @@ const questionSchema = z.object({
   }).nullish(),
 }).passthrough();
 
+const surveyMetadataSchema = z.object({
+  audience: z.string().max(200).nullish(),
+  use_case: z.string().max(200).nullish(),
+}).passthrough().optional();
+
 const createSurveySchema = z.object({
   title: z.string().min(1, 'title is required').max(500),
   description: z.string().max(2000).nullish(),
@@ -57,6 +62,7 @@ const createSurveySchema = z.object({
   template_id: z.string().max(100).nullish(),
   intent: z.string().max(1000).nullish(),
   thank_you_message: z.string().max(2000).nullish(),
+  metadata: surveyMetadataSchema,
 });
 
 const updateSurveySchema = z.object({
@@ -68,6 +74,7 @@ const updateSurveySchema = z.object({
   template_id: z.string().max(100).nullish(),
   intent: z.string().max(1000).nullish(),
   thank_you_message: z.string().max(2000).nullish(),
+  metadata: surveyMetadataSchema,
 });
 
 module.exports = { createSurveySchema, updateSurveySchema };

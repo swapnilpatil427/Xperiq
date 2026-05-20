@@ -94,15 +94,38 @@ class TestExtractOpenTexts:
         result = extract_open_texts(responses, questions)
         assert result == []
 
-    def test_skips_closed_questions(self):
+    def test_synthesises_score_questions(self):
+        # NPS + open_text: both produce text entries
         questions = [{"id": "q1", "type": "nps"}, {"id": "q2", "type": "open_text"}]
         responses = [{"id": "r1", "answers": [
             {"questionId": "q1", "value": "9"},
             {"questionId": "q2", "value": "Very responsive support team!"},
         ]}]
         result = extract_open_texts(responses, questions)
-        assert len(result) == 1
-        assert result[0]["question_id"] == "q2"
+        assert len(result) == 2
+        qids = {r["question_id"] for r in result}
+        assert "q1" in qids and "q2" in qids
+        nps_text = next(r["text"] for r in result if r["question_id"] == "q1")
+        assert "Promoter" in nps_text
+
+    def test_csat_synthesises_sentiment_label(self):
+        questions = [{"id": "q1", "type": "csat", "question": "How satisfied are you?"}]
+        responses = [
+            {"id": "r1", "answers": [{"questionId": "q1", "value": 5}]},
+            {"id": "r2", "answers": [{"questionId": "q1", "value": 1}]},
+        ]
+        result = extract_open_texts(responses, questions)
+        assert len(result) == 2
+        texts = {r["response_id"]: r["text"] for r in result}
+        assert "extremely satisfied" in texts["r1"]
+        assert "extremely dissatisfied" in texts["r2"]
+
+    def test_rating_only_survey_produces_texts(self):
+        # Pure rating survey should still produce texts (enables full text pipeline)
+        questions = [{"id": "q1", "type": "rating", "question": "Overall experience"}]
+        responses = [{"id": f"r{i}", "answers": [{"questionId": "q1", "value": i % 5 + 1}]} for i in range(10)]
+        result = extract_open_texts(responses, questions)
+        assert len(result) == 10
 
 
 # ── Sentiment ─────────────────────────────────────────────────────────────────

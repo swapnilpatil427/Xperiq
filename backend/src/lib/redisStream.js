@@ -14,7 +14,12 @@ const MAX_LEN = 10000; // keep last 10k events
 async function publishResponseEvent({ surveyId, orgId, responseId }) {
   try {
     const client = getRedisClient();
-    if (!client) return; // Redis not configured — fall back to maybeAutoAnalyze
+    // Skip when Redis is not configured or not yet connected. The client is created
+    // with enableOfflineQueue:false, so commands sent before 'ready' are rejected
+    // immediately. Checking status here avoids that error during startup and
+    // reconnect windows — events dropped during those windows are acceptable for
+    // this fire-and-forget stream.
+    if (!client || client.status !== 'ready') return;
     await client.xadd(
       STREAM_KEY,
       'MAXLEN', '~', MAX_LEN,

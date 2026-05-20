@@ -24,10 +24,19 @@ async function ensureTable() {
       updated_at        TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  // Add logo_url column if it was missing in an older schema
-  await db.query(`
-    ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT
-  `).catch(() => {});
+  // Additive columns — idempotent
+  const addCols = [
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT`,
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS sub_vertical TEXT`,
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS region TEXT DEFAULT 'global'`,
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS product_name TEXT`,
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS primary_use_case TEXT`,
+    // Per-survey context stored in surveys.metadata JSONB
+    `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'`,
+  ];
+  for (const sql of addCols) {
+    await db.query(sql).catch(() => {});
+  }
 }
 ensureTable().catch(console.error);
 
@@ -43,22 +52,28 @@ router.get('/', requireAuth, async (req, res) => {
 router.put('/', requireAuth, validate(updateOrgProfileSchema), async (req, res) => {
   try {
     const {
-      industry, company_size, use_case, target_audience,
-      website, brand_description, brand_name, brand_colors, brand_fonts,
+      industry, sub_vertical, company_size, use_case, primary_use_case,
+      target_audience, website, brand_description, brand_name, product_name,
+      region, brand_colors, brand_fonts,
     } = req.body;
     const { rows } = await db.query(
       `INSERT INTO org_profiles
-         (org_id, industry, company_size, use_case, target_audience,
-          website, brand_description, brand_name, brand_colors, brand_fonts)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+         (org_id, industry, sub_vertical, company_size, use_case, primary_use_case,
+          target_audience, website, brand_description, brand_name, product_name,
+          region, brand_colors, brand_fonts)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
        ON CONFLICT (org_id) DO UPDATE SET
          industry          = EXCLUDED.industry,
+         sub_vertical      = EXCLUDED.sub_vertical,
          company_size      = EXCLUDED.company_size,
          use_case          = EXCLUDED.use_case,
+         primary_use_case  = EXCLUDED.primary_use_case,
          target_audience   = EXCLUDED.target_audience,
          website           = EXCLUDED.website,
          brand_description = EXCLUDED.brand_description,
          brand_name        = EXCLUDED.brand_name,
+         product_name      = EXCLUDED.product_name,
+         region            = EXCLUDED.region,
          brand_colors      = EXCLUDED.brand_colors,
          brand_fonts       = EXCLUDED.brand_fonts,
          updated_at        = NOW()
@@ -66,12 +81,16 @@ router.put('/', requireAuth, validate(updateOrgProfileSchema), async (req, res) 
       [
         req.orgId,
         industry || null,
+        sub_vertical || null,
         company_size || null,
         use_case || null,
+        primary_use_case || null,
         target_audience || null,
         website || null,
         brand_description || null,
         brand_name || null,
+        product_name || null,
+        region || 'global',
         JSON.stringify(brand_colors || {}),
         JSON.stringify(brand_fonts || {}),
       ]

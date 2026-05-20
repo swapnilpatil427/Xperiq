@@ -1,0 +1,43 @@
+# Copy this to terraform.tfvars and fill in your values.
+# terraform.tfvars is gitignored — NEVER commit it.
+
+# ── OCI Identity ──────────────────────────────────────────────────────────────
+# Find these in OCI Console → top-right profile menu → Tenancy / User Settings
+tenancy_ocid     = "ocid1.tenancy.oc1..aaa..."
+user_ocid        = "ocid1.user.oc1..aaa..."
+fingerprint      = "aa:bb:cc:dd:..."
+private_key_path = "~/.oci/oci_api_key.pem"
+region           = "us-ashburn-1"
+
+# Same as tenancy_ocid if using root compartment
+compartment_id   = "ocid1.tenancy.oc1..aaa..."
+
+# ── VM ────────────────────────────────────────────────────────────────────────
+# Paste your public key: cat ~/.ssh/id_ed25519.pub
+ssh_public_key            = "ssh-ed25519 AAAA..."
+availability_domain_index = 0   # try 1 or 2 if OCI shows "Out of Capacity"
+
+# ── App ───────────────────────────────────────────────────────────────────────
+domain        = "yourdomain.com"
+app_repo_url  = "https://github.com/yourorg/experient.git"
+app_branch    = "main"
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+# Generate passwords: openssl rand -hex 24
+db_password    = "GENERATE_WITH_OPENSSL_RAND_HEX_24"
+redis_password = "GENERATE_WITH_OPENSSL_RAND_HEX_24"
+
+# Generate internal key: openssl rand -hex 32
+agents_internal_key = "GENERATE_WITH_OPENSSL_RAND_HEX_32"
+
+# Clerk — use sk_live_ keys for production (never sk_test_)
+clerk_secret_key      = "sk_live_..."
+clerk_publishable_key = "pk_live_..."
+
+# AI APIs
+openrouter_api_key = "sk-or-v1-..."
+anthropic_api_key  = "sk-ant-..."
+openai_api_key     = "sk-..."   # for embeddings pipeline
+
+# Sentry (optional — leave empty string to skip)
+sentry_dsn = ""

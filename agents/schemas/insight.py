@@ -100,3 +100,8 @@ class InsightStateModel(BaseModel):
     # Emitted
     insights:     list[dict] = Field(default_factory=list)    # InsightRecord dicts
     errors:       list[str]  = Field(default_factory=list)
+
+    # Specialist context (populated by node_context and node_route_specialists)
+    org_context:          dict      = Field(default_factory=dict)   # OrgContextModel dict
+    survey_context:       dict      = Field(default_factory=dict)   # SurveyContextModel dict
+    selected_specialists: list[str] = Field(default_factory=list)   # specialist IDs

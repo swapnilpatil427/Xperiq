@@ -11,6 +11,7 @@ import { ResponseDashboardPage } from './pages/ResponseDashboardPage';
 import { SurveyInsightsPage }    from './pages/SurveyInsightsPage';
 import { SampleResponsesPage }  from './pages/SampleResponsesPage';
 import { InsightsDashboardPage } from './pages/InsightsDashboardPage';
+import { TopicsAnalysisPage } from './pages/insights/TopicsAnalysisPage';
 import { AdvancedInsightsPage } from './pages/AdvancedInsightsPage';
 import { InsightsBriefPage } from './pages/insights/InsightsBriefPage';
 import { InsightsMetricsPage } from './pages/insights/InsightsMetricsPage';
@@ -70,6 +71,7 @@ export default function App() {
             <Route path={ROUTES.SURVEY_INSIGHTS}    element={<ErrorBoundary inline><SurveyInsightsPage /></ErrorBoundary>} />
             <Route path={ROUTES.SAMPLE_RESPONSES}   element={<ErrorBoundary inline><SampleResponsesPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS}           element={<ErrorBoundary inline><InsightsDashboardPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHTS_TOPICS}    element={<ErrorBoundary inline><TopicsAnalysisPage /></ErrorBoundary>} />
             <Route path={ROUTES.ADVANCED_INSIGHTS}  element={<ErrorBoundary inline><AdvancedInsightsPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS_BRIEF}     element={<ErrorBoundary inline><InsightsBriefPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS_METRICS}   element={<ErrorBoundary inline><InsightsMetricsPage /></ErrorBoundary>} />

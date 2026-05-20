@@ -7,6 +7,7 @@ const db = require('../../lib/db');
 const { maybeAutoAnalyze } = require('../../triggers/autoAnalyze');
 const { responsesSubmitted } = require('../../lib/metrics');
 const { publishResponseEvent } = require('../../lib/redisStream');
+const { triggerInsightGeneration } = require('../../lib/agentsClient');
 const router = express.Router();
 
 // Pagination defaults — adjust here if org-level settings are added later.
@@ -63,10 +64,34 @@ router.post('/:surveyId/responses', responseSubmitLimiter, validate(submitRespon
     const { answers, publishToken, started_at } = req.body;
 
     const { rows: [survey] } = await db.query(
-      `SELECT id, org_id FROM surveys WHERE id = $1 AND publish_token = $2 AND status = 'active'`,
+      `SELECT id, org_id, max_responses, auto_close_at, allow_multiple_responses FROM surveys WHERE id = $1 AND publish_token = $2 AND status = 'active'`,
       [surveyId, publishToken]
     );
     if (!survey) return res.status(404).json({ error: 'Survey not found or not active' });
+
+    // Check auto_close_at
+    if (survey.auto_close_at && new Date(survey.auto_close_at) < new Date()) {
+      await db.query(
+        `UPDATE surveys SET status='closed', closed_at=NOW() WHERE id=$1`,
+        [survey.id]
+      );
+      return res.status(410).json({ error: 'This survey has closed.' });
+    }
+
+    // Check max_responses
+    if (survey.max_responses) {
+      const { rows: [{ count }] } = await db.query(
+        'SELECT COUNT(*)::int AS count FROM responses WHERE survey_id = $1',
+        [surveyId]
+      );
+      if (count >= survey.max_responses) {
+        await db.query(
+          `UPDATE surveys SET status='closed', closed_at=NOW() WHERE id=$1`,
+          [survey.id]
+        );
+        return res.status(410).json({ error: 'This survey has reached its response limit.' });
+      }
+    }
 
     const npsAnswer = answers.find((a) => a.type === 'nps');
     const npsScore  = npsAnswer ? parseInt(npsAnswer.value, 10) : null;
@@ -110,28 +135,154 @@ router.post('/:surveyId/responses', responseSubmitLimiter, validate(submitRespon
   }
 });
 
-// ── Get responses — authenticated, paginated ──────────────────────────────────
-// Query params: ?limit=50&offset=0
-// Returns: { responses, total, limit, offset, hasMore }
+// ── POST /:surveyId/responses/bulk ─────────────────────────────────────────────
+// Authenticated endpoint for importing multiple responses at once.
+// Inserts all rows in a single DB transaction, then triggers insight generation once.
+// Body: { responses: [{ answers, nps_score?, started_at? }] }
+// Returns: { inserted, skipped, run_id }
+
+router.post('/:surveyId/responses/bulk', requireAuth, async (req, res) => {
+  try {
+    const { surveyId } = req.params;
+    const incoming = req.body.responses;
+
+    if (!Array.isArray(incoming) || incoming.length === 0) {
+      return res.status(400).json({ error: '`responses` must be a non-empty array' });
+    }
+    if (incoming.length > 5000) {
+      return res.status(400).json({ error: 'Maximum 5000 responses per bulk import' });
+    }
+
+    const { rows: [survey] } = await db.query(
+      `SELECT id, org_id FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      [surveyId, req.orgId],
+    );
+    if (!survey) return res.status(404).json({ error: 'Survey not found' });
+
+    const client = await db.pool.connect();
+    let inserted = 0;
+    let skipped  = 0;
+    try {
+      await client.query('BEGIN');
+      for (const item of incoming) {
+        const { answers, nps_score, started_at } = item;
+        if (!Array.isArray(answers)) { skipped++; continue; }
+
+        const npsAnswer = answers.find(a => a.type === 'nps');
+        const npsScore  = nps_score != null ? parseInt(nps_score, 10) : (npsAnswer ? parseInt(npsAnswer.value, 10) : null);
+        const completionTimeS = started_at
+          ? Math.max(0, Math.round((Date.now() - new Date(started_at).getTime()) / 1000))
+          : null;
+
+        await client.query(
+          `INSERT INTO responses (survey_id, org_id, answers, nps_score, completion_time_s)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [survey.id, survey.org_id, JSON.stringify(answers), npsScore, completionTimeS],
+        );
+        inserted++;
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    responsesSubmitted.inc(inserted);
+
+    // Trigger insight generation once for the whole batch.
+    // Abandon any stale run first (same logic as POST /api/insights/:id/generate?force=true).
+    let runId = null;
+    try {
+      await db.query(
+        `UPDATE agent_runs SET status='abandoned', completed_at=NOW()
+         WHERE survey_id=$1 AND org_id=$2 AND run_type='insight_generation'
+           AND status='running'`,
+        [surveyId, survey.org_id],
+      );
+      const threadId = `insight:${survey.org_id}:${surveyId}:bulk:${Date.now()}`;
+      const { rows } = await db.query(
+        `INSERT INTO agent_runs
+           (org_id, user_id, thread_id, run_type, status, intent, survey_id)
+         VALUES ($1,$2,$3,'insight_generation','running','insight:bulk_import',$4)
+         RETURNING id`,
+        [survey.org_id, req.userId, threadId, surveyId],
+      );
+      runId = rows[0].id;
+      triggerInsightGeneration({ surveyId, orgId: survey.org_id, runId, trigger: 'bulk_import' })
+        .catch(() => {
+          db.query("UPDATE agent_runs SET status='failed', completed_at=NOW() WHERE id=$1", [runId]).catch(() => {});
+        });
+    } catch (_) {
+      // Insight trigger is best-effort — bulk insert already succeeded
+    }
+
+    res.status(201).json({ inserted, skipped, run_id: runId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Get responses — authenticated, paginated with search/filter ──────────────
+// Query params: ?limit=50&offset=0&search=text&sentiment=positive&nps_min=0&nps_max=10&date_from=...&date_to=...
 router.get('/:surveyId/responses', requireAuth, async (req, res) => {
   try {
-    const limit  = Math.min(Math.max(1, parseInt(req.query.limit  || DEFAULT_PAGE_SIZE, 10)), MAX_PAGE_SIZE);
-    const offset = Math.max(0, parseInt(req.query.offset || '0', 10));
+    const limit   = Math.min(Math.max(1, parseInt(req.query.limit  || DEFAULT_PAGE_SIZE, 10)), MAX_PAGE_SIZE);
+    const offset  = Math.max(0, parseInt(req.query.offset || '0', 10));
+    const search    = (req.query.search    || '').trim();
+    const sentiment = (req.query.sentiment || '').trim();
+    const emotion   = (req.query.emotion   || '').trim();
+    const npsMin    = req.query.nps_min !== undefined ? parseInt(req.query.nps_min, 10) : null;
+    const npsMax    = req.query.nps_max !== undefined ? parseInt(req.query.nps_max, 10) : null;
+    const dateFrom  = (req.query.date_from || '').trim();
+    const dateTo    = (req.query.date_to   || '').trim();
+
+    // Build parameterized WHERE — shared by count and data queries
+    const filterParams = [req.params.surveyId, req.orgId];
+    let where = 'WHERE survey_id = $1 AND org_id = $2';
+
+    if (search) {
+      filterParams.push(`%${search}%`);
+      where += ` AND answers::text ILIKE $${filterParams.length}`;
+    }
+    if (sentiment) {
+      filterParams.push(sentiment);
+      where += ` AND ai_sentiment = $${filterParams.length}`;
+    }
+    if (emotion) {
+      filterParams.push(emotion);
+      where += ` AND ai_emotion = $${filterParams.length}`;
+    }
+    if (npsMin !== null && !isNaN(npsMin)) {
+      filterParams.push(npsMin);
+      where += ` AND nps_score >= $${filterParams.length}`;
+    }
+    if (npsMax !== null && !isNaN(npsMax)) {
+      filterParams.push(npsMax);
+      where += ` AND nps_score <= $${filterParams.length}`;
+    }
+    if (dateFrom) {
+      filterParams.push(dateFrom);
+      where += ` AND submitted_at >= $${filterParams.length}`;
+    }
+    if (dateTo) {
+      filterParams.push(dateTo);
+      where += ` AND submitted_at <= $${filterParams.length}`;
+    }
+
+    const limitIdx  = filterParams.length + 1;
+    const offsetIdx = filterParams.length + 2;
 
     const [countRes, rowsRes] = await Promise.all([
       db.query(
-        `SELECT COUNT(*)::int AS total
-         FROM responses
-         WHERE survey_id = $1 AND org_id = $2`,
-        [req.params.surveyId, req.orgId]
+        `SELECT COUNT(*)::int AS total FROM responses ${where}`,
+        filterParams
       ),
       db.query(
-        `SELECT *
-         FROM responses
-         WHERE survey_id = $1 AND org_id = $2
-         ORDER BY submitted_at DESC
-         LIMIT $3 OFFSET $4`,
-        [req.params.surveyId, req.orgId, limit, offset]
+        `SELECT * FROM responses ${where} ORDER BY submitted_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+        [...filterParams, limit, offset]
       ),
     ]);
 

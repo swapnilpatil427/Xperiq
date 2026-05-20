@@ -90,6 +90,19 @@ async function getRunStatus(runId, orgId) {
   return _fetch(`/orchestrate/${runId}/status?org_id=${encodeURIComponent(orgId)}`);
 }
 
+/**
+ * Cancel a running orchestration. Stops the in-process asyncio task (if still live)
+ * and marks the DB record as 'cancelled'. Idempotent — safe to call on already-
+ * terminal runs; returns the current status without error.
+ * Returns { run_id, status, task_cancelled }
+ */
+async function cancelOrchestration(runId, orgId) {
+  logger.info({ runId, orgId }, 'agents:cancelOrchestration');
+  return _fetch(`/orchestrate/${runId}/cancel?org_id=${encodeURIComponent(orgId)}`, {
+    method: 'POST',
+  });
+}
+
 
 // ── Copilot chat edits ────────────────────────────────────────────────────────────
 
@@ -260,6 +273,23 @@ async function generateSampleResponses({
 }
 
 
+// ── Insight generation ─────────────────────────────────────────────────────────
+
+/**
+ * Fire insight generation for a survey. Best-effort; caller should not await
+ * the full pipeline — only the HTTP kick-off.
+ *
+ * @param {{ surveyId, orgId, runId, trigger }} params
+ */
+async function triggerInsightGeneration({ surveyId, orgId, runId, trigger = 'manual' }) {
+  logger.info({ surveyId, orgId, runId, trigger }, 'agents:triggerInsightGeneration');
+  return _fetch('/insights/generate', {
+    method: 'POST',
+    body: JSON.stringify({ survey_id: surveyId, org_id: orgId, run_id: runId, trigger }),
+  }, 15_000);
+}
+
+
 // ── Registry + health ──────────────────────────────────────────────────────────
 
 /** List all agent capabilities (active + stubs). */
@@ -282,6 +312,7 @@ module.exports = {
   // Orchestration
   startOrchestration,
   getRunStatus,
+  cancelOrchestration,
   // Copilot chat
   refineRun,
   // Skip logic
@@ -295,6 +326,8 @@ module.exports = {
   applyRecommendation,
   // Sample responses
   generateSampleResponses,
+  // Insight generation
+  triggerInsightGeneration,
   // Discovery
   getAgentRegistry,
   isHealthy,

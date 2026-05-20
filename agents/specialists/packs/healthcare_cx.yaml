@@ -1,0 +1,54 @@
+id: healthcare_cx
+display_name: "Healthcare Patient Experience"
+priority: 90
+match:
+  industries: [healthcare, hospital, clinic, life_sciences, pharma, dental, veterinary]
+  use_cases: [CX, patient_experience, patient_satisfaction]
+  survey_types: [post_visit_csat, hcahps, patient_nps, discharge_survey, follow_up]
+  audiences: [patients, caregivers, members]
+taxonomy:
+  canonical_topics:
+    - { name: "Wait Time",               parent: "Access & Scheduling",   keywords: [wait, queue, delay, hold, lobby, appointment, scheduling], weight: 1.3 }
+    - { name: "Appointment Scheduling",  parent: "Access & Scheduling",   keywords: [book, schedule, appointment, availability, slot, calendar] }
+    - { name: "Provider Communication",  parent: "Care Quality",           keywords: [explain, communicate, listen, understand, clear, rushed, dismissed], weight: 1.2 }
+    - { name: "Provider Empathy",        parent: "Care Quality",           keywords: [caring, empathy, compassion, warm, cold, rude, kind, gentle], weight: 1.4 }
+    - { name: "Diagnosis & Treatment",   parent: "Care Quality",           keywords: [diagnosis, treatment, medication, prescription, test, procedure] }
+    - { name: "Discharge Process",       parent: "Care Coordination",      keywords: [discharge, instructions, follow-up, aftercare, home, sent home] }
+    - { name: "Care Coordination",       parent: "Care Coordination",      keywords: [coordination, referral, specialist, follow-up, handoff, team] }
+    - { name: "Facility Cleanliness",    parent: "Facility & Environment", keywords: [clean, dirty, hygiene, sanitary, sterile, smell, bathroom] }
+    - { name: "Staff Professionalism",   parent: "Facility & Environment", keywords: [professional, staff, nurse, doctor, receptionist, rude, helpful] }
+    - { name: "Billing & Insurance",     parent: "Administrative",         keywords: [bill, cost, insurance, charge, coverage, payment, EOB, surprise], weight: 1.1 }
+    - { name: "Medical Records",         parent: "Administrative",         keywords: [records, portal, MyChart, documents, history, access] }
+    - { name: "Privacy & Confidentiality", parent: "Administrative",       keywords: [privacy, HIPAA, confidential, data, secure, shared without] }
+benchmarks:
+  nps:  { p25: 30, p50: 50, p75: 70, source: "Press Ganey 2024 Ambulatory" }
+  csat: { p25: 3.8, p50: 4.2, p75: 4.6, scale: 5, source: "Press Ganey 2024" }
+  ces:  { p25: 5.5, p50: 4.5, p75: 3.5, scale: 7, source: "CES Healthcare Benchmark" }
+vocabulary:
+  positive_signals: [compassionate, attentive, thorough, listened, explained clearly, professional, caring, efficient, friendly]
+  negative_signals: [rushed, dismissed, rude, didn't listen, confusing, billing error, long wait, unprofessional, cold]
+  red_flags: [misdiagnosis, malpractice, abuse, HIPAA violation, unsafe, negligence, lawsuit, infection, fall]
+  domain_terms: [HCAHPS, Press Ganey, NPS, patient journey, care coordination, discharge, EMR, provider]
+prompt_overlays:
+  narrate_system: |
+    You are an expert patient experience analyst familiar with HCAHPS, Press Ganey, and CMS frameworks.
+    IMPORTANT: Never include or repeat patient names, dates of birth, MRNs, or specific medical details in insights.
+    Weight empathy, communication, and dignity language as highest-signal for patient satisfaction.
+    Frame negative findings constructively for clinical and operational leaders.
+    Reference industry context: Press Ganey ambulatory NPS median is 50; top-quartile is 70.
+  topics_system: |
+    Group patient feedback by care journey stage: Access → Visit → Clinical Care → Discharge → Administrative.
+    Use HCAHPS-aligned topic names where possible.
+    Flag any mentions of safety, abuse, or HIPAA concerns as CRITICAL priority.
+  crystal_system: |
+    You are Crystal, a patient experience AI analyst. You understand healthcare operations and clinical workflows.
+    You are HIPAA-aware: never surface or repeat individual patient details.
+    Reference Press Ganey and HCAHPS benchmarks in your answers.
+question_templates:
+  - { id: hcx.wait,        text: "How would you rate the time you waited to be seen today?",                         type: csat, theme: "Access" }
+  - { id: hcx.listen,      text: "Did your care team listen carefully to your concerns?",                            type: csat, theme: "Communication" }
+  - { id: hcx.explain,     text: "Did your provider explain things in a way you could understand?",                  type: csat, theme: "Communication" }
+  - { id: hcx.recommend,   text: "How likely are you to recommend this facility to a friend or family member?",      type: nps,  theme: "Overall" }
+  - { id: hcx.dignity,     text: "Did you feel treated with dignity and respect throughout your visit?",             type: csat, theme: "Care Quality" }
+  - { id: hcx.clean,       text: "How would you rate the cleanliness of the facility?",                             type: csat, theme: "Facility" }
+  - { id: hcx.open,        text: "Is there anything else you'd like to share about your experience today?",          type: open_text, theme: "Open Feedback" }

@@ -5,6 +5,7 @@ import { Icon } from '../components/Icon';
 import { LogoFull } from '../components/Logo';
 import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -42,30 +43,31 @@ function NpsQuestion({ q, value, onChange }: NpsQuestionProps) {
   const { t } = useTranslation();
   return (
     <div className="mt-4">
-      <div className="flex gap-1">
+      {/* grid-cols-11 ensures all 11 buttons (0–10) always fit in one row */}
+      <div className="grid gap-1.5" style={{ gridTemplateColumns: 'repeat(11, minmax(0, 1fr))' }}>
         {Array.from({ length: 11 }, (_, i) => {
-          const zoneColorSelected = i <= 6 ? '#b41340' : i <= 8 ? '#d97706' : '#059669';
-          const zoneBgUnselected  = i <= 6 ? 'rgba(180,19,64,0.07)' : i <= 8 ? 'rgba(217,119,6,0.07)' : 'rgba(5,150,105,0.07)';
+          const zoneColorSelected   = i <= 6 ? '#b41340' : i <= 8 ? '#d97706' : '#059669';
+          const zoneBgUnselected    = i <= 6 ? 'rgba(180,19,64,0.07)' : i <= 8 ? 'rgba(217,119,6,0.07)' : 'rgba(5,150,105,0.07)';
           const zoneColorUnselected = i <= 6 ? '#b41340cc' : i <= 8 ? '#d97706cc' : '#059669cc';
           return (
-          <Button
-            key={i}
-            onClick={() => onChange(i)}
-            variant="secondary"
-            className="flex-1 py-3 rounded-xl text-sm font-bold transition-all active:scale-95 border-0"
-            style={{
-              background: value === i ? zoneColorSelected : zoneBgUnselected,
-              color: value === i ? '#ffffff' : zoneColorUnselected,
-              transform: value === i ? 'scale(1.1)' : 'scale(1)',
-              boxShadow: value === i ? `0 8px 20px ${zoneColorSelected}40` : 'none',
-            } as React.CSSProperties}
-          >
-            {i}
-          </Button>
+            <button
+              key={i}
+              type="button"
+              onClick={() => onChange(i)}
+              className="aspect-square rounded-xl text-sm font-bold transition-all active:scale-95 w-full"
+              style={{
+                background: value === i ? zoneColorSelected : zoneBgUnselected,
+                color: value === i ? '#ffffff' : zoneColorUnselected,
+                transform: value === i ? 'scale(1.08)' : 'scale(1)',
+                boxShadow: value === i ? `0 8px 20px ${zoneColorSelected}40` : 'none',
+              } as React.CSSProperties}
+            >
+              {i}
+            </button>
           );
         })}
       </div>
-      <div className="flex justify-between mt-2 px-1">
+      <div className="flex justify-between mt-2 px-0.5">
         <span className="text-xs font-semibold text-error">{q.labelLow || t('fill.npsLabelLow')}</span>
         <span className="text-xs font-semibold text-success">{q.labelHigh || t('fill.npsLabelHigh')}</span>
       </div>
@@ -471,6 +473,107 @@ function SurveyErrorScreen({ type, onRetry }: SurveyErrorScreenProps) {
   );
 }
 
+// ── Password gate component ───────────────────────────────────────────────────
+function PasswordGate({ token, onUnlocked }: { token: string; onUnlocked: () => void }) {
+  const { t } = useTranslation();
+  const pg = 'passwordGate';
+  const [password,    setPassword]    = useState('');
+  const [showPass,    setShowPass]    = useState(false);
+  const [submitting,  setSubmitting]  = useState(false);
+  const [wrongPass,   setWrongPass]   = useState(false);
+
+  const handleSubmit = async () => {
+    if (!password.trim()) return;
+    setSubmitting(true);
+    setWrongPass(false);
+    try {
+      const res = await fetch(`${BASE}/api/public/surveys/${token}/verify-password`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({})) as { valid?: boolean };
+      if (data.valid) {
+        sessionStorage.setItem(`survey_pwd_${token}`, '1');
+        onUnlocked();
+      } else {
+        setWrongPass(true);
+      }
+    } catch {
+      setWrongPass(true);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-surface-container-low px-4">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-sm"
+      >
+        <div className="text-center mb-8">
+          <LogoFull height={32} />
+        </div>
+        <Card className="p-8 rounded-3xl border-white/60 shadow-xl flex flex-col items-center gap-5">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center"
+            style={{ background: 'rgba(42,75,217,0.1)' }}
+          >
+            <Icon name="lock" size={28} className="text-primary" fill={1} />
+          </div>
+          <div className="text-center">
+            <h2 className="text-xl font-extrabold font-headline text-on-surface">
+              {t(`${pg}.heading`)}
+            </h2>
+            <p className="text-sm text-on-surface-variant mt-1">{t(`${pg}.description`)}</p>
+          </div>
+
+          <div className="w-full flex flex-col gap-2">
+            <div className="relative">
+              <Input
+                type={showPass ? 'text' : 'password'}
+                placeholder={t(`${pg}.placeholder`)}
+                value={password}
+                onChange={(e) => { setPassword(e.target.value); setWrongPass(false); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(); }}
+                className="rounded-xl pr-14 text-base"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={() => setShowPass((v) => !v)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground hover:text-on-surface"
+              >
+                {showPass ? t(`${pg}.hidePassword`) : t(`${pg}.showPassword`)}
+              </button>
+            </div>
+            {wrongPass && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                className="text-sm text-red-600 font-medium"
+              >
+                {t(`${pg}.wrongPassword`)}
+              </motion.p>
+            )}
+          </div>
+
+          <Button
+            onClick={handleSubmit}
+            disabled={submitting || !password.trim()}
+            className="w-full py-3 font-bold rounded-xl text-white"
+            style={{ background: 'linear-gradient(135deg, #2a4bd9, #879aff)' }}
+          >
+            {submitting ? t(`${pg}.submitting`) : t(`${pg}.submitButton`)}
+          </Button>
+        </Card>
+      </motion.div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function SurveyFillPage() {
@@ -487,6 +590,14 @@ export function SurveyFillPage() {
   const [submitted, setSubmitted] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [retryAfterSecs, setRetryAfterSecs] = useState<number | null>(null);
+  const [passwordUnlocked, setPasswordUnlocked] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Restore session-level password bypass
+    if (token && sessionStorage.getItem(`survey_pwd_${token}`)) {
+      setPasswordUnlocked(true);
+    }
+  }, [token]);
 
   useEffect(() => {
     setLoading(true);
@@ -586,6 +697,11 @@ export function SurveyFillPage() {
 
   if (errorType) {
     return <SurveyErrorScreen type={errorType} onRetry={() => setRetryKey((k) => k + 1)} />;
+  }
+
+  // Password gate — show before survey if password_protected and not yet verified
+  if (survey?.password_protected && !passwordUnlocked) {
+    return <PasswordGate token={token!} onUnlocked={() => setPasswordUnlocked(true)} />;
   }
 
   if (submitted) {

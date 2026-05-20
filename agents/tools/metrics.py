@@ -62,11 +62,19 @@ def compute_ces(responses: list[dict], ces_field: str = "ces_score") -> dict:
     return {"score": round(mean, 2), "n": n, "below_minimum": n < 30}
 
 def compute_completion_rate(responses: list[dict]) -> dict:
-    """Fraction of responses that answered all required questions."""
+    """Fraction of responses that have at least one non-empty answer."""
     n = len(responses)
     if n == 0:
         return {"rate": 0.0, "n": 0}
-    completed = sum(1 for r in responses if r.get("completed", True))
+    def _has_answer(r: dict) -> bool:
+        if r.get("completed") is True:
+            return True
+        answers = r.get("answers") or []
+        return any(
+            isinstance(a, dict) and a.get("value") not in (None, "", [])
+            for a in answers
+        )
+    completed = sum(1 for r in responses if _has_answer(r))
     return {"rate": round(completed / n * 100, 1), "n": n}
 
 def compute_response_trend(responses: list[dict], window_days: int = 30) -> list[dict]:
@@ -89,18 +97,98 @@ def compute_response_trend(responses: list[dict], window_days: int = 30) -> list
             pass
     return [{"date": d, "count": c} for d, c in sorted(by_day.items())]
 
+def _score_to_text(q_type: str, score: float, question_stem: str = "") -> str:
+    """Convert a numeric survey score to a human-readable sentence for ABSA/clustering."""
+    stem = question_stem.strip()
+
+    if q_type == "nps":
+        score_int = max(0, min(10, round(score)))
+        if score_int >= 9:
+            label = f"Promoter — very likely to recommend (NPS {score_int}/10)"
+        elif score_int >= 7:
+            label = f"Passive — somewhat likely to recommend (NPS {score_int}/10)"
+        else:
+            label = f"Detractor — unlikely to recommend (NPS {score_int}/10)"
+        return f"{stem}: {label}" if stem else label
+
+    if q_type == "csat":
+        score_int = max(1, min(5, round(score)))
+        labels = {1: "extremely dissatisfied", 2: "dissatisfied", 3: "neutral",
+                  4: "satisfied", 5: "extremely satisfied"}
+        label = f"{labels[score_int]} ({score_int}/5)"
+        return f"{stem}: {label}" if stem else f"Customer satisfaction: {label}"
+
+    if q_type == "ces":
+        score_r = round(score, 1)
+        if score_r <= 2.5:
+            label = f"very easy experience (effort {score_r}/7)"
+        elif score_r <= 4.5:
+            label = f"moderate effort experience ({score_r}/7)"
+        else:
+            label = f"high effort, difficult experience ({score_r}/7)"
+        return f"{stem}: {label}" if stem else f"Customer effort: {label}"
+
+    # rating / slider — generic
+    label = f"rated {round(score, 1)}"
+    return f"{stem}: {label}" if stem else f"Rating: {round(score, 1)}"
+
+
 def extract_open_texts(responses: list[dict], questions: list[dict]) -> list[dict]:
-    """Extract all open-text answers as {response_id, question_id, text}."""
+    """Extract answers for topic/sentiment analysis as {response_id, question_id, text}.
+
+    Includes:
+    - open_text / short_text: raw free-form answer text
+    - multiple_choice: selected option label prefixed with the question stem
+    - checkbox: each selected option emitted as a separate sentence
+    - csat / nps / ces / rating / slider: descriptive text synthesised from the
+      numeric score so that rating-only surveys still feed the full text pipeline
+    """
     open_types = {"open_text", "short_text"}
-    open_qids = {q["id"] for q in questions if q.get("type") in open_types}
+    choice_types = {"multiple_choice", "checkbox"}
+    score_types = {"csat", "nps", "ces", "rating", "slider"}
+
+    q_map = {q["id"]: q for q in questions}
+    open_qids  = {q["id"] for q in questions if q.get("type") in open_types}
+    choice_qids = {q["id"] for q in questions if q.get("type") in choice_types}
+    score_qids  = {q["id"] for q in questions if q.get("type") in score_types}
+
     texts = []
     for r in responses:
         rid = str(r.get("id") or r.get("response_id") or "")
         for answer in (r.get("answers") or []):
-            if answer.get("questionId") in open_qids:
-                val = answer.get("value", "")
+            qid = answer.get("questionId", "")
+            val = answer.get("value")
+
+            if qid in open_qids:
                 if val and isinstance(val, str) and len(val.strip()) > 5:
-                    texts.append({"response_id": rid, "question_id": answer["questionId"], "text": val.strip()})
+                    q_stem = q_map[qid].get("question", "")
+                    texts.append({"response_id": rid, "question_id": qid, "text": val.strip(), "question": q_stem})
+
+            elif qid in choice_qids:
+                q_stem = q_map[qid].get("question", "")
+                if isinstance(val, str) and val.strip():
+                    text = f"{q_stem} → {val.strip()}" if q_stem else val.strip()
+                    texts.append({"response_id": rid, "question_id": qid, "text": text})
+                elif isinstance(val, list):
+                    for opt in val:
+                        if isinstance(opt, str) and opt.strip():
+                            text = f"{q_stem} → {opt.strip()}" if q_stem else opt.strip()
+                            texts.append({"response_id": rid, "question_id": qid, "text": text})
+
+            elif qid in score_qids:
+                if val is None:
+                    continue
+                try:
+                    score = float(val)
+                except (TypeError, ValueError):
+                    continue
+                q_def  = q_map.get(qid, {})
+                q_type = q_def.get("type", "rating")
+                q_stem = q_def.get("question", "")
+                text = _score_to_text(q_type, score, q_stem)
+                if text:
+                    texts.append({"response_id": rid, "question_id": qid, "text": text})
+
     return texts
 
 

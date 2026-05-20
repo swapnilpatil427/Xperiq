@@ -92,6 +92,13 @@ class CircuitBreaker:
             # Real failure
             self._failures          += 1
             self._last_failure_at    = time.monotonic()
+            logger.warning(
+                "circuit_breaker_failure",
+                name=self.name,
+                failures=self._failures,
+                threshold=self.failure_threshold,
+                error=str(exc_val)[:300],
+            )
             if self._state == CBState.HALF_OPEN:
                 await self._transition(CBState.OPEN)
             elif self._failures >= self.failure_threshold:

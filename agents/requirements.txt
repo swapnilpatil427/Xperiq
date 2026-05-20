@@ -29,6 +29,9 @@ structlog>=24.0
 # Config
 python-dotenv>=1.0
 
+# YAML — specialist pack manifests
+pyyaml>=6.0
+
 # Redis Streams consumer (insight_events pipeline)
 redis[asyncio]>=5.0
 

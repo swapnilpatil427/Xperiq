@@ -3,6 +3,7 @@
 Endpoints:
   POST /orchestrate                                    — Start a survey creation run (async background)
   GET  /orchestrate/{run_id}/status                    — Poll run status + stream events
+  POST /orchestrate/{run_id}/cancel                    — Cancel a running run (stops task + marks DB)
   POST /orchestrate/{run_id}/refine                    — Copilot chat: apply natural-language edits
   POST /orchestrate/{run_id}/skip-logic                — Add conditional branching to questions
   POST /orchestrate/{run_id}/questions                 — Add a new question
@@ -44,6 +45,7 @@ from agents.agents import (
     recommender_agent,
 )
 from agents.lib import db
+from agents.lib import run_registry
 from agents.lib.checkpointer import get_checkpointer
 from agents.lib.logger import logger
 from agents.lib.metrics import orchestration_runs_total
@@ -84,6 +86,7 @@ async def _run_scheduler_bg() -> None:
 async def lifespan(app: FastAPI):
     global _compiled_graph
     await db.init_pool()
+    await db.ensure_schema()
     async with get_checkpointer() as checkpointer:
         from agents.graph import build_graph
         _compiled_graph = build_graph(checkpointer)
@@ -94,12 +97,32 @@ async def lifespan(app: FastAPI):
             _scheduler_task = asyncio.create_task(_run_scheduler_bg())
             logger.info("inline_scheduler_started")
 
-        if os.getenv("ENABLE_STREAM_CONSUMER", "false").lower() == "true":
+        # Auto-enable when REDIS_URL is present; override with ENABLE_STREAM_CONSUMER=false to disable.
+        _redis_url = os.getenv("REDIS_URL", "")
+        _stream_default = "true" if _redis_url else "false"
+        if os.getenv("ENABLE_STREAM_CONSUMER", _stream_default).lower() == "true":
             from agents.consumers.response_stream import run_response_stream_consumer
+            from agents.consumers._redis import _REDIS_URL as _effective_redis_url
             asyncio.create_task(run_response_stream_consumer())
-            logger.info("stream_consumer_enabled")
+            logger.info("stream_consumer_enabled", redis_url=_effective_redis_url.split("@")[-1])
 
-        logger.info("agents_service_ready", env=os.getenv("AGENTS_ENV", "dev"))
+        _env = os.getenv("AGENTS_ENV", "dev")
+        from agents.lib.models import _ROUTING, get_env
+        _routing = _ROUTING[get_env()]
+        _banner_rows = "\n".join(
+            f"    {role:<18} {cfg.model}"
+            for role, cfg in _routing.items()
+            if role in ("creator", "qc", "qc_validator", "compliance", "recommender", "copilot")
+        )
+        print(
+            f"\n{'─' * 58}\n"
+            f"  Experient Agents  ·  AGENTS_ENV = {_env}\n"
+            f"{'─' * 58}\n"
+            f"{_banner_rows}\n"
+            f"{'─' * 58}\n",
+            flush=True,
+        )
+        logger.info("agents_service_ready", env=_env)
         yield
 
         if _scheduler_task:
@@ -285,6 +308,11 @@ async def _run_graph_background(run_id: str, thread_id: str, initial_state: dict
                 )
             logger.debug("graph_node_complete", run_id=run_id, node=node_name)
 
+    except asyncio.CancelledError:
+        # Raised by run_registry.cancel() — DB already updated to 'cancelled' by the endpoint.
+        logger.info("graph_task_cancelled", run_id=run_id)
+        raise  # Must re-raise so asyncio marks the task as cancelled, not done normally.
+
     except Exception as e:
         import traceback as _tb
         logger.error("graph_background_error", run_id=run_id, error=str(e),
@@ -293,6 +321,14 @@ async def _run_graph_background(run_id: str, thread_id: str, initial_state: dict
             await db.update_run(run_id, status="failed", error_log=[str(e)])
         except Exception:
             pass
+
+
+def _on_graph_task_done(task: asyncio.Task, run_id: str) -> None:
+    """Done callback: deregister the task and log any unhandled exception."""
+    run_registry.deregister(run_id)
+    if not task.cancelled() and task.exception() is not None:
+        logger.warning("graph_task_unhandled_error", run_id=run_id,
+                       error=str(task.exception()))
 
 
 @app.post("/orchestrate", response_model=OrchestrationResponse,
@@ -310,6 +346,7 @@ async def start_orchestration(
     await db.create_run(
         run_id=run_id, thread_id=thread_id, org_id=body.org_id,
         user_id=body.user_id, intent=intent, survey_type_id=body.survey_type_id,
+        run_type="survey_creation",
     )
 
     initial_state = make_initial_state(
@@ -321,14 +358,40 @@ async def start_orchestration(
     )
 
     task = asyncio.create_task(_run_graph_background(run_id, thread_id, initial_state))
-    task.add_done_callback(
-        lambda t: logger.warning("graph_task_unhandled_error", run_id=run_id, error=str(t.exception()))
-        if t.exception() else None
-    )
+    run_registry.register(run_id, task)
+    task.add_done_callback(lambda t: _on_graph_task_done(t, run_id))
 
     orchestration_runs_total.labels(run_type="survey_creation", status="started").inc()
     logger.info("orchestration_started", run_id=run_id, org_id=body.org_id)
     return OrchestrationResponse(run_id=run_id, thread_id=thread_id, status="running")
+
+
+@app.post("/orchestrate/{run_id}/cancel",
+          summary="Cancel a running survey creation orchestration")
+async def cancel_orchestration(
+    run_id:  str,
+    request: Request,
+    _key:    None = Depends(require_internal_key),
+) -> dict:
+    org_id = request.query_params.get("org_id", "")
+    row    = await _require_run(run_id, org_id)
+
+    # Idempotent: already in a terminal state
+    _TERMINAL = {"completed", "failed", "cancelled"}
+    if row["status"] in _TERMINAL:
+        return {"run_id": run_id, "status": row["status"], "task_cancelled": False}
+
+    # Interrupt the in-process asyncio task (best-effort — may be False if on a
+    # different worker or if the graph just finished between the check above and now)
+    task_cancelled = run_registry.cancel(run_id)
+
+    # DB update is the authoritative record regardless of task state
+    await db.cancel_run(run_id)
+
+    logger.info("orchestration_cancelled", run_id=run_id, org_id=org_id,
+                task_cancelled=task_cancelled)
+    orchestration_runs_total.labels(run_type="survey_creation", status="cancelled").inc()
+    return {"run_id": run_id, "status": "cancelled", "task_cancelled": task_cancelled}
 
 
 @app.get("/orchestrate/{run_id}/status", response_model=RunStatusResponse,
@@ -358,6 +421,52 @@ async def get_run_status(
         error=errors[-1] if errors else None,
         validation_warnings=row.get("qc_validation_errors") or [],
     )
+
+
+# ── Run listing (all run types) ──────────────────────────────────────────────────
+
+@app.get("/runs", summary="List all agent runs for an org")
+async def list_runs(
+    request: Request,
+    _key:    None = Depends(require_internal_key),
+) -> dict:
+    org_id    = request.query_params.get("org_id", "")
+    run_type  = request.query_params.get("run_type") or None
+    status    = request.query_params.get("status") or None
+    survey_id = request.query_params.get("survey_id") or None
+    limit     = int(request.query_params.get("limit", "20"))
+    offset    = int(request.query_params.get("offset", "0"))
+
+    if not org_id:
+        raise HTTPException(status_code=400, detail="org_id required")
+
+    runs = await db.list_runs(
+        org_id=org_id, run_type=run_type, status=status,
+        survey_id=survey_id, limit=limit, offset=offset,
+    )
+    # Serialise datetime fields for JSON
+    for r in runs:
+        for k in ("created_at", "completed_at"):
+            if r.get(k) is not None:
+                r[k] = r[k].isoformat()
+        if r.get("error_log") and not isinstance(r["error_log"], list):
+            import json as _j
+            r["error_log"] = _j.loads(r["error_log"])
+    return {"runs": runs, "limit": limit, "offset": offset}
+
+
+@app.get("/runs/{run_id}", summary="Get any agent run by ID")
+async def get_run(
+    run_id:  str,
+    request: Request,
+    _key:    None = Depends(require_internal_key),
+) -> dict:
+    org_id = request.query_params.get("org_id", "")
+    row    = await _require_run(run_id, org_id)
+    for k in ("created_at", "completed_at"):
+        if row.get(k) is not None:
+            row[k] = row[k].isoformat()
+    return row
 
 
 # ── Copilot chat: natural-language edits ─────────────────────────────────────────

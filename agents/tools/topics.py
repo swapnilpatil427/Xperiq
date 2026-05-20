@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 import structlog
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agents.tools.metrics import compute_effort_score
 
@@ -28,7 +28,12 @@ class TopicItem(BaseModel):
     volume: int
     sentiment_score: float = Field(ge=-1.0, le=1.0, description="Average sentiment -1 to 1")
     dominant_emotion: str
-    effort_score: float = Field(ge=1.0, le=7.0, description="1-7, higher = more customer effort/frustration")
+    effort_score: float = Field(default=4.0, ge=1.0, le=7.0, description="1-7, higher = more customer effort/frustration; overridden by compute_effort_score after LLM response")
+
+    @field_validator("effort_score", mode="before")
+    @classmethod
+    def clamp_effort_score(cls, v) -> float:
+        return max(1.0, min(7.0, float(v or 4.0)))
 
 
 class TopicDiscoveryOutput(BaseModel):
@@ -139,31 +144,26 @@ def compute_topic_signals(cluster: dict, all_responses: list[dict]) -> dict:
 
 # ── LLM-based topic discovery ────────────────────────────────────────────────
 
-async def discover_topics(
-    clusters: list[dict],
+async def _discover_topics_chunk(
+    chunk: list[dict],
+    chunk_start_index: int,
     previous_topic_names: list[str],
     call_agent_func,
+    survey_title: str = "",
+    survey_intent: str = "",
 ) -> list[TopicItem]:
-    """Discover canonical topics from ABSA clusters using LLM labeling.
+    """Call the LLM for a single chunk of clusters. Returns TopicItem list (not yet enriched).
 
-    Args:
-        clusters: From the cluster node — each has aspect, size, texts,
-                  dominant_sentiment, dominant_emotion, avg_sentiment_score.
-        previous_topic_names: Names of topics seen in prior runs (for new-topic detection).
-        call_agent_func: The call_agent coroutine from openrouter.py.
-
-    Returns:
-        List of TopicItem with canonical names, is_new flags, effort scores, etc.
+    On LLM failure, falls back to heuristic labels — same behaviour as the original single-call path.
+    chunk_start_index is the offset of this chunk within the full clusters list (used to align
+    effort_score computation with the right cluster index in the outer loop).
     """
-    if not clusters:
-        return []
-
     # Build cluster summaries for the LLM
     cluster_summaries = []
-    for i, c in enumerate(clusters):
+    for i, c in enumerate(chunk):
         sample_texts = [t["text"][:150] for t in c.get("texts", [])[:5]]
         cluster_summaries.append({
-            "cluster_index": i,
+            "cluster_index": chunk_start_index + i,
             "raw_aspect": c.get("aspect", "general"),
             "size": c.get("size", len(c.get("texts", []))),
             "dominant_sentiment": c.get("dominant_sentiment", "neutral"),
@@ -172,9 +172,19 @@ async def discover_topics(
             "sample_texts": sample_texts,
         })
 
+    survey_ctx = ""
+    if survey_title:
+        survey_ctx = f'Survey: "{survey_title}"'
+        if survey_intent:
+            survey_ctx += f"\nGoal: {survey_intent}"
+        survey_ctx += "\n\n"
+
     system = (
-        "You are a CX analyst. Label each survey feedback cluster with a canonical topic name. "
-        "Names must be 1-4 words, title case (e.g. 'Response Time', 'Checkout Flow'). "
+        f"{survey_ctx}"
+        "You are an expert CX analyst. Given clusters of survey feedback, assign each cluster "
+        "a precise canonical topic name that reflects what customers are ACTUALLY talking about. "
+        "Names must be 1-4 words, title case (e.g. 'Response Time', 'Checkout Flow', 'Billing Clarity'). "
+        "Use the survey context above to make names specific — avoid vague labels like 'General Feedback' or 'Other'. "
         "Return JSON matching the schema exactly."
     )
     user = (
@@ -184,8 +194,10 @@ async def discover_topics(
         "parent_category (broader theme that groups related topics, e.g. 'Onboarding' groups "
         "'Email Verification' and 'Password Reset'; use null for standalone topics with no clear parent), "
         "aliases (other ways this topic is mentioned), summary (1 sentence), "
-        "volume (= cluster size), sentiment_score, dominant_emotion.\n"
-        f"Return a TopicDiscoveryOutput JSON with a 'topics' list of {len(clusters)} items."
+        "volume (= cluster size), sentiment_score (-1.0 to 1.0), dominant_emotion, "
+        "effort_score (1=effortless, 4=moderate, 7=extreme frustration/effort — how hard does "
+        "this topic suggest the experience is for customers).\n"
+        f"Return a TopicDiscoveryOutput JSON with a 'topics' list of {len(chunk)} items."
     )
 
     try:
@@ -195,14 +207,13 @@ async def discover_topics(
             user=user,
             output_schema=TopicDiscoveryOutput,
         )
-        topics = output.topics
+        return output.topics
     except Exception as exc:
-        logger.warning("discover_topics_llm_failed", error=str(exc))
+        logger.error("discover_topics_chunk_llm_failed", error=str(exc), chunk_size=len(chunk))
         # Fallback: use raw aspect labels as canonical names
         topics = []
-        for c in clusters:
+        for c in chunk:
             aspect = c.get("aspect", "general")
-            # Convert snake_case/lower to Title Case
             canonical = " ".join(word.capitalize() for word in aspect.replace("_", " ").split())
             size = c.get("size", len(c.get("texts", [])))
             all_texts = [t["text"] for t in c.get("texts", [])]
@@ -212,31 +223,121 @@ async def discover_topics(
                 aliases=[aspect] if aspect != canonical else [],
                 summary=f"Customers mention '{canonical}' frequently with {c.get('dominant_sentiment', 'neutral')} sentiment.",
                 volume=size,
-                sentiment_score=float(c.get("avg_sentiment_score", 0.0)),
+                sentiment_score=float(v if (v := c.get("avg_sentiment_score")) is not None else 0.0),
                 dominant_emotion=c.get("dominant_emotion", "neutral"),
                 effort_score=compute_effort_score(all_texts),
             ))
-        # Mark new topics in fallback path too
-        for topic in topics:
-            topic.is_new = not _fuzzy_matches_any(topic.name, previous_topic_names)
         return topics
 
-    # Enrich topics with is_new flag and effort_score from actual texts
-    enriched: list[TopicItem] = []
-    for i, topic in enumerate(topics):
-        topic.is_new = not _fuzzy_matches_any(topic.name, previous_topic_names)
 
-        # Compute effort score from cluster texts if available
-        if i < len(clusters):
-            cluster_texts = [t["text"] for t in clusters[i].get("texts", [])]
-            topic.effort_score = compute_effort_score(cluster_texts)
+async def discover_topics(
+    clusters: list[dict],
+    previous_topic_names: list[str],
+    call_agent_func,
+    context_window: int = 64_000,
+    survey_title: str = "",
+    survey_intent: str = "",
+) -> list[TopicItem]:
+    """Discover canonical topics from ABSA clusters using LLM labeling.
 
-        enriched.append(topic)
+    Args:
+        clusters: From the cluster node — each has aspect, size, texts,
+                  dominant_sentiment, dominant_emotion, avg_sentiment_score.
+        previous_topic_names: Names of topics seen in prior runs (for new-topic detection).
+        call_agent_func: The call_agent coroutine from openrouter.py.
+        context_window: Token budget for the model (used to chunk large cluster lists).
 
-    return enriched
+    Returns:
+        List of TopicItem with canonical names, is_new flags, effort scores, etc.
+    """
+    if not clusters:
+        return []
+
+    # ── Chunking logic: stay within both input and output budgets ─────────────
+    # ~300 tokens per cluster summary in the prompt; use 45% of context for input.
+    # ~150 tokens per TopicItem in the JSON output (name + summary + metadata).
+    # Both limits are enforced so a large cluster list never truncates output.
+    _TOKENS_PER_CLUSTER      = 300   # input estimate
+    _TOKENS_PER_TOPIC_OUTPUT = 150   # output estimate per TopicItem
+
+    input_budget = int(context_window * 0.45)
+    max_clusters_by_input = max(5, input_budget // _TOKENS_PER_CLUSTER)
+
+    # Fetch the output token budget from the model config to avoid truncation.
+    try:
+        from agents.lib.models import get_model as _get_model
+        _topic_max_tokens = _get_model("insight_topics").max_tokens
+    except Exception:
+        _topic_max_tokens = 2000  # safe fallback
+    max_clusters_by_output = max(5, _topic_max_tokens // _TOKENS_PER_TOPIC_OUTPUT)
+
+    max_clusters_per_call = min(max_clusters_by_input, max_clusters_by_output)
+
+    if len(clusters) <= max_clusters_per_call:
+        # Single-call path — no chunking needed
+        raw_topics = await _discover_topics_chunk(
+            clusters, 0, previous_topic_names, call_agent_func,
+            survey_title=survey_title, survey_intent=survey_intent,
+        )
+        # Enrich: is_new flag + effort_score from cluster texts
+        enriched: list[TopicItem] = []
+        for i, topic in enumerate(raw_topics):
+            topic.is_new = not _fuzzy_matches_any(topic.name, previous_topic_names)
+            if i < len(clusters):
+                cluster_texts = [t["text"] for t in clusters[i].get("texts", [])]
+                topic.effort_score = compute_effort_score(cluster_texts)
+            enriched.append(topic)
+        return enriched
+
+    # ── Multi-chunk path ──────────────────────────────────────────────────────
+    logger.info(
+        "discover_topics_chunking",
+        total_clusters=len(clusters),
+        max_per_chunk=max_clusters_per_call,
+        context_window=context_window,
+    )
+
+    all_topics: list[TopicItem] = []
+    seen_names: list[str] = list(previous_topic_names)  # accumulate across chunks
+
+    for chunk_start in range(0, len(clusters), max_clusters_per_call):
+        chunk = clusters[chunk_start:chunk_start + max_clusters_per_call]
+        chunk_topics = await _discover_topics_chunk(
+            chunk, chunk_start, seen_names, call_agent_func,
+            survey_title=survey_title, survey_intent=survey_intent,
+        )
+
+        # Enrich: is_new flag (against all known names so far) + effort_score
+        for j, topic in enumerate(chunk_topics):
+            topic.is_new = not _fuzzy_matches_any(topic.name, seen_names)
+            cluster_idx = chunk_start + j
+            if cluster_idx < len(clusters):
+                cluster_texts = [t["text"] for t in clusters[cluster_idx].get("texts", [])]
+                topic.effort_score = compute_effort_score(cluster_texts)
+
+        # Deduplicate by name (keep first seen), then accumulate
+        for topic in chunk_topics:
+            if not any(t.name == topic.name for t in all_topics):
+                all_topics.append(topic)
+                seen_names.append(topic.name)
+
+    return all_topics
 
 
 # ── DB upsert ────────────────────────────────────────────────────────────────
+
+def _compute_urgency(sentiment_score: float, volume: int, effort_score: float) -> float:
+    """Urgency = how much this topic demands immediate attention.
+
+    Formula: abs(sentiment) × sqrt(volume) × (effort / 7)
+    Range roughly 0–20+. Topics above ~5 are worth flagging.
+    Negative sentiment amplifies urgency; positive sentiment reduces it to near-zero.
+    """
+    import math
+    negativity = max(0.0, -sentiment_score)           # only negative sentiment drives urgency
+    effort_weight = max(0.0, effort_score) / 7.0
+    return round(negativity * math.sqrt(max(0, volume)) * effort_weight, 2)
+
 
 async def upsert_survey_topics(
     topics: list[TopicItem],
@@ -247,7 +348,16 @@ async def upsert_survey_topics(
     conn,
     topic_signals: dict[str, dict] | None = None,
 ) -> dict[str, str]:
-    """Insert or update survey_topics rows. Returns {topic_name: db_id}."""
+    """Insert or update survey_topics rows. Returns {topic_name: db_id}.
+
+    Signals computed per topic:
+    - trending           : volume direction (up/down/stable/new) — are more people talking about it?
+    - sentiment_momentum : sentiment direction (improving/worsening/stable) — is it getting better?
+    - urgency_score      : composite priority (negativity × √volume × effort/7)
+    - volume_delta       : absolute mentions change vs last run
+    - volume_delta_pct   : % mentions change vs last run
+    - chronic            : True if topic has been negative (sentiment < -0.2) for 3+ consecutive runs
+    """
     if not topics:
         return {}
 
@@ -259,7 +369,7 @@ async def upsert_survey_topics(
         try:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    """SELECT id, sentiment_score, volume
+                    """SELECT id, sentiment_score, volume, negative_run_streak
                        FROM survey_topics
                        WHERE survey_id = %s AND name = %s AND time_window = %s
                        LIMIT 1""",
@@ -267,59 +377,96 @@ async def upsert_survey_topics(
                 )
                 existing = await cur.fetchone()
 
+            urgency = _compute_urgency(topic.sentiment_score, topic.volume, topic.effort_score)
+
             if existing:
-                existing_id = str(existing[0])
-                prev_sentiment = float(existing[1] or 0)
+                existing_id      = str(existing[0])
+                prev_sentiment   = float(existing[1] or 0)
+                prev_volume      = int(existing[2] or 0)
+                prev_streak      = int(existing[3] or 0) if existing[3] is not None else 0
+
+                # ── Trending: volume direction ─────────────────────────────
+                volume_delta     = topic.volume - prev_volume
+                volume_delta_pct = round(volume_delta / max(1, prev_volume) * 100, 1)
+                if abs(volume_delta_pct) < 10:         trending = "stable"
+                elif volume_delta_pct > 0:             trending = "up"
+                else:                                  trending = "down"
+
+                # ── Sentiment momentum: sentiment direction ────────────────
                 sentiment_delta = topic.sentiment_score - prev_sentiment
-                if abs(sentiment_delta) < 0.05:
-                    trending = "stable"
-                elif sentiment_delta > 0:
-                    trending = "up"
+                if abs(sentiment_delta) < 0.05:        sentiment_momentum = "stable"
+                elif sentiment_delta > 0:              sentiment_momentum = "improving"
+                else:                                  sentiment_momentum = "worsening"
+
+                # ── Chronic: consecutive negative runs ────────────────────
+                if topic.sentiment_score < -0.2:
+                    new_streak = prev_streak + 1
                 else:
-                    trending = "down"
+                    new_streak = 0
+                chronic = new_streak >= 3
 
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """UPDATE survey_topics SET
                                volume = %s, sentiment_score = %s,
                                dominant_emotion = %s, effort_score = %s,
-                               trending = %s, last_seen_at = NOW(), run_id = %s,
+                               trending = %s, sentiment_momentum = %s,
+                               urgency_score = %s, volume_delta = %s, volume_delta_pct = %s,
+                               chronic = %s, negative_run_streak = %s,
+                               last_seen_at = NOW(), run_id = %s,
                                nps_avg = %s, positive_pct = %s, negative_pct = %s,
                                neutral_pct = %s, avg_response_len = %s,
-                               emotion_breakdown = %s, sample_response_ids = %s
+                               emotion_breakdown = %s, sample_response_ids = %s,
+                               summary = %s
                            WHERE id = %s""",
                         (
                             topic.volume, topic.sentiment_score,
                             topic.dominant_emotion, topic.effort_score,
-                            trending, run_id,
+                            trending, sentiment_momentum,
+                            urgency, volume_delta, volume_delta_pct,
+                            chronic, new_streak, run_id,
                             sig.get("nps_avg"), sig.get("positive_pct"),
                             sig.get("negative_pct"), sig.get("neutral_pct"),
                             sig.get("avg_response_len"),
                             json.dumps(sig.get("emotion_breakdown", {})),
                             json.dumps(sig.get("sample_response_ids", [])),
+                            topic.summary or None,
                             existing_id,
                         ),
                     )
                 topic_ids[topic.name] = existing_id
 
             else:
-                trending = "new" if topic.is_new else "stable"
+                # First time we've seen this topic
+                trending           = "new" if topic.is_new else "stable"
+                sentiment_momentum = "stable"
+                volume_delta       = 0
+                volume_delta_pct   = 0.0
+                new_streak         = 1 if topic.sentiment_score < -0.2 else 0
+                chronic            = False
+
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """INSERT INTO survey_topics (
                                survey_id, org_id, run_id, time_window,
-                               name, aliases, is_new,
+                               name, aliases, is_new, summary,
                                volume, sentiment_score, dominant_emotion,
-                               effort_score, trending,
+                               effort_score, trending, sentiment_momentum,
+                               urgency_score, volume_delta, volume_delta_pct,
+                               chronic, negative_run_streak,
                                nps_avg, positive_pct, negative_pct, neutral_pct,
                                avg_response_len, emotion_breakdown, sample_response_ids
-                           ) VALUES (%s,%s,%s,%s, %s,%s,%s, %s,%s,%s, %s,%s, %s,%s,%s,%s, %s,%s,%s)
-                           RETURNING id""",
+                           ) VALUES (
+                               %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s,
+                               %s,%s,%s, %s,%s, %s,%s,%s,%s, %s,%s,%s
+                           ) RETURNING id""",
                         (
                             survey_id, org_id, run_id, time_window,
-                            topic.name, topic.aliases, topic.is_new,
+                            topic.name, topic.aliases, topic.is_new, topic.summary or None,
                             topic.volume, topic.sentiment_score, topic.dominant_emotion,
-                            topic.effort_score, trending,
+                            topic.effort_score, trending, sentiment_momentum,
+                            urgency, volume_delta, volume_delta_pct,
+                            chronic, new_streak,
                             sig.get("nps_avg"), sig.get("positive_pct"),
                             sig.get("negative_pct"), sig.get("neutral_pct"),
                             sig.get("avg_response_len"),
@@ -331,7 +478,7 @@ async def upsert_survey_topics(
                     topic_ids[topic.name] = str(row[0])
 
         except Exception as exc:
-            logger.warning(
+            logger.error(
                 "upsert_survey_topic_failed",
                 topic_name=topic.name, survey_id=survey_id, error=str(exc),
             )
@@ -350,7 +497,7 @@ async def get_previous_topic_names(survey_id: str, conn) -> list[str]:
             rows = await cur.fetchall()
             return [row[0] for row in rows]
     except Exception as exc:
-        logger.warning("get_previous_topic_names_failed", survey_id=survey_id, error=str(exc))
+        logger.error("get_previous_topic_names_failed", survey_id=survey_id, error=str(exc))
         return []
 
 
@@ -422,6 +569,10 @@ async def build_topic_hierarchy(
                             (parent_id, child_id),
                         )
 
+            # Commit child links before running the roll-up so the aggregate
+            # subquery sees the updated parent_topic_id values.
+            await conn.commit()
+
             # Roll up child aggregates into parent
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -446,7 +597,7 @@ async def build_topic_hierarchy(
                 )
 
         except Exception as exc:
-            logger.warning(
+            logger.error(
                 "build_topic_hierarchy_failed",
                 parent_name=parent_name, error=str(exc),
             )

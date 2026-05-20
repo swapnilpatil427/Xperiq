@@ -51,22 +51,41 @@ def _build_bow_embeddings(texts: list[str]) -> list[list[float]]:
 
 async def _embed_via_api(texts: list[str]) -> list[list[float]]:
     """Call OpenAI embeddings endpoint. Returns vectors in input order."""
+    import time
     headers = {
         "Authorization": f"Bearer {_OPENAI_API_KEY}",
         "Content-Type": "application/json",
     }
     payload = {"model": _EMBED_MODEL, "input": texts}
+    logger.info("embeddings_api_request", model=_EMBED_MODEL, n_texts=len(texts))
+    t0 = time.monotonic()
     async with httpx.AsyncClient(timeout=60.0) as client:
         resp = await client.post(
             "https://api.openai.com/v1/embeddings",
             json=payload,
             headers=headers,
         )
+    duration_ms = round((time.monotonic() - t0) * 1000)
     if not resp.is_success:
+        logger.error(
+            "embeddings_api_error",
+            model=_EMBED_MODEL,
+            status=resp.status_code,
+            body=resp.text[:200],
+            duration_ms=duration_ms,
+        )
         raise RuntimeError(f"OpenAI embeddings API error {resp.status_code}: {resp.text[:200]}")
     data = resp.json()
-    # data["data"] is sorted by index
+    usage = data.get("usage", {})
     items = sorted(data["data"], key=lambda x: x["index"])
+    logger.info(
+        "embeddings_api_complete",
+        model=_EMBED_MODEL,
+        n_texts=len(texts),
+        duration_ms=duration_ms,
+        prompt_tokens=usage.get("prompt_tokens"),
+        total_tokens=usage.get("total_tokens"),
+    )
     return [item["embedding"] for item in items]
 
 
@@ -88,15 +107,17 @@ async def embed_texts(
         return []
 
     if not _OPENAI_API_KEY:
-        logger.debug("embed_texts_heuristic_fallback", org_id=org_id, survey_id=survey_id, n=len(texts))
+        logger.warning("embed_texts_heuristic_fallback", org_id=org_id, survey_id=survey_id, n=len(texts))
         return _build_bow_embeddings(texts)
 
+    n_batches = math.ceil(len(texts) / _BATCH_SIZE)
+    logger.info("embed_texts_start", model=_EMBED_MODEL, n_texts=len(texts), n_batches=n_batches, org_id=org_id, survey_id=survey_id)
     results: list[list[float]] = []
     for start in range(0, len(texts), _BATCH_SIZE):
         batch = texts[start : start + _BATCH_SIZE]
         vectors = await _embed_via_api(batch)
         results.extend(vectors)
-        logger.debug(
+        logger.info(
             "embed_texts_batch",
             org_id=org_id,
             survey_id=survey_id,
@@ -148,7 +169,7 @@ async def get_or_create_embeddings(
                     emb = json.loads(emb.replace("(", "[").replace(")", "]"))
                 cached[(rid, qid)] = emb
     except Exception as exc:
-        logger.warning("get_or_create_embeddings_cache_query_failed", error=str(exc))
+        logger.error("get_or_create_embeddings_cache_query_failed", error=str(exc))
         try:
             await conn.rollback()
         except Exception:
@@ -162,6 +183,13 @@ async def get_or_create_embeddings(
         if key not in cached:
             misses.append(item)
             miss_indices.append(idx)
+
+    logger.info(
+        "embeddings_cache_lookup",
+        total=len(texts),
+        cache_hits=len(texts) - len(misses),
+        misses=len(misses),
+    )
 
     # Embed misses
     if misses:
@@ -178,15 +206,16 @@ async def get_or_create_embeddings(
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """INSERT INTO response_embeddings
-                               (response_id, question_id, embedding)
-                           VALUES (%s, %s, %s::vector)
+                               (response_id, survey_id, org_id, question_id, text, embedding)
+                           VALUES (%s, %s, %s, %s, %s, %s::vector)
                            ON CONFLICT DO NOTHING""",
-                        (m["response_id"], m["question_id"], vec_str),
+                        (m["response_id"], m.get("survey_id"), m.get("org_id"), m["question_id"], m.get("text"), vec_str),
                     )
             except Exception as exc:
-                logger.warning(
+                logger.error(
                     "get_or_create_embeddings_insert_failed",
                     response_id=m.get("response_id"),
+                    survey_id=m.get("survey_id"),
                     error=str(exc),
                 )
                 try:

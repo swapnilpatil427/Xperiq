@@ -8,6 +8,10 @@ import asyncio
 import os
 from typing import AsyncGenerator
 
+import structlog
+
+logger = structlog.get_logger()
+
 _STREAM_KEY = "insight_events"
 _GROUP = "insight_consumers"
 _CONSUMER = os.getenv("WORKER_ID", "worker-1")
@@ -28,7 +32,7 @@ async def _get_redis():
             except Exception:
                 pass  # group already exists — that's fine
         except Exception as e:
-            # redis package not installed or Redis unreachable — degrade gracefully
+            logger.error("redis_connect_failed", url=_REDIS_URL, error=str(e))
             return None
     return _redis
 
@@ -49,8 +53,8 @@ async def publish_event(survey_id: str, org_id: str, response_id: str) -> None:
             maxlen=10000,
             approximate=True,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning("redis_publish_failed", stream=_STREAM_KEY, error=str(exc))
 
 
 async def consume_events(
@@ -86,5 +90,6 @@ async def consume_events(
                     yield events
                     # Acknowledge only after the caller has processed the batch.
                     await r.xack(_STREAM_KEY, _GROUP, *ids)
-        except Exception:
+        except Exception as exc:
+            logger.error("redis_consume_error", stream=_STREAM_KEY, group=_GROUP, error=str(exc))
             await asyncio.sleep(5)

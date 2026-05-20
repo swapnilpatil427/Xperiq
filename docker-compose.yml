@@ -3,6 +3,7 @@
 
 services:
   postgres:
+    platform: linux/arm64
     build:
       context: .
       dockerfile: docker/postgres/Dockerfile
@@ -24,6 +25,7 @@ services:
     restart: unless-stopped
 
   prometheus:
+    platform: linux/arm64
     build:
       context: .
       dockerfile: docker/prometheus/Dockerfile
@@ -40,6 +42,7 @@ services:
     restart: unless-stopped
 
   loki:
+    platform: linux/arm64
     build:
       context: .
       dockerfile: docker/loki/Dockerfile
@@ -52,6 +55,7 @@ services:
     restart: unless-stopped
 
   grafana:
+    platform: linux/arm64
     build:
       context: .
       dockerfile: docker/grafana/Dockerfile
@@ -83,6 +87,7 @@ services:
   agents:
     # Start with: docker-compose --profile agents up -d agents
     # (prod deployments: --profile prod)
+    platform: linux/arm64
     profiles: ["agents", "prod"]
     build:
       context: .
@@ -94,6 +99,7 @@ services:
         required: false          # allows startup without an .env file
     environment:
       AGENTS_ENV: ${AGENTS_ENV:-dev}
+      LOG_PRETTY: ${LOG_PRETTY:-0}
       AGENTS_DB_DSN: postgresql://postgres:postgres@postgres:5432/experient
       AGENTS_INTERNAL_KEY: ${AGENTS_INTERNAL_KEY:-dev-internal-key-change-in-prod}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

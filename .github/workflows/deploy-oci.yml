@@ -1,0 +1,176 @@
+name: Deploy to OCI
+
+# Triggers on every push to main AFTER tests pass.
+# PRs only run the test job (no deploy).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Tests (runs on every push + PR) ─────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package.json
+
+      - name: Install frontend deps
+        working-directory: app
+        run: rm -f package-lock.json && npm install
+
+      - name: Frontend lint
+        working-directory: app
+        run: npm run lint
+
+      - name: Frontend typecheck
+        working-directory: app
+        run: npx tsc --noEmit
+
+      - name: Frontend tests
+        working-directory: app
+        run: npm run test:coverage
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Backend syntax check
+        working-directory: backend
+        run: |
+          rm -f package-lock.json && npm install
+          find src -name "*.js" | xargs node --check
+
+  # ── Build frontend (main branch only) ───────────────────────────────────────
+  build-frontend:
+    name: Build Frontend
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: app/.nvmrc
+          cache: npm
+          cache-dependency-path: app/package.json
+
+      - name: Install deps
+        working-directory: app
+        run: rm -f package-lock.json && npm install
+
+      - name: Write production env
+        working-directory: app
+        run: |
+          cat > .env.production << EOF
+          VITE_API_URL=${{ secrets.VITE_API_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY=${{ secrets.VITE_CLERK_PUBLISHABLE_KEY }}
+          VITE_FIREBASE_API_KEY=${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN=${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID=${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET=${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID=${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID=${{ secrets.VITE_FIREBASE_APP_ID }}
+          VITE_SENTRY_DSN=${{ secrets.VITE_SENTRY_DSN }}
+          EOF
+
+      - name: Build
+        working-directory: app
+        run: npm run build:app
+
+      # Upload dist as artifact — deploy job picks it up
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: app/dist/
+          retention-days: 1
+
+  # ── Deploy to OCI VM (main branch only) ─────────────────────────────────────
+  deploy:
+    name: Deploy
+    needs: [test, build-frontend]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download frontend build
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: app/dist/
+
+      # ── Backend + agents deploy via SSH ──────────────────────────────────────
+      - name: Deploy backend & agents
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: appuser
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /home/appuser/app
+
+            echo "--- Pulling latest code ---"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "--- Backend deps ---"
+            cd backend && npm ci --omit=dev && cd ..
+
+            echo "--- Database migrations ---"
+            DATABASE_URL=$(grep '^DATABASE_URL=' /home/appuser/app/.env | cut -d= -f2-) \
+              node scripts/migrate.js
+
+            echo "--- Agents deps ---"
+            cd agents && source venv/bin/activate && pip install -r requirements.txt -q && cd ..
+
+            echo "--- Reloading processes ---"
+            pm2 reload backend --update-env
+            pm2 reload agents  --update-env
+
+            echo "--- Deploy complete ---"
+            pm2 status
+
+      # ── Frontend deploy via SCP then SSH reload ───────────────────────────────
+      - name: Deploy frontend
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: appuser
+          key: ${{ secrets.OCI_SSH_KEY }}
+          source: "app/dist/"
+          target: "/home/appuser/app/app/"
+          strip_components: 2   # removes "app/dist/" prefix → lands in app/app/dist/
+
+      - name: Reload nginx
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.OCI_HOST }}
+          username: appuser
+          key: ${{ secrets.OCI_SSH_KEY }}
+          script: sudo systemctl reload nginx
+
+      # ── Smoke test ────────────────────────────────────────────────────────────
+      - name: Smoke test
+        run: |
+          sleep 5
+          STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
+            "https://${{ secrets.OCI_HOST_DOMAIN }}/api/health" || echo "000")
+          if [ "$STATUS" != "200" ]; then
+            echo "Health check failed — got HTTP $STATUS"
+            exit 1
+          fi
+          echo "Health check passed (HTTP $STATUS)"

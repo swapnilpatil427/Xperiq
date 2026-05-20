@@ -15,7 +15,7 @@ import asyncio
 import json
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agents.lib.openrouter import call_agent
 from agents.lib.logger import logger
@@ -80,6 +80,27 @@ class InsightSetEvaluatorOutput(BaseModel):
         description="[{index: int, issue: str, suggestion: str}] per-insight improvement hints",
     )
     narrative_coherence: str = Field(default="", description="Does the full set tell a coherent story?")
+
+    @field_validator("overall_quality", "coverage_score", "balance_score", "actionability_score", mode="before")
+    @classmethod
+    def _coerce_score(cls, v):
+        try:
+            return max(0, min(100, round(float(v))))
+        except (TypeError, ValueError):
+            return 75
+
+    @field_validator("improvements", mode="before")
+    @classmethod
+    def _coerce_improvements(cls, v):
+        if not isinstance(v, list):
+            return []
+        result = []
+        for item in v:
+            if isinstance(item, dict):
+                result.append(item)
+            elif isinstance(item, str):
+                result.append({"suggestion": item})
+        return result
 
 
 class CrystalEvalOutput(BaseModel):
@@ -233,6 +254,7 @@ async def narrate_topic_insight(
     is_new: bool,
     sample_quotes: list[str],
     citation_ids: list[str],
+    overlay: str = "",
 ) -> TopicExpertOutput:
     cite_refs = [f"[r{rid[:8]}]" for rid in citation_ids[:3] if rid]
     new_flag = " [NEW TOPIC - first appearance this run]" if is_new else ""
@@ -245,9 +267,10 @@ async def narrate_topic_insight(
         "Write a headline (≤120 chars) and 2-3 sentence narrative using the [rXXXXXXXX] format. "
         "Classify friction_type, provide root_cause_hypothesis and business_impact."
     )
+    system = _TOPIC_SYSTEM + (f"\n\nINDUSTRY CONTEXT:\n{overlay}" if overlay else "")
     output, _ = await call_agent(
         agent_name="insight_expert",
-        system=_TOPIC_SYSTEM,
+        system=system,
         user=prompt,
         output_schema=TopicExpertOutput,
     )
@@ -333,6 +356,7 @@ async def narrate_prescriptive_insight(
     nps_score: float | None,
     csat_score: float | None,
     effort_score: float,
+    overlay: str = "",
 ) -> PrescriptiveExpertOutput:
     metric_context = ""
     if nps_score is not None:
@@ -348,9 +372,10 @@ async def narrate_prescriptive_insight(
         "Set headline, narrative, priority, time_horizon, estimated_impact, "
         "ice_impact, ice_confidence, ice_ease (each 1-10)."
     )
+    system = _PRESCRIPTIVE_SYSTEM + (f"\n\nINDUSTRY CONTEXT:\n{overlay}" if overlay else "")
     output, _ = await call_agent(
         agent_name="insight_expert",
-        system=_PRESCRIPTIVE_SYSTEM,
+        system=system,
         user=prompt,
         output_schema=PrescriptiveExpertOutput,
     )
@@ -372,8 +397,12 @@ EVALUATION CRITERIA:
 4. Redundancy: Flag insights that say essentially the same thing (same claim, same data)
 5. Overall quality: Weighted average (coverage 30%, balance 25%, actionability 25%, non-redundancy 20%)
 
-OUTPUT: Return InsightSetEvaluatorOutput JSON. For redundant_indices, list the LOWER-priority
-duplicate index to drop (0-indexed). For improvements, be specific.
+OUTPUT: Return a single JSON object with these exact fields:
+- overall_quality, coverage_score, balance_score, actionability_score: integers 0-100
+- redundant_indices: array of integers (0-based indices to drop), or []
+- missing_themes: array of strings, or []
+- improvements: array of objects {index: int, issue: string, suggestion: string}, or []
+- narrative_coherence: string
 
 Return JSON only — no markdown, no preamble."""
 

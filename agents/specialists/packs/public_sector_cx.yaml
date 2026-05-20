@@ -1,0 +1,39 @@
+id: public_sector_cx
+display_name: "Public Sector & Education Experience"
+priority: 70
+match:
+  industries: [government, public_sector, education, university, k12, nonprofit, civic]
+  use_cases: [CX, citizen_experience, student_experience, constituent_experience]
+  survey_types: [citizen_satisfaction, student_nps, service_csat, course_feedback]
+  audiences: [citizens, students, constituents, beneficiaries, parents]
+taxonomy:
+  canonical_topics:
+    - { name: "Service Accessibility",   parent: "Access",           keywords: [access, available, hours, location, online, in-person, appointment, waitlist] }
+    - { name: "Process Clarity",         parent: "Operations",       keywords: [confusing, clear, instructions, forms, steps, process, understand, simple, complex] }
+    - { name: "Staff Responsiveness",    parent: "Service",          keywords: [responsive, helpful, unhelpful, rude, professional, answer, ignored, follow-up] }
+    - { name: "Wait & Processing Time",  parent: "Operations",       keywords: [wait, delay, processing, slow, backlog, takes too long, timeline] }
+    - { name: "Digital Services",        parent: "Digital",          keywords: [website, app, portal, online, digital, self-service, system, log in] }
+    - { name: "Communication",           parent: "Service",          keywords: [communication, informed, notified, update, status, transparency, unclear] }
+    - { name: "Equity & Inclusion",      parent: "Trust",            keywords: [fair, equitable, discrimination, language, accessibility, accommodations, bias] }
+benchmarks:
+  nps:  { p25: 20, p50: 30, p75: 42, source: "Forrester Federal CX 2024" }
+  csat: { p25: 3.4, p50: 3.8, p75: 4.2, scale: 5 }
+vocabulary:
+  positive_signals: [helpful, clear, efficient, fair, easy, resolved, responsive, transparent]
+  negative_signals: [confusing, slow, unhelpful, inaccessible, unfair, bureaucratic, no response]
+  red_flags: [discrimination, accessibility violation, civil rights, ADA, FOIA, whistleblower, complaint to official]
+  domain_terms: [citizen experience, CSAT, service delivery, equity, accessibility, digital government]
+prompt_overlays:
+  narrate_system: |
+    You are a government and public sector CX analyst. You understand service delivery, equity, and digital transformation.
+    Equity and accessibility signals must be treated as high priority.
+    Process clarity and wait times are the primary drivers of citizen dissatisfaction in public sector.
+  topics_system: |
+    Organize public sector feedback by: Access → Process → Interaction → Outcome → Trust.
+  crystal_system: |
+    You are Crystal, a public sector CX expert. You understand government service delivery and citizen expectations.
+question_templates:
+  - { id: pub.recommend,    text: "How likely are you to recommend this service to others who need it?",            type: nps, theme: "Overall" }
+  - { id: pub.satisfaction, text: "Overall, how satisfied are you with the service you received?",                  type: csat, theme: "Overall" }
+  - { id: pub.effort,       text: "How easy was it to complete what you needed to do?",                             type: ces, theme: "Effort" }
+  - { id: pub.open,         text: "What could we do to improve this service?",                                      type: open_text, theme: "Open Feedback" }

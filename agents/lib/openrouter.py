@@ -18,6 +18,7 @@ Usage:
     )
 """
 import asyncio
+import asyncio as _asyncio
 import json
 import os
 import re
@@ -38,8 +39,18 @@ from agents.lib.metrics import (
     agent_cost_usd_total,
 )
 from agents.lib.models import get_model, get_env, ModelConfig
+from agents.lib.trace_context import get_trace_context
 
 T = TypeVar("T", bound=BaseModel)
+
+
+async def _write_trace_safe(**kwargs) -> None:
+    """Wrapper so import errors (DB not available in test env) are silenced."""
+    try:
+        from agents.lib.db import write_call_trace
+        await write_call_trace(**kwargs)
+    except Exception:
+        pass
 
 _BASE_URL  = "https://openrouter.ai/api/v1"
 _API_KEY   = os.getenv("OPENROUTER_API_KEY", "")
@@ -72,10 +83,22 @@ _request_counts: dict[str, int] = defaultdict(int)
 # Circuit breaker wraps the FULL retry sequence (not each individual attempt).
 # A model must exhaust ALL retries _CB_THRESHOLD times before the circuit opens.
 # This means 429s inside the retry loop don't count — only final exhaustion does.
+#
+# Non-retryable 4xx (402 payment required, 404 model not found, etc.) are
+# model/key-specific failures — they must NOT trip the global circuit because
+# one unavailable model should not block all other agents in the same pipeline.
+# Only exhausted-retry sequences (5xx storms, 429 quota walls) count.
+def _count_for_circuit(exc: BaseException) -> bool:
+    if isinstance(exc, OpenRouterError) and not exc.retryable:
+        return False
+    return True
+
+
 openrouter_breaker = CircuitBreaker(
     "openrouter",
     failure_threshold=_CB_THRESHOLD,
     recovery_timeout=_CB_RECOVERY,
+    count_exception=_count_for_circuit,
 )
 
 
@@ -130,12 +153,11 @@ async def _raw_call(
     _request_counts[config.model] += 1
     total_this_model = _request_counts[config.model]
     total_all        = sum(_request_counts.values())
-    logger.debug(
+    logger.info(
         "openrouter_request",
         model=config.model,
         request_num_this_model=total_this_model,
         total_requests_this_session=total_all,
-        all_counts=dict(_request_counts),
     )
 
     payload: dict[str, Any] = {
@@ -200,6 +222,7 @@ def _retry_wait(err: "OpenRouterError", attempt: int) -> float:
 async def _retry_loop(
     messages: list[dict[str, str]],
     config: ModelConfig,
+    json_mode: bool = True,
 ) -> tuple[str, dict[str, Any]]:
     """Retry loop only — no circuit breaker here.
 
@@ -207,19 +230,21 @@ async def _retry_loop(
     present, otherwise pure exponential backoff. Non-retryable errors (4xx
     bad model ID, auth failure) are raised immediately without retrying.
 
+    json_mode=False skips response_format:json_object — use this when the
+    prompt asks for a top-level JSON array (json_object mode forces a dict
+    wrapper, which breaks array parsers).
+
     Special case: "JSON mode is not enabled for this model" (provider 400).
     This means the model doesn't support response_format=json_object. We
     disable JSON mode for the remainder of the call rather than giving up.
     """
     last_err: Exception | None = None
-    use_json_mode = True
+    use_json_mode = json_mode
     for attempt in range(_MAX_HTTP_ATTEMPTS):
         try:
             return await _raw_call(messages, config, use_json_mode=use_json_mode)
         except OpenRouterError as e:
             if "json mode is not enabled" in str(e).lower():
-                # Model doesn't advertise response_format support — drop the flag
-                # and retry immediately (don't count as a backoff attempt).
                 logger.warning(
                     "openrouter_json_mode_fallback",
                     model=config.model,
@@ -228,11 +253,53 @@ async def _retry_loop(
                 use_json_mode = False
                 continue
             if not e.retryable:
+                err_lower = str(e).lower()
+                # OpenAI 400: "messages must contain the word 'json'" when
+                # using response_format=json_object — drop json mode and retry
+                # rather than hard-failing every call.
+                if "must contain the word" in err_lower and "json" in err_lower:
+                    logger.warning(
+                        "openrouter_json_word_fallback",
+                        model=config.model,
+                        note="dropping json_object mode — prompt lacked the word 'json'",
+                    )
+                    use_json_mode = False
+                    continue
+                logger.warning(
+                    "openrouter_nonretryable",
+                    model=config.model,
+                    error=str(e)[:300],
+                )
                 raise
             last_err = e
             wait = _retry_wait(e, attempt)
             logger.warning(
                 "openrouter_retry",
+                attempt=attempt + 1,
+                max_attempts=_MAX_HTTP_ATTEMPTS,
+                wait_s=wait,
+                error=str(e),
+                model=config.model,
+            )
+            await asyncio.sleep(wait)
+        except httpx.TimeoutException as e:
+            # httpx read/connect timeout — treat as retryable network error
+            last_err = OpenRouterError(f"HTTP timeout: {e}", retryable=True)
+            wait = float(2 ** attempt)
+            logger.warning(
+                "openrouter_http_timeout",
+                attempt=attempt + 1,
+                max_attempts=_MAX_HTTP_ATTEMPTS,
+                wait_s=wait,
+                model=config.model,
+            )
+            await asyncio.sleep(wait)
+        except httpx.RequestError as e:
+            # Network-level error (DNS, connection refused, etc.)
+            last_err = OpenRouterError(f"HTTP request error: {e}", retryable=True)
+            wait = float(2 ** attempt)
+            logger.warning(
+                "openrouter_http_error",
                 attempt=attempt + 1,
                 max_attempts=_MAX_HTTP_ATTEMPTS,
                 wait_s=wait,
@@ -305,6 +372,13 @@ async def call_agent(
         {"role": "user",   "content": user},
     ]
 
+    # OpenAI (and OpenRouter-proxied OpenAI) requires the literal word "json"
+    # to appear somewhere in the messages when response_format=json_object is
+    # used. If the system prompt doesn't say it, every call returns a 400.
+    # Guard: silently append the word to the system message when it's absent.
+    if not any("json" in (m.get("content") or "").lower() for m in messages):
+        messages[0] = {**messages[0], "content": messages[0]["content"] + "\n\nRespond in JSON."}
+
     last_parse_error: str = ""
     content:          str = ""
     usage:            dict[str, Any] = {}
@@ -335,6 +409,19 @@ async def call_agent(
             check_budget(current_tokens, total_t)
         except BudgetExceededError:
             agent_calls_total.labels(agent=agent_name, model=config.model, status="budget_exceeded").inc()
+            _budget_duration = time.monotonic() - start
+            _budget_ctx = get_trace_context()
+            if _budget_ctx.get("run_id"):
+                _asyncio.ensure_future(_write_trace_safe(
+                    run_id=_budget_ctx["run_id"], org_id=_budget_ctx["org_id"],
+                    trace_id=_budget_ctx["trace_id"],
+                    agent_name=agent_name, model=config.model,
+                    input_tokens=usage.get("prompt_tokens", 0),
+                    output_tokens=usage.get("completion_tokens", 0),
+                    cost_usd=0.0,
+                    duration_ms=round(_budget_duration * 1000),
+                    status="budget_exceeded",
+                ))
             raise
 
         # JSON defence layer 3: Pydantic validation
@@ -364,6 +451,18 @@ async def call_agent(
                 tokens_out=usage.get("completion_tokens"),
                 cost_usd=entry.cost_usd,
             )
+            # Fire-and-forget trace write — never blocks the main call
+            ctx = get_trace_context()
+            if ctx.get("run_id"):
+                _asyncio.ensure_future(_write_trace_safe(
+                    run_id=ctx["run_id"], org_id=ctx["org_id"], trace_id=ctx["trace_id"],
+                    agent_name=agent_name, model=config.model,
+                    input_tokens=usage.get("prompt_tokens", 0),
+                    output_tokens=usage.get("completion_tokens", 0),
+                    cost_usd=entry.cost_usd,
+                    duration_ms=round(duration * 1000),
+                    status="success",
+                ))
             return parsed, entry
 
         except (ValidationError, json.JSONDecodeError, ValueError) as e:
@@ -373,6 +472,18 @@ async def call_agent(
     duration = time.monotonic() - start
     agent_calls_total.labels(agent=agent_name, model=config.model, status="error").inc()
     agent_duration_seconds.labels(agent=agent_name, model=config.model).observe(duration)
+    _err_ctx = get_trace_context()
+    if _err_ctx.get("run_id"):
+        _asyncio.ensure_future(_write_trace_safe(
+            run_id=_err_ctx["run_id"], org_id=_err_ctx["org_id"], trace_id=_err_ctx["trace_id"],
+            agent_name=agent_name, model=config.model,
+            input_tokens=usage.get("prompt_tokens", 0),
+            output_tokens=usage.get("completion_tokens", 0),
+            cost_usd=0.0,
+            duration_ms=round(duration * 1000),
+            status="error",
+            error_msg=last_parse_error[:500],
+        ))
     raise AgentOutputError(
         f"Agent '{agent_name}' output failed validation after {_MAX_RETRY + 1} attempts. "
         f"Last error: {last_parse_error}"

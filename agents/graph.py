@@ -42,9 +42,12 @@ from agents.agents import (
     compliance_agent,
     recommender_agent,
 )
+import os
+
 from agents.lib import db
 from agents.lib.logger import logger
 from agents.lib.metrics import orchestration_qc_score, orchestration_runs_total
+from agents.lib.models import get_env, get_model
 from agents.schemas.output import (
     ComplianceInput,
     CreatorInput,
@@ -57,8 +60,12 @@ from agents.schemas.output import (
 from agents.schemas.question import Question
 from agents.schemas.state import make_stream_event
 
-# Per-node timeout: if an LLM call hangs longer than this, the node fails cleanly
-NODE_TIMEOUT_S = 90.0
+# Per-node timeout — configurable via NODE_TIMEOUT_S env var.
+# Free-tier models (dev) need longer: DeepSeek R1 free can take 120-180s on a cold queue.
+# Dev-paid Qwen models are typically 20-60s, so 120s is safe.
+# Staging/prod paid models are fast; 90s is plenty.
+_TIMEOUT_DEFAULTS = {"dev": 180.0, "dev-paid": 120.0, "staging": 90.0, "prod": 90.0}
+NODE_TIMEOUT_S = float(os.getenv("NODE_TIMEOUT_S", str(_TIMEOUT_DEFAULTS.get(get_env(), 90.0))))
 
 
 # ── State definition ────────────────────────────────────────────────────────────
@@ -170,18 +177,20 @@ async def creator_node(state: dict) -> dict:
         }
 
     except asyncio.TimeoutError:
-        logger.error("creator_node_timeout", revision=revision_count)
+        _model = get_model("creator").model
+        logger.error("creator_node_timeout", revision=revision_count, model=_model, timeout_s=NODE_TIMEOUT_S)
         return {
             "status":    "failed",
-            "error_log": [f"Creator agent timed out after {NODE_TIMEOUT_S}s (revision {revision_count})"],
-            "stream_events": [make_stream_event("run_failed", "creator", {"error": "timeout"})],
+            "error_log": [f"Creator timed out after {NODE_TIMEOUT_S}s — model: {_model}"],
+            "stream_events": [make_stream_event("run_failed", "creator", {"error": "timeout", "model": _model, "timeout_s": NODE_TIMEOUT_S})],
         }
     except Exception as e:
-        logger.error("creator_node_error", error=str(e), revision=revision_count)
+        _model = get_model("creator").model
+        logger.error("creator_node_error", error=str(e), revision=revision_count, model=_model)
         return {
             "status":    "failed",
-            "error_log": [f"Creator agent failed (revision {revision_count}): {e}"],
-            "stream_events": [make_stream_event("run_failed", "creator", {"error": str(e)})],
+            "error_log": [f"Creator failed — model: {_model} — {e}"],
+            "stream_events": [make_stream_event("run_failed", "creator", {"error": str(e), "model": _model})],
         }
 
 

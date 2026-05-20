@@ -12,8 +12,10 @@
     "deploy": "firebase deploy --only functions",
     "test": "vitest run",
     "test:watch": "vitest",
-    "start:agents": "cd .. && ENABLE_STREAM_CONSUMER=true agents/.venv/bin/python -m uvicorn agents.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio",
-    "start:full": "concurrently --names 'backend,agents' --prefix-colors 'blue,green' 'npm run start' 'npm run start:agents'"
+    "start:agents": "cd .. && AGENTS_ENV=${AGENTS_ENV:-dev} REDIS_URL=redis://localhost:6379 ENABLE_STREAM_CONSUMER=true agents/.venv/bin/python -m uvicorn agents.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio",
+    "start:agents:dev-paid": "cd .. && AGENTS_ENV=dev-paid REDIS_URL=redis://localhost:6379 ENABLE_STREAM_CONSUMER=true agents/.venv/bin/python -m uvicorn agents.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio",
+    "start:full": "concurrently --names 'backend,agents' --prefix-colors 'blue,green' 'npm run start' 'npm run start:agents'",
+    "start:full:dev-paid": "concurrently --names 'backend,agents' --prefix-colors 'blue,green' 'npm run start' 'npm run start:agents:dev-paid'"
   },
   "dependencies": {
     "@clerk/backend": "^1.0.0",

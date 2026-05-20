@@ -88,8 +88,91 @@ async def _trigger_generation(survey_id: str, org_id: str) -> bool:
         return False
 
 
+async def _recover_stale_runs() -> int:
+    """Mark runs stuck in 'running' for >10 minutes as 'abandoned'.
+
+    Returns the count of runs recovered.
+    """
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """UPDATE agent_runs
+                       SET status='abandoned', completed_at=NOW()
+                       WHERE run_type='insight_generation'
+                         AND status='running'
+                         AND created_at < NOW() - INTERVAL '10 minutes'
+                       RETURNING id""",
+                )
+                rows = await cur.fetchall()
+                count = len(rows)
+            await conn.commit()
+        if count:
+            logger.info("scheduler_stale_recovery", recovered=count)
+        return count
+    except Exception as exc:
+        logger.warning("scheduler_stale_recovery_failed", error=str(exc))
+        return 0
+
+
+async def _auto_close_by_date() -> int:
+    """Close active/paused surveys that have passed their auto_close_at datetime."""
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """UPDATE surveys
+                       SET status='closed', closed_at=NOW()
+                       WHERE status IN ('active','paused')
+                         AND auto_close_at IS NOT NULL
+                         AND auto_close_at < NOW()
+                       RETURNING id"""
+                )
+                rows = await cur.fetchall()
+                count = len(rows)
+            await conn.commit()
+        if count:
+            logger.info("scheduler_auto_closed_by_date", count=count)
+        return count
+    except Exception as exc:
+        logger.warning("scheduler_auto_close_date_failed", error=str(exc))
+        return 0
+
+
+async def _auto_close_by_response_count() -> int:
+    """Close active surveys that have hit their max_responses limit."""
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """UPDATE surveys
+                       SET status='closed', closed_at=NOW()
+                       WHERE status = 'active'
+                         AND max_responses IS NOT NULL
+                         AND (
+                           SELECT COUNT(*) FROM responses r WHERE r.survey_id = surveys.id
+                         ) >= max_responses
+                       RETURNING id"""
+                )
+                rows = await cur.fetchall()
+                count = len(rows)
+            await conn.commit()
+        if count:
+            logger.info("scheduler_auto_closed_by_count", count=count)
+        return count
+    except Exception as exc:
+        logger.warning("scheduler_auto_close_count_failed", error=str(exc))
+        return 0
+
+
 async def _get_surveys_due(interval_minutes: int) -> list[dict]:
-    """Return surveys that are due for insight regeneration."""
+    """Return surveys that are due for insight regeneration.
+
+    A survey is due when:
+    - It has responses
+    - No completed/running run exists within the interval window
+    - Stale runs (>10 min) have already been cleared by _recover_stale_runs
+    """
     async with _pool_conn().connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
@@ -118,6 +201,11 @@ async def _get_surveys_due(interval_minutes: int) -> list[dict]:
 
 async def run_scheduler_once() -> None:
     """Run a single scheduler tick (useful for testing and inline embedding)."""
+    # Always clean up stale runs first so they don't block re-triggering.
+    await _recover_stale_runs()
+    await _auto_close_by_date()
+    await _auto_close_by_response_count()
+
     surveys = await _get_surveys_due(INTERVAL_FREE_MIN)
     if surveys:
         logger.info("scheduler_batch", count=len(surveys))

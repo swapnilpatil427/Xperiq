@@ -30,13 +30,39 @@ Environment:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
 import sys
 import textwrap
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
+
+
+def _bootstrap_venv() -> None:
+    """Re-exec with agents/.venv when httpx is missing but the project venv exists."""
+    if importlib.util.find_spec("httpx") is not None:
+        return
+    venv_python = Path(__file__).resolve().parents[1] / ".venv" / "bin" / "python"
+    if venv_python.is_file():
+        os.execv(
+            str(venv_python),
+            [str(venv_python), "-m", "agents.skills.openrouter_scan", *sys.argv[1:]],
+        )
+    print(
+        "Missing Python dependency: httpx\n\n"
+        "Create the agents venv and install requirements:\n"
+        "  cd agents && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt\n\n"
+        "Then run from the repo root:\n"
+        "  PYTHONPATH=. agents/.venv/bin/python -m agents.skills.openrouter_scan",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+
+_bootstrap_venv()
 
 import httpx
 
