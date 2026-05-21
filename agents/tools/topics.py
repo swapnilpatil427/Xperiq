@@ -7,6 +7,7 @@ and upserts into survey_topics table.
 from __future__ import annotations
 
 import json
+import traceback
 from typing import Any
 
 import structlog
@@ -82,66 +83,6 @@ def _fuzzy_matches_any(name: str, previous_names: list[str], threshold: int = 3)
     return False
 
 
-# ── Per-topic signal breakdown ────────────────────────────────────────────────
-
-def compute_topic_signals(cluster: dict, all_responses: list[dict]) -> dict:
-    """Compute per-topic signal breakdown from cluster data and response NPS scores.
-
-    Returns a dict with fields matching the new survey_topics columns:
-    positive_pct, negative_pct, neutral_pct, nps_avg, emotion_breakdown,
-    avg_response_len, sample_response_ids.
-    """
-    texts = cluster.get("texts", [])
-    if not texts:
-        return {}
-
-    response_ids = [str(t["response_id"]) for t in texts]
-
-    # Build NPS lookup from all responses (keyed by str(id))
-    resp_lookup: dict[str, dict] = {}
-    for r in all_responses:
-        rid = str(r.get("id") or r.get("response_id") or "")
-        if rid:
-            resp_lookup[rid] = r
-
-    # Sentiment breakdown
-    total = len(texts)
-    pos_count  = sum(1 for t in texts if t.get("sentiment") == "positive")
-    neg_count  = sum(1 for t in texts if t.get("sentiment") == "negative")
-    neu_count  = total - pos_count - neg_count
-    positive_pct = round(pos_count / max(1, total) * 100, 1)
-    negative_pct = round(neg_count / max(1, total) * 100, 1)
-    neutral_pct  = round(neu_count / max(1, total) * 100, 1)
-
-    # NPS average for responses in this topic
-    nps_scores = [
-        resp_lookup[rid]["nps_score"]
-        for rid in response_ids
-        if rid in resp_lookup and resp_lookup[rid].get("nps_score") is not None
-    ]
-    nps_avg = round(sum(nps_scores) / len(nps_scores), 1) if nps_scores else None
-
-    # Emotion distribution
-    emotion_breakdown: dict[str, int] = {}
-    for t in texts:
-        e = t.get("emotion", "neutral")
-        emotion_breakdown[e] = emotion_breakdown.get(e, 0) + 1
-
-    # Average response length (words)
-    word_counts = [len(t["text"].split()) for t in texts if t.get("text")]
-    avg_response_len = round(sum(word_counts) / len(word_counts)) if word_counts else 0
-
-    return {
-        "positive_pct":       positive_pct,
-        "negative_pct":       negative_pct,
-        "neutral_pct":        neutral_pct,
-        "nps_avg":            nps_avg,
-        "emotion_breakdown":  emotion_breakdown,
-        "avg_response_len":   avg_response_len,
-        "sample_response_ids": response_ids[:5],
-    }
-
-
 # ── LLM-based topic discovery ────────────────────────────────────────────────
 
 async def _discover_topics_chunk(
@@ -209,7 +150,7 @@ async def _discover_topics_chunk(
         )
         return output.topics
     except Exception as exc:
-        logger.error("discover_topics_chunk_llm_failed", error=str(exc), chunk_size=len(chunk))
+        logger.error("discover_topics_chunk_llm_failed", error=str(exc), chunk_size=len(chunk), traceback=traceback.format_exc())
         # Fallback: use raw aspect labels as canonical names
         topics = []
         for c in chunk:
@@ -348,15 +289,14 @@ async def upsert_survey_topics(
     conn,
     topic_signals: dict[str, dict] | None = None,
 ) -> dict[str, str]:
-    """Insert or update survey_topics rows. Returns {topic_name: db_id}.
+    """Upsert survey_topics rows via a single ON CONFLICT statement per topic.
 
-    Signals computed per topic:
-    - trending           : volume direction (up/down/stable/new) — are more people talking about it?
-    - sentiment_momentum : sentiment direction (improving/worsening/stable) — is it getting better?
-    - urgency_score      : composite priority (negativity × √volume × effort/7)
-    - volume_delta       : absolute mentions change vs last run
-    - volume_delta_pct   : % mentions change vs last run
-    - chronic            : True if topic has been negative (sentiment < -0.2) for 3+ consecutive runs
+    Deltas (trending, sentiment_momentum, volume_delta, chronic, streak) are
+    computed entirely in SQL CASE WHEN so there are no separate SELECT round-trips
+    and no race conditions when two scheduler ticks run concurrently.
+
+    Requires a unique index on survey_topics(survey_id, name, time_window) — added
+    by ensure_schema() in db.py.
     """
     if not topics:
         return {}
@@ -366,122 +306,98 @@ async def upsert_survey_topics(
 
     for topic in topics:
         sig = signals.get(topic.name, {})
+        urgency = _compute_urgency(topic.sentiment_score, topic.volume, topic.effort_score)
+        initial_streak = 1 if topic.sentiment_score < -0.2 else 0
+        initial_trending = "new" if topic.is_new else "stable"
+
         try:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    """SELECT id, sentiment_score, volume, negative_run_streak
-                       FROM survey_topics
-                       WHERE survey_id = %s AND name = %s AND time_window = %s
-                       LIMIT 1""",
-                    (survey_id, topic.name, time_window),
+                    """INSERT INTO survey_topics (
+                           survey_id, org_id, run_id, time_window,
+                           name, aliases, is_new, summary,
+                           volume, sentiment_score, dominant_emotion,
+                           effort_score, trending, sentiment_momentum,
+                           urgency_score, volume_delta, volume_delta_pct,
+                           chronic, negative_run_streak,
+                           nps_avg, positive_pct, negative_pct, neutral_pct,
+                           avg_response_len, emotion_distribution, sample_response_ids
+                       ) VALUES (
+                           %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s,
+                           %s,%s,'stable',
+                           %s,0,0.0,
+                           false,%s,
+                           %s,%s,%s,%s, %s,%s,%s
+                       )
+                       ON CONFLICT (survey_id, name, time_window) DO UPDATE SET
+                           run_id             = EXCLUDED.run_id,
+                           volume             = EXCLUDED.volume,
+                           sentiment_score    = EXCLUDED.sentiment_score,
+                           dominant_emotion   = EXCLUDED.dominant_emotion,
+                           effort_score       = EXCLUDED.effort_score,
+                           trending           = CASE
+                               WHEN ABS(
+                                   (EXCLUDED.volume - survey_topics.volume)::float
+                                   / GREATEST(1, survey_topics.volume) * 100
+                               ) < 10 THEN 'stable'
+                               WHEN EXCLUDED.volume > survey_topics.volume THEN 'up'
+                               ELSE 'down'
+                           END,
+                           sentiment_momentum = CASE
+                               WHEN ABS(EXCLUDED.sentiment_score - survey_topics.sentiment_score) < 0.05
+                               THEN 'stable'
+                               WHEN EXCLUDED.sentiment_score > survey_topics.sentiment_score
+                               THEN 'improving'
+                               ELSE 'worsening'
+                           END,
+                           volume_delta       = EXCLUDED.volume - survey_topics.volume,
+                           volume_delta_pct   = ROUND(
+                               ((EXCLUDED.volume - survey_topics.volume)::float
+                               / GREATEST(1, survey_topics.volume) * 100)::numeric, 1
+                           ),
+                           negative_run_streak = CASE
+                               WHEN EXCLUDED.sentiment_score < -0.2
+                               THEN survey_topics.negative_run_streak + 1
+                               ELSE 0
+                           END,
+                           chronic            = CASE
+                               WHEN EXCLUDED.sentiment_score < -0.2
+                                    AND survey_topics.negative_run_streak >= 2
+                               THEN true
+                               ELSE false
+                           END,
+                           urgency_score      = EXCLUDED.urgency_score,
+                           last_seen_at       = NOW(),
+                           nps_avg            = EXCLUDED.nps_avg,
+                           positive_pct       = EXCLUDED.positive_pct,
+                           negative_pct       = EXCLUDED.negative_pct,
+                           neutral_pct        = EXCLUDED.neutral_pct,
+                           avg_response_len   = EXCLUDED.avg_response_len,
+                           emotion_distribution = EXCLUDED.emotion_distribution,
+                           sample_response_ids  = EXCLUDED.sample_response_ids,
+                           summary            = COALESCE(EXCLUDED.summary, survey_topics.summary)
+                       RETURNING id""",
+                    (
+                        survey_id, org_id, run_id, time_window,
+                        topic.name, topic.aliases, topic.is_new, topic.summary or None,
+                        topic.volume, topic.sentiment_score, topic.dominant_emotion,
+                        topic.effort_score, initial_trending,
+                        urgency, initial_streak,
+                        sig.get("nps_avg"), sig.get("positive_pct"),
+                        sig.get("negative_pct"), sig.get("neutral_pct"),
+                        sig.get("avg_response_len") or 0,
+                        json.dumps(sig.get("emotion_distribution", {})),
+                        json.dumps(sig.get("response_ids", [])),
+                    ),
                 )
-                existing = await cur.fetchone()
-
-            urgency = _compute_urgency(topic.sentiment_score, topic.volume, topic.effort_score)
-
-            if existing:
-                existing_id      = str(existing[0])
-                prev_sentiment   = float(existing[1] or 0)
-                prev_volume      = int(existing[2] or 0)
-                prev_streak      = int(existing[3] or 0) if existing[3] is not None else 0
-
-                # ── Trending: volume direction ─────────────────────────────
-                volume_delta     = topic.volume - prev_volume
-                volume_delta_pct = round(volume_delta / max(1, prev_volume) * 100, 1)
-                if abs(volume_delta_pct) < 10:         trending = "stable"
-                elif volume_delta_pct > 0:             trending = "up"
-                else:                                  trending = "down"
-
-                # ── Sentiment momentum: sentiment direction ────────────────
-                sentiment_delta = topic.sentiment_score - prev_sentiment
-                if abs(sentiment_delta) < 0.05:        sentiment_momentum = "stable"
-                elif sentiment_delta > 0:              sentiment_momentum = "improving"
-                else:                                  sentiment_momentum = "worsening"
-
-                # ── Chronic: consecutive negative runs ────────────────────
-                if topic.sentiment_score < -0.2:
-                    new_streak = prev_streak + 1
-                else:
-                    new_streak = 0
-                chronic = new_streak >= 3
-
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        """UPDATE survey_topics SET
-                               volume = %s, sentiment_score = %s,
-                               dominant_emotion = %s, effort_score = %s,
-                               trending = %s, sentiment_momentum = %s,
-                               urgency_score = %s, volume_delta = %s, volume_delta_pct = %s,
-                               chronic = %s, negative_run_streak = %s,
-                               last_seen_at = NOW(), run_id = %s,
-                               nps_avg = %s, positive_pct = %s, negative_pct = %s,
-                               neutral_pct = %s, avg_response_len = %s,
-                               emotion_breakdown = %s, sample_response_ids = %s,
-                               summary = %s
-                           WHERE id = %s""",
-                        (
-                            topic.volume, topic.sentiment_score,
-                            topic.dominant_emotion, topic.effort_score,
-                            trending, sentiment_momentum,
-                            urgency, volume_delta, volume_delta_pct,
-                            chronic, new_streak, run_id,
-                            sig.get("nps_avg"), sig.get("positive_pct"),
-                            sig.get("negative_pct"), sig.get("neutral_pct"),
-                            sig.get("avg_response_len"),
-                            json.dumps(sig.get("emotion_breakdown", {})),
-                            json.dumps(sig.get("sample_response_ids", [])),
-                            topic.summary or None,
-                            existing_id,
-                        ),
-                    )
-                topic_ids[topic.name] = existing_id
-
-            else:
-                # First time we've seen this topic
-                trending           = "new" if topic.is_new else "stable"
-                sentiment_momentum = "stable"
-                volume_delta       = 0
-                volume_delta_pct   = 0.0
-                new_streak         = 1 if topic.sentiment_score < -0.2 else 0
-                chronic            = False
-
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        """INSERT INTO survey_topics (
-                               survey_id, org_id, run_id, time_window,
-                               name, aliases, is_new, summary,
-                               volume, sentiment_score, dominant_emotion,
-                               effort_score, trending, sentiment_momentum,
-                               urgency_score, volume_delta, volume_delta_pct,
-                               chronic, negative_run_streak,
-                               nps_avg, positive_pct, negative_pct, neutral_pct,
-                               avg_response_len, emotion_breakdown, sample_response_ids
-                           ) VALUES (
-                               %s,%s,%s,%s, %s,%s,%s,%s, %s,%s,%s, %s,%s,%s,
-                               %s,%s,%s, %s,%s, %s,%s,%s,%s, %s,%s,%s
-                           ) RETURNING id""",
-                        (
-                            survey_id, org_id, run_id, time_window,
-                            topic.name, topic.aliases, topic.is_new, topic.summary or None,
-                            topic.volume, topic.sentiment_score, topic.dominant_emotion,
-                            topic.effort_score, trending, sentiment_momentum,
-                            urgency, volume_delta, volume_delta_pct,
-                            chronic, new_streak,
-                            sig.get("nps_avg"), sig.get("positive_pct"),
-                            sig.get("negative_pct"), sig.get("neutral_pct"),
-                            sig.get("avg_response_len"),
-                            json.dumps(sig.get("emotion_breakdown", {})),
-                            json.dumps(sig.get("sample_response_ids", [])),
-                        ),
-                    )
-                    row = await cur.fetchone()
-                    topic_ids[topic.name] = str(row[0])
+                row = await cur.fetchone()
+                topic_ids[topic.name] = str(row[0])
 
         except Exception as exc:
             logger.error(
                 "upsert_survey_topic_failed",
                 topic_name=topic.name, survey_id=survey_id, error=str(exc),
-            )
+                traceback=traceback.format_exc())
 
     return topic_ids
 
@@ -497,7 +413,7 @@ async def get_previous_topic_names(survey_id: str, conn) -> list[str]:
             rows = await cur.fetchall()
             return [row[0] for row in rows]
     except Exception as exc:
-        logger.error("get_previous_topic_names_failed", survey_id=survey_id, error=str(exc))
+        logger.error("get_previous_topic_names_failed", survey_id=survey_id, error=str(exc), traceback=traceback.format_exc())
         return []
 
 
@@ -600,6 +516,6 @@ async def build_topic_hierarchy(
             logger.error(
                 "build_topic_hierarchy_failed",
                 parent_name=parent_name, error=str(exc),
-            )
+                traceback=traceback.format_exc())
 
     await conn.commit()

@@ -853,6 +853,51 @@ async def list_agents(_key: None = Depends(require_internal_key)) -> list[dict]:
     ]
 
 
+# ── Internal: checkpoint blob proxy ─────────────────────────────────────────────
+# Used by the Node.js backend to fetch checkpoint report blobs in dev/dev-paid.
+# In staging/prod the backend receives a signed OCI PAR URL instead — this endpoint
+# is only exercised when AGENTS_ENV is dev or dev-paid.
+
+@app.get("/internal/checkpoint-blob", include_in_schema=False)
+async def get_checkpoint_blob_internal(
+    ref: str,
+    _key: None = Depends(require_internal_key),
+) -> dict:
+    """
+    Proxy a checkpoint blob by its storage ref.
+    ref is an absolute local path (dev) or OCI object key (staging/prod).
+    Returns the parsed + migrated JSON blob.
+    """
+    from agents.lib.checkpoint_store import read_checkpoint_blob
+    try:
+        return await read_checkpoint_blob(ref)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Checkpoint blob not found")
+    except Exception as exc:
+        logger.error("checkpoint_blob_fetch_failed", ref=ref, error=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to read checkpoint blob")
+
+
+@app.get("/internal/checkpoint-read-url", include_in_schema=False)
+async def get_checkpoint_read_url_internal(
+    ref: str,
+    expiry_minutes: int = 15,
+    _key: None = Depends(require_internal_key),
+) -> dict:
+    """
+    Return a readable URL for a checkpoint blob.
+    dev/dev-paid: returns the ref unchanged (backend proxies the blob directly).
+    staging/prod: returns a signed OCI PAR URL valid for expiry_minutes.
+    """
+    from agents.lib.checkpoint_store import get_checkpoint_read_url
+    try:
+        url = await get_checkpoint_read_url(ref, expiry_minutes)
+        return {"url": url}
+    except Exception as exc:
+        logger.error("checkpoint_read_url_failed", ref=ref, error=str(exc))
+        raise HTTPException(status_code=500, detail="Failed to generate checkpoint URL")
+
+
 # ── Health + Metrics ─────────────────────────────────────────────────────────────
 
 @app.get("/health", include_in_schema=False)

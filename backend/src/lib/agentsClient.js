@@ -10,8 +10,11 @@
 const fetch  = require('node-fetch');
 const logger = require('./logger');
 
-const AGENTS_URL          = process.env.AGENTS_URL          || 'http://localhost:8001';
-const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY || 'dev-internal-key-change-in-prod';
+const AGENTS_URL          = process.env.AGENTS_URL || 'http://localhost:8001';
+const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY
+  || (process.env.NODE_ENV !== 'production'
+    ? 'dev-internal-key-change-in-prod'
+    : (() => { throw new Error('AGENTS_INTERNAL_KEY must be set in production'); })());
 
 // Fast timeout: non-LLM operations (status polls, CRUD edits, registry)
 const DEFAULT_TIMEOUT_MS = 12_000;
@@ -290,6 +293,37 @@ async function triggerInsightGeneration({ surveyId, orgId, runId, trigger = 'man
 }
 
 
+// ── Checkpoint blobs ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch a checkpoint report blob by its storage ref.
+ * In dev/dev-paid the agents service reads from the local filesystem.
+ * In staging/prod use getCheckpointReadUrl() to get a signed OCI PAR URL instead.
+ *
+ * @param {string} ref  - storage ref returned by write_checkpoint_blob (local path or OCI key)
+ * @returns {Promise<object>} parsed + schema-migrated blob
+ */
+async function getCheckpointBlob(ref) {
+  return _fetch(`/internal/checkpoint-blob?ref=${encodeURIComponent(ref)}`);
+}
+
+/**
+ * Get a readable URL for a checkpoint blob.
+ * In dev/dev-paid returns the ref itself (agents proxies it).
+ * In staging/prod returns a signed OCI Pre-Authenticated Request URL valid for 15 min.
+ *
+ * @param {string} ref           - storage ref from the DB
+ * @param {number} [expiryMin=15] - PAR expiry in minutes (ignored for local refs)
+ * @returns {Promise<string>} URL or local ref
+ */
+async function getCheckpointReadUrl(ref, expiryMin = 15) {
+  const result = await _fetch(
+    `/internal/checkpoint-read-url?ref=${encodeURIComponent(ref)}&expiry_minutes=${expiryMin}`,
+  );
+  return result.url;
+}
+
+
 // ── Registry + health ──────────────────────────────────────────────────────────
 
 /** List all agent capabilities (active + stubs). */
@@ -328,6 +362,9 @@ module.exports = {
   generateSampleResponses,
   // Insight generation
   triggerInsightGeneration,
+  // Checkpoint blobs
+  getCheckpointBlob,
+  getCheckpointReadUrl,
   // Discovery
   getAgentRegistry,
   isHealthy,

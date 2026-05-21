@@ -82,10 +82,10 @@ class TestCompletionRate:
 class TestExtractOpenTexts:
     def test_extracts_text_answers(self):
         questions = [{"id": "q1", "type": "open_text"}, {"id": "q2", "type": "nps"}]
-        responses = [{"id": "r1", "answers": [{"questionId": "q1", "value": "Great product!"}]}]
+        responses = [{"id": "r1", "answers": [{"questionId": "q1", "value": "Great product overall!"}]}]
         result = extract_open_texts(responses, questions)
         assert len(result) == 1
-        assert result[0]["text"] == "Great product!"
+        assert result[0]["text"] == "Great product overall!"
         assert result[0]["response_id"] == "r1"
 
     def test_skips_short_text(self):
@@ -95,18 +95,26 @@ class TestExtractOpenTexts:
         assert result == []
 
     def test_synthesises_score_questions(self):
-        # NPS + open_text: both produce text entries
+        # Score-only survey: NPS score synthesised to descriptive text
+        questions = [{"id": "q1", "type": "nps"}]
+        responses = [{"id": "r1", "answers": [{"questionId": "q1", "value": "9"}]}]
+        result = extract_open_texts(responses, questions)
+        assert len(result) == 1
+        assert result[0]["question_id"] == "q1"
+        assert "Promoter" in result[0]["text"]
+
+    def test_open_text_suppresses_score_synthesis(self):
+        # When survey has open_text questions, score answers are NOT synthesised
+        # (prevents synthetic labels like "Detractor" from polluting topic clusters)
         questions = [{"id": "q1", "type": "nps"}, {"id": "q2", "type": "open_text"}]
         responses = [{"id": "r1", "answers": [
             {"questionId": "q1", "value": "9"},
             {"questionId": "q2", "value": "Very responsive support team!"},
         ]}]
         result = extract_open_texts(responses, questions)
-        assert len(result) == 2
         qids = {r["question_id"] for r in result}
-        assert "q1" in qids and "q2" in qids
-        nps_text = next(r["text"] for r in result if r["question_id"] == "q1")
-        assert "Promoter" in nps_text
+        assert "q1" not in qids, "NPS score should be suppressed when open_text present"
+        assert "q2" in qids
 
     def test_csat_synthesises_sentiment_label(self):
         questions = [{"id": "q1", "type": "csat", "question": "How satisfied are you?"}]

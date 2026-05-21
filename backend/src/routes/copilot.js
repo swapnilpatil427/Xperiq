@@ -25,10 +25,11 @@
  * org_id is extracted from the verified token — never from request body.
  */
 const express = require('express');
-const { requireAuth } = require('../../middleware/auth');
-const agentsClient    = require('../../lib/agentsClient');
-const db              = require('../../lib/db');
-const logger          = require('../../lib/logger');
+const { requireAuth } = require('../middleware/auth');
+const agentsClient    = require('../lib/agentsClient');
+const db              = require('../lib/db');
+const logger          = require('../lib/logger');
+const { serverError } = require('../lib/httpError');
 
 const router = express.Router();
 router.use(requireAuth);

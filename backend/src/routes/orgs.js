@@ -1,10 +1,11 @@
 const express = require('express');
 const multer  = require('multer');
 const path    = require('path');
-const { requireAuth } = require('../../middleware/auth');
-const { validate }    = require('../../lib/validate');
-const { createOrgSchema, updateOrgSchema } = require('../../schemas/orgs');
-const db = require('../../lib/db');
+const { requireAuth } = require('../middleware/auth');
+const { validate }    = require('../lib/validate');
+const { createOrgSchema, updateOrgSchema } = require('../schemas/orgs');
+const db = require('../lib/db');
+const { serverError } = require('../lib/httpError');
 const router = express.Router();
 
 const BACKEND = process.env.BACKEND || 'firebase';
@@ -36,7 +37,7 @@ router.post('/', requireAuth, validate(createOrgSchema), async (req, res) => {
     const row = rows[0];
     res.json({ org: { orgId: row.org_id, name: row.brand_name, logoUrl: row.logo_url } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -67,7 +68,7 @@ router.get('/me', requireAuth, async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -99,7 +100,7 @@ router.put('/me', requireAuth, validate(updateOrgSchema), async (req, res) => {
 
     res.json({ org: { orgId: row.org_id, name: row.brand_name, logoUrl: row.logo_url } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -111,7 +112,7 @@ router.post('/me/logo', requireAuth, upload.single('logo'), async (req, res) => 
     let logoUrl;
 
     if (BACKEND === 'firebase') {
-      const { storage } = require('../../lib/admin');
+      const { storage } = require('../lib/admin');
       const ext = path.extname(req.file.originalname) || '.png';
       const filePath = `orgs/${req.orgId}/logo${ext}`;
       const bucket = storage.bucket();
@@ -129,7 +130,7 @@ router.post('/me/logo', requireAuth, upload.single('logo'), async (req, res) => 
 
     res.json({ logoUrl });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 

@@ -10,11 +10,11 @@ import { PageHeader } from '../components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CrystalPanel } from '../components/CrystalPanel';
 import { useCrystalPanel } from '../contexts/crystalPanel';
 import type { SurveyTopic, TopicDriver } from '../types';
+import { GeneratingOverlay } from './insights/GeneratingOverlay';
 
 // ── Palette for topic cards ────────────────────────────────────────────────────
 const TOPIC_PALETTES = [
@@ -30,8 +30,17 @@ const TOPIC_PALETTES = [
 
 // Pipeline nodes matching the backend INSIGHT_NODES order
 const PIPELINE_NODES = [
-  'ingest', 'embed', 'metrics', 'absa', 'cluster', 'topics', 'narrate', 'verify', 'evaluate', 'publish',
-];
+  { id: 'ingest',   label: 'Loading Responses',  icon: 'download'            },
+  { id: 'embed',    label: 'Building Embeddings', icon: 'memory'              },
+  { id: 'metrics',  label: 'Computing Metrics',   icon: 'analytics'           },
+  { id: 'absa',     label: 'Sentiment Analysis',  icon: 'sentiment_satisfied' },
+  { id: 'cluster',  label: 'Clustering Topics',   icon: 'hub'                 },
+  { id: 'topics',   label: 'Discovering Topics',  icon: 'topic'               },
+  { id: 'narrate',  label: 'Narrating Insights',  icon: 'edit_note'           },
+  { id: 'verify',   label: 'Verifying Claims',    icon: 'fact_check'          },
+  { id: 'evaluate', label: 'Evaluating Quality',  icon: 'verified'            },
+  { id: 'publish',  label: 'Publishing Results',  icon: 'publish'             },
+] as const;
 
 function topicSignal(score: number | null): { label: string; color: string; dot: string } {
   if (score == null) return { label: 'Unknown', color: '#94a3b8', dot: '#94a3b8' };
@@ -186,7 +195,7 @@ export function AdvancedInsightsPage() {
         }
         if (status === 'completed') {
           clearInterval(pollRef.current!);
-          setNodesDone(PIPELINE_NODES);
+          setNodesDone(PIPELINE_NODES.map(n => n.id));
           await new Promise(r => setTimeout(r, 800));
           await loadTopics();
           await loadDrivers();
@@ -230,54 +239,6 @@ export function AdvancedInsightsPage() {
     t => t.trending === 'up' && (t.sentiment_score ?? 0) < -0.3,
   );
 
-  // ── Generating overlay ────────────────────────────────────────────────────
-  if (generating) {
-    const progress = Math.round((nodesDone.length / PIPELINE_NODES.length) * 100);
-    return (
-      <div className="max-w-7xl mx-auto w-full">
-        <PageHeader
-          crumbs={[{ label: t('nav.insights'), icon: 'psychology', path: ROUTES.INSIGHTS }, { label: t('advancedInsights.pageTitle') }]}
-          title={t('advancedInsights.pageTitle')}
-          subtitle={t('advancedInsights.generateRunning')}
-        />
-        <Card className="p-12 flex flex-col items-center gap-8 text-center mt-6">
-          <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
-            <Icon name="psychology" size={40} className="text-primary" style={{ animation: 'spin 3s linear infinite' }} />
-          </div>
-          <div className="w-full max-w-md">
-            <div className="flex justify-between text-xs font-bold text-muted-foreground mb-2">
-              <span>{t('advancedInsights.generateRunning')}</span>
-              <span>{progress}%</span>
-            </div>
-            <div className="w-full h-2 bg-muted/30 rounded-full overflow-hidden">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${progress}%`, background: 'linear-gradient(90deg, #4f46e5, #2a4bd9)' }}
-              />
-            </div>
-          </div>
-          <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-            {PIPELINE_NODES.map(node => (
-              <Badge
-                key={node}
-                variant="secondary"
-                className="text-xs capitalize"
-                style={{
-                  background: nodesDone.includes(node) ? '#eef2ff' : '#f8fafc',
-                  color: nodesDone.includes(node) ? '#4f46e5' : '#94a3b8',
-                  border: nodesDone.includes(node) ? '1px solid #c7d2fe' : '1px solid #e2e8f0',
-                }}
-              >
-                {nodesDone.includes(node) && <Icon name="check_circle" size={12} className="mr-1" />}
-                {node}
-              </Badge>
-            ))}
-          </div>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-8 max-w-7xl mx-auto w-full">
 
@@ -287,7 +248,7 @@ export function AdvancedInsightsPage() {
           { label: t('advancedInsights.pageTitle') }
         ]}
         title={t('advancedInsights.pageTitle')}
-        subtitle={t('advancedInsights.topicsDescription', { count: responseCount.toLocaleString() })}
+        subtitle={generating ? t('advancedInsights.generateRunning') : t('advancedInsights.topicsDescription', { count: responseCount.toLocaleString() })}
         actions={
           <div className="flex items-center gap-2 flex-wrap">
             {/* Sort mode */}
@@ -322,6 +283,17 @@ export function AdvancedInsightsPage() {
           </div>
         }
       />
+
+      <GeneratingOverlay
+        generating={generating}
+        nodesDone={nodesDone}
+        genError={genError ?? null}
+        nodes={PIPELINE_NODES}
+        focusSurvey={activeSurvey ?? undefined}
+        onRetry={handleGenerate}
+      />
+
+      {!generating && <>
 
       {/* ── Anomaly alerts ─────────────────────────────────────────────────── */}
       {anomalies.length > 0 && (
@@ -909,6 +881,185 @@ export function AdvancedInsightsPage() {
                           </div>
                         )}
                       </div>
+
+                      {/* NPS & Loyalty */}
+                      {(sel.net_sentiment != null || sel.nps_impact != null || sel.promoter_pct != null) && (
+                        <div className="space-y-1.5 pt-1">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 px-1">
+                            {t('advancedInsights.loyaltySection')}
+                          </p>
+                          {sel.net_sentiment != null && (
+                            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                {t('advancedInsights.netSentimentLabel')}
+                              </span>
+                              <span className="text-[11px] font-black" style={{
+                                color: sel.net_sentiment > 0.1 ? '#059669' : sel.net_sentiment < -0.1 ? '#b41340' : '#64748b',
+                              }}>
+                                {sel.net_sentiment > 0 ? '+' : ''}{(sel.net_sentiment * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          )}
+                          {sel.nps_impact != null && (
+                            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                {t('advancedInsights.npsImpactLabel')}
+                              </span>
+                              <span className="text-[11px] font-black" style={{
+                                color: sel.nps_impact > 0 ? '#059669' : sel.nps_impact < 0 ? '#b41340' : '#64748b',
+                              }}>
+                                {sel.nps_impact > 0 ? '+' : ''}{sel.nps_impact.toFixed(1)} pts
+                              </span>
+                            </div>
+                          )}
+                          {sel.promoter_pct != null && sel.detractor_pct != null && (
+                            <div className="px-2 py-2 rounded-lg bg-muted/5 border border-muted/20 space-y-1">
+                              <div className="flex rounded-full overflow-hidden h-2">
+                                <div style={{ width: `${sel.promoter_pct}%`, background: '#059669' }} />
+                                <div style={{ width: `${sel.passive_pct ?? 0}%`, background: '#d1d5db' }} />
+                                <div style={{ width: `${sel.detractor_pct}%`, background: '#b41340' }} />
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="text-[9px] font-bold" style={{ color: '#059669' }}>
+                                  {t('advancedInsights.promoterLabel')} {sel.promoter_pct.toFixed(0)}%
+                                </span>
+                                <span className="text-[9px] font-bold" style={{ color: '#b41340' }}>
+                                  {t('advancedInsights.detractorLabel')} {sel.detractor_pct.toFixed(0)}%
+                                </span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* CSAT & Effort */}
+                      {(sel.avg_csat != null || sel.csat_impact != null || sel.avg_effort_score != null) && (
+                        <div className="space-y-1.5 pt-1">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 px-1">
+                            {t('advancedInsights.csatSection')}
+                          </p>
+                          {sel.avg_csat != null && (
+                            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">CSAT</span>
+                              <span className="text-[11px] font-black text-on-surface">{sel.avg_csat.toFixed(1)}/5</span>
+                            </div>
+                          )}
+                          {sel.csat_impact != null && (
+                            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                {t('advancedInsights.csatImpactLabel')}
+                              </span>
+                              <span className="text-[11px] font-black" style={{
+                                color: sel.csat_impact > 0 ? '#059669' : sel.csat_impact < 0 ? '#b41340' : '#64748b',
+                              }}>
+                                {sel.csat_impact > 0 ? '+' : ''}{sel.csat_impact.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {sel.avg_effort_score != null && (
+                            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                {t('advancedInsights.avgEffortScoreLabel')}
+                              </span>
+                              <span className="text-[11px] font-black text-on-surface">{sel.avg_effort_score.toFixed(1)}/7</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Health & Confidence */}
+                      {(sel.health_label != null || sel.confidence_level != null || sel.driver_score != null || sel.velocity_pct != null) && (
+                        <div className="space-y-1.5 pt-1">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 px-1">
+                            {t('advancedInsights.healthSection')}
+                          </p>
+                          {sel.health_label && (() => {
+                            const hColor = sel.health_label === 'healthy' ? '#059669' : sel.health_label === 'at-risk' ? '#b41340' : '#64748b';
+                            const hLabel = sel.health_label === 'healthy' ? t('advancedInsights.healthHealthy')
+                                         : sel.health_label === 'at-risk'  ? t('advancedInsights.healthAtRisk')
+                                         : t('advancedInsights.healthStable');
+                            return (
+                              <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                  {t('advancedInsights.healthLabel2')}
+                                </span>
+                                <span className="text-[11px] font-black" style={{ color: hColor }}>{hLabel}</span>
+                              </div>
+                            );
+                          })()}
+                          {sel.confidence_level && (() => {
+                            const cColor = sel.confidence_level === 'high' ? '#059669' : sel.confidence_level === 'low' ? '#9ca3af' : '#d97706';
+                            return (
+                              <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                  {t('advancedInsights.confidenceLabel')}
+                                </span>
+                                <span className="text-[11px] font-black capitalize" style={{ color: cColor }}>{sel.confidence_level}</span>
+                              </div>
+                            );
+                          })()}
+                          {sel.driver_score != null && (
+                            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                {t('advancedInsights.driverScoreLabel')}
+                              </span>
+                              <span className="text-[11px] font-black" style={{
+                                color: Math.abs(sel.driver_score) > 0.3 ? '#4f46e5' : '#64748b',
+                              }}>
+                                {sel.driver_score > 0 ? '+' : ''}{sel.driver_score.toFixed(2)}
+                              </span>
+                            </div>
+                          )}
+                          {sel.velocity_pct != null && (
+                            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-muted/5 border border-muted/20">
+                              <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                                {t('advancedInsights.velocityLabel')}
+                              </span>
+                              <span className="text-[11px] font-black flex items-center gap-1" style={{
+                                color: sel.velocity_pct > 0 ? '#059669' : sel.velocity_pct < 0 ? '#b41340' : '#64748b',
+                              }}>
+                                <Icon name={sel.velocity_pct > 0 ? 'trending_up' : sel.velocity_pct < 0 ? 'trending_down' : 'trending_flat'} size={12} />
+                                {sel.velocity_pct > 0 ? '+' : ''}{sel.velocity_pct.toFixed(0)}%
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Emotion mix */}
+                      {sel.emotion_distribution && Object.keys(sel.emotion_distribution).length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 px-1">
+                            {t('advancedInsights.emotionMixLabel')}
+                          </p>
+                          <div className="flex flex-wrap gap-1 px-1">
+                            {Object.entries(sel.emotion_distribution)
+                              .sort((a, b) => b[1] - a[1])
+                              .slice(0, 5)
+                              .map(([emotion, count]) => (
+                                <span key={emotion} className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-muted/10 border border-muted/20 text-muted-foreground capitalize">
+                                  {emotion} <span className="opacity-60">{count}</span>
+                                </span>
+                              ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Top verbatims */}
+                      {sel.top_verbatims && sel.top_verbatims.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <p className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/70 px-1">
+                            {t('advancedInsights.topVerbatimsLabel')}
+                          </p>
+                          <div className="space-y-1.5 px-1">
+                            {sel.top_verbatims.slice(0, 3).map((v, i) => (
+                              <p key={i} className="text-[9px] text-muted-foreground leading-relaxed border-l-2 border-muted/30 pl-2 italic">
+                                &ldquo;{v}&rdquo;
+                              </p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -971,6 +1122,8 @@ export function AdvancedInsightsPage() {
           topics={topics}
         />
       )}
+
+      </>}
     </div>
   );
 }

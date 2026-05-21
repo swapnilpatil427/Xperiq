@@ -10,7 +10,26 @@
 import React from 'react';
 import { Icon } from '../../components/Icon';
 
+// ── Layer config — single source of truth for all four insight layers ────────
+export type InsightLayer = 'descriptive' | 'diagnostic' | 'predictive' | 'prescriptive';
+
+export const LAYER_CONFIG: Record<InsightLayer, {
+  label: string; tooltip: string; color: string; bg: string; ringColor: string; textColor: string;
+}> = {
+  descriptive:  { label: 'What happened',    tooltip: 'Summarises what occurred — response counts, NPS, sentiment distribution.',         color: '#0369a1', bg: '#e0f2fe', ringColor: '#2a4bd9', textColor: 'text-blue-700' },
+  diagnostic:   { label: 'Why it happened',  tooltip: 'Explains the drivers behind the patterns — which topics caused the score.',        color: '#7c3aed', bg: '#ede9fe', ringColor: '#8329c8', textColor: 'text-purple-700' },
+  predictive:   { label: 'What will happen', tooltip: 'Forward-looking signal — trends and patterns likely to continue or worsen.',        color: '#d97706', bg: '#fef3c7', ringColor: '#d97706', textColor: 'text-amber-700' },
+  prescriptive: { label: 'What to do',       tooltip: 'Actionable recommendation — specific steps to improve the experience or metric.',   color: '#059669', bg: '#d1fae5', ringColor: '#059669', textColor: 'text-green-700' },
+};
+
 // ── Citation chip ────────────────────────────────────────────────────────────
+
+const SENTIMENT_BORDER: Record<string, string> = {
+  positive: '#16a34a',
+  negative: '#dc2626',
+  neutral:  'var(--color-outline-variant, #ccc)',
+};
+
 export function CitationChip({ id, dark = false, title }: { id: string; dark?: boolean; title?: string }) {
   return (
     <button
@@ -27,6 +46,8 @@ export function CitationChip({ id, dark = false, title }: { id: string; dark?: b
     </button>
   );
 }
+
+export { SENTIMENT_BORDER };
 
 // ── Confidence chip ──────────────────────────────────────────────────────────
 export function ConfidenceChip({ value, dark = false }: { value: number; dark?: boolean }) {
@@ -79,17 +100,8 @@ export function CIBar({ position, width = 100, dark = false }: { position: numbe
 }
 
 // ── Layer badge ──────────────────────────────────────────────────────────────
-export type InsightLayer = 'descriptive' | 'diagnostic' | 'predictive' | 'prescriptive';
-
-const LAYER_META: Record<InsightLayer, { label: string; color: string; bg: string; ringColor: string }> = {
-  descriptive: { label: 'Descriptive', color: 'text-blue-700', bg: 'bg-blue-100', ringColor: '#2a4bd9' },
-  diagnostic: { label: 'Diagnostic', color: 'text-tertiary', bg: 'bg-tertiary/10', ringColor: '#8329c8' },
-  predictive: { label: 'Predictive', color: 'text-amber-700', bg: 'bg-amber-100', ringColor: '#d97706' },
-  prescriptive: { label: 'Prescriptive', color: 'text-green-700', bg: 'bg-green-100', ringColor: '#059669' },
-};
-
 export function LayerBadge({ layer, icon, dark = false }: { layer: InsightLayer; icon?: string; dark?: boolean }) {
-  const m = LAYER_META[layer];
+  const m = LAYER_CONFIG[layer];
   return (
     <div className="flex items-center gap-2">
       {icon && (
@@ -100,10 +112,7 @@ export function LayerBadge({ layer, icon, dark = false }: { layer: InsightLayer;
         />
       )}
       <span
-        className={
-          'text-[10px] font-black uppercase tracking-[0.18em] ' +
-          (dark ? 'text-white/80' : m.color)
-        }
+        className={'text-[10px] font-black uppercase tracking-[0.18em] ' + (dark ? 'text-white/80' : m.textColor)}
         style={dark ? undefined : { color: m.ringColor }}
       >
         {m.label}

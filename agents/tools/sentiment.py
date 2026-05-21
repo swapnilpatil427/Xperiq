@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 import asyncio
 import json
+import traceback
 import re
 import structlog
 
@@ -231,7 +232,7 @@ async def run_absa_llm(
                 raw = await llm_func(prompt)
                 return _parse_absa_batch(raw, batch)
             except Exception as exc:
-                logger.error("absa_batch_failed", error=str(exc))
+                logger.error("absa_batch_failed", error=str(exc), traceback=traceback.format_exc())
                 return _heuristic_batch(batch)
 
     batch_tasks = [_process_batch(batch) for batch in batches]

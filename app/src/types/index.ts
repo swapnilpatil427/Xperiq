@@ -376,6 +376,7 @@ export interface SurveyTopic {
   nps_correlation?: number | null;   // Pearson r vs NPS score (-1 to 1)
   positive_pct?: number | null;
   negative_pct?: number | null;
+  neutral_pct?:  number | null;
   // Hierarchy
   parent_topic_id?: string | null;
   hierarchy_level?: number;          // 0=root topic, 1=subtopic
@@ -383,6 +384,21 @@ export interface SurveyTopic {
   theme?: string | null;             // theme group (e.g. "Checkout Experience")
   // Specialist
   keyword_list?: string[];
+  // Extended XM signal fingerprint
+  health_label?:         string | null;                   // 'healthy' | 'stable' | 'at-risk'
+  confidence_level?:     string | null;                   // 'high' | 'medium' | 'low'
+  velocity_pct?:         number | null;                   // response velocity change %
+  driver_score?:         number | null;                   // point-biserial correlation (-1 to 1)
+  net_sentiment?:        number | null;                   // positive_pct − negative_pct
+  nps_impact?:           number | null;                   // topic NPS impact in pts
+  promoter_pct?:         number | null;
+  detractor_pct?:        number | null;
+  passive_pct?:          number | null;
+  avg_csat?:             number | null;
+  csat_impact?:          number | null;
+  avg_effort_score?:     number | null;
+  top_verbatims?:        string[] | null;
+  emotion_distribution?: Record<string, number> | null;
 }
 
 export interface TopicTheme {

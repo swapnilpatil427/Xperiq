@@ -36,9 +36,9 @@ from agents.lib.logger import logger
 AGENTS_URL          = os.getenv("AGENTS_URL",          "http://localhost:8001")
 AGENTS_INTERNAL_KEY = os.getenv("AGENTS_INTERNAL_KEY", "dev-internal-key-change-in-prod")
 
-INTERVAL_FREE_MIN = int(os.getenv("INSIGHT_INTERVAL_FREE_MIN", "60"))
-INTERVAL_PAID_MIN = int(os.getenv("INSIGHT_INTERVAL_PAID_MIN", "5"))
-POLL_SEC          = int(os.getenv("SCHEDULER_POLL_SEC",        "30"))
+INTERVAL_FREE_MIN = int(os.getenv("INSIGHT_INTERVAL_FREE_MIN", "120"))  # 2 hours
+INTERVAL_PAID_MIN = int(os.getenv("INSIGHT_INTERVAL_PAID_MIN", "15"))   # 15 minutes
+POLL_SEC          = int(os.getenv("SCHEDULER_POLL_SEC",        "120"))  # 2 minutes
 
 
 async def _trigger_generation(survey_id: str, org_id: str) -> bool:
@@ -89,7 +89,7 @@ async def _trigger_generation(survey_id: str, org_id: str) -> bool:
 
 
 async def _recover_stale_runs() -> int:
-    """Mark runs stuck in 'running' for >10 minutes as 'abandoned'.
+    """Mark runs stuck in 'running' for >10 minutes as 'cancelled'.
 
     Returns the count of runs recovered.
     """
@@ -98,7 +98,7 @@ async def _recover_stale_runs() -> int:
             async with conn.cursor() as cur:
                 await cur.execute(
                     """UPDATE agent_runs
-                       SET status='abandoned', completed_at=NOW()
+                       SET status='cancelled', completed_at=NOW()
                        WHERE run_type='insight_generation'
                          AND status='running'
                          AND created_at < NOW() - INTERVAL '10 minutes'
@@ -199,6 +199,46 @@ async def _get_surveys_due(interval_minutes: int) -> list[dict]:
             return [dict(zip(cols, r)) for r in rows]
 
 
+async def _get_last_run_response_count(survey_id: str) -> int | None:
+    """Return the response count stored in the last completed insight run, or None."""
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT stream_events FROM agent_runs
+                       WHERE survey_id = %s
+                         AND run_type = 'insight_generation'
+                         AND status = 'completed'
+                       ORDER BY created_at DESC
+                       LIMIT 1""",
+                    (survey_id,),
+                )
+                row = await cur.fetchone()
+                if row is None:
+                    return None
+                events = row[0] if isinstance(row[0], list) else []
+                for evt in reversed(events):  # newest event first
+                    if isinstance(evt, dict) and evt.get("event") == "response_count":
+                        return int(evt.get("count", 0))
+    except Exception:
+        pass
+    return None
+
+
+async def _get_current_response_count(survey_id: str) -> int:
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT COUNT(*) FROM responses WHERE survey_id = %s",
+                    (survey_id,),
+                )
+                row = await cur.fetchone()
+                return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
 async def run_scheduler_once() -> None:
     """Run a single scheduler tick (useful for testing and inline embedding)."""
     # Always clean up stale runs first so they don't block re-triggering.
@@ -209,9 +249,48 @@ async def run_scheduler_once() -> None:
     surveys = await _get_surveys_due(INTERVAL_FREE_MIN)
     if surveys:
         logger.info("scheduler_batch", count=len(surveys))
+        triggered = 0
         for survey in surveys:
-            await _trigger_generation(survey["id"], survey["org_id"])
+            survey_id = survey["id"]
+            current_count = await _get_current_response_count(survey_id)
+            last_count = await _get_last_run_response_count(survey_id)
+            if last_count is not None and current_count <= last_count:
+                logger.info(
+                    "scheduler_skip_no_new_responses",
+                    survey_id=survey_id,
+                    current_count=current_count,
+                    last_run_count=last_count,
+                )
+                continue
+            await _trigger_generation(survey_id, survey["org_id"])
+            triggered += 1
             await asyncio.sleep(2)  # stagger requests
+
+        # Snapshot org-level aggregates for all orgs managed this tick
+        distinct_org_ids = list({s["org_id"] for s in surveys})
+        try:
+            async with _pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    for oid in distinct_org_ids:
+                        await cur.execute(
+                            """INSERT INTO org_metric_snapshots
+                                   (org_id, captured_at, active_survey_count, total_responses, avg_nps)
+                               SELECT
+                                   %s, NOW(),
+                                   COUNT(*) FILTER (WHERE status = 'active'),
+                                   (SELECT COUNT(*)::int FROM responses WHERE org_id = %s),
+                                   ROUND(AVG(nps_score)::numeric, 1)
+                               FROM surveys
+                               WHERE org_id = %s AND deleted_at IS NULL""",
+                            (oid, oid, oid),
+                        )
+                await conn.commit()
+            logger.info("scheduler_org_snapshots", org_count=len(distinct_org_ids))
+        except Exception as exc:
+            logger.warning("scheduler_org_snapshot_failed", error=str(exc))
+
+        if not triggered:
+            logger.debug("scheduler_idle_no_new_responses")
     else:
         logger.debug("scheduler_idle")
 

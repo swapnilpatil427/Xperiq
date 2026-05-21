@@ -21,7 +21,8 @@ import asyncio
 import hashlib
 import json
 import time
-from typing import Any, Literal
+import traceback
+from typing import Any, Literal, TypedDict
 
 import structlog
 from langgraph.graph import StateGraph, END
@@ -43,8 +44,10 @@ from agents.tools.sentiment import run_absa_llm, detect_dominant_emotion, score_
 from agents.tools.embeddings import get_or_create_embeddings
 from agents.tools.topics import (
     discover_topics, upsert_survey_topics, get_previous_topic_names,
-    compute_topic_signals, build_topic_hierarchy,
+    build_topic_hierarchy,
 )
+from agents.lib.topic_signals import compute_full_topic_signals
+from agents.lib import topic_registry
 from agents.agents.insight_experts import (
     narrate_nps_insight, narrate_csat_insight,
     narrate_topic_insight, narrate_trend_insight,
@@ -55,6 +58,35 @@ from agents.agents.insight_experts import (
 from agents.graphs.nodes.context import node_context, node_route_specialists
 from agents.specialists.registry import get_registry
 from agents.schemas.context import OrgContextModel, SurveyContextModel
+
+
+# ── State type ───────────────────────────────────────────────────────────────
+
+class InsightState(TypedDict, total=False):
+    survey_id:            str
+    org_id:               str
+    run_id:               str
+    trigger:              str
+    force_regenerate:     bool
+    is_bootstrap:         bool                    # True on first run (no centroids yet)
+    bootstrap_centroids:  list[list[float] | None] # centroid per cluster index, bootstrap only
+    survey:               dict[str, Any]
+    responses:            list[dict[str, Any]]
+    new_response_ids:     set[str]
+    metrics:              dict[str, Any]
+    open_texts:           list[dict[str, Any]]
+    embedded_texts:       list[dict[str, Any]]
+    absa_results:         list[dict[str, Any]]
+    clusters:             list[dict[str, Any]]
+    topics:               list[Any]
+    drivers:              list[Any]
+    stream_events:        list[Any]
+    insights:             list[dict[str, Any]]
+    insights_from_cache:  bool
+    errors:               list[str]
+    org_context:          dict[str, Any]
+    survey_context:       dict[str, Any]
+    selected_specialists: list[str]
 
 
 # ── Model config ──────────────────────────────────────────────────────────────
@@ -281,6 +313,24 @@ async def node_ingest(state: dict) -> dict:
     if isinstance(questions, str):
         questions = json.loads(questions)
 
+    # Bootstrap detection: if no topic centroids exist this is the first run.
+    # First run loads more responses to seed the centroid registry; incremental
+    # runs load fewer (metrics window) and cap new-response processing at 50.
+    is_bootstrap = True
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT 1 FROM survey_topic_centroids WHERE survey_id = %s LIMIT 1",
+                    (survey_id,),
+                )
+                is_bootstrap = await cur.fetchone() is None
+    except Exception:
+        pass  # table may not exist yet — treat as bootstrap
+
+    response_limit    = 300 if is_bootstrap else 200
+    new_response_cap  = 50   # max new responses to ABSA/cluster per incremental run
+
     # Load responses
     response_rows = []
     async with db._pool_conn().connection() as conn:
@@ -292,8 +342,8 @@ async def node_ingest(state: dict) -> dict:
                    FROM responses
                    WHERE survey_id = %s
                    ORDER BY submitted_at DESC NULLS LAST
-                   LIMIT 1000""",
-                (survey_id,),
+                   LIMIT %s""",
+                (survey_id, response_limit),
             )
             rows = await cur.fetchall()
             cols = [desc[0] for desc in cur.description]
@@ -367,12 +417,52 @@ async def node_ingest(state: dict) -> dict:
             metadata = {}
     survey["metadata"] = metadata
 
+    # Track which responses need processing this run.
+    # Includes two cases:
+    #   (a) Never ABSA-enriched — fully new responses
+    #   (b) ABSA-enriched but missing ai_topics — bootstrap orphans that clustered
+    #       below threshold and got stranded without topic tags on the first run
+    all_new_ids: set[str] = {
+        str(r["id"]) for r in responses
+        if not (r.get("ai_enriched_at") and r.get("ai_sentiment") and r.get("ai_emotion"))
+        or (r.get("ai_enriched_at") and not r.get("ai_topics"))
+    }
+    # Incremental runs: cap new responses to process at 50 (newest first).
+    # Metrics run on the full loaded set; clustering/ABSA only touches the cap.
+    if not is_bootstrap and len(all_new_ids) > new_response_cap:
+        # Sort by submitted_at descending to prefer the newest unenriched responses.
+        id_to_ts = {str(r["id"]): r.get("submitted_at") or "" for r in responses}
+        new_response_ids: set[str] = set(
+            sorted(all_new_ids, key=lambda rid: id_to_ts.get(rid, ""), reverse=True)[:new_response_cap]
+        )
+    else:
+        new_response_ids = all_new_ids
+
+    # Persist response count so the scheduler can skip re-runs on unchanged data.
+    try:
+        async with db._pool_conn().connection() as conn:
+            await conn.execute(
+                "UPDATE agent_runs SET stream_events = stream_events || %s::jsonb WHERE id = %s",
+                (json.dumps([{"event": "response_count", "count": len(responses)}]), run_id),
+            )
+            await conn.commit()
+    except Exception:
+        pass
+
     await _emit_event(run_id, "node_complete", "ingest", {
         "survey_id": survey_id, "response_count": len(responses),
+        "new_response_count": len(new_response_ids),
         "industry": survey["org_context"]["industry"],
     })
 
-    return {**state, "survey": survey, "responses": responses}
+    return {
+        **state,
+        "survey":           survey,
+        "responses":        responses,
+        "new_response_ids": new_response_ids,
+        "force_regenerate": state.get("force_regenerate", False),
+        "is_bootstrap":     is_bootstrap,
+    }
 
 
 # ── Node: embed ───────────────────────────────────────────────────────────────
@@ -439,17 +529,17 @@ async def node_metrics(state: dict) -> dict:
     # Extended trend analysis (replaces bare daily dict)
     metrics["trend"] = compute_response_trend_analysis(responses)
 
-    # Effort score over all open texts (if already extracted in state)
-    open_texts = state.get("open_texts") or state.get("embedded_texts") or []
-    if open_texts:
-        all_text_strs = [t["text"] for t in open_texts]
+    # Effort score over all open texts (embedded_texts is available before parallel split)
+    effort_texts = state.get("embedded_texts") or []
+    if effort_texts:
+        all_text_strs = [t["text"] for t in effort_texts]
         metrics["effort_score"] = compute_effort_score(all_text_strs)
 
     await _emit_event(run_id, "node_complete", "metrics", {
         "metrics": {k: v for k, v in metrics.items() if k not in ("trend",)},
     })
 
-    return {**state, "metrics": metrics}
+    return {"metrics": metrics}
 
 
 # ── Node: extract_texts ───────────────────────────────────────────────────────
@@ -515,7 +605,7 @@ async def node_extract_texts(state: dict) -> dict:
             ),
         )
 
-    return {**state, "open_texts": texts}
+    return {"open_texts": texts}
 
 
 # ── Node: absa ────────────────────────────────────────────────────────────────
@@ -656,7 +746,7 @@ async def node_absa(state: dict) -> dict:
                 await conn.commit()
             logger.info("node_absa_writeback", count=len(updates))
     except Exception as exc:
-        logger.error("node_absa_writeback_failed", error=str(exc))
+        logger.error("node_absa_writeback_failed", error=str(exc), traceback=traceback.format_exc())
 
     await _emit_event(run_id, "node_complete", "absa", {"analyzed_count": len(results)})
     return {**state, "absa_results": results}
@@ -664,122 +754,407 @@ async def node_absa(state: dict) -> dict:
 
 # ── Node: cluster ─────────────────────────────────────────────────────────────
 
+def _make_cluster_from_items(
+    idx: int,
+    items: list[dict],
+    total_size: int | None = None,
+    canonical_name: str | None = None,
+    is_new_topic: bool = False,
+    centroid: list[float] | None = None,
+) -> dict:
+    """Build a cluster dict from a list of ABSA result items."""
+    if not items:
+        return {}
+    avg_score = sum(i.get("score", 0.0) for i in items) / len(items)
+    neg = sum(1 for i in items if i.get("sentiment") == "negative")
+    pos = sum(1 for i in items if i.get("sentiment") == "positive")
+    dom_sentiment = "negative" if neg > pos else ("positive" if pos > neg else "neutral")
+    emotion_counts: dict[str, int] = {}
+    for i in items:
+        e = i.get("emotion", "neutral")
+        emotion_counts[e] = emotion_counts.get(e, 0) + 1
+    dom_emotion = max(emotion_counts, key=emotion_counts.get) if emotion_counts else "neutral"
+    aspect_counts: dict[str, int] = {}
+    for i in items:
+        a = i.get("aspect", "general")
+        aspect_counts[a] = aspect_counts.get(a, 0) + 1
+    aspect = max(aspect_counts, key=aspect_counts.get) if aspect_counts else "general"
+
+    return {
+        "id":                  f"cluster_{idx}",
+        "aspect":              canonical_name or aspect,
+        "canonical_name":      canonical_name,   # set for existing topics; None triggers LLM naming
+        "texts":               items,
+        "size":                total_size if total_size is not None else len(items),
+        "avg_sentiment_score": round(avg_score, 2),
+        "dominant_sentiment":  dom_sentiment,
+        "dominant_emotion":    dom_emotion,
+        "label":               canonical_name,
+        "_new_topic":          is_new_topic,
+        "_centroid":           centroid,         # stored for node_topics centroid insertion
+    }
+
+
+def _group_unclustered_by_aspect(
+    raw_clusters: list[dict],
+    all_items: list[dict],
+    start_idx: int,
+    is_new_topic: bool,
+) -> tuple[list[dict], list]:
+    """Collect items not in any cluster and group them by ABSA aspect.
+
+    Guarantees every response ends up in some cluster — no silent drops.
+    Each unique aspect becomes its own cluster even with a single response.
+    Returns (extra_clusters, extra_centroids).
+    """
+    from collections import defaultdict as _dd
+
+    clustered_rids: set[str] = set()
+    for raw in raw_clusters:
+        for item in (raw.get("texts") or []):
+            clustered_rids.add(str(item.get("response_id")))
+
+    unclustered = [
+        item for item in all_items
+        if str(item.get("response_id")) not in clustered_rids
+        and item.get("response_id") is not None
+    ]
+    if not unclustered:
+        return [], []
+
+    aspect_groups: dict[str, list] = _dd(list)
+    for item in unclustered:
+        aspect = (item.get("aspect") or "general feedback").strip().lower()
+        aspect_groups[aspect].append(item)
+
+    extra_clusters: list[dict] = []
+    extra_centroids: list = []
+    for aspect, items in sorted(aspect_groups.items(), key=lambda x: -len(x[1])):
+        # Compute centroid from embeddings so the topic is usable in incremental ANN.
+        embeddings = [item["embedding"] for item in items if item.get("embedding")]
+        if embeddings:
+            dim = len(embeddings[0])
+            centroid = [
+                sum(e[d] for e in embeddings) / len(embeddings) for d in range(dim)
+            ]
+        else:
+            centroid = None
+        extra_clusters.append(_make_cluster_from_items(
+            start_idx + len(extra_clusters) + 1,
+            items,
+            total_size=len(items),
+            canonical_name=None,   # LLM will name it
+            is_new_topic=is_new_topic,
+            centroid=centroid,
+        ))
+        extra_centroids.append(centroid)
+
+    return extra_clusters, extra_centroids
+
+
 async def node_cluster(state: dict) -> dict:
-    """Cluster using real cosine similarity on embedding vectors when available,
-    falling back to ABSA aspect grouping (keyword heuristic) if not."""
+    """Cluster responses into topics.
+
+    Bootstrap mode (first run, no centroids exist):
+      Runs the original O(n²) cosine clustering to seed the centroid registry.
+      Any responses that don't form a cluster of ≥2 are grouped by ABSA aspect
+      into additional clusters so every response gets a topic.
+      Stores per-cluster centroids in state["bootstrap_centroids"] for node_topics
+      to insert after LLM naming.
+
+    Incremental mode (centroids exist):
+      For each new response embedding, runs a single pgvector ANN query against
+      survey_topic_centroids. Responses that match (similarity >= 0.72) are
+      assigned to the nearest existing topic (Welford centroid update). Responses
+      that don't match go into the topic_candidates buffer. When the buffer
+      reaches the flush threshold, mini-clustering runs on candidates only to
+      detect new emerging topics — these are passed to node_topics for LLM naming.
+      Unclustered candidates are also grouped by ABSA aspect so they surface.
+
+    Falls back to bootstrap mode if pgvector queries fail.
+    """
     texts  = state["open_texts"]
     run_id = state["run_id"]
     if not texts:
         return state
 
-    # Check if we have real embeddings from node_embed
-    embedded_texts = state.get("embedded_texts", [])
+    survey_id       = state["survey_id"]
+    org_id          = state["org_id"]
+    is_bootstrap    = state.get("is_bootstrap", True)
+    new_response_ids = state.get("new_response_ids", set())
+
+    embedded_texts      = state.get("embedded_texts", [])
     has_real_embeddings = any(t.get("embedding") for t in embedded_texts)
 
-    clusters = []
+    # Build (response_id, question_id) → embedding lookup
+    emb_lookup: dict[tuple[str, str], list[float]] = {}
+    emb_by_rid: dict[str, list[float]] = {}   # first embedding per response_id
+    for t in embedded_texts:
+        if t.get("embedding"):
+            emb_lookup[(t["response_id"], t["question_id"])] = t["embedding"]
+            if str(t["response_id"]) not in emb_by_rid:
+                emb_by_rid[str(t["response_id"])] = t["embedding"]
 
-    if has_real_embeddings:
-        # Build a lookup from (response_id, question_id) -> embedding
-        emb_lookup: dict[tuple[str, str], list[float]] = {}
-        for t in embedded_texts:
-            if t.get("embedding"):
-                key = (t["response_id"], t["question_id"])
-                emb_lookup[key] = t["embedding"]
+    clusters: list[dict] = []
 
-        # Attach embeddings to ABSA results
-        absa_with_emb = []
-        for item in state["absa_results"]:
-            key = (item["response_id"], item["question_id"])
-            emb = emb_lookup.get(key)
-            absa_with_emb.append({**item, "embedding": emb})
+    # ── Bootstrap path ────────────────────────────────────────────────────────
+    if is_bootstrap or not has_real_embeddings:
+        if has_real_embeddings:
+            absa_with_emb = [
+                {**item, "embedding": emb_lookup.get((item["response_id"], item["question_id"]))}
+                for item in state["absa_results"]
+            ]
+            raw_clusters = cluster_texts(absa_with_emb, threshold=0.72, min_cluster_size=2)
+            bootstrap_centroids: list[list[float] | None] = []
+            for i, raw in enumerate(raw_clusters):
+                clusters.append(_make_cluster_from_items(
+                    i + 1, raw["texts"],
+                    total_size=raw["size"],
+                    is_new_topic=False,  # node_topics will set is_new via LLM
+                    centroid=raw.get("centroid"),  # stored for node_topics to insert
+                ))
+                bootstrap_centroids.append(raw.get("centroid"))
+            # Any response that didn't form a cluster of ≥2 gets grouped by ABSA aspect
+            # so every response surfaces as a topic — no silent drops.
+            extra, extra_cent = _group_unclustered_by_aspect(
+                raw_clusters, absa_with_emb, start_idx=len(clusters), is_new_topic=False,
+            )
+            clusters.extend(extra)
+            bootstrap_centroids.extend(extra_cent)
+        else:
+            # No embeddings — aspect heuristic fallback (all aspects, even singletons)
+            from collections import defaultdict as _dd
+            aspect_groups: dict[str, list] = _dd(list)
+            for item in state["absa_results"]:
+                aspect_groups[item.get("aspect") or "general feedback"].append(item)
+            bootstrap_centroids = []
+            for aspect, items in sorted(aspect_groups.items(), key=lambda x: -len(x[1])):
+                clusters.append(_make_cluster_from_items(
+                    len(clusters) + 1, items,
+                    is_new_topic=False,
+                    centroid=None,
+                ))
+                bootstrap_centroids.append(None)
 
-        # Run cosine-similarity clustering
+        await _emit_event(run_id, "node_complete", "cluster", {
+            "cluster_count": len(clusters),
+            "mode": "bootstrap",
+            "used_embeddings": has_real_embeddings,
+        })
+        return {**state, "clusters": clusters, "bootstrap_centroids": bootstrap_centroids}
+
+    # ── Incremental path ──────────────────────────────────────────────────────
+    # Only process responses that haven't been ABSA-enriched yet.
+    new_absa = [a for a in state["absa_results"] if str(a["response_id"]) in new_response_ids]
+    # Build lookup: response_id -> list of absa items (for candidate lookup later)
+    absa_by_rid: dict[str, list[dict]] = {}
+    for a in state["absa_results"]:
+        absa_by_rid.setdefault(str(a["response_id"]), []).append(a)
+
+    topic_assignments: dict[str, list[dict]] = {}  # topic_name → absa items
+
+    try:
+        async with db._pool_conn().connection() as conn:
+            embeddings_by_rid: dict[str, list[float]] = {}
+            for item in new_absa:
+                rid = str(item["response_id"])
+                embedding = emb_by_rid.get(rid)
+                if embedding:
+                    embeddings_by_rid[rid] = embedding
+
+            # Batch ANN: one centroid fetch + Python cosine sim for all responses
+            assignments, unassigned_rids = await topic_registry.assign_batch_to_nearest(
+                embeddings_by_rid, survey_id, conn
+            )
+
+            topic_emb_groups: dict[str, list[list[float]]] = {}
+            for rid, tname in assignments.items():
+                items = absa_by_rid.get(rid)
+                if items:
+                    topic_assignments.setdefault(tname, []).append(items[0])
+                if rid in embeddings_by_rid:
+                    topic_emb_groups.setdefault(tname, []).append(embeddings_by_rid[rid])
+
+            # Batch Welford: one SELECT FOR UPDATE + executemany UPDATE
+            await topic_registry.update_centroids_welford_batch(survey_id, topic_emb_groups, conn)
+
+            cand_pairs = [
+                (rid, embeddings_by_rid[rid])
+                for rid in unassigned_rids
+                if rid in embeddings_by_rid
+            ]
+            await topic_registry.add_candidates_batch(survey_id, org_id, cand_pairs, conn)
+
+            # Adaptive flush threshold: at least 5, or 3% of total survey responses
+            total_responses = len(state.get("responses", []))
+            flush_threshold = max(5, int(total_responses * 0.03))
+            candidate_count = await topic_registry.get_candidate_count(survey_id, conn)
+
+            new_topic_clusters: list[dict] = []
+            if candidate_count >= flush_threshold:
+                candidates = await topic_registry.flush_candidates(survey_id, conn)
+                logger.info(
+                    "node_cluster_flush_candidates",
+                    survey_id=survey_id,
+                    candidate_count=len(candidates),
+                    flush_threshold=flush_threshold,
+                )
+                if candidates:
+                    # Build absa-style items for each candidate using stored ABSA results
+                    cand_texts: list[dict] = []
+                    for c in candidates:
+                        rid = str(c["response_id"])
+                        emb = c["embedding"]
+                        for a in absa_by_rid.get(rid, []):
+                            cand_texts.append({**a, "embedding": emb})
+                    if cand_texts:
+                        raw_new = cluster_texts(cand_texts, threshold=0.72, min_cluster_size=2)
+                        for i, raw in enumerate(raw_new):
+                            new_topic_clusters.append(_make_cluster_from_items(
+                                len(topic_assignments) + i + 1,
+                                raw["texts"],
+                                total_size=raw["size"],
+                                is_new_topic=True,
+                                centroid=raw.get("centroid"),
+                            ))
+                        # Candidates that didn't pair up still deserve a topic — group by aspect.
+                        extra, _ = _group_unclustered_by_aspect(
+                            raw_new, cand_texts,
+                            start_idx=len(topic_assignments) + len(raw_new),
+                            is_new_topic=True,
+                        )
+                        new_topic_clusters.extend(extra)
+
+            await conn.commit()
+
+        # Fetch total response_count per topic from centroid registry for correct trust scores
+        centroid_counts: dict[str, int] = {}
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT topic_name, response_count FROM survey_topic_centroids WHERE survey_id = %s",
+                    (survey_id,),
+                )
+                for row in await cur.fetchall():
+                    centroid_counts[row[0]] = row[1]
+
+    except Exception as exc:
+        logger.error(
+            "node_cluster_incremental_failed",
+            survey_id=survey_id, error=str(exc), traceback=traceback.format_exc(),
+        )
+        # Fall back to bootstrap clustering so the run doesn't fail completely
+        logger.warning("node_cluster_fallback_to_bootstrap", survey_id=survey_id)
+        absa_with_emb = [
+            {**item, "embedding": emb_lookup.get((item["response_id"], item["question_id"]))}
+            for item in state["absa_results"]
+        ]
         raw_clusters = cluster_texts(absa_with_emb, threshold=0.72, min_cluster_size=2)
+        bootstrap_centroids = []
+        for i, raw in enumerate(raw_clusters):
+            clusters.append(_make_cluster_from_items(i + 1, raw["texts"], centroid=raw.get("centroid")))
+            bootstrap_centroids.append(raw.get("centroid"))
+        extra, extra_cent = _group_unclustered_by_aspect(
+            raw_clusters, absa_with_emb, start_idx=len(clusters), is_new_topic=False,
+        )
+        clusters.extend(extra)
+        bootstrap_centroids.extend(extra_cent)
+        await _emit_event(run_id, "node_complete", "cluster", {
+            "cluster_count": len(clusters), "mode": "fallback_bootstrap",
+        })
+        return {**state, "clusters": clusters, "bootstrap_centroids": bootstrap_centroids, "is_bootstrap": True}
 
-        for raw in raw_clusters:
-            items = raw["texts"]
-            avg_score = sum(i.get("score", 0) for i in items) / len(items)
-            neg = sum(1 for i in items if i.get("sentiment") == "negative")
-            pos = sum(1 for i in items if i.get("sentiment") == "positive")
-            dom_sentiment = "negative" if neg > pos else ("positive" if pos > neg else "neutral")
-            emotion_counts: dict[str, int] = {}
-            for i in items:
-                e = i.get("emotion", "neutral")
-                emotion_counts[e] = emotion_counts.get(e, 0) + 1
-            dom_emotion = max(emotion_counts, key=emotion_counts.get) if emotion_counts else "neutral"
-            # Use most-common ABSA aspect as the cluster label
-            aspect_counts: dict[str, int] = {}
-            for i in items:
-                a = i.get("aspect", "general")
-                aspect_counts[a] = aspect_counts.get(a, 0) + 1
-            aspect = max(aspect_counts, key=aspect_counts.get) if aspect_counts else "general"
+    # Build cluster objects for existing topics (sorted by total size descending)
+    existing_clusters: list[dict] = []
+    for topic_name, items in topic_assignments.items():
+        if not items:
+            continue
+        existing_clusters.append(_make_cluster_from_items(
+            len(existing_clusters) + 1,
+            items,
+            total_size=centroid_counts.get(topic_name, len(items)),
+            canonical_name=topic_name,
+            is_new_topic=False,
+            centroid=None,  # centroid already in DB, no need to re-insert
+        ))
 
-            clusters.append({
-                "id":                  f"cluster_{len(clusters) + 1}",
-                "aspect":              aspect,
-                "texts":               items,
-                "size":                len(items),
-                "avg_sentiment_score": round(avg_score, 2),
-                "dominant_sentiment":  dom_sentiment,
-                "dominant_emotion":    dom_emotion,
-                "label":               None,
-            })
+    existing_clusters.sort(key=lambda c: c["size"], reverse=True)
+    clusters = existing_clusters + new_topic_clusters
 
-    else:
-        # Fallback: group by ABSA aspect (keyword heuristic — original v1 behaviour)
-        from collections import defaultdict
-        aspect_groups: dict[str, list] = defaultdict(list)
-        for item in state["absa_results"]:
-            aspect_groups[item["aspect"]].append(item)
+    assigned_count  = sum(len(v) for v in topic_assignments.values())
+    candidate_count = len(cand_pairs)
 
-        for aspect, items in sorted(aspect_groups.items(), key=lambda x: -len(x[1])):
-            if len(items) >= 2:
-                avg_score = sum(i["score"] for i in items) / len(items)
-                neg = sum(1 for i in items if i["sentiment"] == "negative")
-                pos = sum(1 for i in items if i["sentiment"] == "positive")
-                dom_sentiment = "negative" if neg > pos else ("positive" if pos > neg else "neutral")
-                emotion_counts: dict[str, int] = {}
-                for i in items:
-                    e = i.get("emotion", "neutral")
-                    emotion_counts[e] = emotion_counts.get(e, 0) + 1
-                dom_emotion = max(emotion_counts, key=emotion_counts.get) if emotion_counts else "neutral"
-                clusters.append({
-                    "id":                  f"cluster_{len(clusters) + 1}",
-                    "aspect":              aspect,
-                    "texts":               items,
-                    "size":                len(items),
-                    "avg_sentiment_score": round(avg_score, 2),
-                    "dominant_sentiment":  dom_sentiment,
-                    "dominant_emotion":    dom_emotion,
-                    "label":               None,
-                })
-
+    logger.info(
+        "node_cluster_incremental",
+        survey_id=survey_id,
+        assigned=assigned_count,
+        candidates_added=candidate_count,
+        new_topic_clusters=len(new_topic_clusters),
+        existing_topic_clusters=len(existing_clusters),
+    )
     await _emit_event(run_id, "node_complete", "cluster", {
-        "cluster_count": len(clusters),
-        "used_embeddings": has_real_embeddings,
+        "cluster_count":        len(clusters),
+        "mode":                 "incremental",
+        "assigned_to_existing": assigned_count,
+        "candidates_buffered":  candidate_count,
+        "new_topics_found":     len(new_topic_clusters),
     })
     return {**state, "clusters": clusters}
 
 
 # ── Node: topics ──────────────────────────────────────────────────────────────
 
-async def node_topics(state: dict) -> dict:
-    """Discover canonical topics from clusters via LLM.
+def _cluster_to_topic_item(cluster: dict):
+    """Create a TopicItem for an existing topic cluster without calling the LLM.
 
-    - Fetches previous topic names from DB for new-topic detection
-    - Calls discover_topics() for LLM labeling
-    - Upserts to survey_topics table
-    - Stores canonical topics in state for narrate/publish
+    Used in incremental mode when a cluster maps to an already-named topic so we
+    can upsert its updated signals without spending an LLM token.
+    """
+    from agents.tools.topics import TopicItem
+    name = cluster.get("canonical_name") or cluster.get("aspect") or "General"
+    texts = cluster.get("texts", [])
+    all_text_strs = [t["text"] for t in texts if t.get("text")]
+    from agents.tools.metrics import compute_effort_score as _effort
+    return TopicItem(
+        name=name,
+        parent_category=None,
+        aliases=[],
+        is_new=False,
+        summary=f"Ongoing feedback about {name}.",
+        volume=cluster.get("size", len(texts)),
+        sentiment_score=float(cluster.get("avg_sentiment_score") or 0.0),
+        dominant_emotion=cluster.get("dominant_emotion") or "neutral",
+        effort_score=_effort(all_text_strs) if all_text_strs else 4.0,
+    )
+
+
+async def node_topics(state: dict) -> dict:
+    """Discover canonical topics from clusters.
+
+    Bootstrap / force-regenerate: calls discover_topics() LLM for all clusters,
+    then seeds the centroid registry.
+
+    Incremental: calls discover_topics() ONLY for clusters marked _new_topic=True
+    (i.e., those that emerged from flushing the candidate buffer). For all other
+    clusters the canonical name is already known from the centroid registry and
+    a TopicItem is constructed locally — zero LLM calls for stable topics.
+
+    In both modes:
+    - Upserts survey_topics with fresh signal breakdown
+    - Links centroid rows to their survey_topics.id
+    - Writes ai_topics back to new/topic-less responses
+    - Upserts topic_windows for health label tracking
     """
     survey_id = state["survey_id"]
     org_id    = state["org_id"]
     run_id    = state["run_id"]
     clusters  = state["clusters"]
+    is_bootstrap = state.get("is_bootstrap", True)
 
     if not clusters:
         return {**state, "topics": []}
 
-    # Guard: skip LLM topic discovery when there aren't enough distinct clusters
+    # Guard: skip when there aren't enough distinct clusters for meaningful topics
     total_cluster_size = sum(c.get("size", 0) for c in clusters)
     if len(clusters) < 2 or total_cluster_size < 3:
         logger.info(
@@ -792,7 +1167,7 @@ async def node_topics(state: dict) -> dict:
         })
         return {**state, "topics": []}
 
-    # Fetch existing topic names for new-topic detection
+    # Fetch existing topic names for new-topic detection and LLM guidance
     previous_names: list[str] = []
     try:
         async with db._pool_conn().connection() as conn:
@@ -801,8 +1176,6 @@ async def node_topics(state: dict) -> dict:
         logger.warning("node_topics_fetch_previous_failed", error=str(exc))
 
     # Inject specialist canonical topics as seed hints for the LLM
-    # These are prepended to previous_names so the topic LLM prompt receives
-    # industry-specific preferred topic names as labeling guidance.
     if state.get("selected_specialists"):
         registry = get_registry()
         primary_id = state["selected_specialists"][0]
@@ -811,86 +1184,240 @@ async def node_topics(state: dict) -> dict:
             specialist_seeds = primary.canonical_topics()
             seed_names = [t["name"] for t in specialist_seeds[:15]]
             if seed_names:
-                # Prepend a guidance marker so the LLM understands these are preferred names
-                hint = f"[PREFERRED TOPIC NAMES FOR THIS INDUSTRY: {', '.join(seed_names)}. Use these names when the content matches — invent new topics only when none fit.]"
+                hint = (
+                    f"[PREFERRED TOPIC NAMES FOR THIS INDUSTRY: {', '.join(seed_names)}. "
+                    "Use these names when the content matches — invent new topics only when none fit.]"
+                )
                 previous_names = [hint] + previous_names
                 logger.info({
-                    "msg":      "node_topics: injected specialist seed hints",
+                    "msg":        "node_topics: injected specialist seed hints",
                     "specialist": primary_id,
                     "seed_count": len(seed_names),
                 })
 
-    from agents.lib.models import get_model
-    ctx_window = get_model("insight_topics").context_window
-    _survey = state.get("survey", {})
-    topics = await discover_topics(
-        clusters, previous_names, call_agent,
-        context_window=ctx_window,
-        survey_title=(_survey.get("title") or "").strip(),
-        survey_intent=(_survey.get("intent") or "").strip(),
-    )
+    from agents.lib.models import get_model as _get_model
+    from agents.lib import topic_registry
+    ctx_window = _get_model("insight_topics").context_window
+    _survey    = state.get("survey", {})
+
+    # ── Split clusters by whether LLM naming is needed ────────────────────────
+    # new_clusters: came from candidate-buffer flush → need LLM naming
+    # existing_clusters: mapped to a known centroid → name already in centroid registry
+    new_clusters      = [c for c in clusters if c.get("_new_topic")]
+    existing_clusters = [c for c in clusters if not c.get("_new_topic")]
+
+    # ── LLM call: only for new topic clusters ────────────────────────────────
+    new_topics: list = []
+    if new_clusters or is_bootstrap:
+        # In bootstrap mode all clusters are "new" — pass everything to the LLM.
+        llm_targets = clusters if is_bootstrap else new_clusters
+        new_topics = await discover_topics(
+            llm_targets, previous_names, call_agent,
+            context_window=ctx_window,
+            survey_title=(_survey.get("title") or "").strip(),
+            survey_intent=(_survey.get("intent") or "").strip(),
+        )
+        llm_calls = len(llm_targets)
+    else:
+        llm_calls = 0
+
+    # ── Build TopicItem list for existing clusters (no LLM) ───────────────────
+    existing_topic_items = [_cluster_to_topic_item(c) for c in existing_clusters]
+
+    # ── Align topic names back to clusters ────────────────────────────────────
+    # Bootstrap: new_topics covers all clusters (same ordering)
+    # Incremental: existing_clusters have canonical_name set; new_clusters aligned to new_topics
+    enriched_clusters: list[dict] = []
+
+    if is_bootstrap:
+        aspect_to_topic = {t.name.lower(): t.name for t in new_topics}
+        for i, cluster in enumerate(clusters):
+            if i < len(new_topics):
+                canonical = new_topics[i].name
+            else:
+                raw_aspect = (cluster.get("aspect") or "").lower()
+                canonical = aspect_to_topic.get(raw_aspect, cluster.get("aspect") or "general")
+            enriched_clusters.append({**cluster, "canonical_name": canonical})
+        all_topics = new_topics
+    else:
+        # Existing clusters: canonical_name already set by node_cluster
+        for cluster in existing_clusters:
+            enriched_clusters.append(cluster)
+
+        # New clusters: align to new_topics by position
+        for i, cluster in enumerate(new_clusters):
+            if i < len(new_topics):
+                canonical = new_topics[i].name
+            else:
+                canonical = cluster.get("aspect") or "New Topic"
+            enriched_clusters.append({**cluster, "canonical_name": canonical})
+
+        all_topics = existing_topic_items + new_topics
 
     await _emit_event(run_id, "node_complete", "topics", {
-        "topic_count": len(topics),
-        "new_topics": sum(1 for t in topics if t.is_new),
+        "topic_count":      len(all_topics),
+        "new_topics":       sum(1 for t in all_topics if getattr(t, "is_new", False)),
+        "llm_calls_made":   llm_calls,
+        "llm_calls_skipped": len(existing_clusters),
     })
 
-    # Attach canonical names back to clusters for narrate node.
-    # Primary: positional alignment (LLM returns one topic per cluster in order).
-    # Fallback: aspect-name match when multi-chunk dedup leaves fewer topics than
-    # clusters (rare — only when cluster count exceeds max_clusters_per_call).
-    aspect_to_topic = {t.name.lower(): t.name for t in topics}
-    enriched_clusters = []
-    for i, cluster in enumerate(clusters):
-        if i < len(topics):
-            canonical = topics[i].name
-        else:
-            # Index drift fallback: match cluster's aspect label to a known topic name
-            raw_aspect = (cluster.get("aspect") or "").lower()
-            canonical = aspect_to_topic.get(raw_aspect, cluster.get("aspect") or "general")
-        enriched_clusters.append({**cluster, "canonical_name": canonical})
-
-    # ── Compute per-topic signal breakdown (zero LLM cost) ───────────────────
+    # ── Compute per-topic XM signal fingerprint (zero LLM cost) ──────────────
     all_responses = state.get("responses", [])
+    _metrics      = state.get("metrics", {})
+    survey_metrics = {
+        "nps_avg":         _metrics.get("nps", {}).get("score"),
+        "csat_avg":        _metrics.get("csat", {}).get("score"),
+        "total_responses": len(all_responses),
+    }
     topic_signals: dict[str, dict] = {}
-    for i, cluster in enumerate(enriched_clusters):
-        topic_name = cluster["canonical_name"]
-        topic_signals[topic_name] = compute_topic_signals(cluster, all_responses)
+    for cluster in enriched_clusters:
+        topic_name = cluster.get("canonical_name")
+        if topic_name:
+            topic_signals[topic_name] = compute_full_topic_signals(cluster, all_responses, survey_metrics)
 
-    # ── Re-upsert topics with signal breakdown + collect DB ids ──────────────
+    # Post-pass: compute composite urgency score per spec (§3)
+    # Requires max_volume across all topics — not available per-cluster.
+    import math as _math
+    max_volume = max((sig.get("response_count", 1) for sig in topic_signals.values()), default=1)
+    max_volume = max(1, max_volume)
+
+    # Look up prior trending for trend_multiplier (best-effort — default to "stable")
+    trending_lookup: dict[str, str] = {}
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT name, trending FROM survey_topics WHERE survey_id = %s AND time_window = 'all_time'",
+                    (survey_id,),
+                )
+                for row in await cur.fetchall():
+                    trending_lookup[row[0]] = row[1] or "stable"
+    except Exception:
+        pass
+
+    for tname, sig in topic_signals.items():
+        vol          = sig.get("response_count", 0)
+        avg_sentiment = sig.get("avg_sentiment_score", 0.0)
+        avg_effort   = sig.get("avg_effort_score", 4.0) or 4.0
+        trending     = trending_lookup.get(tname, "stable") or "stable"
+
+        if trending == "up" and avg_sentiment < 0:
+            trend_mult = 1.5
+        elif trending == "up":
+            trend_mult = 1.2
+        elif trending == "down":
+            trend_mult = 0.8
+        else:
+            trend_mult = 1.0
+
+        sig["urgency_score"] = round(min(10.0, (
+            abs(avg_sentiment) * 5.0
+            * _math.sqrt(vol / max_volume)
+            * (avg_effort / 7.0)
+            * trend_mult
+        )), 2)
+
+    # ── Upsert topics with signal breakdown ───────────────────────────────────
     topic_db_ids: dict[str, str] = {}
     try:
         async with db._pool_conn().connection() as conn:
             topic_db_ids = await upsert_survey_topics(
-                topics, survey_id, org_id, run_id, "all_time", conn,
+                all_topics, survey_id, org_id, run_id, "all_time", conn,
                 topic_signals=topic_signals,
             )
             await conn.commit()
     except Exception as exc:
-        logger.error("node_topics_signal_upsert_failed", error=str(exc))
+        logger.error("node_topics_signal_upsert_failed", error=str(exc), traceback=traceback.format_exc())
 
-    # ── Build topic hierarchy (parent/child from parent_category field) ───────
+    # ── Write extended XM signals to survey_topics (denormalized fast reads) ──
+    if topic_db_ids:
+        try:
+            async with db._pool_conn().connection() as conn:
+                for tname, tid in topic_db_ids.items():
+                    sig = topic_signals.get(tname, {})
+                    if sig:
+                        await topic_registry.upsert_survey_topic_signals(tid, sig, conn)
+                await conn.commit()
+        except Exception as exc:
+            logger.warning("node_topics_extended_signals_failed", error=str(exc), traceback=traceback.format_exc())
+
+    # ── Seed / link centroid registry ─────────────────────────────────────────
+    try:
+        async with db._pool_conn().connection() as conn:
+            if is_bootstrap:
+                # Bootstrap: insert one centroid per cluster using stored centroid vectors
+                bootstrap_centroids = state.get("bootstrap_centroids", [])
+                for i, cluster in enumerate(enriched_clusters):
+                    topic_name = cluster.get("canonical_name")
+                    if not topic_name:
+                        continue
+                    centroid_vec = bootstrap_centroids[i] if i < len(bootstrap_centroids) else None
+                    if centroid_vec:
+                        topic_id = topic_db_ids.get(topic_name)
+                        await topic_registry.insert_centroid(
+                            survey_id, org_id, topic_name, centroid_vec,
+                            cluster.get("size", 0), conn, topic_id=topic_id,
+                        )
+                logger.info("node_topics_centroids_seeded", survey_id=survey_id, count=len(enriched_clusters))
+            else:
+                # Incremental: link any existing centroids that don't have topic_id yet
+                # and insert centroids for newly named topics (_new_topic clusters)
+                for i, cluster in enumerate(new_clusters):
+                    topic_name = cluster.get("canonical_name") or (
+                        new_topics[i].name if i < len(new_topics) else None
+                    )
+                    if not topic_name:
+                        continue
+                    centroid_vec = cluster.get("_centroid")
+                    topic_id = topic_db_ids.get(topic_name)
+                    if centroid_vec:
+                        await topic_registry.insert_centroid(
+                            survey_id, org_id, topic_name, centroid_vec,
+                            cluster.get("size", 0), conn, topic_id=topic_id,
+                        )
+                    elif topic_id:
+                        # Link existing centroid to topic_id
+                        await topic_registry.update_centroid_topic_id(survey_id, topic_name, topic_id, conn)
+                # Also patch topic_ids for existing centroids that were missing them
+                for cluster in existing_clusters:
+                    tname = cluster.get("canonical_name")
+                    tid   = topic_db_ids.get(tname) if tname else None
+                    if tname and tid:
+                        await topic_registry.update_centroid_topic_id(survey_id, tname, tid, conn)
+            await conn.commit()
+    except Exception as exc:
+        logger.error("node_topics_centroid_seed_failed", error=str(exc), traceback=traceback.format_exc())
+
+    # ── Build topic hierarchy ─────────────────────────────────────────────────
     try:
         async with db._pool_conn().connection() as conn:
             await build_topic_hierarchy(
-                topics, topic_db_ids, survey_id, org_id, run_id, "all_time", conn,
+                all_topics, topic_db_ids, survey_id, org_id, run_id, "all_time", conn,
             )
     except Exception as exc:
-        logger.error("node_topics_hierarchy_failed", error=str(exc))
+        logger.error("node_topics_hierarchy_failed", error=str(exc), traceback=traceback.format_exc())
 
-    # ── Write ai_topics list back to each response ───────────────────────────
+    # ── Write ai_topics back — only for new or topic-less responses ───────────
     try:
         from collections import defaultdict as _dd2
+        new_response_ids: set[str] = state.get("new_response_ids", set())
+        topics_already_written: set[str] = {
+            str(r["id"]) for r in all_responses
+            if r.get("ai_topics") and r.get("ai_enriched_at")
+            and str(r["id"]) not in new_response_ids
+        }
+
         resp_topics: dict[str, list[str]] = _dd2(list)
         for cluster in enriched_clusters:
-            canonical = cluster["canonical_name"]
+            canonical = cluster.get("canonical_name") or ""
             for item in cluster.get("texts", []):
                 rid = str(item["response_id"])
-                if canonical not in resp_topics[rid]:
-                    resp_topics[rid].append(canonical)
+                if rid not in topics_already_written and canonical:
+                    if canonical not in resp_topics[rid]:
+                        resp_topics[rid].append(canonical)
 
         if resp_topics:
-            updates = [(json.dumps(topic_list), rid) for rid, topic_list in resp_topics.items()]
+            updates = [(json.dumps(tlist), rid) for rid, tlist in resp_topics.items()]
             async with db._pool_conn().connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.executemany(
@@ -898,14 +1425,62 @@ async def node_topics(state: dict) -> dict:
                         updates,
                     )
                 await conn.commit()
-            logger.info("node_topics_writeback", response_count=len(updates))
+            logger.info(
+                "node_topics_writeback",
+                response_count=len(updates),
+                skipped_already_decorated=len(topics_already_written),
+            )
     except Exception as exc:
-        logger.error("node_topics_writeback_failed", error=str(exc))
+        logger.error("node_topics_writeback_failed", error=str(exc), traceback=traceback.format_exc())
 
-    return {**state, "topics": [t.model_dump() for t in topics], "clusters": enriched_clusters}
+    # ── Upsert topic health windows (full XM signals per window) ─────────────
+    try:
+        async with db._pool_conn().connection() as conn:
+            for cluster in enriched_clusters:
+                tname = cluster.get("canonical_name")
+                tid   = topic_db_ids.get(tname) if tname else None
+                if not tid:
+                    continue
+                sig = topic_signals.get(tname, {})
+                await topic_registry.upsert_topic_window(survey_id, org_id, tid, sig, conn, topic_name=tname)
+            await conn.commit()
+    except Exception as exc:
+        logger.warning("node_topics_windows_failed", error=str(exc), traceback=traceback.format_exc())
+
+    return {**state, "topics": [t.model_dump() for t in all_topics], "clusters": enriched_clusters}
 
 
 # ── Node: narrate (expert domain-specific agents) ────────────────────────────
+
+def _parse_json_field(val: Any) -> Any:
+    """Safely parse a JSONB field that may already be a dict/list or a JSON string."""
+    if isinstance(val, (dict, list)):
+        return val
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except Exception:
+            pass
+    return val
+
+
+def _reuse_existing_insight(row: dict) -> dict:
+    """Convert a DB insight row back to the in-memory insights dict format."""
+    return {
+        "layer":              row.get("layer", ""),
+        "category":           row.get("category", ""),
+        "headline":           row.get("headline", ""),
+        "narrative":          row.get("narrative", ""),
+        "metric_json":        _parse_json_field(row.get("metric_json")) or {},
+        "trust_score":        row.get("trust_score") or 50,
+        "trust_json":         _parse_json_field(row.get("trust_json")) or {},
+        "citations_json":     _parse_json_field(row.get("citations_json")) or [],
+        "recommended_action": _parse_json_field(row.get("recommended_action")),
+        "priority":           float(row.get("priority") or 0.7),
+        "audit_json":         _parse_json_field(row.get("audit_json")) or {},
+        "_reused":            True,
+    }
+
 
 async def node_narrate(state: dict) -> dict:
     """Generate headlines + narratives using specialist expert agents in parallel.
@@ -914,7 +1489,9 @@ async def node_narrate(state: dict) -> dict:
     its system prompt (benchmarks, frameworks, vocabulary). Expert calls for clusters
     run concurrently via asyncio.gather for minimal latency overhead.
     """
-    run_id   = state["run_id"]
+    run_id          = state["run_id"]
+    force_regenerate = state.get("force_regenerate", False)
+    new_response_ids = state.get("new_response_ids", set())
     metrics  = state["metrics"]
     clusters = state["clusters"]
     topics   = state.get("topics", [])
@@ -922,6 +1499,37 @@ async def node_narrate(state: dict) -> dict:
 
     total_responses = metrics.get("total_responses", 0)
     nps_score  = metrics.get("nps", {}).get("score")
+
+    # ── Dedup: if no new responses and not force-regenerating, reuse cached insights ──
+    # This prevents re-running all LLM expert calls when the scheduler triggers on
+    # unchanged data (e.g., every 5-60 minutes with zero new responses submitted).
+    if not force_regenerate and len(new_response_ids) == 0:
+        try:
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT category, layer, headline, narrative, trust_score, trust_json,
+                                  citations_json, metric_json, recommended_action, priority, audit_json
+                           FROM insights
+                           WHERE survey_id = %s AND org_id = %s AND superseded_at IS NULL""",
+                        (state["survey_id"], state["org_id"]),
+                    )
+                    cached_rows = await cur.fetchall()
+                    if cached_rows:
+                        cols = [desc[0] for desc in cur.description]
+                        cached_insights = [_reuse_existing_insight(dict(zip(cols, r))) for r in cached_rows]
+                        logger.info(
+                            "node_narrate_cache_hit",
+                            insight_count=len(cached_insights),
+                            survey_id=state["survey_id"],
+                        )
+                        await _emit_event(run_id, "node_complete", "narrate", {
+                            "insight_count": len(cached_insights),
+                            "cache_hit": True,
+                        })
+                        return {**state, "insights": cached_insights, "insights_from_cache": True}
+        except Exception as exc:
+            logger.warning("node_narrate_cache_load_failed", error=str(exc))
     csat_score = metrics.get("csat", {}).get("score")
     trend_data = metrics.get("trend", {})
 
@@ -1382,6 +1990,11 @@ async def node_evaluate(state: dict) -> dict:
     Uses InsightSetEvaluator to check coverage, balance, actionability, and
     redundancy. Drops redundant insights. Appends evaluation metadata to audit_json.
     """
+    # Skip if insights came from cache — they were already evaluated on a prior run.
+    if state.get("insights_from_cache") and not state.get("force_regenerate"):
+        await _emit_event(state["run_id"], "node_complete", "evaluate", {"cache_hit": True})
+        return state
+
     run_id   = state["run_id"]
     insights = state["insights"]
     topics   = state.get("topics", [])
@@ -1445,6 +2058,11 @@ async def node_evaluate(state: dict) -> dict:
 
 async def node_verify(state: dict) -> dict:
     """Verify each insight claim is supported by its citations (demote if not)."""
+    # Skip if insights came from cache — they were already verified on a prior run.
+    if state.get("insights_from_cache") and not state.get("force_regenerate"):
+        await _emit_event(state["run_id"], "node_complete", "verify", {"cache_hit": True})
+        return state
+
     run_id   = state["run_id"]
     insights = state["insights"]
 
@@ -1504,99 +2122,87 @@ async def node_publish(state: dict) -> dict:
     except Exception:
         pass
 
+    import traceback as _tb
+
+    # ── Phase 1: Atomic insight publish ──────────────────────────────────────────
+    # All supersede + upsert operations happen inside a single transaction.
+    # If any step fails, the entire batch is rolled back — no partial states.
+    published = 0
     try:
         async with db._pool_conn().connection() as conn:
-            # Supersede old insights for this survey (all windows)
-            await conn.execute(
-                """UPDATE insights SET superseded_at = NOW(), superseded_by = NULL
-                   WHERE survey_id = %s AND org_id = %s AND superseded_at IS NULL""",
-                (survey_id, org_id),
-            )
+            async with conn.transaction():
+                # Supersede old insights for this survey (all windows)
+                await conn.execute(
+                    """UPDATE insights SET superseded_at = NOW(), superseded_by = NULL
+                       WHERE survey_id = %s AND org_id = %s AND superseded_at IS NULL""",
+                    (survey_id, org_id),
+                )
 
-            # ── Publish main (all_time) insights ─────────────────────────────────
-            published = 0
-            for ins in insights:
-                try:
+                # Publish main (all_time) insights
+                for ins in insights:
                     await _publish_one(conn, survey_id, org_id, run_id, ins, "all_time", prior_user_states)
                     published += 1
-                except Exception as ins_exc:
-                    logger.error(
-                        "publish_one_failed",
-                        headline=ins.get("headline", "")[:80],
-                        error=str(ins_exc)[:200],
-                    )
-            logger.info("node_publish_main_done", published=published, total=len(insights))
+                logger.info("node_publish_main_done", published=published, total=len(insights))
 
-            # ── Per-window metric insights (cheap — no LLM) ───────────────────────
-            for window in ["last_30d", "last_7d"]:
-                windowed = filter_responses_by_window(responses, window)
-                min_n = WINDOW_MIN_RESPONSES[window]
-                if len(windowed) < min_n:
-                    continue
+                # Per-window metric insights (cheap — no LLM)
+                for window in ["last_30d", "last_7d"]:
+                    windowed = filter_responses_by_window(responses, window)
+                    min_n = WINDOW_MIN_RESPONSES[window]
+                    if len(windowed) < min_n:
+                        continue
 
-                w_metrics: dict = {}
-                if any(r.get("nps_score") is not None for r in windowed):
-                    w_metrics["nps"] = compute_nps_ci(windowed)
-                if any(r.get("csat_score") is not None for r in windowed):
-                    w_metrics["csat"] = compute_csat(windowed)
-                w_total = len(windowed)
+                    w_metrics: dict = {}
+                    if any(r.get("nps_score") is not None for r in windowed):
+                        w_metrics["nps"] = compute_nps_ci(windowed)
+                    if any(r.get("csat_score") is not None for r in windowed):
+                        w_metrics["csat"] = compute_csat(windowed)
+                    w_total = len(windowed)
 
-                if "nps" in w_metrics and w_metrics["nps"].get("score") is not None:
-                    m = w_metrics["nps"]
-                    score = m["score"]
-                    n = m["n"]
-                    ci_low = m.get("ci_low", score - 5)
-                    ci_high = m.get("ci_high", score + 5)
-                    trust_score, trust_json = _build_trust(n=n, mentions=n, total=w_total)
-                    w_ins = {
-                        "layer": "descriptive", "category": "metric.nps",
-                        "headline": f"NPS is {score} ({window.replace('_', ' ')})",
-                        "narrative": (
-                            f"Over the {window.replace('_', ' ')}, NPS is {score} "
-                            f"(95% CI: {ci_low}–{ci_high}, n={n})."
-                        ),
-                        "metric_json": {"name": "NPS", "value": score, "ci_low": ci_low, "ci_high": ci_high},
-                        "trust_score": trust_score, "trust_json": trust_json,
-                        "citations_json": [], "priority": 0.88,
-                    }
-                    try:
+                    if "nps" in w_metrics and w_metrics["nps"].get("score") is not None:
+                        m = w_metrics["nps"]
+                        score = m["score"]
+                        n = m["n"]
+                        ci_low = m.get("ci_low", score - 5)
+                        ci_high = m.get("ci_high", score + 5)
+                        trust_score, trust_json = _build_trust(n=n, mentions=n, total=w_total)
+                        w_ins = {
+                            "layer": "descriptive", "category": "metric.nps",
+                            "headline": f"NPS is {score} ({window.replace('_', ' ')})",
+                            "narrative": (
+                                f"Over the {window.replace('_', ' ')}, NPS is {score} "
+                                f"(95% CI: {ci_low}–{ci_high}, n={n})."
+                            ),
+                            "metric_json": {"name": "NPS", "value": score, "ci_low": ci_low, "ci_high": ci_high},
+                            "trust_score": trust_score, "trust_json": trust_json,
+                            "citations_json": [], "priority": 0.88,
+                        }
                         await _publish_one(conn, survey_id, org_id, run_id, w_ins, window, prior_user_states)
-                    except Exception as we:
-                        logger.error("publish_window_nps_failed", window=window, error=str(we)[:200])
 
-                if "csat" in w_metrics and w_metrics["csat"].get("score") is not None:
-                    m = w_metrics["csat"]
-                    score = m["score"]
-                    n = m["n"]
-                    ci_low_c = m.get("ci_low", score - 0.2)
-                    ci_high_c = m.get("ci_high", score + 0.2)
-                    trust_score, trust_json = _build_trust(n=n, mentions=n, total=w_total)
-                    w_ins = {
-                        "layer": "descriptive", "category": "metric.csat",
-                        "headline": f"CSAT is {score}/5 ({window.replace('_', ' ')})",
-                        "narrative": (
-                            f"Over the {window.replace('_', ' ')}, CSAT is {score}/5 "
-                            f"(95% CI: {ci_low_c:.2f}–{ci_high_c:.2f}, n={n})."
-                        ),
-                        "metric_json": {"name": "CSAT", "value": score, "ci_low": ci_low_c, "ci_high": ci_high_c, "scale": 5},
-                        "trust_score": trust_score, "trust_json": trust_json,
-                        "citations_json": [], "priority": 0.83,
-                    }
-                    try:
+                    if "csat" in w_metrics and w_metrics["csat"].get("score") is not None:
+                        m = w_metrics["csat"]
+                        score = m["score"]
+                        n = m["n"]
+                        ci_low_c = m.get("ci_low", score - 0.2)
+                        ci_high_c = m.get("ci_high", score + 0.2)
+                        trust_score, trust_json = _build_trust(n=n, mentions=n, total=w_total)
+                        w_ins = {
+                            "layer": "descriptive", "category": "metric.csat",
+                            "headline": f"CSAT is {score}/5 ({window.replace('_', ' ')})",
+                            "narrative": (
+                                f"Over the {window.replace('_', ' ')}, CSAT is {score}/5 "
+                                f"(95% CI: {ci_low_c:.2f}–{ci_high_c:.2f}, n={n})."
+                            ),
+                            "metric_json": {"name": "CSAT", "value": score, "ci_low": ci_low_c, "ci_high": ci_high_c, "scale": 5},
+                            "trust_score": trust_score, "trust_json": trust_json,
+                            "citations_json": [], "priority": 0.83,
+                        }
                         await _publish_one(conn, survey_id, org_id, run_id, w_ins, window, prior_user_states)
-                    except Exception as we:
-                        logger.error("publish_window_csat_failed", window=window, error=str(we)[:200])
-
-            # Mark run as completed — inside the same connection so it's atomic
-            await conn.execute(
-                "UPDATE agent_runs SET status='completed', completed_at=NOW() WHERE id=%s",
-                (run_id,),
-            )
 
     except Exception as exc:
         logger.error(
-            "node_publish_failed",
+            "node_publish_phase1_failed",
             error=str(exc),
+            traceback=_tb.format_exc(),
             hint="Check that insights table has time_window column + insights_hash_window_unique index",
         )
         try:
@@ -1608,6 +2214,18 @@ async def node_publish(state: dict) -> dict:
         except Exception:
             pass
         raise
+
+    # ── Phase 2: Derived data updates ────────────────────────────────────────────
+    # Only runs after Phase 1 committed successfully.
+    # Failures here don't roll back the published insights.
+    try:
+        async with db._pool_conn().connection() as conn:
+            await conn.execute(
+                "UPDATE agent_runs SET status='completed', completed_at=NOW() WHERE id=%s",
+                (run_id,),
+            )
+    except Exception as exc:
+        logger.warning("node_publish_run_status_failed", error=str(exc), traceback=_tb.format_exc())
 
     # Write NPS score back to the surveys table so the survey list and org analytics
     # reflect the latest computed NPS without a separate query.
@@ -1622,6 +2240,37 @@ async def node_publish(state: dict) -> dict:
                 )
         except Exception as exc:
             logger.warning("node_publish_nps_writeback_failed", error=str(exc))
+
+    # Snapshot per-run metrics for time-series dashboards
+    nps_m   = metrics.get("nps", {})
+    csat_m  = metrics.get("csat", {})
+    trend_m = metrics.get("trend", {})
+    compl_m = metrics.get("completion", {})
+    try:
+        async with db._pool_conn().connection() as conn:
+            await conn.execute(
+                """INSERT INTO survey_metric_snapshots
+                       (survey_id, org_id, run_id, captured_at,
+                        response_count, nps, nps_ci_low, nps_ci_high, nps_n,
+                        promoter_pct, detractor_pct, passive_pct,
+                        csat, completion_rate, effort_score,
+                        response_velocity_7d, anomaly_flag)
+                   VALUES (%s,%s,%s,NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    survey_id, org_id, run_id,
+                    metrics.get("total_responses"),
+                    nps_m.get("score"), nps_m.get("ci_low"), nps_m.get("ci_high"),
+                    nps_m.get("n") or None,
+                    nps_m.get("promoters"), nps_m.get("detractors"), nps_m.get("passives"),
+                    csat_m.get("score"),
+                    compl_m.get("rate"),
+                    metrics.get("effort_score"),
+                    trend_m.get("recent_avg"),
+                    bool(trend_m.get("anomaly", False)),
+                ),
+            )
+    except Exception as exc:
+        logger.warning("node_publish_metric_snapshot_failed", error=str(exc))
 
     published_total = len(insights)
     await _emit_event(run_id, "run_complete", "publish", {
@@ -1738,7 +2387,7 @@ def build_insight_graph():
     evaluate:         Holistic quality audit (coverage, balance, actionability, redundancy).
     publish:          DB upsert + per-window metric snapshots.
     """
-    g = StateGraph(dict)
+    g = StateGraph(InsightState)
     g.add_node("ingest",            node_ingest)
     g.add_node("context",           node_context)
     g.add_node("route_specialists", node_route_specialists)
@@ -1757,9 +2406,10 @@ def build_insight_graph():
     g.add_edge("ingest",            "context")
     g.add_edge("context",           "route_specialists")
     g.add_edge("route_specialists",  "embed")
-    g.add_edge("embed",             "metrics")
-    g.add_edge("metrics",           "extract_texts")
-    g.add_edge("extract_texts",     "absa")
+    g.add_edge("embed",          "metrics")
+    g.add_edge("embed",          "extract_texts")
+    g.add_edge("metrics",        "absa")
+    g.add_edge("extract_texts",  "absa")
     g.add_edge("absa",              "cluster")
     g.add_edge("cluster",           "topics")
     g.add_edge("topics",            "narrate")
@@ -1802,13 +2452,18 @@ async def run_insight_generation(
     initial_state = {
         "survey_id": survey_id, "org_id": org_id,
         "run_id": run_id, "trigger": trigger,
+        # Manual trigger (UI Refresh button) forces full re-narration even if data unchanged.
+        # Scheduler/stream/bulk triggers use cached insights when data is identical.
+        "force_regenerate": trigger == "manual",
         "survey": {}, "responses": [],
+        "new_response_ids": set(),
         "metrics": {}, "open_texts": [],
         "embedded_texts": [],
         "absa_results": [], "clusters": [],
         "topics": [],
         "drivers": [], "stream_events": [],
         "insights": [], "errors": [],
+        "insights_from_cache": False,
         "org_context":          {},
         "survey_context":       {},
         "selected_specialists": [],

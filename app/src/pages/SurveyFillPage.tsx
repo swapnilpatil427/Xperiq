@@ -9,7 +9,6 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
 import type {
   Survey,
   Question,
@@ -842,15 +841,9 @@ export function SurveyFillPage() {
               style={{ boxShadow: '0 40px 100px -20px rgba(42,75,217,0.14), 0 0 0 1px rgba(255,255,255,0.6) inset' }}
             >
               <div className="mb-6">
-                <Badge
-                  variant="secondary"
-                  className="inline-block text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full mb-4 text-primary bg-[#e0e7ff]"
-                >
-                  {t(`fill.questionTypes.${q.type}`) || q.type}
-                  {q.required && t('fill.requiredIndicator')}
-                </Badge>
                 <h2 className="text-xl font-bold leading-tight font-headline text-on-surface">
                   {q.question}
+                  {q.required && <span className="text-primary ml-1">*</span>}
                 </h2>
               </div>
 

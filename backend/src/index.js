@@ -8,6 +8,16 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 require('dotenv').config(); // backend/.env (CWD = backend/ when run via npm start)
 
+// Fail fast in production if required env vars are missing or insecure
+if (process.env.NODE_ENV === 'production') {
+  const missing = ['DATABASE_URL', 'CLERK_SECRET_KEY', 'AGENTS_INTERNAL_KEY', 'ALLOWED_ORIGIN']
+    .filter(k => !process.env[k]);
+  if (missing.length) throw new Error(`Missing required env vars: ${missing.join(', ')}`);
+  if (process.env.AGENTS_INTERNAL_KEY === 'dev-internal-key-change-in-prod') {
+    throw new Error('AGENTS_INTERNAL_KEY must be changed from the default in production');
+  }
+}
+
 const Sentry  = require('@sentry/node');
 const express = require('express');
 const cors    = require('cors');
@@ -17,7 +27,7 @@ const requestId  = require('./middleware/requestId');
 const httpLogger = require('./middleware/httpLogger');
 const { apiLimiter, aiLimiter } = require('./middleware/rateLimiter');
 
-const dir = './routes/local';
+const dir = './routes';
 
 const app = express();
 app.set('trust proxy', 1);

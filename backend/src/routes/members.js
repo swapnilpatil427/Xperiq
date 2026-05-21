@@ -1,8 +1,9 @@
 const express = require('express');
-const { requireAuth } = require('../../middleware/auth');
-const { requireRole } = require('../../middleware/requireRole');
-const { validate }    = require('../../lib/validate');
-const { inviteMemberSchema, updateRoleSchema } = require('../../schemas/orgs');
+const { serverError } = require('../lib/httpError');
+const { requireAuth } = require('../middleware/auth');
+const { requireRole } = require('../middleware/requireRole');
+const { validate }    = require('../lib/validate');
+const { inviteMemberSchema, updateRoleSchema } = require('../schemas/orgs');
 const router = express.Router();
 
 // GET /api/orgs/me/members
@@ -27,7 +28,7 @@ router.get('/members', requireAuth, async (req, res) => {
     }));
     res.json({ members, total: members.length });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -52,7 +53,7 @@ router.post('/invitations', requireAuth, requireRole('admin'), validate(inviteMe
       invitation: { id: invitation.id, emailAddress: invitation.emailAddress, status: invitation.status },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -70,7 +71,7 @@ router.delete('/members/:userId', requireAuth, requireRole('admin'), async (req,
     });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -89,7 +90,7 @@ router.put('/members/:userId/role', requireAuth, requireRole('admin'), validate(
     });
     res.json({ success: true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 

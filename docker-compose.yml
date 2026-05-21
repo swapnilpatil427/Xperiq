@@ -1,9 +1,17 @@
 # Images bake config/migrations at build time so bind mounts from the host are not
 # required (avoids Docker Desktop "operation not permitted" on some paths).
+#
+# Platform: follows DOCKER_DEFAULT_PLATFORM when set (e.g. linux/amd64 in CI or
+# Rosetta setups). Otherwise defaults to linux/arm64 on Apple Silicon. After
+# changing platform, rebuild all custom images (npm run infra:reset). Builds need
+# DOCKER_BUILDKIT=1 when DOCKER_DEFAULT_PLATFORM differs from the host CPU arch.
+
+x-built-platform: &built-platform
+  platform: ${DOCKER_DEFAULT_PLATFORM:-linux/arm64}
 
 services:
   postgres:
-    platform: linux/arm64
+    <<: *built-platform
     build:
       context: .
       dockerfile: docker/postgres/Dockerfile
@@ -25,7 +33,7 @@ services:
     restart: unless-stopped
 
   prometheus:
-    platform: linux/arm64
+    <<: *built-platform
     build:
       context: .
       dockerfile: docker/prometheus/Dockerfile
@@ -42,7 +50,7 @@ services:
     restart: unless-stopped
 
   loki:
-    platform: linux/arm64
+    <<: *built-platform
     build:
       context: .
       dockerfile: docker/loki/Dockerfile
@@ -55,7 +63,7 @@ services:
     restart: unless-stopped
 
   grafana:
-    platform: linux/arm64
+    <<: *built-platform
     build:
       context: .
       dockerfile: docker/grafana/Dockerfile
@@ -87,7 +95,7 @@ services:
   agents:
     # Start with: docker-compose --profile agents up -d agents
     # (prod deployments: --profile prod)
-    platform: linux/arm64
+    <<: *built-platform
     profiles: ["agents", "prod"]
     build:
       context: .

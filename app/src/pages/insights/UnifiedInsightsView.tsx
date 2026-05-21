@@ -11,7 +11,7 @@
 //   • Contributing surveys strip: meta.cross_survey category (backend v1.1)
 //   • All citations use the [rXXX] format from INSIGHT_TAXONOMY.md
 
-import { useState, useMemo, type ReactNode } from 'react';
+import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { Icon } from '../../components/Icon';
@@ -22,6 +22,7 @@ import type { SurveyScope } from '../../components/SurveyScopePicker';
 import { useCrystalPanel } from '../../contexts/crystalPanel';
 import { ROUTES, toPath } from '../../constants/routes';
 import { useTranslation } from '../../lib/i18n';
+import { useApi } from '../../hooks/useApi';
 import {
   GlassCard,
   CitationChip,
@@ -29,7 +30,10 @@ import {
   CIBar,
   LayerBadge,
   LiveDot,
+  LAYER_CONFIG,
+  SENTIMENT_BORDER,
 } from './shared';
+import { GeneratingOverlay } from './GeneratingOverlay';
 
 // Pipeline nodes — must match InsightsDashboardPage.INSIGHT_NODES order
 const PIPELINE_NODES = [
@@ -44,13 +48,6 @@ const PIPELINE_NODES = [
   { id: 'evaluate', label: 'Evaluating Quality',  icon: 'verified'            },
   { id: 'publish',  label: 'Publishing Results',  icon: 'publish'             },
 ] as const;
-
-const LAYER_CONFIG: Record<AgenticInsight['layer'], { label: string; tooltip: string; color: string; bg: string }> = {
-  descriptive:  { label: 'What happened',    tooltip: 'Summarises what occurred — response counts, NPS, sentiment distribution.',           color: '#0369a1', bg: '#e0f2fe' },
-  diagnostic:   { label: 'Why it happened',  tooltip: 'Explains the drivers behind the patterns — which topics caused the score.',          color: '#7c3aed', bg: '#ede9fe' },
-  predictive:   { label: 'What will happen', tooltip: 'Forward-looking signal — trends and patterns likely to continue or worsen.',          color: '#d97706', bg: '#fef3c7' },
-  prescriptive: { label: 'What to do',       tooltip: 'Actionable recommendation — specific steps to improve the experience or metric.',     color: '#059669', bg: '#d1fae5' },
-};
 
 // ── Animation variants ────────────────────────────────────────────────────
 const stagger = {
@@ -96,11 +93,32 @@ export function UnifiedInsightsView({
   orgAvgNps,
 }: ViewProps) {
   const { t } = useTranslation();
+  const api = useApi();
   const isAll = scope === 'all';
   const { openCrystal } = useCrystalPanel();
   const [askQuery, setAskQuery] = useState('');
   const [filterLayer,    setFilterLayer]    = useState<AgenticInsight['layer'] | 'all'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [insightFeedback, setInsightFeedback] = useState<Record<string, { thumbs?: 'up' | 'down' | null; pinned?: boolean }>>(() =>
+    Object.fromEntries(agenticInsights.map((i) => [i.id, i.user_state_json ?? {}]))
+  );
+  const handleThumb = useCallback(async (insightId: string, thumbs: 'up' | 'down') => {
+    setInsightFeedback((prev) => {
+      const current = prev[insightId] ?? {};
+      return { ...prev, [insightId]: { ...current, thumbs: current.thumbs === thumbs ? null : thumbs } };
+    });
+    const next = insightFeedback[insightId]?.thumbs === thumbs ? null : thumbs;
+    try { await api.updateInsightFeedback(insightId, { thumbs: next }); } catch { /* optimistic — no rollback */ }
+  }, [api, insightFeedback]);
+
+  const handlePin = useCallback(async (insightId: string) => {
+    setInsightFeedback((prev) => {
+      const current = prev[insightId] ?? {};
+      return { ...prev, [insightId]: { ...current, pinned: !current.pinned } };
+    });
+    const next = !insightFeedback[insightId]?.pinned;
+    try { await api.updateInsightFeedback(insightId, { pinned: next }); } catch { /* optimistic — no rollback */ }
+  }, [api, insightFeedback]);
 
   const availableLayers = useMemo(() => {
     const present = new Set(agenticInsights.map((i) => i.layer));
@@ -120,17 +138,13 @@ export function UnifiedInsightsView({
     });
   }, [agenticInsights, filterLayer, filterCategory]);
 
+
   const nps = insights?.nps_score ?? null;
   const activeSurveys = surveys.filter((s) => s.status === 'active' && !s.deleted_at);
   const activeCount = activeSurveys.length;
   const totalResponses = surveys.reduce((sum, s) => sum + (s.response_count ?? 0), 0);
   const leadSurvey = activeSurveys[0];
   const displayNps = isAll ? (orgAvgNps != null ? Math.round(orgAvgNps) : null) : nps;
-
-  // Determine which pipeline node is currently running (first not-done node)
-  const activeNodeIdx = generating
-    ? PIPELINE_NODES.findIndex((n) => !nodesDone.includes(n.id))
-    : -1;
 
   const responseCount = focusSurvey?.response_count ?? 0;
 
@@ -156,81 +170,15 @@ export function UnifiedInsightsView({
 
       {/* ════════════════════════════════════════════════════════════════════
           GENERATING OVERLAY — light-theme pipeline progress
-          Renders as an inset panel above the page content (not a modal).
       ════════════════════════════════════════════════════════════════════ */}
-      <AnimatePresence>
-        {generating && (
-          <motion.div
-            key="gen-overlay"
-            initial={{ opacity: 0, scale: 0.97 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.97 }}
-            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <GlassCard className="p-8 text-center border-2 border-primary/20">
-              {/* Pulsing orb */}
-              <div className="flex justify-center mb-6">
-                <div className="relative w-20 h-20">
-                  <div
-                    className="absolute inset-0 rounded-full"
-                    style={{
-                      background: 'linear-gradient(135deg, #2a4bd9, #8329c8)',
-                      animation: 'pulse-glow 2s ease-in-out infinite',
-                    }}
-                  />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Icon name="psychology" size={32} style={{ color: 'white' }} />
-                  </div>
-                </div>
-              </div>
-
-              <h3 className="text-xl font-black font-headline mb-1">
-                Generating insights
-                {focusSurvey && <span className="text-primary"> · {focusSurvey.title}</span>}
-              </h3>
-              <p className="text-sm text-on-surface-variant mb-8">
-                Crystal is analyzing {(focusSurvey?.response_count ?? 0).toLocaleString()} responses
-                through the full intelligence pipeline.
-              </p>
-
-              {/* Pipeline node badges */}
-              <div className="flex flex-wrap justify-center gap-2 max-w-2xl mx-auto mb-4">
-                {PIPELINE_NODES.map((node, idx) => {
-                  const done = nodesDone.includes(node.id);
-                  const active = idx === activeNodeIdx;
-                  return (
-                    <motion.div
-                      key={node.id}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: idx * 0.04 }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border transition-all duration-300"
-                      style={
-                        done
-                          ? { background: '#d1fae5', borderColor: '#059669', color: '#047857' }
-                          : active
-                          ? { background: '#eff2ff', borderColor: '#2a4bd9', color: '#2a4bd9', boxShadow: '0 0 0 3px rgba(42,75,217,0.15)' }
-                          : { background: 'var(--color-surface-container)', borderColor: 'var(--color-outline-variant)', color: 'var(--color-on-surface-variant)' }
-                      }
-                    >
-                      <Icon
-                        name={done ? 'check_circle' : active ? node.icon : node.icon}
-                        size={13}
-                        style={active ? { animation: 'spin 1.5s linear infinite' } : undefined}
-                      />
-                      {node.label}
-                    </motion.div>
-                  );
-                })}
-              </div>
-
-              <p className="text-xs text-on-surface-variant">
-                {nodesDone.length} of {PIPELINE_NODES.length} stages complete · Usually takes 30–90s
-              </p>
-            </GlassCard>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <GeneratingOverlay
+        generating={generating}
+        nodesDone={nodesDone}
+        genError={!hasAgenticData ? genError : null}
+        nodes={PIPELINE_NODES}
+        focusSurvey={focusSurvey}
+        onRetry={onGenerate}
+      />
 
       {/* ════════════════════════════════════════════════════════════════════
           AGENTIC INSIGHTS SECTION — real pipeline results (light theme)
@@ -408,7 +356,6 @@ export function UnifiedInsightsView({
                         </span>
                       )}
                       <div className="flex-1" />
-                      {/* Confidence — plain English label, raw number in tooltip */}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span className={`text-[10px] font-bold cursor-default ${
@@ -452,8 +399,8 @@ export function UnifiedInsightsView({
                     {insight.citations_json.length > 0 && (
                       <div className="space-y-1.5 mb-3">
                         {insight.citations_json.slice(0, 2).map((c) => (
-                          <div key={c.response_id} className="px-3 py-2 rounded-lg bg-muted/60 border-l-2"
-                            style={{ borderLeftColor: layer.color + '60' }}>
+                          <div key={c.response_id} className="px-3 py-2 rounded-lg bg-muted/60"
+                            style={{ borderLeft: `3px solid ${SENTIMENT_BORDER[c.sentiment] ?? 'var(--color-outline-variant, #ccc)'}` }}>
                             <p className="text-xs leading-relaxed text-on-surface line-clamp-2">
                               "{c.quote}"
                             </p>
@@ -485,18 +432,37 @@ export function UnifiedInsightsView({
                     )}
 
                     {/* Action bar */}
-                    <div className="flex items-center gap-1 pt-2.5 border-t border-outline-variant/20">
-                      <Button size="sm" variant="ghost" className="text-xs gap-1 px-2 h-7">
-                        <Icon name="thumb_up" size={13} /> Helpful
-                      </Button>
-                      <Button size="sm" variant="ghost" className="text-xs gap-1 px-2 h-7">
-                        <Icon name="push_pin" size={13} /> Pin
-                      </Button>
-                      <div className="flex-1" />
-                      <span className="text-[10px] text-on-surface-variant/60">
-                        {prettifyCategory(insight.category)}
-                      </span>
-                    </div>
+                    {(() => {
+                      const fb = insightFeedback[insight.id] ?? {};
+                      return (
+                        <div className="flex items-center gap-1 pt-2.5 border-t border-outline-variant/20">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className={`text-xs gap-1 px-2 h-7 ${fb.thumbs === 'up' ? 'text-emerald-600' : ''}`}
+                            onClick={() => handleThumb(insight.id, 'up')}
+                          >
+                            <Icon name={fb.thumbs === 'up' ? 'thumb_up' : 'thumb_up'} size={13}
+                              style={fb.thumbs === 'up' ? { color: '#059669' } : undefined} />
+                            Helpful
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className={`text-xs gap-1 px-2 h-7 ${fb.pinned ? 'text-primary' : ''}`}
+                            onClick={() => handlePin(insight.id)}
+                          >
+                            <Icon name="push_pin" size={13}
+                              style={fb.pinned ? { color: 'var(--color-primary)' } : undefined} />
+                            {fb.pinned ? 'Pinned' : 'Pin'}
+                          </Button>
+                          <div className="flex-1" />
+                          <span className="text-[10px] text-on-surface-variant/60">
+                            {prettifyCategory(insight.category)}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </GlassCard>
                 </motion.div>
               );

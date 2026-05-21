@@ -8,10 +8,13 @@ from __future__ import annotations
 
 import math
 import os
+import traceback
 from typing import Any
 
 import httpx
 import structlog
+
+from agents.lib.topic_registry import _format_vector
 
 logger = structlog.get_logger()
 
@@ -169,7 +172,7 @@ async def get_or_create_embeddings(
                     emb = json.loads(emb.replace("(", "[").replace(")", "]"))
                 cached[(rid, qid)] = emb
     except Exception as exc:
-        logger.error("get_or_create_embeddings_cache_query_failed", error=str(exc))
+        logger.error("get_or_create_embeddings_cache_query_failed", error=str(exc), traceback=traceback.format_exc())
         try:
             await conn.rollback()
         except Exception:
@@ -201,8 +204,7 @@ async def get_or_create_embeddings(
         # Store new embeddings in DB
         for m, vec in zip(misses, new_vectors):
             try:
-                import json as _json
-                vec_str = "[" + ",".join(str(v) for v in vec) + "]"
+                vec_str = _format_vector(vec)
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """INSERT INTO response_embeddings
@@ -243,7 +245,7 @@ async def similarity_search(
     Uses pgvector cosine distance operator <=> (requires pgvector extension).
     Returns list of dicts with keys: response_id, question_id, text, distance.
     """
-    vec_str = "[" + ",".join(str(v) for v in embedding) + "]"
+    vec_str = _format_vector(embedding)
     try:
         async with conn.cursor() as cur:
             await cur.execute(

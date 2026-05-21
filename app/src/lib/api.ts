@@ -75,6 +75,58 @@ export interface Notification {
   created_at: string;
 }
 
+// ── Time-series types ──────────────────────────────────────────────────────────
+
+export interface MetricSnapshot {
+  captured_at:          string;
+  response_count:       number | null;
+  nps:                  number | null;
+  nps_ci_low:           number | null;
+  nps_ci_high:          number | null;
+  nps_n:                number | null;
+  promoter_pct:         number | null;
+  detractor_pct:        number | null;
+  passive_pct:          number | null;
+  csat:                 number | null;
+  completion_rate:      number | null;
+  effort_score:         number | null;
+  response_velocity_7d: number | null;
+  anomaly_flag:         boolean;
+}
+
+export interface OrgMetricSnapshot {
+  captured_at:          string;
+  active_survey_count:  number | null;
+  total_responses:      number | null;
+  avg_nps:              number | null;
+  avg_csat:             number | null;
+  avg_completion_rate:  number | null;
+  top_urgent_topic:     string | null;
+  top_driver_topic:     string | null;
+}
+
+export interface TopicWindow {
+  window_start:         string;
+  window_end:           string;
+  response_count:       number;
+  avg_sentiment_score:  number | null;
+  avg_nps:              number | null;
+  health_label:         string | null;
+  net_sentiment:        number | null;
+  nps_impact:           number | null;
+  urgency_score:        number | null;
+  velocity_pct:         number | null;
+  promoter_pct:         number | null;
+  detractor_pct:        number | null;
+  emotion_distribution: Record<string, number> | null;
+}
+
+export interface TopicTrend {
+  topic_id:   string;
+  topic_name: string;
+  windows:    TopicWindow[];
+}
+
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 export type GetToken = () => Promise<string | null>;
@@ -508,6 +560,16 @@ export function createApiClient(getToken: GetToken) {
         neutral_pct:        coerce(t.neutral_pct),
         volume_delta_pct:   coerce(t.volume_delta_pct),
         nps_correlation:    coerce(t.nps_correlation),
+        net_sentiment:      coerce(t.net_sentiment),
+        nps_impact:         coerce(t.nps_impact),
+        promoter_pct:       coerce(t.promoter_pct),
+        detractor_pct:      coerce(t.detractor_pct),
+        passive_pct:        coerce(t.passive_pct),
+        avg_csat:           coerce(t.avg_csat),
+        csat_impact:        coerce(t.csat_impact),
+        avg_effort_score:   coerce(t.avg_effort_score),
+        driver_score:       coerce(t.driver_score),
+        velocity_pct:       coerce(t.velocity_pct),
       }));
       return { ...res.data, topics };
     },
@@ -645,6 +707,41 @@ export function createApiClient(getToken: GetToken) {
       top_surveys:      Array<{ id: string; title: string; response_count: number }>;
     }> => {
       const res = await http.get('/api/orgs/me/analytics');
+      return res.data;
+    },
+
+    // ── Time-series metric history ────────────────────────────────────────────
+
+    getSurveyMetricHistory: async (
+      surveyId: string,
+      days = 90,
+    ): Promise<{ history: MetricSnapshot[]; days: number; survey_id: string }> => {
+      const res = await http.get<{ history: MetricSnapshot[]; days: number; survey_id: string }>(
+        `/api/insights/${surveyId}/metric-history?days=${days}`,
+      );
+      return res.data;
+    },
+
+    getTopicTrends: async (
+      surveyId: string,
+      opts: { topicId?: string; weeks?: number } = {},
+    ): Promise<{ topics: TopicTrend[]; weeks: number; survey_id: string }> => {
+      const params = new URLSearchParams();
+      if (opts.weeks)   params.set('weeks',   String(opts.weeks));
+      if (opts.topicId) params.set('topicId', opts.topicId);
+      const qs = params.toString();
+      const res = await http.get<{ topics: TopicTrend[]; weeks: number; survey_id: string }>(
+        `/api/insights/${surveyId}/topic-trends${qs ? '?' + qs : ''}`,
+      );
+      return res.data;
+    },
+
+    getOrgMetricHistory: async (
+      days = 90,
+    ): Promise<{ history: OrgMetricSnapshot[]; days: number; org_id: string }> => {
+      const res = await http.get<{ history: OrgMetricSnapshot[]; days: number; org_id: string }>(
+        `/api/insights/org/metric-history?days=${days}`,
+      );
       return res.data;
     },
   };

@@ -5,9 +5,10 @@
  *   GET  /api/runs/:runId    — Get a single run by ID
  */
 const express  = require('express');
-const { requireAuth } = require('../../middleware/auth');
-const db       = require('../../lib/db');
-const logger   = require('../../lib/logger');
+const { requireAuth } = require('../middleware/auth');
+const db       = require('../lib/db');
+const logger   = require('../lib/logger');
+const { serverError } = require('../lib/httpError');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -15,7 +16,7 @@ router.use(requireAuth);
 // ── GET /api/runs ──────────────────────────────────────────────────────────────
 // Query params:
 //   run_type  — filter by type: 'survey_creation' | 'insight_generation'
-//   status    — filter by status: 'running' | 'completed' | 'failed' | 'cancelled' | 'abandoned'
+//   status    — filter by status: 'running' | 'completed' | 'failed' | 'cancelled' | 'waiting_approval'
 //   survey_id — filter by survey
 //   limit     — max rows (default 20, max 50)
 //   offset    — pagination offset
@@ -24,7 +25,7 @@ router.get('/', async (req, res) => {
   const { run_type, status, survey_id, limit = '20', offset = '0' } = req.query;
 
   const VALID_TYPES   = new Set(['survey_creation', 'insight_generation']);
-  const VALID_STATUSES = new Set(['running', 'completed', 'failed', 'cancelled', 'abandoned']);
+  const VALID_STATUSES = new Set(['running', 'completed', 'failed', 'cancelled', 'waiting_approval']);
 
   const clauses = ['org_id = $1'];
   const params  = [req.orgId];
@@ -73,7 +74,7 @@ router.get('/', async (req, res) => {
     });
   } catch (err) {
     logger.error({ err: err.message }, 'runs:list:error');
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -91,7 +92,7 @@ router.get('/:runId', async (req, res) => {
     res.json(normaliseRun(rows[0]));
   } catch (err) {
     logger.error({ err: err.message, runId }, 'runs:get:error');
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 

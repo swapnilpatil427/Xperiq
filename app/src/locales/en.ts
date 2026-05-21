@@ -513,6 +513,7 @@ const en = {
     pageTitle: 'Survey Builder',
     pageDescription: 'Design your dimensional data collector with AI precision.',
     defaultSurveyTitle: 'New Product Feedback Survey',
+    untitled: 'Untitled survey',
     autosaving: 'Autosaving…',
     autosaved: 'Autosaved',
     questionTitlePlaceholder: 'Enter your question title here...',
@@ -788,6 +789,9 @@ const en = {
       sending:     'Thinking…',
       suggestions: 'Suggestions',
       empty:       'Ask anything about your survey insights. Crystal has full context.',
+      tool: {
+        getCheckpointHistory: 'Comparing to your last analysis...',
+      },
     },
     pinned:       'Pinned',
     dismissed:    '{n} insight(s) dismissed',
@@ -800,6 +804,10 @@ const en = {
       stable: 'Stable',
       new:    'New topic',
     },
+    confidence: {
+      label: 'CONF {value}',
+    },
+    sampleDataBanner: 'Sample data — select a survey above for real insights',
   },
 
   advancedInsights: {
@@ -863,6 +871,28 @@ const en = {
     // Chronic
     chronicLabel: 'Chronic issue',
     chronicDesc: 'Negative for 3+ consecutive analysis runs',
+    // NPS & Loyalty section
+    loyaltySection: 'NPS & Loyalty',
+    netSentimentLabel: 'Net Sentiment',
+    npsImpactLabel: 'NPS Impact',
+    promoterLabel: 'Promoter',
+    detractorLabel: 'Detractor',
+    // CSAT & Effort section
+    csatSection: 'CSAT & Effort',
+    csatImpactLabel: 'CSAT Impact',
+    avgEffortScoreLabel: 'Avg Effort',
+    // Health & Confidence section
+    healthSection: 'Health & Confidence',
+    healthLabel2: 'Health',
+    healthAtRisk: 'At risk',
+    healthStable: 'Stable',
+    healthHealthy: 'Healthy',
+    confidenceLabel: 'Confidence',
+    driverScoreLabel: 'Driver Score',
+    velocityLabel: 'Velocity',
+    // Emotion & verbatims
+    emotionMixLabel: 'Emotion Mix',
+    topVerbatimsLabel: 'Top Verbatims',
     // Sort
     sortByVolume: 'By volume',
     sortByUrgency: 'By urgency',
