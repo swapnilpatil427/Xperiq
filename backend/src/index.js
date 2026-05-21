@@ -8,6 +8,16 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 require('dotenv').config(); // backend/.env (CWD = backend/ when run via npm start)
 
+// Fail fast in production if required env vars are missing or insecure
+if (process.env.NODE_ENV === 'production') {
+  const missing = ['DATABASE_URL', 'CLERK_SECRET_KEY', 'AGENTS_INTERNAL_KEY', 'ALLOWED_ORIGIN']
+    .filter(k => !process.env[k]);
+  if (missing.length) throw new Error(`Missing required env vars: ${missing.join(', ')}`);
+  if (process.env.AGENTS_INTERNAL_KEY === 'dev-internal-key-change-in-prod') {
+    throw new Error('AGENTS_INTERNAL_KEY must be changed from the default in production');
+  }
+}
+
 const Sentry  = require('@sentry/node');
 const express = require('express');
 const cors    = require('cors');
@@ -17,13 +27,17 @@ const requestId  = require('./middleware/requestId');
 const httpLogger = require('./middleware/httpLogger');
 const { apiLimiter, aiLimiter } = require('./middleware/rateLimiter');
 
-const BACKEND = process.env.BACKEND || 'firebase';
-const isLocal = BACKEND === 'local';
-const dir     = isLocal ? './routes/local' : './routes';
+const dir = './routes';
 
 const app = express();
 app.set('trust proxy', 1);
-app.use(cors({ origin: true }));
+
+// Production: restrict CORS to the configured frontend origin.
+// Dev: allow all (origin: true reflects the request Origin header).
+const corsOrigin = process.env.NODE_ENV === 'production'
+  ? (process.env.ALLOWED_ORIGIN || false)
+  : true;
+app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json());
 app.use(requestId);  // attach req.id before logging
 app.use(httpLogger); // structured request logging + Prometheus HTTP metrics
@@ -41,13 +55,29 @@ app.use('/api/org-profile', apiLimiter, require(`${dir}/orgProfile`));
 app.use('/api/orgs',       apiLimiter, require(`${dir}/orgs`));
 app.use('/api/orgs/me',    apiLimiter, require(`${dir}/members`));
 app.use('/api/copilot',    apiLimiter, require(`${dir}/copilot`));
+app.use('/api/runs',       apiLimiter, require(`${dir}/runs`));
 
 // ── Observability endpoints ───────────────────────────────────────────────────
-app.get('/api/health', (req, res) =>
-  res.json({ status: 'ok', version: '2.0.0', backend: BACKEND })
-);
+app.get('/api/health', async (req, res) => {
+  const health = { status: 'ok', version: '2.0.0', backend: 'local' };
+  try {
+    await require('./lib/db').query('SELECT 1');
+    health.db = 'ok';
+  } catch {
+    health.db = 'error';
+    health.status = 'degraded';
+  }
+  res.status(health.status === 'ok' ? 200 : 503).json(health);
+});
 
 app.get('/api/metrics', async (req, res) => {
+  // Prometheus scrapes from localhost only — block external access in production
+  if (process.env.NODE_ENV === 'production') {
+    const ip = req.ip || req.socket?.remoteAddress || '';
+    if (!ip.includes('127.0.0.1') && !ip.includes('::1') && !ip.includes('::ffff:127.')) {
+      return res.status(403).end();
+    }
+  }
   res.set('Content-Type', register.contentType);
   res.end(await register.metrics());
 });
@@ -62,15 +92,23 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-if (isLocal) {
-  const PORT = process.env.PORT || 3001;
-  app.listen(PORT, () => {
-    logger.info(`API  → http://localhost:${PORT}  (backend: local/postgres)`);
-    logger.info(`Auth → ${process.env.SKIP_AUTH === 'true' ? 'SKIP_AUTH (dev-user/dev-org)' : 'Clerk JWT'}`);
-    logger.info(`Metrics → http://localhost:${PORT}/api/metrics`);
+const PORT = process.env.PORT || 3001;
+const server = app.listen(PORT, () => {
+  logger.info(`API  → http://localhost:${PORT}  (backend: local/postgres)`);
+  logger.info(`Auth → ${process.env.SKIP_AUTH === 'true' ? 'SKIP_AUTH (dev-user/dev-org)' : 'Clerk JWT'}`);
+  logger.info(`CORS → ${corsOrigin === true ? 'all origins (dev)' : (corsOrigin || 'BLOCKED — set ALLOWED_ORIGIN')}`);
+  logger.info(`Agents env → AGENTS_ENV=${process.env.AGENTS_ENV || 'dev (default)'}`);
+  logger.info(`Metrics → http://localhost:${PORT}/api/metrics`);
+});
+
+// Graceful shutdown — PM2 sends SIGTERM on `pm2 reload`, SIGINT on Ctrl+C
+const shutdown = (sig) => {
+  logger.info({ sig }, 'shutdown signal received');
+  server.close(() => {
+    logger.info('HTTP server closed');
+    process.exit(0);
   });
-} else {
-  const functions = require('firebase-functions/v2');
-  exports.api           = functions.https.onRequest({ region: 'us-central1', memory: '256MiB' }, app);
-  exports.onNewResponse = require('./triggers/onNewResponse').onNewResponse;
-}
+  setTimeout(() => { logger.error('shutdown timeout — forcing exit'); process.exit(1); }, 30_000).unref();
+};
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));

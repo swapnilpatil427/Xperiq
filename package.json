@@ -8,15 +8,18 @@
     "start":       "npm run dev",
     "predev":      "node -e \"const [maj,min]=process.versions.node.split('.').map(Number);if(maj<20||(maj===20&&min<19)){console.error('\\n✗ Node '+process.version+' detected. Vite requires Node >=20.19 or >=22.12.\\n  Run: nvm use 22\\n');process.exit(1)}\"",
     "dev":         "docker compose up -d && node scripts/migrate.js && concurrently --kill-others-on-fail -n \"api,web,agents\" -c \"cyan,magenta,green\" \"npm --prefix backend run dev\" \"npm --prefix app run dev\" \"npm --prefix backend run start:agents\"",
+    "dev:dev-paid": "AGENTS_ENV=dev-paid npm run dev",
     "migrate":     "node scripts/migrate.js",
-    "infra":       "docker compose up -d",
-    "infra:build": "docker compose build postgres prometheus loki grafana",
+    "infra":       "DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose up -d",
+    "infra:build": "DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose build postgres prometheus loki grafana",
     "infra:stop":  "docker compose down",
-    "infra:reset": "docker compose down -v && docker compose build postgres && docker compose up -d",
+    "infra:reset": "docker compose down -v && docker rmi -f experient-postgres:local experient-prometheus:local experient-loki:local experient-grafana:local 2>/dev/null; DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose build postgres prometheus loki grafana && docker compose up -d",
     "infra:logs":  "docker compose logs -f",
     "setup":       "npm run install:all && docker compose build postgres && docker compose up -d && node scripts/migrate.js",
     "setup:dev":   "cp -n .env.example .env 2>/dev/null && echo '✓ .env created — fill in OPENROUTER_API_KEY and CLERK_SECRET_KEY before starting' || echo '✓ .env already exists'",
-    "install:all": "npm install && npm --prefix backend install && npm --prefix app install"
+    "install:all": "npm install && npm --prefix backend install && npm --prefix app install",
+    "setup:agents": "test -d agents/.venv || python3 -m venv agents/.venv; agents/.venv/bin/pip install -q -r agents/requirements.txt",
+    "scan-models": "npm run setup:agents --silent && PYTHONPATH=. agents/.venv/bin/python -m agents.skills.openrouter_scan"
   },
   "devDependencies": {
     "concurrently": "^8.2.0"

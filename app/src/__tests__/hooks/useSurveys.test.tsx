@@ -422,7 +422,7 @@ describe('useSurveys — publishSurvey', () => {
       await result.current.publishSurvey('s1');
     });
 
-    expect(mockPublishSurvey).toHaveBeenCalledWith('s1');
+    expect(mockPublishSurvey).toHaveBeenCalledWith('s1', undefined);
     expect(mockPublishSurvey).toHaveBeenCalledTimes(1);
   });
 });

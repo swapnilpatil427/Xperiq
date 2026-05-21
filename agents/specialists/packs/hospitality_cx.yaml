@@ -1,0 +1,43 @@
+id: hospitality_cx
+display_name: "Hospitality & Travel Customer Experience"
+priority: 80
+match:
+  industries: [hospitality, hotel, restaurant, airline, travel, cruise, vacation_rental]
+  use_cases: [CX, guest_experience, post_stay, post_flight]
+  survey_types: [post_stay_nps, restaurant_csat, flight_nps, guest_survey]
+  audiences: [guests, diners, passengers, travelers]
+taxonomy:
+  canonical_topics:
+    - { name: "Check-in / Check-out",    parent: "Arrival & Departure", keywords: [check-in, check-out, wait, queue, reception, front desk, arrival, luggage] }
+    - { name: "Room Quality",            parent: "Accommodation",       keywords: [room, clean, bed, comfortable, amenities, view, size, noise, air conditioning], weight: 1.2 }
+    - { name: "Staff Warmth & Service",  parent: "Service",             keywords: [staff, friendly, helpful, professional, warm, rude, attentive, ignored, courtesy], weight: 1.3 }
+    - { name: "Food & Beverage",         parent: "F&B",                 keywords: [food, drink, breakfast, restaurant, menu, quality, portion, taste, bar] }
+    - { name: "Cleanliness",             parent: "Accommodation",       keywords: [clean, dirty, hygiene, sanitary, towels, bathroom, smell, spotless], weight: 1.2 }
+    - { name: "Value for Price",         parent: "Value",               keywords: [price, value, expensive, worth, overpriced, reasonable, bang for buck] }
+    - { name: "Loyalty & Recognition",   parent: "Engagement",          keywords: [loyalty, points, status, recognition, elite, member, upgrade, reward] }
+    - { name: "Amenities & Facilities",  parent: "Property",            keywords: [pool, gym, spa, Wi-Fi, parking, facilities, amenities, elevator] }
+    - { name: "Issue Resolution",        parent: "Service",             keywords: [complaint, resolved, problem, issue, fixed, apology, compensated, escalated] }
+benchmarks:
+  nps:  { p25: 25, p50: 39, p75: 52, source: "J.D. Power Hotel 2024" }
+  csat: { p25: 3.7, p50: 4.1, p75: 4.5, scale: 5 }
+  ces:  { p25: 5.0, p50: 4.0, p75: 3.0, scale: 7 }
+vocabulary:
+  positive_signals: [exceptional, above and beyond, spotless, friendly, perfect stay, will return, highly recommend, luxurious]
+  negative_signals: [dirty, rude, overpriced, noisy, broken, disappointed, below expectation, never return]
+  red_flags: [safety hazard, food poisoning, theft, harassment, injury, bedbugs, unsafe]
+  domain_terms: [RevPAR, ADR, occupancy, loyalty tier, TripAdvisor, Expedia, OTA]
+prompt_overlays:
+  narrate_system: |
+    You are an expert hospitality CX analyst. You understand hotel operations, F&B, and loyalty programs.
+    Weight staff interaction, cleanliness, and value-for-money as the primary NPS drivers in hospitality.
+    Reference: Hotel NPS median is 39; luxury brands (Four Seasons) average 70+; budget chains average 20-30.
+  topics_system: |
+    Organize hospitality feedback by guest journey: Pre-Arrival → Check-In → Stay → F&B → Departure → Post-Stay.
+  crystal_system: |
+    You are Crystal, a hospitality CX expert. You understand hotel operations, F&B, and guest experience.
+question_templates:
+  - { id: hos.recommend,   text: "How likely are you to recommend this property to a friend or colleague?",         type: nps, theme: "Overall" }
+  - { id: hos.stay,        text: "Overall, how satisfied were you with your stay?",                                 type: csat, theme: "Overall" }
+  - { id: hos.staff,       text: "How would you rate the service provided by our team?",                            type: csat, theme: "Service" }
+  - { id: hos.cleanliness, text: "How satisfied were you with the cleanliness of your room and common areas?",      type: csat, theme: "Cleanliness" }
+  - { id: hos.open,        text: "What could we have done to make your stay even better?",                          type: open_text, theme: "Open Feedback" }

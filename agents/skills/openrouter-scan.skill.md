@@ -26,17 +26,20 @@ Invoke via Claude Code:
 /openrouter-scan --json
 ```
 
-Or run directly from the repo root:
+Or run directly from the repo root (uses `agents/.venv`; one-time: `npm run setup:agents`):
 
 ```bash
 # Dry run — show report
-python -m agents.skills.openrouter_scan
+npm run scan-models
 
 # Auto-update agents/lib/models.py with suggestions
-python -m agents.skills.openrouter_scan --patch
+npm run scan-models -- --patch
 
 # Machine-readable JSON (pipe to jq, scripts, etc.)
-python -m agents.skills.openrouter_scan --json | jq .recommendations
+npm run scan-models -- --json | jq .recommendations
+
+# Equivalent without npm:
+PYTHONPATH=. agents/.venv/bin/python -m agents.skills.openrouter_scan --patch
 ```
 
 ## What the report covers

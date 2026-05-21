@@ -27,7 +27,7 @@ Experient is an AI-powered experience intelligence platform. It lets organizatio
 ## Local dev
 ```
 docker-compose up -d          # Start Postgres + Redis + monitoring
-cd backend && npm start        # Start API on :5001
+cd backend && npm start        # Start API on :3001
 cd app && npm run dev          # Start Vite dev server on :5173
 ```
 

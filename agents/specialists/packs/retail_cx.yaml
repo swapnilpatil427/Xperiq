@@ -1,0 +1,49 @@
+id: retail_cx
+display_name: "Retail & E-commerce Customer Experience"
+priority: 85
+match:
+  industries: [retail, ecommerce, e-commerce, grocery, fashion, apparel, home_goods, electronics]
+  use_cases: [CX, customer_experience, post_purchase, store_visit]
+  survey_types: [post_purchase_nps, store_csat, product_review, returns_ces, loyalty_survey]
+  audiences: [customers, shoppers, buyers]
+taxonomy:
+  canonical_topics:
+    - { name: "Product Quality",         parent: "Product",         keywords: [quality, defective, broken, durable, material, fabric, size, fit, accurate], weight: 1.3 }
+    - { name: "Product Selection",       parent: "Product",         keywords: [selection, variety, stock, availability, out of stock, options, range] }
+    - { name: "Staff Helpfulness",       parent: "In-Store",        keywords: [staff, associate, helpful, knowledgeable, rude, ignored, assisted, friendly] }
+    - { name: "Store Cleanliness",       parent: "In-Store",        keywords: [clean, messy, organized, cluttered, dirty, tidy, store condition] }
+    - { name: "Checkout Speed",          parent: "Transaction",     keywords: [checkout, queue, line, wait, self-checkout, cashier, slow, fast, register], weight: 1.2 }
+    - { name: "Pricing & Value",         parent: "Transaction",     keywords: [price, expensive, cheap, value, overpriced, competitive, affordable, deal] }
+    - { name: "Returns Process",         parent: "Post-Purchase",   keywords: [return, refund, exchange, hassle, easy, policy, receipt, process], weight: 1.1 }
+    - { name: "Website & App UX",        parent: "Digital",         keywords: [website, app, mobile, load, navigate, crash, interface, design, UX, filter] }
+    - { name: "Shipping & Delivery",     parent: "Fulfilment",      keywords: [shipping, delivery, delayed, late, damaged, packaging, carrier, tracking, ETA], weight: 1.2 }
+    - { name: "Loyalty Program",         parent: "Engagement",      keywords: [loyalty, points, rewards, discount, member, tier, expire, redeem] }
+    - { name: "Customer Service",        parent: "Support",         keywords: [support, service, agent, call, chat, resolved, helpful, responsive] }
+    - { name: "Omnichannel Experience",  parent: "Digital",         keywords: [online, in-store, click and collect, BOPIS, consistent, integration] }
+benchmarks:
+  nps:  { p25: 30, p50: 40, p75: 55, source: "Bain Retail NPS Benchmark 2024" }
+  csat: { p25: 3.6, p50: 4.0, p75: 4.4, scale: 5 }
+  ces:  { p25: 5.0, p50: 4.0, p75: 3.0, scale: 7 }
+vocabulary:
+  positive_signals: [great selection, helpful staff, easy checkout, fast delivery, love the quality, highly recommend, will return]
+  negative_signals: [out of stock, long wait, rude, broken, expensive, late delivery, hard to find, return hassle]
+  red_flags: [safety recall, defective, injury, fraudulent charge, identity theft, discriminatory]
+  domain_terms: [NPS, CX, retention, CLV, omnichannel, BOPIS, SKU, promoter, detractor]
+prompt_overlays:
+  narrate_system: |
+    You are an expert retail CX analyst familiar with omnichannel retail, e-commerce, and store operations.
+    Weight checkout, delivery, and returns issues as high operational priority.
+    Always tie insights to revenue impact: detractors reduce repeat purchase rate by 3-7x.
+    Reference: Retail NPS median is 40; top performers (Amazon, Costco) achieve 60+.
+  topics_system: |
+    Organize retail feedback across the customer journey: Discovery → Browse → Purchase → Fulfilment → Returns → Loyalty.
+    Separate online and in-store feedback when distinguishable.
+  crystal_system: |
+    You are Crystal, a retail CX expert. You understand omnichannel retail, supply chain, and customer lifetime value.
+    Reference retail industry benchmarks and tie insights to retention and repeat purchase behavior.
+question_templates:
+  - { id: ret.recommend,    text: "How likely are you to recommend us to a friend or colleague?",                    type: nps, theme: "Overall" }
+  - { id: ret.satisfaction, text: "Overall, how satisfied are you with your shopping experience today?",            type: csat, theme: "Overall" }
+  - { id: ret.effort,       text: "How easy was it to find and purchase what you were looking for?",                type: ces, theme: "Effort" }
+  - { id: ret.staff,        text: "How helpful was our team in assisting you today?",                               type: csat, theme: "Staff" }
+  - { id: ret.open,         text: "What could we do to improve your experience?",                                   type: open_text, theme: "Open Feedback" }

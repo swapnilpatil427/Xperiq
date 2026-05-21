@@ -7,7 +7,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from './Icon';
 import { Button } from '@/components/ui/button';
-import { useCrystalPanel } from '../contexts/crystalPanel';
+import { useCrystalPanel, type CrystalCtx } from '../contexts/crystalPanel';
 import { GlassCard, CitationChip, ConfidenceChip } from '../pages/insights/shared';
 import { useApi } from '../hooks/useApi';
 import type { SurveyScope } from './SurveyScopePicker';
@@ -21,6 +21,8 @@ interface Message {
   confidence?: number;
   citations?: string[];       // insight_refs from the real API
   suggestions?: string[];     // follow-up prompts from the real API
+  thumbs?: 'up' | 'down' | null;
+  pinned?: boolean;
 }
 
 interface CrystalPanelProps {
@@ -46,14 +48,16 @@ const ALL_PROMPTS = [
 ];
 
 export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], topics = [] }: CrystalPanelProps) {
-  const { isOpen, initialQuery, closeCrystal } = useCrystalPanel();
+  const { isOpen, initialQuery, crystalCtx, setCrystalCtx, closeCrystal } = useCrystalPanel();
   const [isExpanded, setIsExpanded] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [isListening, setIsListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastSubmittedQuery = useRef('');
+  const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const api = useApi();
 
   const isAll = scope === 'all';
@@ -62,17 +66,34 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
 
   // Prefer real agentic NPS over legacy insights fallback
   const npsInsight = agenticInsights.find(
-    (i) => i.category === 'nps' && i.metric_json?.name === 'nps',
+    (i) => i.category === 'metric.nps',
   );
-  const nps = npsInsight?.metric_json?.value ?? insights?.nps_score ?? (isAll ? 51 : 47);
+  const nps = npsInsight?.metric_json?.value ?? insights?.nps_score ?? null;
 
   // Response count from agentic trust data or survey metadata
   const responseCount = agenticInsights[0]?.trust_json?.sample_size ?? focusSurvey?.response_count ?? 0;
 
-  const prompts = isAll ? ALL_PROMPTS : SINGLE_PROMPTS;
+  // Dynamic starter prompts: inject top topics if available
+  const dynamicPrompts = !isAll && topics.length > 0
+    ? [
+        ...(topics[0] ? [{ icon: 'topic', label: `What's driving "${topics[0].name}"?` }] : []),
+        ...(topics.find(t => (t.sentiment_score ?? 0) < -0.3)
+          ? [{ icon: 'warning', label: `Why is "${topics.find(t => (t.sentiment_score ?? 0) < -0.3)!.name}" negative?` }]
+          : [{ icon: 'trending_down', label: 'Why did NPS drop recently?' }]
+        ),
+        { icon: 'lightbulb', label: 'What should I fix first?' },
+        { icon: 'emoji_events', label: 'What are customers praising most?' },
+      ]
+    : (isAll ? ALL_PROMPTS : SINGLE_PROMPTS);
+
+  const WINDOW_LABELS: Record<string, string> = {
+    all_time: 'All time',
+    '30d': 'Last 30 days',
+    '7d': 'Last 7 days',
+  };
 
   const submitQuery = useCallback(
-    async (query: string) => {
+    async (query: string, overrideCtx?: CrystalCtx) => {
       if (!query.trim() || isThinking) return;
       lastSubmittedQuery.current = query;
       setMessages((prev) => [
@@ -97,8 +118,12 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
         return;
       }
 
+      const activeCtx = overrideCtx ?? crystalCtx;
       try {
-        const { answer, suggestions, insight_refs } = await api.crystalChat(scope, query);
+        const { answer, suggestions, insight_refs } = await api.crystalChat(scope, query, {
+          window: activeCtx.window,
+          focused_topic: activeCtx.focused_topic,
+        });
         setMessages((prev) => [
           ...prev,
           {
@@ -129,7 +154,7 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
         setIsThinking(false);
       }
     },
-    [isAll, isThinking, api, scope],
+    [isAll, isThinking, api, scope, crystalCtx],
   );
 
   // Auto-submit when panel opens with a pre-loaded query
@@ -159,6 +184,65 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
   useEffect(() => {
     if (!isOpen) setIsExpanded(false);
   }, [isOpen]);
+
+  const handleMic = useCallback(() => {
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) return;
+
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognitionRef.current = recognition;
+
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(prev => (prev ? `${prev} ${transcript}` : transcript));
+    };
+    recognition.onend = () => setIsListening(false);
+    recognition.onerror = () => setIsListening(false);
+
+    recognition.start();
+    setIsListening(true);
+  }, [isListening]);
+
+  const handlePin = useCallback((id: string) => {
+    setMessages(prev => prev.map(m => m.id === id ? { ...m, pinned: !m.pinned } : m));
+  }, []);
+
+  const handleThumbsUp = useCallback((id: string) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== id) return m;
+      const newThumbs = m.thumbs === 'up' ? null : 'up';
+      // Persist to all cited insight IDs (fire-and-forget)
+      if (!isAll && m.citations?.length) {
+        m.citations.forEach(insightId => {
+          api.updateInsightFeedback(insightId, { thumbs: newThumbs }).catch(() => {});
+        });
+      }
+      return { ...m, thumbs: newThumbs };
+    }));
+  }, [api, isAll]);
+
+  const handleThumbsDown = useCallback((id: string) => {
+    setMessages(prev => prev.map(m => {
+      if (m.id !== id) return m;
+      const newThumbs = m.thumbs === 'down' ? null : 'down';
+      // Persist to all cited insight IDs (fire-and-forget)
+      if (!isAll && m.citations?.length) {
+        m.citations.forEach(insightId => {
+          api.updateInsightFeedback(insightId, { thumbs: newThumbs }).catch(() => {});
+        });
+      }
+      return { ...m, thumbs: newThumbs };
+    }));
+  }, [api, isAll]);
 
   const handleSubmit = () => {
     if (input.trim()) {
@@ -251,9 +335,9 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
                 </div>
                 <div className="text-[10px] text-on-surface-variant truncate">
                   {isAll
-                    ? `Ask across ${activeSurveys.length} active surveys · Portfolio NPS ${nps}`
+                    ? `Ask across ${activeSurveys.length} active surveys${nps != null ? ` · Portfolio NPS ${nps}` : ''}`
                     : focusSurvey
-                      ? `${focusSurvey.title} · ${responseCount.toLocaleString()} responses · NPS ${nps}${topics.length > 0 ? ` · ${topics.length} topics` : ''}`
+                      ? `${focusSurvey.title} · ${responseCount.toLocaleString()} responses${nps != null ? ` · NPS ${nps}` : ''}${topics.length > 0 ? ` · ${topics.length} topics` : ''}`
                       : 'Ask anything about this survey'}
                 </div>
               </div>
@@ -289,6 +373,52 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
               </button>
             </div>
 
+            {/* ── Context strip — shows what Crystal is scoped to ──────── */}
+            {!isAll && (crystalCtx.window || crystalCtx.focused_topic) && (
+              <div className="flex-shrink-0 flex items-center gap-2 px-5 py-2 flex-wrap"
+                style={{ background: 'rgba(42,75,217,0.04)', borderBottom: '1px solid rgba(42,75,217,0.08)' }}>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mr-1">
+                  Scoped to:
+                </span>
+                {crystalCtx.window && crystalCtx.window !== 'all_time' && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
+                    style={{ background: '#eef2ff', color: '#4f46e5' }}>
+                    <Icon name="schedule" size={11} />
+                    {WINDOW_LABELS[crystalCtx.window] ?? crystalCtx.window}
+                  </span>
+                )}
+                {crystalCtx.focused_topic && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
+                    style={{ background: '#ecfdf5', color: '#059669' }}>
+                    <Icon name="topic" size={11} />
+                    {crystalCtx.focused_topic}
+                  </span>
+                )}
+                <button className="ml-auto text-[10px] text-on-surface-variant hover:text-on-surface"
+                  onClick={() => setCrystalCtx({})}>
+                  clear
+                </button>
+              </div>
+            )}
+
+            {/* ── Time window quick-filter ──────────────────────────────── */}
+            {!isAll && messages.length === 0 && (
+              <div className="flex-shrink-0 flex items-center gap-1.5 px-5 pt-3 pb-0">
+                <span className="text-[10px] text-on-surface-variant font-semibold mr-1">Window:</span>
+                {(['all_time', '30d', '7d'] as const).map(w => (
+                  <button key={w}
+                    onClick={() => setCrystalCtx({ ...crystalCtx, window: w })}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-full transition-all"
+                    style={{
+                      background: (crystalCtx.window ?? 'all_time') === w ? '#4f46e5' : 'rgba(0,0,0,0.06)',
+                      color: (crystalCtx.window ?? 'all_time') === w ? '#fff' : '#64748b',
+                    }}>
+                    {WINDOW_LABELS[w]}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {/* ── Conversation ───────────────────────────────────────────── */}
             <div
               ref={scrollRef}
@@ -297,7 +427,7 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
             >
               {messages.length === 0 && !isThinking ? (
                 <EmptyState
-                  prompts={prompts}
+                  prompts={dynamicPrompts}
                   isAll={isAll}
                   onPromptClick={(p) => submitQuery(p)}
                 />
@@ -307,7 +437,14 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
                     msg.role === 'user' ? (
                       <UserBubble key={msg.id} message={msg} />
                     ) : (
-                      <CrystalBubble key={msg.id} message={msg} onFollowUp={submitQuery} />
+                      <CrystalBubble
+                        key={msg.id}
+                        message={msg}
+                        onFollowUp={submitQuery}
+                        onPin={handlePin}
+                        onThumbsUp={handleThumbsUp}
+                        onThumbsDown={handleThumbsDown}
+                      />
                     ),
                   )}
                   {isThinking && <ThinkingBubble />}
@@ -327,8 +464,13 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
                   border: '1px solid rgba(42,75,217,0.14)',
                 }}
               >
-                <button className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 self-end mb-0.5 hover:bg-primary/10 transition-colors">
-                  <Icon name="mic" size={18} className="text-on-surface-variant" />
+                <button
+                  className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 self-end mb-0.5 hover:bg-primary/10 transition-colors"
+                  onClick={handleMic}
+                  title={isListening ? 'Stop listening' : 'Speak your question'}
+                  style={isListening ? { background: 'rgba(220,38,38,0.1)', color: '#dc2626' } : undefined}
+                >
+                  <Icon name={isListening ? 'mic_off' : 'mic'} size={18} className={isListening ? '' : 'text-on-surface-variant'} />
                 </button>
                 <textarea
                   ref={inputRef}
@@ -382,7 +524,7 @@ function EmptyState({
   isAll,
   onPromptClick,
 }: {
-  prompts: typeof SINGLE_PROMPTS;
+  prompts: Array<{ icon: string; label: string }>;
   isAll: boolean;
   onPromptClick: (p: string) => void;
 }) {
@@ -490,7 +632,19 @@ function UserBubble({ message }: { message: Message }) {
 }
 
 // ── Crystal answer bubble ─────────────────────────────────────────────────────
-function CrystalBubble({ message, onFollowUp }: { message: Message; onFollowUp: (q: string) => void }) {
+function CrystalBubble({
+  message,
+  onFollowUp,
+  onPin,
+  onThumbsUp,
+  onThumbsDown,
+}: {
+  message: Message;
+  onFollowUp: (q: string) => void;
+  onPin: (id: string) => void;
+  onThumbsUp: (id: string) => void;
+  onThumbsDown: (id: string) => void;
+}) {
   return (
     <div className="flex gap-3">
       <div
@@ -502,6 +656,12 @@ function CrystalBubble({ message, onFollowUp }: { message: Message; onFollowUp: 
       <GlassCard className="rounded-2xl rounded-bl-sm px-4 py-4 flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-2">
           <span className="text-[10px] font-bold uppercase tracking-widest text-tertiary">Crystal</span>
+          {message.pinned && (
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5"
+              style={{ background: '#eef2ff', color: '#4f46e5' }}>
+              <Icon name="push_pin" size={10} fill={1} /> Pinned
+            </span>
+          )}
           {message.confidence !== undefined && <ConfidenceChip value={message.confidence} />}
         </div>
         <p className="text-sm leading-relaxed mb-3">{message.content}</p>
@@ -527,21 +687,55 @@ function CrystalBubble({ message, onFollowUp }: { message: Message; onFollowUp: 
           </div>
         )}
         <div className="flex items-center gap-2 mt-3">
-          <Button size="sm" variant="outline" className="text-xs">
-            <Icon name="push_pin" size={13} /> Pin
+          <Button
+            size="sm"
+            variant={message.pinned ? 'default' : 'outline'}
+            className="text-xs"
+            onClick={() => onPin(message.id)}
+            title={message.pinned ? 'Unpin this response' : 'Pin this response'}
+            style={message.pinned ? { background: '#4f46e5', color: '#fff' } : undefined}
+          >
+            <Icon name="push_pin" size={13} fill={message.pinned ? 1 : 0} />
+            {message.pinned ? 'Pinned' : 'Pin'}
           </Button>
-          <Button size="sm" variant="outline" className="text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs"
+            title="Slack integration coming soon"
+            onClick={() => {/* Slack integration — not yet connected */}}
+          >
             <Icon name="ios_share" size={13} /> Slack
           </Button>
-          <Button size="sm" variant="outline" className="text-xs">
+          <Button
+            size="sm"
+            variant="outline"
+            className="text-xs"
+            title="Ticketing integration coming soon"
+            onClick={() => {/* Ticketing integration — not yet connected */}}
+          >
             <Icon name="flag" size={13} /> Ticket
           </Button>
           <div className="flex-1" />
-          <Button size="icon" variant="ghost" className="w-7 h-7">
-            <Icon name="thumb_up" size={13} />
+          <Button
+            size="icon"
+            variant="ghost"
+            className="w-7 h-7"
+            onClick={() => onThumbsUp(message.id)}
+            title="Good answer"
+            style={message.thumbs === 'up' ? { color: '#059669', background: '#d1fae5' } : undefined}
+          >
+            <Icon name="thumb_up" size={13} fill={message.thumbs === 'up' ? 1 : 0} />
           </Button>
-          <Button size="icon" variant="ghost" className="w-7 h-7">
-            <Icon name="thumb_down" size={13} />
+          <Button
+            size="icon"
+            variant="ghost"
+            className="w-7 h-7"
+            onClick={() => onThumbsDown(message.id)}
+            title="Needs improvement"
+            style={message.thumbs === 'down' ? { color: '#b41340', background: '#fee2e2' } : undefined}
+          >
+            <Icon name="thumb_down" size={13} fill={message.thumbs === 'down' ? 1 : 0} />
           </Button>
         </div>
       </GlassCard>

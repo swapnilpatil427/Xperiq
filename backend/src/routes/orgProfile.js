@@ -1,89 +1,105 @@
 const express = require('express');
-const { db } = require('../lib/admin');
 const { requireAuth } = require('../middleware/auth');
-
+const { validate } = require('../lib/validate');
+const { updateOrgProfileSchema } = require('../schemas/orgProfile');
+const db = require('../lib/db');
+const { serverError } = require('../lib/httpError');
+const logger = require('../lib/logger');
 const router = express.Router();
 
-/** Single doc per org — same field names as Postgres org_profiles (snake_case). */
-function profileRef(orgId) {
-  return db.collection('orgs').doc(orgId).collection('internal').doc('orgProfile');
+async function ensureTable() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS org_profiles (
+      id                SERIAL PRIMARY KEY,
+      org_id            TEXT UNIQUE NOT NULL,
+      industry          TEXT,
+      company_size      TEXT,
+      use_case          TEXT,
+      target_audience   TEXT,
+      website           TEXT,
+      brand_description TEXT,
+      brand_name        TEXT,
+      logo_url          TEXT,
+      brand_colors      JSONB DEFAULT '{}',
+      brand_fonts       JSONB DEFAULT '{}',
+      created_at        TIMESTAMPTZ DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  // Additive columns — idempotent
+  const addCols = [
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS logo_url TEXT`,
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS sub_vertical TEXT`,
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS region TEXT DEFAULT 'global'`,
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS product_name TEXT`,
+    `ALTER TABLE org_profiles ADD COLUMN IF NOT EXISTS primary_use_case TEXT`,
+    // Per-survey context stored in surveys.metadata JSONB
+    `ALTER TABLE surveys ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'`,
+  ];
+  for (const sql of addCols) {
+    await db.query(sql).catch(() => {});
+  }
 }
+ensureTable().catch(err => logger.error({ err: err.message }, 'orgProfile:ensureTable failed'));
 
 router.get('/', requireAuth, async (req, res) => {
   try {
-    const snap = await profileRef(req.orgId).get();
-    if (!snap.exists) return res.json({ profile: null });
-    const data = snap.data();
-    res.json({
-      profile: {
-        id:               data.id ?? null,
-        org_id:           req.orgId,
-        industry:         data.industry ?? null,
-        company_size:     data.company_size ?? null,
-        use_case:         data.use_case ?? null,
-        target_audience:  data.target_audience ?? null,
-        website:          data.website ?? null,
-        brand_description: data.brand_description ?? null,
-        brand_name:       data.brand_name ?? null,
-        brand_colors:     data.brand_colors || {},
-        brand_fonts:      data.brand_fonts || {},
-        created_at:       data.created_at?.toDate?.()?.toISOString?.() ?? null,
-        updated_at:       data.updated_at?.toDate?.()?.toISOString?.() ?? null,
-      },
-    });
+    const { rows } = await db.query('SELECT * FROM org_profiles WHERE org_id = $1', [req.orgId]);
+    res.json({ profile: rows[0] || null });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
-router.put('/', requireAuth, async (req, res) => {
+router.put('/', requireAuth, validate(updateOrgProfileSchema), async (req, res) => {
   try {
     const {
-      industry, company_size, use_case, target_audience,
-      website, brand_description, brand_name, brand_colors, brand_fonts,
+      industry, sub_vertical, company_size, use_case, primary_use_case,
+      target_audience, website, brand_description, brand_name, product_name,
+      region, brand_colors, brand_fonts,
     } = req.body;
-    const ref = profileRef(req.orgId);
-    const snap = await ref.get();
-    const now = new Date();
-    const base = snap.exists ? snap.data() : {};
-    const next = {
-      ...base,
-      org_id:           req.orgId,
-      industry:         industry !== undefined ? industry : base.industry ?? null,
-      company_size:     company_size !== undefined ? company_size : base.company_size ?? null,
-      use_case:         use_case !== undefined ? use_case : base.use_case ?? null,
-      target_audience:  target_audience !== undefined ? target_audience : base.target_audience ?? null,
-      website:          website !== undefined ? website : base.website ?? null,
-      brand_description: brand_description !== undefined ? brand_description : base.brand_description ?? null,
-      brand_name:       brand_name !== undefined ? brand_name : base.brand_name ?? null,
-      brand_colors:     brand_colors !== undefined ? brand_colors : base.brand_colors || {},
-      brand_fonts:      brand_fonts !== undefined ? brand_fonts : base.brand_fonts || {},
-      updated_at:       now,
-    };
-    if (!snap.exists) next.created_at = now;
-    await ref.set(next, { merge: true });
-    const out = (await ref.get()).data();
-    res.json({
-      profile: {
-        id:               out.id ?? null,
-        org_id:           req.orgId,
-        industry:         out.industry ?? null,
-        company_size:     out.company_size ?? null,
-        use_case:         out.use_case ?? null,
-        target_audience:  out.target_audience ?? null,
-        website:          out.website ?? null,
-        brand_description: out.brand_description ?? null,
-        brand_name:       out.brand_name ?? null,
-        brand_colors:     out.brand_colors || {},
-        brand_fonts:      out.brand_fonts || {},
-        created_at:       out.created_at?.toDate?.()?.toISOString?.() ?? null,
-        updated_at:       out.updated_at?.toDate?.()?.toISOString?.() ?? null,
-      },
-    });
+    const { rows } = await db.query(
+      `INSERT INTO org_profiles
+         (org_id, industry, sub_vertical, company_size, use_case, primary_use_case,
+          target_audience, website, brand_description, brand_name, product_name,
+          region, brand_colors, brand_fonts)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       ON CONFLICT (org_id) DO UPDATE SET
+         industry          = EXCLUDED.industry,
+         sub_vertical      = EXCLUDED.sub_vertical,
+         company_size      = EXCLUDED.company_size,
+         use_case          = EXCLUDED.use_case,
+         primary_use_case  = EXCLUDED.primary_use_case,
+         target_audience   = EXCLUDED.target_audience,
+         website           = EXCLUDED.website,
+         brand_description = EXCLUDED.brand_description,
+         brand_name        = EXCLUDED.brand_name,
+         product_name      = EXCLUDED.product_name,
+         region            = EXCLUDED.region,
+         brand_colors      = EXCLUDED.brand_colors,
+         brand_fonts       = EXCLUDED.brand_fonts,
+         updated_at        = NOW()
+       RETURNING *`,
+      [
+        req.orgId,
+        industry || null,
+        sub_vertical || null,
+        company_size || null,
+        use_case || null,
+        primary_use_case || null,
+        target_audience || null,
+        website || null,
+        brand_description || null,
+        brand_name || null,
+        product_name || null,
+        region || 'global',
+        JSON.stringify(brand_colors || {}),
+        JSON.stringify(brand_fonts || {}),
+      ]
+    );
+    res.json({ profile: rows[0] });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 

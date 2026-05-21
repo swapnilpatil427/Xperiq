@@ -119,8 +119,11 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
               >
                 ◆
               </span>
-              <span className="truncate font-semibold">Crystal</span>
-              <span className="ml-auto text-[9px] font-bold text-on-surface-variant/70 font-mono">⌘K</span>
+              <div className="flex flex-col items-start min-w-0">
+                <span className="truncate font-semibold">Crystal</span>
+                <span className="text-[10px] text-on-surface-variant/60 font-normal truncate">Ask questions, get cited answers</span>
+              </div>
+              <span className="ml-auto text-[9px] font-bold text-on-surface-variant/70 font-mono flex-shrink-0">⌘K</span>
               {crystalOpen && <span className="w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
             </button>
           ) : (

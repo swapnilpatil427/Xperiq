@@ -1,10 +1,11 @@
 const express = require('express');
 const multer  = require('multer');
 const path    = require('path');
-const { requireAuth } = require('../../middleware/auth');
-const { validate }    = require('../../lib/validate');
-const { createOrgSchema, updateOrgSchema } = require('../../schemas/orgs');
-const db = require('../../lib/db');
+const { requireAuth } = require('../middleware/auth');
+const { validate }    = require('../lib/validate');
+const { createOrgSchema, updateOrgSchema } = require('../schemas/orgs');
+const db = require('../lib/db');
+const { serverError } = require('../lib/httpError');
 const router = express.Router();
 
 const BACKEND = process.env.BACKEND || 'firebase';
@@ -36,7 +37,7 @@ router.post('/', requireAuth, validate(createOrgSchema), async (req, res) => {
     const row = rows[0];
     res.json({ org: { orgId: row.org_id, name: row.brand_name, logoUrl: row.logo_url } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -67,7 +68,7 @@ router.get('/me', requireAuth, async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -99,7 +100,7 @@ router.put('/me', requireAuth, validate(updateOrgSchema), async (req, res) => {
 
     res.json({ org: { orgId: row.org_id, name: row.brand_name, logoUrl: row.logo_url } });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
   }
 });
 
@@ -111,7 +112,7 @@ router.post('/me/logo', requireAuth, upload.single('logo'), async (req, res) => 
     let logoUrl;
 
     if (BACKEND === 'firebase') {
-      const { storage } = require('../../lib/admin');
+      const { storage } = require('../lib/admin');
       const ext = path.extname(req.file.originalname) || '.png';
       const filePath = `orgs/${req.orgId}/logo${ext}`;
       const bucket = storage.bucket();
@@ -129,7 +130,61 @@ router.post('/me/logo', requireAuth, upload.single('logo'), async (req, res) => 
 
     res.json({ logoUrl });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    serverError(res, err);
+  }
+});
+
+// ── Org analytics rollup ──────────────────────────────────────────────────────
+
+router.get('/me/analytics', requireAuth, async (req, res) => {
+  try {
+    // Survey + response totals
+    const { rows: [totals] } = await db.query(
+      `SELECT
+         COUNT(DISTINCT s.id)::int                                          AS total_surveys,
+         COUNT(DISTINCT CASE WHEN s.status = 'active' THEN s.id END)::int  AS active_surveys,
+         COUNT(r.id)::int                                                   AS total_responses,
+         ROUND(AVG(s.nps_score)::numeric, 1)                               AS avg_nps
+       FROM surveys s
+       LEFT JOIN responses r ON r.survey_id = s.id AND r.org_id = $1
+       WHERE s.org_id = $1 AND s.deleted_at IS NULL`,
+      [req.orgId],
+    );
+
+    // Org-wide responses per day — last 30 days
+    const { rows: dailySeries } = await db.query(
+      `SELECT
+         TO_CHAR(DATE_TRUNC('day', submitted_at), 'YYYY-MM-DD') AS day,
+         COUNT(*)::int AS count
+       FROM responses
+       WHERE org_id = $1 AND submitted_at >= NOW() - INTERVAL '30 days'
+       GROUP BY DATE_TRUNC('day', submitted_at)
+       ORDER BY DATE_TRUNC('day', submitted_at)`,
+      [req.orgId],
+    );
+
+    // Response volume per survey (top 5)
+    const { rows: bySurvey } = await db.query(
+      `SELECT s.id, s.title, COUNT(r.id)::int AS response_count
+       FROM surveys s
+       LEFT JOIN responses r ON r.survey_id = s.id AND r.org_id = $1
+       WHERE s.org_id = $1 AND s.deleted_at IS NULL
+       GROUP BY s.id, s.title
+       ORDER BY response_count DESC
+       LIMIT 5`,
+      [req.orgId],
+    );
+
+    res.json({
+      total_surveys:    totals.total_surveys    || 0,
+      active_surveys:   totals.active_surveys   || 0,
+      total_responses:  totals.total_responses  || 0,
+      avg_nps:          totals.avg_nps != null ? parseFloat(totals.avg_nps) : null,
+      responses_by_day: dailySeries,
+      top_surveys:      bySurvey,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch org analytics' });
   }
 });
 

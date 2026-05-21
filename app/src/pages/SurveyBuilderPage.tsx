@@ -1765,7 +1765,7 @@ export function SurveyBuilderPage() {
     if ((pending?.questions as Question[])?.length) return (pending.questions as Question[]).map(mapAiToBuilderQuestion);
     return [createQuestion('nps') as Question, createQuestion('open_text') as Question];
   });
-  const [surveyTitle,  setSurveyTitle]  = useState((pending?.title as string)?.slice(0, 80) || 'New Survey');
+  const [surveyTitle,  setSurveyTitle]  = useState((pending?.title as string)?.slice(0, 80) || '');
   const [surveyTypeId, setSurveyTypeId] = useState<string | null>((pending?.surveyTypeId as string) || null);
   const [surveyId,     setSurveyId]     = useState<string | null>(
     surveyIdParam && surveyIdParam !== 'new' ? surveyIdParam : ((pending?.id as string) || null)
@@ -1798,7 +1798,7 @@ export function SurveyBuilderPage() {
         const data = rawData as Record<string, unknown>;
         const s = (data?.survey as Record<string, unknown>) || data;
         if (s) {
-          setSurveyTitle((s.title as string) || 'New Survey');
+          setSurveyTitle((s.title as string) || '');
           setSurveyTypeId((s.survey_type_id as string) || null);
           setSurveySettings({
             description:     (s.description as string) || '',
@@ -1968,6 +1968,7 @@ export function SurveyBuilderPage() {
     intent:            surveySettings.intent || null,
     thank_you_message: surveySettings.thankYouMessage || null,
     template_id:       surveySettings.templateId || null,
+    metadata:          (pending?.metadata as Record<string, unknown>) || undefined,
   });
 
   const doSave = async () => {
@@ -2024,7 +2025,7 @@ export function SurveyBuilderPage() {
     };
   }, [questions, surveyTitle, surveySettings]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleLaunch = async () => {
+  const handleLaunch = async (launchSettings: import('../components/SurveyActionModal').LaunchSettings) => {
     setLaunching(true);
     setSaveError(null);
     try {
@@ -2032,7 +2033,13 @@ export function SurveyBuilderPage() {
       isDirtyRef.current = false;
       const id = survey?.id || surveyId;
       if (id) {
-        const result = await publishSurvey(id) as { publishToken?: string } | null;
+        const result = await publishSurvey(id, {
+          maxResponses: launchSettings.maxResponses ? parseInt(launchSettings.maxResponses, 10) : null,
+          autoCloseAt:  launchSettings.autoCloseAt ? new Date(launchSettings.autoCloseAt).toISOString() : null,
+          allowMultipleResponses: launchSettings.allowMultiple,
+          passwordProtected: launchSettings.passwordProtected,
+          password: launchSettings.password || undefined,
+        }) as { publishToken?: string } | null;
         const token = result?.publishToken;
         if (token) {
           setShowPublishModal(false);
@@ -2121,13 +2128,14 @@ export function SurveyBuilderPage() {
           <PageHeader
             crumbs={[
               { label: t('nav.surveys'), path: ROUTES.SURVEYS },
-              { label: surveyTitle },
+              { label: surveyTitle || t('builder.untitled') },
             ]}
             title={
               <input
                 value={surveyTitle}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => { isDirtyRef.current = true; setSurveyTitle(e.target.value); }}
-                className="text-2xl md:text-[1.75rem] font-extrabold tracking-tight font-headline text-on-surface leading-tight bg-transparent border-none outline-none w-full block px-0 focus:ring-0"
+                placeholder={t('builder.untitled')}
+                className="text-2xl md:text-[1.75rem] font-extrabold tracking-tight font-headline text-on-surface leading-tight bg-transparent border-none outline-none w-full block px-0 focus:ring-0 placeholder:text-muted-foreground/40"
                 style={{ boxShadow: 'none' }}
               />
             }

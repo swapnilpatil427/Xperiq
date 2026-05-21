@@ -1,14 +1,13 @@
 # Experient — Backend (Cloud Functions / Express API)
 
 ## What this is
-Node.js Express API deployed as Cloud Functions (GCP) or run locally.
+Node.js Express API run locally and deployed to production.
 Handles all write operations, AI calls, and business logic.
-Frontend reads go direct to Firestore; writes come here.
+All data is Postgres-backed (no Firestore).
 
 ## Stack
 - Node.js + Express
-- Postgres via `pg` (db.js) — primary datastore for local/prod surveys, responses
-- Firebase Firestore — real-time subscriptions for the frontend
+- Postgres via `pg` (db.js) — primary datastore
 - Redis via ioredis — sliding-window rate limiter (falls back to in-memory if no REDIS_URL)
 - OpenRouter — AI model gateway (GPT-4o, Claude, etc.)
 
@@ -16,19 +15,24 @@ Frontend reads go direct to Firestore; writes come here.
 ```
 src/
   index.js          # Express app entry; mounts all routers
-  routes/
-    local/          # Postgres-backed CRUD routes (surveys, responses, templates, etc.)
-    ai.js           # AI endpoints (generate-survey, refine-survey, analyze-insights)
-    insights.js     # Insights aggregation
-    public.js       # Public survey fill endpoint (no auth)
+  routes/           # All Postgres-backed routes (no subdirectory)
+    surveys.js      # Survey CRUD + publish/pause/close
     responses.js    # Response submission and retrieval
-    surveys.js      # Survey management
+    insights.js     # Insight pipeline trigger, list, feedback, topics
+    ai.js           # AI endpoints (generate-survey, refine-survey)
+    copilot.js      # Crystal AI Q&A chat
     templates.js    # Template library
     workflows.js    # Workflow automation
-    admin.js        # Admin utilities
+    orgProfile.js   # Org profile CRUD
+    orgs.js         # Org management
+    members.js      # Team member management
+    runs.js         # Agent run status/events
+    public.js       # Public survey fill endpoint (no auth)
   lib/
     db.js           # Postgres pool singleton
+    agentsClient.js # HTTP client for the Python agents service
     openrouter.js   # AI API client (OpenRouter)
+    httpError.js    # clientError() / serverError() helpers
     metrics.js      # Prometheus counters
     logger.js       # Structured logging
   middleware/

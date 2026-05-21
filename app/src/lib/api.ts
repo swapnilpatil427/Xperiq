@@ -2,7 +2,8 @@ import axios from 'axios';
 import type {
   ListSurveysParams, ListSurveysResult, Survey, SurveyResponse,
   Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
-  CopilotChange, AgenticInsight, InsightRunStatus, SurveyTopic,
+  CopilotChange, AgenticInsight, InsightRunStatus, SurveyTopic, TopicDriver,
+  TopicTheme, TopicDetail, TopicVerbatim,
 } from '../types';
 
 // ── Copilot types ──────────────────────────────────────────────────────────────
@@ -19,7 +20,7 @@ export interface OrgContext {
 export interface RunStatus {
   run_id:           string;
   thread_id:        string;
-  status:           'running' | 'completed' | 'failed' | 'waiting_approval';
+  status:           'running' | 'completed' | 'failed' | 'cancelled' | 'waiting_approval';
   stream_events:    StreamEvent[];
   qc_score?:        number;
   compliance_risk?: string;
@@ -27,6 +28,7 @@ export interface RunStatus {
   recommendations:  Recommendation[];
   credit_summary:   Record<string, unknown>;
   error?:           string;
+  error_log?:       string[];
   validation_warnings: string[];
 }
 
@@ -73,7 +75,59 @@ export interface Notification {
   created_at: string;
 }
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/experient-prod/us-central1/api';
+// ── Time-series types ──────────────────────────────────────────────────────────
+
+export interface MetricSnapshot {
+  captured_at:          string;
+  response_count:       number | null;
+  nps:                  number | null;
+  nps_ci_low:           number | null;
+  nps_ci_high:          number | null;
+  nps_n:                number | null;
+  promoter_pct:         number | null;
+  detractor_pct:        number | null;
+  passive_pct:          number | null;
+  csat:                 number | null;
+  completion_rate:      number | null;
+  effort_score:         number | null;
+  response_velocity_7d: number | null;
+  anomaly_flag:         boolean;
+}
+
+export interface OrgMetricSnapshot {
+  captured_at:          string;
+  active_survey_count:  number | null;
+  total_responses:      number | null;
+  avg_nps:              number | null;
+  avg_csat:             number | null;
+  avg_completion_rate:  number | null;
+  top_urgent_topic:     string | null;
+  top_driver_topic:     string | null;
+}
+
+export interface TopicWindow {
+  window_start:         string;
+  window_end:           string;
+  response_count:       number;
+  avg_sentiment_score:  number | null;
+  avg_nps:              number | null;
+  health_label:         string | null;
+  net_sentiment:        number | null;
+  nps_impact:           number | null;
+  urgency_score:        number | null;
+  velocity_pct:         number | null;
+  promoter_pct:         number | null;
+  detractor_pct:        number | null;
+  emotion_distribution: Record<string, number> | null;
+}
+
+export interface TopicTrend {
+  topic_id:   string;
+  topic_name: string;
+  windows:    TopicWindow[];
+}
+
+const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 export type GetToken = () => Promise<string | null>;
 
@@ -138,8 +192,46 @@ export function createApiClient(getToken: GetToken) {
       const res = await http.delete<{ success: boolean }>(`/api/surveys/${id}`);
       return res.data;
     },
-    publishSurvey: async (id: string) => {
-      const res = await http.post<{ publishToken: string; publishedAt: string }>(`/api/surveys/${id}/publish`, {});
+    publishSurvey: async (id: string, settings?: {
+      maxResponses?: number | null;
+      autoCloseAt?: string | null;
+      allowMultipleResponses?: boolean;
+      passwordProtected?: boolean;
+      password?: string;
+    }) => {
+      const res = await http.post<{
+        publishToken: string;
+        publishedAt: string;
+        maxResponses?: number | null;
+        autoCloseAt?: string | null;
+        allowMultipleResponses?: boolean;
+        passwordProtected?: boolean;
+      }>(`/api/surveys/${id}/publish`, settings ?? {});
+      return res.data;
+    },
+
+    updateLaunchSettings: async (id: string, settings: {
+      maxResponses?: number | null;
+      autoCloseAt?: string | null;
+      allowMultipleResponses?: boolean;
+      passwordProtected?: boolean;
+      password?: string;
+    }) => {
+      const res = await http.patch<{
+        maxResponses?: number | null;
+        autoCloseAt?: string | null;
+        allowMultipleResponses?: boolean;
+        passwordProtected?: boolean;
+      }>(`/api/surveys/${id}/launch-settings`, settings);
+      return res.data;
+    },
+
+    verifyPassword: async (token: string, password: string) => {
+      const publicHttp = axios.create({ baseURL: BASE });
+      const res = await publicHttp.post<{ valid: boolean }>(
+        `/api/public/surveys/${token}/verify-password`,
+        { password },
+      );
       return res.data;
     },
 
@@ -160,8 +252,16 @@ export function createApiClient(getToken: GetToken) {
       const res = await publicHttp.post<{ success: boolean; id: string }>(`/api/surveys/${surveyId}/responses`, data);
       return res.data;
     },
-    getResponses: async (surveyId: string) => {
-      const res = await http.get<{ responses: SurveyResponse[]; total: number }>(`/api/surveys/${surveyId}/responses`);
+    getResponses: async (surveyId: string, params: {
+      limit?: number; offset?: number; search?: string;
+      sentiment?: string; emotion?: string;
+      nps_min?: number; nps_max?: number;
+      date_from?: string; date_to?: string;
+    } = {}) => {
+      const res = await http.get<{
+        responses: SurveyResponse[];
+        total: number; limit: number; offset: number; hasMore: boolean;
+      }>(`/api/surveys/${surveyId}/responses`, { params });
       return res.data;
     },
     getInsights: async (surveyId: string) => {
@@ -202,6 +302,16 @@ export function createApiClient(getToken: GetToken) {
     /** Poll a run for status, questions, QC score, recommendations. */
     getRunStatus: async (runId: string): Promise<RunStatus> => {
       const res = await http.get<RunStatus>(`/api/copilot/runs/${runId}/status`);
+      return res.data;
+    },
+
+    /** Cancel a running orchestration. Interrupts the in-process task and marks DB as cancelled.
+     *  Idempotent — safe to call on already-terminal runs. */
+    cancelRun: async (runId: string): Promise<{ run_id: string; status: string; task_cancelled: boolean }> => {
+      const res = await http.post<{ run_id: string; status: string; task_cancelled: boolean }>(
+        `/api/copilot/runs/${runId}/cancel`,
+        {},
+      );
       return res.data;
     },
 
@@ -428,12 +538,75 @@ export function createApiClient(getToken: GetToken) {
       return res.data;
     },
 
-    listTopics: async (surveyId: string): Promise<{ topics: SurveyTopic[] }> => {
-      const res = await http.get<{ topics: SurveyTopic[] }>(`/api/insights/${surveyId}/topics`);
-      return res.data;
+    listTopics: async (
+      surveyId: string,
+      window = 'all_time',
+      sort: 'volume' | 'urgency' = 'volume',
+    ): Promise<{ topics: SurveyTopic[]; run_status: string | null; window: string }> => {
+      const res = await http.get<{ topics: SurveyTopic[]; run_status: string | null; window: string }>(
+        `/api/insights/${surveyId}/topics?window=${window}&sort=${sort}`,
+      );
+      // Postgres NUMERIC columns arrive as strings from the pg driver.
+      // Coerce to numbers here so .toFixed() calls in components never crash.
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const topics = (res.data.topics ?? []).map(t => ({
+        ...t,
+        sentiment_score:    coerce(t.sentiment_score),
+        effort_score:       coerce(t.effort_score),
+        urgency_score:      coerce(t.urgency_score),
+        nps_avg:            coerce(t.nps_avg),
+        positive_pct:       coerce(t.positive_pct),
+        negative_pct:       coerce(t.negative_pct),
+        neutral_pct:        coerce(t.neutral_pct),
+        volume_delta_pct:   coerce(t.volume_delta_pct),
+        nps_correlation:    coerce(t.nps_correlation),
+        net_sentiment:      coerce(t.net_sentiment),
+        nps_impact:         coerce(t.nps_impact),
+        promoter_pct:       coerce(t.promoter_pct),
+        detractor_pct:      coerce(t.detractor_pct),
+        passive_pct:        coerce(t.passive_pct),
+        avg_csat:           coerce(t.avg_csat),
+        csat_impact:        coerce(t.csat_impact),
+        avg_effort_score:   coerce(t.avg_effort_score),
+        driver_score:       coerce(t.driver_score),
+        velocity_pct:       coerce(t.velocity_pct),
+      }));
+      return { ...res.data, topics };
     },
 
-    crystalChat: async (surveyId: string, message: string): Promise<{
+    getTopicDrivers: async (surveyId: string, window = 'all_time'): Promise<{
+      drivers: TopicDriver[];
+      overall_nps: number | null;
+      total_topics: number;
+      window: string;
+    }> => {
+      const res = await http.get(`/api/insights/${surveyId}/drivers?window=${window}`);
+      return res.data as { drivers: TopicDriver[]; overall_nps: number | null; total_topics: number; window: string };
+    },
+
+    getTopicQuotes: async (surveyId: string, topicId: string): Promise<{
+      topic_id: string;
+      topic_name: string;
+      quotes: Array<{
+        response_id: string;
+        texts: string[];
+        nps_score: number | null;
+        submitted_at: string;
+      }>;
+    }> => {
+      const res = await http.get(`/api/insights/${surveyId}/topics/${topicId}/quotes`);
+      return res.data as {
+        topic_id: string;
+        topic_name: string;
+        quotes: Array<{ response_id: string; texts: string[]; nps_score: number | null; submitted_at: string }>;
+      };
+    },
+
+    crystalChat: async (
+      surveyId: string,
+      message: string,
+      ctx?: { window?: string; focused_topic?: string },
+    ): Promise<{
       answer: string;
       suggestions: string[];
       insight_refs: string[];
@@ -444,7 +617,7 @@ export function createApiClient(getToken: GetToken) {
         suggestions: string[];
         insight_refs: string[];
         thread_key: string;
-      }>(`/api/insights/${surveyId}/crystal`, { message });
+      }>(`/api/insights/${surveyId}/crystal`, { message, ...ctx });
       return res.data;
     },
 
@@ -461,6 +634,115 @@ export function createApiClient(getToken: GetToken) {
 
     clearCrystalHistory: async (surveyId: string): Promise<void> => {
       await http.delete(`/api/insights/${surveyId}/crystal/history`);
+    },
+
+    // ── Topics deep-dive ──────────────────────────────────────────────────────
+
+    getTopicHierarchy: async (
+      surveyId: string,
+      window = 'all_time',
+    ): Promise<{ themes: TopicTheme[]; total_topics: number; window: string }> => {
+      const res = await http.get<{ themes: TopicTheme[]; total_topics: number; window: string }>(
+        `/api/insights/${surveyId}/topics/hierarchy?window=${window}`,
+      );
+      return res.data;
+    },
+
+    getTopicDetail: async (
+      surveyId: string,
+      topicId: string,
+      window = 'all_time',
+    ): Promise<{ topic: SurveyTopic; detail: TopicDetail; window: string }> => {
+      const res = await http.get<{ topic: SurveyTopic; detail: TopicDetail; window: string }>(
+        `/api/insights/${surveyId}/topics/${topicId}/detail?window=${window}`,
+      );
+      return res.data;
+    },
+
+    getTopicVerbatims: async (
+      surveyId: string,
+      topicId: string,
+      opts: { limit?: number; offset?: number; sentiment?: string; nps_bucket?: string; window?: string } = {},
+    ): Promise<{ verbatims: TopicVerbatim[]; total: number; has_more: boolean; limit: number; offset: number }> => {
+      const params = new URLSearchParams();
+      if (opts.limit)      params.set('limit',      String(opts.limit));
+      if (opts.offset)     params.set('offset',     String(opts.offset));
+      if (opts.sentiment)  params.set('sentiment',  opts.sentiment);
+      if (opts.nps_bucket) params.set('nps_bucket', opts.nps_bucket);
+      if (opts.window && opts.window !== 'all_time') params.set('window', opts.window);
+      const qs = params.toString();
+      const res = await http.get<{ verbatims: TopicVerbatim[]; total: number; has_more: boolean; limit: number; offset: number }>(
+        `/api/insights/${surveyId}/topics/${topicId}/verbatims${qs ? '?' + qs : ''}`,
+      );
+      return res.data;
+    },
+
+    renameTopic: async (surveyId: string, topicId: string, name: string): Promise<{ success: boolean; name: string }> => {
+      const res = await http.patch<{ success: boolean; name: string }>(
+        `/api/insights/${surveyId}/topics/${topicId}`,
+        { name },
+      );
+      return res.data;
+    },
+
+    // ── Analytics ──────────────────────────────────────────────────────────────
+
+    getSurveyAnalytics: async (surveyId: string): Promise<{
+      total_responses:  number;
+      avg_nps:          number | null;
+      completion_rate:  number;
+      nps_distribution: { promoters: number; passives: number; detractors: number };
+      responses_by_day: Array<{ day: string; count: number }>;
+    }> => {
+      const res = await http.get(`/api/surveys/${surveyId}/analytics`);
+      return res.data;
+    },
+
+    getOrgAnalytics: async (): Promise<{
+      total_surveys:    number;
+      active_surveys:   number;
+      total_responses:  number;
+      avg_nps:          number | null;
+      responses_by_day: Array<{ day: string; count: number }>;
+      top_surveys:      Array<{ id: string; title: string; response_count: number }>;
+    }> => {
+      const res = await http.get('/api/orgs/me/analytics');
+      return res.data;
+    },
+
+    // ── Time-series metric history ────────────────────────────────────────────
+
+    getSurveyMetricHistory: async (
+      surveyId: string,
+      days = 90,
+    ): Promise<{ history: MetricSnapshot[]; days: number; survey_id: string }> => {
+      const res = await http.get<{ history: MetricSnapshot[]; days: number; survey_id: string }>(
+        `/api/insights/${surveyId}/metric-history?days=${days}`,
+      );
+      return res.data;
+    },
+
+    getTopicTrends: async (
+      surveyId: string,
+      opts: { topicId?: string; weeks?: number } = {},
+    ): Promise<{ topics: TopicTrend[]; weeks: number; survey_id: string }> => {
+      const params = new URLSearchParams();
+      if (opts.weeks)   params.set('weeks',   String(opts.weeks));
+      if (opts.topicId) params.set('topicId', opts.topicId);
+      const qs = params.toString();
+      const res = await http.get<{ topics: TopicTrend[]; weeks: number; survey_id: string }>(
+        `/api/insights/${surveyId}/topic-trends${qs ? '?' + qs : ''}`,
+      );
+      return res.data;
+    },
+
+    getOrgMetricHistory: async (
+      days = 90,
+    ): Promise<{ history: OrgMetricSnapshot[]; days: number; org_id: string }> => {
+      const res = await http.get<{ history: OrgMetricSnapshot[]; days: number; org_id: string }>(
+        `/api/insights/org/metric-history?days=${days}`,
+      );
+      return res.data;
     },
   };
 }

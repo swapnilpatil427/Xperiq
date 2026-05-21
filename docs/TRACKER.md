@@ -12,7 +12,7 @@
 |---|---|---|---|---|
 | Phase 0 — Foundation | 12 | 11 | 0 | 92% |
 | Phase 1 — Core Completion | 35 | 27 | 0 | 77% |
-| Phase 2 — AI Engine | 32 | 0 | 0 | 0% |
+| Phase 2 — AI Engine | 40 | 0 | 0 | 0% |
 | Phase 3 — Billing | 18 | 0 | 0 | 0% |
 | Phase 4 — Enterprise | 38 | 0 | 0 | 0% |
 | Phase 5 — Integrations | 16 | 0 | 0 | 0% |
@@ -20,7 +20,8 @@
 | Phase 7 — Go-to-Market | 20 | 0 | 0 | 0% |
 | Phase 2A — Agentic Skills Foundation | 16 | 0 | 0 | 0% |
 | Phase 5A — MCP & Skill Publishing | 12 | 0 | 0 | 0% |
-| **Total** | **220** | **35** | **0** | **16%** |
+| Phase OCI — Production Migration | 18 | 0 | 0 | 0% |
+| **Total** | **246** | **35** | **0** | **14%** |
 
 ---
 
@@ -51,6 +52,55 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 | P0-10 | Backend: add rate limiting middleware (`express-rate-limit`) | ✅ | Custom sliding-window limiter (Redis/in-memory). `apiLimiter` (200/15min) on all authenticated routes; `aiLimiter` (20/15min) stacked on `/api/ai` |
 | P0-11 | Backend: add structured JSON request logging → Cloud Logging | ✅ | GCP severity mapping (pino level → severity string) in production. requestId middleware generates UUID per request, included in all request logs. httpLogger updated with requestId. Sentry error handler added before global handler. |
 | P0-12 | **SECURITY:** Remove `openrouter.js` from `app/src/lib/` — API key must be server-side only | ✅ | `openrouter.js` only in `functions/src/lib/`, reads `process.env.OPENROUTER_API_KEY` — no frontend reference |
+
+---
+
+## Phase OCI — Production Migration
+**Goal: Ship Experient to production on Oracle Cloud Infrastructure Always Free tier. Zero infrastructure cost until ~200 orgs.**
+
+> IaC files live in `infra/terraform/`. Run `terraform apply` to provision. See `docs/OCI_DEPLOY.md` for full guide.
+
+### Sprint OCI-1 — Account Setup & Infrastructure Provisioning
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| OCI-1 | Create OCI account + verify Always Free eligibility | ⬜ | cloud.oracle.com — credit card required for identity only, not charged |
+| OCI-2 | Purchase domain (Cloudflare Registrar recommended) + add to Cloudflare | ⬜ | ~$9-15/yr. Set Cloudflare as authoritative DNS |
+| OCI-3 | Generate OCI API key pair + upload public key to OCI Console | ⬜ | OCI Console → Profile → User Settings → API Keys |
+| OCI-4 | Install Terraform locally (`brew install terraform`) + run `oci setup config` | ⬜ | Creates ~/.oci/config + API key files |
+| OCI-5 | Fill in `infra/terraform/terraform.tfvars` from `.example` file | ⬜ | All secrets, domain, repo URL, SSH public key |
+| OCI-6 | `terraform init && terraform plan && terraform apply` | ⬜ | Creates VCN, security list, A1 VM, Object Storage backup bucket |
+| OCI-7 | Watch cloud-init complete: `ssh appuser@VM_IP 'sudo tail -f /var/log/cloud-init-output.log'` | ⬜ | ~8-12 min. Installs Postgres 15+pgvector, Redis 7, Node 22, Python 3.12, nginx, PM2 |
+| OCI-8 | Verify all services running: backend health + agents health + PM2 status | ⬜ | `curl http://VM_IP:3001/api/health` (before nginx/SSL) |
+
+### Sprint OCI-2 — Domain, SSL & Frontend
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| OCI-9 | Add Cloudflare A record: `yourdomain.com → VM_IP` (orange cloud proxy ON) | ⬜ | Also add `auth CNAME → frontend.clerk.accounts.dev` (grey, DNS only) |
+| OCI-10 | Run SSL setup after DNS propagates: `ssh appuser@VM_IP '/home/appuser/setup-ssl.sh'` | ⬜ | Let's Encrypt cert via certbot. nginx switches to HTTPS config automatically |
+| OCI-11 | Cloudflare SSL settings: Full (Strict), Always HTTPS ON, HSTS ON, min TLS 1.2 | ⬜ | Security → SSL/TLS → Edge Certificates |
+| OCI-12 | Build frontend with production env vars + deploy to VM: `npm run build:app` + scp dist/ | ⬜ | Create `app/.env.production` with VITE_API_URL=https://yourdomain.com |
+| OCI-13 | Verify full HTTPS stack: `curl -I https://yourdomain.com` → HTTP/2 200 | ⬜ | Also check ssllabs.com/ssltest → should score A+ |
+
+### Sprint OCI-3 — Clerk Production + Security Hardening
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| OCI-14 | Upgrade Clerk to Pro ($25/mo) + set production domain in Clerk Dashboard | ⬜ | Use sk_live_ keys (never sk_test_) in production .env |
+| OCI-15 | Clerk custom auth domain: verify `auth.yourdomain.com` CNAME in Clerk Dashboard | ⬜ | Sign-in page served from your domain, no Clerk branding |
+| OCI-16 | Security audit: verify ports 3001/8001/5432/6379 not externally reachable | ⬜ | `nmap -p 3001,8001,5432,6379 VM_IP` → all filtered |
+| OCI-17 | Set up UptimeRobot: monitor `/api/health` every 5 min + alert email | ⬜ | uptimerobot.com free tier |
+| OCI-18 | Test backup script manually + verify file in OCI Object Storage | ⬜ | `/home/appuser/backup.sh` — check OCI Console → Storage |
+
+### Sprint OCI-4 — CI/CD & Go-Live
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| OCI-19 | Add GitHub secrets: OCI_HOST (VM IP), OCI_SSH_KEY (private key) | ⬜ | GitHub repo → Settings → Secrets → Actions |
+| OCI-20 | Test GitHub Actions deploy workflow: push to main → auto-deploy fires | ⬜ | `.github/workflows/deploy-oci.yml` |
+| OCI-21 | End-to-end smoke test: sign up → create org → create survey → publish → fill → run insights | ⬜ | Full golden path on production URL |
+| OCI-22 | Set up Sentry projects (frontend + backend) + verify events received | ⬜ | sentry.io free tier. Add DSNs to .env + rebuild frontend |
 
 ---
 
@@ -110,11 +160,11 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| 2C-1 | Backend: verify `runId` ownership — confirm `run.org_id = req.orgId` AND `run.user_id = req.userId` on every copilot route that accepts a `runId` | ⬜ | Currently any authenticated org member can call `/runs/:runId/refine` with any runId |
-| 2C-2 | Backend: add ownership check on `POST /api/ai/analyze-insights` — verify `survey.org_id = req.orgId` before passing response data to the AI model | ⬜ | Survey ID comes from request body and is currently trusted without re-validation |
-| 2C-3 | Agents service (Python): add `check_survey_access(survey_id, user_id, org_id)` guard before fetching survey data for any model context | ⬜ | Must call back to backend API or Postgres; agents service currently has no permission layer |
+| 2C-1 | Backend: verify `runId` ownership — confirm `run.org_id = req.orgId` AND `run.user_id = req.userId` on every copilot route that accepts a `runId` | ✅ | `_requireRunOwnership` guard on all 8 `:runId` routes in `copilot.js` |
+| 2C-2 | Backend: add ownership check on `POST /api/ai/analyze-insights` — verify `survey.org_id = req.orgId` before passing response data to the AI model | ✅ | Already present in `ai.js` line 34 — `surveys WHERE id=$1 AND org_id=$2` |
+| 2C-3 | Agents service (Python): add `check_survey_access(survey_id, user_id, org_id)` guard before fetching survey data for any model context | ✅ | `check_survey_access()` in `agents/lib/db.py`; guard at start of `node_ingest()` in `agents/graphs/insights.py` |
 | 2C-4 | Backend: when granular user permissions land, scope all Copilot survey/response queries to user's accessible surveys (not full org) | ⬜ | Blocked on Sprint 2 permissions implementation — do this in the same sprint |
-| 2C-5 | Tests: verify a viewer-role user cannot extract restricted survey data via Copilot prompt injection | ⬜ | Test: auth as viewer, call refine with a runId belonging to a restricted survey — expect 403 |
+| 2C-5 | Tests: verify a viewer-role user cannot extract restricted survey data via Copilot prompt injection | ✅ | 24 tests in `backend/src/__tests__/copilot.test.js` — 403 on wrong owner/org, 500 on DB error, SKIP_AUTH bypass |
 
 ---
 
@@ -155,26 +205,40 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| 3-1 | Backend: `GET /api/surveys/:id/analytics` — aggregated stats | ⬜ | |
-| 3-2 | Backend: `GET /api/orgs/me/analytics` — org-level rollup | ⬜ | |
-| 3-3 | Frontend: wire `ResponseDashboardPage` to real analytics | ⬜ | Replace hardcoded 84.6%, NPS 74 |
-| 3-4 | Frontend: wire `InsightsDashboardPage` KPI cards to real data | ⬜ | |
-| 3-5 | Frontend: wire `AdvancedInsightsPage` to real insights API | ⬜ | |
-| 3-6 | Frontend: time-series chart in `ResponseDashboardPage` (recharts) | ⬜ | |
-| 3-7 | Frontend: response volume sparklines on `SurveysListPage` | ⬜ | |
-| 3-8 | Frontend: empty states for all pages | ⬜ | |
-| 3-9 | Tests: analytics aggregation unit tests, dashboard E2E | ⬜ | |
+| 3-1 | Backend: `GET /api/surveys/:id/analytics` — aggregated stats | ✅ | Ownership check + NPS distribution + 30-day daily series in `surveys.js` |
+| 3-2 | Backend: `GET /api/orgs/me/analytics` — org-level rollup | ✅ | Totals + 30-day series + top-5 surveys in `orgs.js` |
+| 3-3 | Frontend: wire `ResponseDashboardPage` to real analytics | ✅ | KPI cards, NPS gauge, promoter/passive/detractor bars, empty state |
+| 3-4 | Frontend: wire `InsightsDashboardPage` KPI cards to real data | ✅ | `orgAvgNps` from `getOrgAnalytics()` passed to `UnifiedInsightsView` |
+| 3-5 | Frontend: wire `AdvancedInsightsPage` to real insights API | ✅ | NPS gauge, real topics from `listTopics()`, real sentiment bars, real top phrases |
+| 3-6 | Frontend: time-series chart in `ResponseDashboardPage` (recharts) | ✅ | 30-day AreaChart with gradient fill and formatted X-axis dates |
+| 3-7 | Frontend: response volume sparklines on `SurveysListPage` | ✅ | Backend lateral subquery adds `sparkline` array; `Sparkline` SVG component on each survey card |
+| 3-8 | Frontend: empty states for all pages | ✅ | `ResponseDashboardPage` (zero responses), `AdvancedInsightsPage` (no topics), `SurveysListPage` (already had state) |
+| 3-9 | Tests: analytics aggregation unit tests, dashboard E2E | ✅ | 8 new tests in `backend/src/__tests__/analytics.test.js` (survey + org analytics); 67 backend tests total pass |
 
 ### Sprint 3B — Distribution & Notifications (PM Gap Backlog)
 
 **Goal:** Close the distribution gap between Experient and established platforms (SurveyMonkey et al.). A survey that can only be shared as a bare URL is fundamentally less valuable than one with channels, scheduling, and lifecycle notifications.
 
+**Sprint 3B-Core (completed 2026-05-19):**
+- Enterprise Distribution Center page (7 channels: Direct Link, QR Code, Email Invite, Embed Widget, Social Share, API Access, Kiosk Mode)
+- Real QR code generation with brand logo overlay (`qrcode` npm package + canvas compositing)
+- Survey selector always visible on distribution page
+- Launch Settings panel: maxResponses, autoCloseAt, allowMultipleResponses, passwordProtected
+- Password protection: bcrypt-equivalent password hashing (Node crypto.scrypt), PasswordGate on fill page
+- Publish Modal redesign: tabs for Preview + Launch Settings; settings flow into publishSurvey call
+
 | ID | Task | Status | Notes |
 |---|---|---|---|
+| 3B-C1 | Frontend: Enterprise Distribution Center (ResponseCollectionPage full rewrite) | ✅ | 7 channels, always-visible selector, expandable panels, stats bar |
+| 3B-C2 | Frontend: Real QR code with brand logo imprint (canvas + qrcode npm) | ✅ | Add `qrcode` to app/package.json; run `npm install` in app/ |
+| 3B-C3 | Backend: Password protection on surveys (hashPassword / checkPassword via Node crypto) | ✅ | `password_protected BOOLEAN`, `password_hash TEXT` columns; verify endpoint |
+| 3B-C4 | Frontend: PasswordGate on SurveyFillPage — blocks access until passcode verified | ✅ | sessionStorage bypass after first verify; no re-prompt on same session |
+| 3B-C5 | Frontend: PublishModal tabs (Preview + Launch Settings) — maxResponses, autoCloseAt, allowMultiple, password | ✅ | Settings flow into `publishSurvey()` call |
+| 3B-C6 | Frontend: Launch Settings panel on Distribution Center — save via `updateLaunchSettings` API | ✅ | Shows current values, patch on save |
 | 3B-1 | Backend: `POST /api/surveys/:id/distribute` — record distribution event (channel, sent_at, audience size) | ⬜ | Foundation for tracking reach |
 | 3B-2 | Backend: `POST /api/surveys/:id/channels/email` — send via SendGrid/Resend to a list of emails | ⬜ | Attach org branding, unsubscribe footer |
-| 3B-3 | Backend: QR code generation endpoint for any survey | ⬜ | `qrcode` npm package, return base64 PNG |
-| 3B-4 | Frontend: Distribution panel in builder (share link + QR + email channel) | ⬜ | Replace bare share URL in publish success |
+| 3B-3 | Backend: QR code generation endpoint for any survey | ✅ | Done client-side via `qrcode` npm + canvas |
+| 3B-4 | Frontend: Distribution panel in builder (share link + QR + email channel) | ✅ | Full Distribution Center replaces bare URL |
 | 3B-5 | Backend: `POST /api/surveys/:id/schedule` — schedule auto-open at a future datetime | ⬜ | Cloud Tasks + survey status update |
 | 3B-6 | Backend: Response milestone webhook — notify when N responses hit a threshold | ⬜ | Fires to configured endpoint or Slack |
 | 3B-7 | Frontend: Notification settings in BrandSettingsPage — Slack webhook URL, email for alerts | ⬜ | Per-org notification config |
@@ -224,6 +288,20 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 | 6-4 | Frontend: query history, last 10 with shareable links | ⬜ | |
 | 6-5 | Backend: `POST /api/ai/executive-summary` | ⬜ | |
 | 6-6 | Frontend: Executive Summary modal + PDF export | ⬜ | |
+
+### Sprint 6A — RAG: Retrieval-Augmented Insights (Weeks 14–15)
+**Goal:** Wire the existing `similarity_search()` + `response_embeddings` table into three user-facing features. The embeddings pipeline already runs on every insight job — this sprint closes the loop from vectors → retrieval → LLM-grounded answers.
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| 6A-1 | Agents: `node_retrieve` graph node — embed query, call `similarity_search()`, attach top-k verbatims to state | ⬜ | `similarity_search()` in `tools/embeddings.py` is already implemented, never called |
+| 6A-2 | Backend: `POST /api/surveys/:id/ask` — plain-English question → RAG answer with cited verbatim quotes | ⬜ | Embeds question, retrieves top-k responses, Claude synthesizes grounded answer |
+| 6A-3 | Frontend: "Ask your data" input on `InsightsDashboardPage` — type a question, get a cited answer | ⬜ | e.g. "Why are customers unhappy with onboarding?" → answer + supporting quotes |
+| 6A-4 | Agents: cross-survey memory node — on insight run, retrieve similar insights from org's past surveys | ⬜ | Embeds new insight summary, searches `response_embeddings` across prior surveys; feeds trend context to narrator |
+| 6A-5 | Frontend: "Also seen in N past surveys" badge on insight cards | ⬜ | Surfaces recurring themes automatically |
+| 6A-6 | Backend: `GET /api/benchmarks/:metric` — anonymized aggregate NPS/CSAT by industry + company size | ⬜ | Requires aggregate table across orgs; strict anonymization (min 10 orgs per bucket) |
+| 6A-7 | Agents: benchmark grounding in narrator — pull org's industry bucket, inject percentile into narrative | ⬜ | e.g. "Your 72 NPS is in the 85th percentile for B2B SaaS 50–200 employees" |
+| 6A-8 | Backend: populate `retrieved_context` column on insights table — store which verbatims grounded each insight | ⬜ | `retrieved_context JSONB` column already exists, always `[]` today |
 
 ### Sprint 7 — Smart Collection & Adaptive Surveys (Weeks 15–16)
 
@@ -437,7 +515,7 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 ### Sprint 17 — Multi-Region & Global Scale (Weeks 35–36)
 **Trigger: run when MRR ~$10K or Firestore costs become meaningful. Do not run early.**
 
-#### Stage 2 — Migrate to Cloud Run + Cloud SQL (~$10K MRR)
+#### Stage 2 — Managed Services Migration (~$10K MRR, currently targeting GCP Hybrid or OCI managed)
 | ID | Task | Status | Notes |
 |---|---|---|---|
 | 17-1 | Provision Cloud SQL Postgres (db-g1-small, us-central1) | ⬜ | Run existing supabase/migrations/ to create schema |
@@ -596,3 +674,4 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 | 2026-05-13 | P0-8 complete: ErrorBoundary enhanced with `inline` prop. 12 AppShell pages wrapped with compact inline boundary (nav stays functional on page crash). 4 public pages wrapped with full-screen boundary. Top-level catch-all kept. P0-6 complete: .github/workflows/ci.yml created — lint + tsc + vitest on every push/PR to main. coverage/ gitignored, eslint ignores coverage/. Full CI sim: lint ✓ typecheck ✓ 102 tests ✓. |
 | 2026-05-12 | Survey backend fully rewritten: clean data model (templateId only, no template fields on survey), full audit trail (created_at/updated_at/updated_by/published_at/paused_at/closed_at/deleted_at), soft delete, status lifecycle timestamps, COALESCE publish. Org profile backend (org_profiles table, GET+PUT upsert). Fixed optimistic update bug for updated_at. Survey builder: settings panel shows template info read-only + editable fields (description/intent/thankYouMessage). Fixed SurveyCreationPage: "Edit in Builder" passes correct navigation state (intent/fromTemplate/templateId), "Launch Survey" now directly creates+publishes and shows success modal with share URL. All 13 question types implemented in fill page. Brand settings persisted to backend. 3D page transition animations (Framer Motion AnimatePresence + rotateX). Survey question card slide animations in fill page. LoadingStates components (Spinner, OverlayLoader, SurveyListSkeleton). Skeleton loading in SurveysListPage. Overlay loader for publish in builder. i18n strings added for all new UI text. |
 | 2026-05-15 | AI Insights Pipeline v2 (end-to-end): LangGraph DAG (ingest→embed→metrics→extract_texts→absa→cluster→topics→narrate→verify→publish). Real text embeddings via OpenAI text-embedding-3-small + pgvector RAG (cosine similarity). Enhanced topic discovery with canonical LLM labeling, Levenshtein fuzzy dedup, effort score (1-7 CES scale), per-topic sentiment/emotion/trending. Time-windowed insights (all_time/last_30d/last_7d) stored per window. L3 Predictive insights: OLS trend regression, anomaly detection, NPS trajectory. Dynamic trust scores (statistical/coverage/consistency/grounding). Crystal AI chat (stateful, thread persisted in crystal_threads, conversation history, citation IDs, suggestion chips). Redis Streams pub/sub: insight_events stream, XADD/XREADGROUP/XACK consumer, smart batching (10 responses or 5-min threshold). New backend routes: GET /topics, POST+GET+DELETE /crystal. UI: TrendSparkline SVG, TopicSentimentCard, CrystalDrawer (framer-motion slide-in), pin/dismiss with undo, timeWindow selector. Migration: 20240518000000_insights_v2.sql (survey_topics, crystal_threads, insight_stream_offsets, time_window column, IVFFlat index). Redis added to docker-compose.yml. Incremental migration runner (scripts/migrate.js) with fingerprint-based detection for pre-applied migrations. npm start auto-runs migrations. Fixed: migration 'already exists' error (fingerprinting), Redis blank error log (safe property access + SILENT_CODES set + deduplication). |
+| 2026-05-19 | Topics system hardened + competitive parity pass. Backend: `ensureTopicsTables()` auto-migration creates survey_topics + crystal_threads + all indexes on startup (no manual migration needed). Enhanced GET /topics with ?window= param + nps_avg/positive_pct/negative_pct/last_seen_at/run_status. New GET /drivers endpoint: per-topic NPS delta + impact_score from responses.ai_topics JSONB (falls back to sentiment proxy). New GET /topics/:id/quotes endpoint: verbatim response excerpts per topic (ai_topics tag match + keyword fallback). GIN index on responses.ai_topics auto-created. Backend: 67 tests all passing. Frontend: AdvancedInsightsPage full rewrite — time window selector (all_time/30d/7d), anomaly alert banners, NPS driver analysis grid (6 drivers with nps_delta badges + effort scores + trending), topic landscape with effort bars + trending icons + is_new badges + click-to-select, Verbatim tab shows live response quotes with NPS labels + date. ResponseDashboardPage topics section enhanced: effort score bars, trending icons, sentiment badges, NPS delta, is_new badge, View Full Analysis link, empty state CTA. InsightsDashboardPage: anomaly callout banners for negative-trending topics. tsc: 0 errors. |

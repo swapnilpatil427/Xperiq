@@ -11,6 +11,7 @@ export const ROUTES = {
   SURVEY_INSIGHTS:    '/app/surveys/:surveyId/insights',
   SAMPLE_RESPONSES:   '/app/surveys/:surveyId/sample-responses',
   INSIGHTS:           '/app/insights',
+  INSIGHTS_TOPICS:    '/app/insights/topics',
   ADVANCED_INSIGHTS:  '/app/insights/advanced',
   INSIGHTS_BRIEF:     '/app/insights/brief',
   INSIGHTS_METRICS:   '/app/insights/metrics',

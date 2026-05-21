@@ -13,6 +13,24 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import type { Template } from '../types';
 
+interface GenerationError {
+  heading: string;
+  description: string;
+  retryable: boolean;
+}
+
+// Maps agent error_log text to a locale key pair so callers resolve via t()
+function classifyAgentError(errorLog: string[]): { headingKey: string; descriptionKey: string } {
+  const raw = errorLog.join(' ').toLowerCase();
+  if (raw.includes('timeout') || raw.includes('timed out')) {
+    return { headingKey: 'create.error.timeoutHeading', descriptionKey: 'create.error.timeoutDescription' };
+  }
+  if (raw.includes('rate') || raw.includes('quota') || raw.includes('limit')) {
+    return { headingKey: 'create.error.busyHeading', descriptionKey: 'create.error.busyDescription' };
+  }
+  return { headingKey: 'create.error.failedHeading', descriptionKey: 'create.error.failedDescription' };
+}
+
 // ── Helper: build a starter prompt when a category chip is clicked on empty textarea ──
 function buildStarterPrompt(tmpl: Template): string {
   if (tmpl.description) return tmpl.description;
@@ -77,13 +95,17 @@ export function SurveyCreationPage() {
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(fromTemplate?.id || preselectedId);
   const [surveyName,     setSurveyName]     = useState<string>('');
   const [intent,         setIntent]         = useState<string>('');
-  const [helpOpen,       setHelpOpen]       = useState<boolean>(false);
-  const [copilotRunId,   setCopilotRunId]   = useState<string | null>(null);
-  const [agentsDone,     setAgentsDone]     = useState<string[]>([]);
+  const [surveyAudience, setSurveyAudience] = useState<string>('');
+  const [surveyUseCase,  setSurveyUseCase]  = useState<string>('');
+  const [helpOpen,        setHelpOpen]        = useState<boolean>(false);
+  const [copilotRunId,    setCopilotRunId]    = useState<string | null>(null);
+  const [agentsDone,      setAgentsDone]      = useState<string[]>([]);
+  const [generationError, setGenerationError] = useState<GenerationError | null>(null);
 
-  const nameInputRef    = useRef<HTMLInputElement>(null);
-
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef  = useRef<HTMLTextAreaElement>(null);
+  // Ref (not state) so the async polling loop reads the current value without a stale closure
+  const cancelledRef = useRef<boolean>(false);
   const api         = useApi();
 
   const [templates,        setTemplates]        = useState<Template[]>([]);
@@ -135,7 +157,7 @@ export function SurveyCreationPage() {
 
   function handleManualStart(typeId: string | null) {
     const type = typeId ? templateMap[typeId] : null;
-    const resolvedName = surveyName.trim() || type?.label || 'New Survey';
+    const resolvedName = surveyName.trim() || type?.label || t('create.generating.untitled') as string;
     navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
       state: {
         title:        resolvedName,
@@ -159,8 +181,41 @@ export function SurveyCreationPage() {
     }
   }
 
+  function handleCancel() {
+    cancelledRef.current = true;
+
+    // Tell the backend to cancel the run before stopping the UI — fire-and-forget
+    // so the UI responds instantly. If this fails (service down), the frontend has
+    // already stopped polling and stale-run cleanup will handle it server-side.
+    if (copilotRunId) {
+      api.cancelRun(copilotRunId).catch(() => {
+        // Non-fatal: polling is already stopped via cancelledRef
+      });
+    }
+
+    setCopilotRunId(null);
+    setAgentsDone([]);
+    setStep('intent');
+    // No error banner — user deliberately cancelled
+  }
+
+  function handleBuildManually() {
+    const resolvedName = surveyName.trim() || intent.slice(0, 80) || t('create.generating.untitled') as string;
+    navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
+      state: {
+        title:        resolvedName,
+        questions:    selectedType?.questions || [],
+        surveyTypeId: selectedTypeId,
+        fromTemplate: selectedType || null,
+        templateId:   selectedTypeId,
+      },
+    });
+  }
+
   async function handleGenerate() {
     if (!intent.trim()) return;
+    cancelledRef.current = false;
+    setGenerationError(null);
     setStep('generating');
     setAgentsDone([]);
     setCopilotRunId(null);
@@ -170,21 +225,38 @@ export function SurveyCreationPage() {
       const { run_id } = await api.startRun({
         intent:       intent.trim(),
         surveyTypeId: selectedTypeId ?? undefined,
+        orgContext:   { target_audience: surveyAudience || undefined, use_case: surveyUseCase || undefined },
       });
       setCopilotRunId(run_id);
 
-      const deadline = Date.now() + 45_000;
+      const deadline = Date.now() + 180_000;
       while (Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 2000));
+        if (cancelledRef.current) return;
+
         const status = await api.getRunStatus(run_id);
+        if (cancelledRef.current) return;
 
         const done = (status.stream_events as Array<{ event: string; agent?: string }>)
           .filter((e) => e.event === 'agent_complete' && e.agent)
           .map((e) => e.agent as string);
         setAgentsDone(done);
 
-        if (status.status === 'completed' || status.status === 'failed') {
-          const resolvedTitle = surveyName.trim() || intent.slice(0, 80);
+        if (status.status === 'failed') {
+          const { headingKey, descriptionKey } = classifyAgentError(
+            (status.error_log as string[] | undefined) ?? [],
+          );
+          setGenerationError({
+            heading:     t(headingKey) as string,
+            description: t(descriptionKey) as string,
+            retryable:   true,
+          });
+          setStep('intent');
+          return;
+        }
+
+        if (status.status === 'completed') {
+          const resolvedTitle = surveyName.trim() || intent.slice(0, 80) || t('create.generating.untitled') as string;
           navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
             state: {
               title:           resolvedTitle,
@@ -196,28 +268,40 @@ export function SurveyCreationPage() {
               runId:           run_id,
               recommendations: status.recommendations || [],
               openCrystal:     true,
+              metadata:        { audience: surveyAudience || undefined, use_case: surveyUseCase || undefined },
             },
           });
           return;
         }
       }
-      // Timed out
-      const resolvedTitleTimeout = surveyName.trim() || intent.slice(0, 80);
-      navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
-        state: { title: resolvedTitleTimeout, questions: [], surveyTypeId: selectedTypeId, intent, runId: copilotRunId, openCrystal: true },
-      });
+
+      // Polling deadline exceeded — stay on creation page
+      if (!cancelledRef.current) {
+        setGenerationError({
+          heading:     t('create.error.timeoutHeading') as string,
+          description: t('create.error.timeoutDescription') as string,
+          retryable:   true,
+        });
+        setStep('intent');
+      }
     } catch {
-      // Agents service unavailable — fall back to legacy endpoint
+      if (cancelledRef.current) return;
+      // Agents service unreachable — try legacy endpoint
       const resolvedTitleFallback = surveyName.trim() || intent.slice(0, 80);
       try {
         const result = await api.generateSurvey(intent, selectedTypeId ?? undefined) as { questions: unknown[] };
         navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
-          state: { title: resolvedTitleFallback, questions: result.questions || [], surveyTypeId: selectedTypeId, intent, openCrystal: true },
+          state: { title: resolvedTitleFallback, questions: result.questions || [], surveyTypeId: selectedTypeId, intent },
         });
       } catch {
-        navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
-          state: { title: resolvedTitleFallback, questions: [], surveyTypeId: selectedTypeId, intent, openCrystal: true },
-        });
+        if (!cancelledRef.current) {
+          setGenerationError({
+            heading:     t('create.error.unavailableHeading') as string,
+            description: t('create.error.unavailableDescription') as string,
+            retryable:   false,
+          });
+          setStep('intent');
+        }
       }
     }
   }
@@ -341,6 +425,62 @@ export function SurveyCreationPage() {
               className="glass-card rounded-2xl overflow-hidden"
               style={{ boxShadow: '0 40px 100px -20px rgba(42,75,217,0.12)', border: '1px solid rgba(255,255,255,0.3)' }}
             >
+              {/* Error banner */}
+              <AnimatePresence initial={false}>
+                {generationError && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mx-6 mt-6 rounded-xl p-4 flex flex-col gap-3"
+                      style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)' }}>
+                      {/* Message row */}
+                      <div className="flex items-start gap-3">
+                        <Icon name="error" fill={1} size={16} className="flex-shrink-0 mt-0.5" style={{ color: '#dc2626' }} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold" style={{ color: '#dc2626' }}>{generationError.heading}</p>
+                          <p className="text-xs mt-0.5" style={{ color: '#b91c1c' }}>{generationError.description}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setGenerationError(null)}
+                          className="flex-shrink-0 transition-opacity hover:opacity-60"
+                          style={{ color: '#dc2626' }}
+                        >
+                          <Icon name="close" size={14} />
+                        </button>
+                      </div>
+                      {/* Action row */}
+                      <div className="flex items-center gap-2 pl-7">
+                        {generationError.retryable && (
+                          <button
+                            type="button"
+                            onClick={handleGenerate}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors"
+                            style={{ background: 'rgba(220,38,38,0.1)', color: '#dc2626' }}
+                          >
+                            <Icon name="refresh" size={12} />
+                            {t('create.error.retryButton')}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleBuildManually}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors text-on-surface-variant hover:text-on-surface"
+                          style={{ background: 'rgba(0,0,0,0.05)' }}
+                        >
+                          <Icon name="edit_note" size={12} />
+                          {t('create.error.buildManuallyButton')}
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Header */}
               <div className="px-10 pt-10 pb-6 text-center">
                 <div
@@ -371,6 +511,45 @@ export function SurveyCreationPage() {
                     placeholder="e.g., Customer Onboarding NPS — Q3 2025"
                     className="w-full text-sm font-semibold bg-surface-container-low border-0 rounded-xl px-4 py-3 h-auto focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-0"
                   />
+                </div>
+
+                {/* Survey context — audience + use-case for specialist routing */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black tracking-[0.2em] uppercase text-on-surface-variant">
+                      {t('create.contextAudienceLabel')}
+                    </label>
+                    <select
+                      value={surveyAudience}
+                      onChange={(e) => setSurveyAudience(e.target.value)}
+                      className="w-full text-sm bg-surface-container-low text-on-surface border-0 rounded-xl px-4 py-3 h-auto focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                    >
+                      <option value="">{t('create.contextAudiencePlaceholder')}</option>
+                      <option value="B2B Customers">B2B Customers</option>
+                      <option value="B2C Consumers">B2C Consumers</option>
+                      <option value="Internal Employees">Internal Employees</option>
+                      <option value="Mixed">Mixed</option>
+                      <option value="Partners / Vendors">Partners / Vendors</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black tracking-[0.2em] uppercase text-on-surface-variant">
+                      {t('create.contextUseCaseLabel')}
+                    </label>
+                    <select
+                      value={surveyUseCase}
+                      onChange={(e) => setSurveyUseCase(e.target.value)}
+                      className="w-full text-sm bg-surface-container-low text-on-surface border-0 rounded-xl px-4 py-3 h-auto focus:ring-2 focus:ring-primary/30 focus:outline-none"
+                    >
+                      <option value="">{t('create.contextUseCasePlaceholder')}</option>
+                      <option value="Customer Experience (CX)">Customer Experience (CX)</option>
+                      <option value="Employee Experience (EX)">Employee Experience (EX)</option>
+                      <option value="Product Feedback">Product Feedback</option>
+                      <option value="Market Research">Market Research</option>
+                      <option value="Brand Tracking">Brand Tracking</option>
+                      <option value="Event Feedback">Event Feedback</option>
+                    </select>
+                  </div>
                 </div>
 
                 {/* Textarea */}
@@ -526,8 +705,27 @@ export function SurveyCreationPage() {
         )}
 
         {/* ── Step: Generating ── */}
-        {step === 'generating' && (
+        {step === 'generating' && (() => {
+          const displayName = surveyName.trim() || (intent.trim().length > 0
+            ? intent.trim().slice(0, 45) + (intent.trim().length > 45 ? '…' : '')
+            : null);
+          return (
           <div className="flex flex-col items-center justify-center gap-8 pt-20">
+            {/* Survey name pill — shown above the spinner so users immediately know what's being built */}
+            {displayName && (
+              <div
+                className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold"
+                style={{
+                  background: 'rgba(42,75,217,0.07)',
+                  border: '1px solid rgba(42,75,217,0.15)',
+                  color: '#2a4bd9',
+                  maxWidth: '28rem',
+                }}
+              >
+                <Icon name="description" fill={1} size={14} style={{ flexShrink: 0 }} />
+                <span className="truncate">{displayName}</span>
+              </div>
+            )}
             <div className="relative w-32 h-32">
               <div className="absolute inset-0 rounded-full animate-ping"
                 style={{ background: 'rgba(42,75,217,0.15)', animationDuration: '1.5s' }} />
@@ -589,8 +787,18 @@ export function SurveyCreationPage() {
                 ))}
               </div>
             )}
+            {/* Cancel */}
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="flex items-center gap-1.5 text-sm font-semibold text-on-surface-variant hover:text-on-surface transition-colors mt-2"
+            >
+              <Icon name="close" size={14} />
+              {t('create.generating.cancelButton')}
+            </button>
           </div>
-        )}
+          );
+        })()}
       </main>
     </div>
   );

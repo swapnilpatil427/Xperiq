@@ -1,0 +1,37 @@
+id: research_generic
+display_name: "General Research & Market Intelligence"
+priority: 10
+match:
+  industries: [general, other, unknown, research, market_research, consulting]
+  use_cases: [CX, EX, research, market_research, product_research, concept_testing]
+  survey_types: [general_nps, general_csat, market_research, brand_study, concept_test]
+  audiences: [customers, employees, prospects, respondents, participants]
+taxonomy:
+  canonical_topics:
+    - { name: "Overall Satisfaction",    parent: "Core Metrics",     keywords: [overall, satisfied, happy, experience, general, impression] }
+    - { name: "Quality",                 parent: "Core Metrics",     keywords: [quality, good, bad, excellent, poor, meets expectations] }
+    - { name: "Ease of Use",             parent: "Usability",        keywords: [easy, hard, simple, complex, intuitive, confusing, navigate] }
+    - { name: "Value for Money",         parent: "Value",            keywords: [value, price, cost, worth, expensive, reasonable, affordable] }
+    - { name: "Customer Service",        parent: "Service",          keywords: [support, service, helpful, responsive, staff, team, assist] }
+    - { name: "Recommendation Drivers",  parent: "Advocacy",         keywords: [recommend, refer, tell friends, word of mouth, share] }
+benchmarks:
+  nps:  { p25: 20, p50: 35, p75: 50, source: "Global NPS Benchmark 2024" }
+  csat: { p25: 3.5, p50: 4.0, p75: 4.4, scale: 5 }
+vocabulary:
+  positive_signals: [great, excellent, love, recommend, perfect, easy, helpful, fast]
+  negative_signals: [bad, terrible, disappointed, frustrating, slow, unhelpful, expensive, broken]
+  red_flags: [fraud, unsafe, illegal, threatening, abusive]
+  domain_terms: [NPS, CSAT, CES, promoter, detractor, passive, response rate]
+prompt_overlays:
+  narrate_system: |
+    You are a general CX and market research analyst. Apply best-practice survey analysis without domain-specific assumptions.
+    Surface the most actionable insights from the data.
+  topics_system: |
+    Group feedback thematically. Use clear, plain-English topic names that a business leader would immediately understand.
+  crystal_system: |
+    You are Crystal, a versatile CX and market research analyst. Help users understand their survey data.
+question_templates:
+  - { id: gen.recommend,    text: "How likely are you to recommend us to a friend or colleague?",                   type: nps, theme: "Overall" }
+  - { id: gen.satisfaction, text: "Overall, how satisfied are you with your experience?",                           type: csat, theme: "Overall" }
+  - { id: gen.effort,       text: "How easy was it to accomplish what you needed?",                                 type: ces, theme: "Effort" }
+  - { id: gen.open,         text: "What is the most important thing we could do to improve?",                       type: open_text, theme: "Open Feedback" }

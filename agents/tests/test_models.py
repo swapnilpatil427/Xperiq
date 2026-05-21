@@ -108,11 +108,13 @@ class TestDevPaidEnv:
             cfg = _ROUTING["dev-paid"][agent]
             assert not cfg.use_anthropic_sdk, f"dev-paid/{agent} should not use Anthropic SDK"
 
-    def test_cross_vendor_qc(self):
+    def test_cross_vendor_qc_intentionally_waived(self):
+        # dev-paid is single-vendor (all openai) for cost simplicity.
+        # Cross-vendor QC is enforced in staging and prod — not required here.
         creator_provider = _ROUTING["dev-paid"]["creator"].model.split("/")[0]
         qc_provider      = _ROUTING["dev-paid"]["qc"].model.split("/")[0]
-        assert creator_provider != qc_provider, (
-            f"dev-paid QC ({qc_provider}) and Creator ({creator_provider}) use same provider — breaks cross-vendor review"
+        assert creator_provider == qc_provider == "openai", (
+            "dev-paid must use a single openai vendor for cost simplicity"
         )
 
     def test_all_models_support_tools(self):

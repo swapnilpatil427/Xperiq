@@ -1,0 +1,51 @@
+id: saas_cx
+display_name: "SaaS & Technology Customer Experience"
+priority: 88
+match:
+  industries: [saas, software, technology, tech, b2b_software, platform, cloud]
+  use_cases: [CX, product_feedback, customer_success, renewal, expansion]
+  survey_types: [product_nps, onboarding_ces, feature_satisfaction, churn_survey, qbr_survey]
+  audiences: [customers, users, admins, buyers, champions]
+taxonomy:
+  canonical_topics:
+    - { name: "Onboarding & Setup",       parent: "Getting Started",  keywords: [onboarding, setup, install, configure, getting started, first use, trial, activate], weight: 1.3 }
+    - { name: "Ease of Use",              parent: "Product UX",       keywords: [intuitive, confusing, complex, easy, navigate, UX, interface, design, workflow], weight: 1.2 }
+    - { name: "Performance & Reliability", parent: "Product Quality", keywords: [slow, fast, crash, bug, downtime, reliability, uptime, performance, latency], weight: 1.3 }
+    - { name: "Feature Gaps",             parent: "Product Roadmap",  keywords: [missing, feature request, wish, would like, need, doesn't support, lacks, add], weight: 1.1 }
+    - { name: "Integrations",             parent: "Product Roadmap",  keywords: [integration, connect, API, webhook, sync, third-party, Zapier, Salesforce] }
+    - { name: "Support & Documentation",  parent: "Support",          keywords: [support, docs, documentation, knowledge base, ticket, response time, help, tutorial], weight: 1.2 }
+    - { name: "Pricing & ROI",            parent: "Value",            keywords: [price, expensive, ROI, value, worth, cost, tier, plan, upgrade, license] }
+    - { name: "Security & Compliance",    parent: "Trust",            keywords: [security, SOC2, GDPR, compliance, data, breach, permission, SSO, 2FA] }
+    - { name: "Roadmap & Vision",         parent: "Partnership",      keywords: [roadmap, future, innovation, direction, vision, strategy, release] }
+    - { name: "Customer Success",         parent: "Partnership",      keywords: [CSM, success manager, check-in, QBR, relationship, proactive, accountmanager] }
+    - { name: "Data & Analytics",         parent: "Product Quality",  keywords: [reports, analytics, dashboard, data, export, metrics, BI, visualization] }
+benchmarks:
+  nps:  { p25: 20, p50: 32, p75: 50, source: "Satmetrix B2B SaaS 2024" }
+  csat: { p25: 3.7, p50: 4.1, p75: 4.5, scale: 5 }
+  ces:  { p25: 4.5, p50: 3.5, p75: 2.5, scale: 7, source: "Gartner CES B2B 2024" }
+vocabulary:
+  positive_signals: [powerful, saves time, intuitive, love it, game changer, must have, best in class, solid]
+  negative_signals: [buggy, crashes, slow, confusing, missing, overpriced, poor support, incomplete, clunky]
+  red_flags: [churn, cancel, leaving, switch to competitor, breach, data loss, production down, SLA violation]
+  domain_terms: [PLG, NRR, GRR, churn, CAC, LTV, time-to-value, activation, DAU, MAU, QBR]
+prompt_overlays:
+  narrate_system: |
+    You are an expert SaaS CX and product analyst. You understand PLG, customer success, and B2B retention.
+    Weight feature gaps, reliability, and onboarding insights as top drivers of churn risk.
+    Always tie insights to expansion/churn revenue risk where possible.
+    Reference: SaaS NPS median is 32; Slack/Zoom/Notion achieve 50+; below 20 signals churn risk.
+    Mention time-to-value metrics when onboarding issues surface.
+  topics_system: |
+    Organize SaaS feedback across the customer lifecycle: Trial → Onboard → Activate → Expand → Renew/Churn.
+    Separate new user feedback from power-user feedback when distinguishable from response patterns.
+    Flag churn-risk signals (cancel, leaving, switching) as CRITICAL priority.
+  crystal_system: |
+    You are Crystal, a SaaS product and customer success expert. You understand PLG, retention, NRR, and B2B buying.
+    Reference SaaS benchmarks and connect insights to churn risk, expansion revenue, and NPS.
+question_templates:
+  - { id: saas.nps,        text: "How likely are you to recommend [Product] to a colleague?",                       type: nps, theme: "Overall" }
+  - { id: saas.effort,     text: "How easy was it to accomplish your goal in [Product] today?",                     type: ces, theme: "Effort" }
+  - { id: saas.value,      text: "How confident are you that [Product] is delivering ROI for your team?",           type: csat, theme: "Value" }
+  - { id: saas.onboarding, text: "How smooth was your initial setup and onboarding experience?",                    type: csat, theme: "Onboarding" }
+  - { id: saas.feature,    text: "What is the one feature or improvement that would make [Product] indispensable?",  type: open_text, theme: "Roadmap" }
+  - { id: saas.open,       text: "What's working well, and what's not?",                                            type: open_text, theme: "Open Feedback" }

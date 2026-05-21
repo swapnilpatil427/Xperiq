@@ -59,27 +59,44 @@ class ResponseGenBatch(BaseModel):
 
 # ── Prompt building ───────────────────────────────────────────────────────────
 
-_PERSONA_GUIDES = {
+_PERSONA_GUIDES_NPS = {
     "realistic": "~25% detractors (NPS 0-6), 35% passives (NPS 7-8), 40% promoters (NPS 9-10). Mix of frustrations and praise.",
     "critical":  "~60% detractors (NPS 0-6), 30% passives (NPS 7-8), 10% promoters. Focus on pain points, bugs, slow service.",
     "positive":  "~5% detractors, 20% passives (NPS 7-8), 75% promoters (NPS 9-10). Enthusiastic users, feature love.",
     "mixed":     "Equal spread across all NPS ranges 0-10. Highly varied feedback topics.",
 }
 
+_PERSONA_GUIDES_CSAT = {
+    "realistic": "~20% dissatisfied (1-2/5), 30% neutral (3/5), 50% satisfied (4-5/5). Mix of frustrations and praise.",
+    "critical":  "~55% dissatisfied (1-2/5), 30% neutral (3/5), 15% satisfied. Focus on pain points and unmet expectations.",
+    "positive":  "~5% dissatisfied, 20% neutral, 75% satisfied (4-5/5). Happy, enthusiastic respondents.",
+    "mixed":     "Equal spread across all satisfaction levels 1-5. Highly varied feedback.",
+}
+
+_PERSONA_GUIDES_GENERIC = {
+    "realistic": "Realistic distribution of satisfied, neutral, and dissatisfied respondents. Mix of frustrations and praise.",
+    "critical":  "Majority dissatisfied. Focus on pain points, bugs, slow service.",
+    "positive":  "Majority satisfied. Enthusiastic, positive respondents.",
+    "mixed":     "Equal spread of positive, neutral, and negative responses. Highly varied.",
+}
+
 _ANSWER_RULES = """\
 ANSWER FORMAT BY QUESTION TYPE (must match exactly):
 - nps:             integer 0-10
 - csat:            integer 1-5
-- rating:          integer from 1 to scaleMax (default 5)
-- slider:          integer between min and max
-- multiple_choice: exactly ONE string copied verbatim from options list
-- checkbox:        JSON array of 1-3 strings from options list
-- dropdown:        exactly ONE string copied verbatim from options list
-- ranking:         JSON array containing ALL option strings in ranked order
-- open_text:       1-3 sentences (50-200 chars), realistic and persona-appropriate
-- short_text:      3-12 words matching the persona tone
-- matrix:          JSON object {"row_label": "column_label"} for each row
-- date:            "YYYY-MM-DD" string
+- rating:          integer from 1 to scaleMax (shown in question)
+- slider:          integer between min and max (shown in question)
+- multiple_choice: exactly ONE string copied verbatim from OPTIONS list
+- checkbox:        JSON array of strings from OPTIONS (respect maxSelections if shown; default 1-3)
+- dropdown:        exactly ONE string copied verbatim from OPTIONS list
+- ranking:         JSON array containing ALL option strings in ranked order (most to least preferred)
+- open_text:       1-3 sentences (50-200 chars), persona-appropriate; if validation=email produce a realistic email address; if validation=url produce a realistic URL; if validation=phone produce a phone number
+- short_text:      3-12 words matching the persona tone (email/url/phone if validation shown)
+- matrix (radio):  JSON object mapping EVERY row label to exactly one column label: {"row": "col"}
+- matrix (checkbox): JSON object mapping EVERY row label to a JSON array of selected column labels: {"row": ["col1","col2"]}
+- date (date):     "YYYY-MM-DD" string
+- date (time):     "HH:MM" string (24-hour)
+- date (datetime): "YYYY-MM-DDTHH:MM" string
 - statement:       null"""
 
 
@@ -95,24 +112,62 @@ def _format_questions(questions: list[dict]) -> str:
             opts = q.get("options") or []
             if opts:
                 line += f"\n    OPTIONS: {json.dumps(opts)}"
+            max_sel = q.get("maxSelections")
+            if qtype == "checkbox" and max_sel:
+                line += f"  maxSelections={max_sel}"
+            allow_other = q.get("allowOther")
+            if allow_other:
+                line += "  (allowOther: may also generate a custom answer string)"
 
         if qtype == "rating":
             line += f"  scaleMax={q.get('scaleMax', 5)}"
+
         if qtype == "slider":
             line += f"  min={q.get('min', 0)} max={q.get('max', 10)}"
+
         if qtype == "matrix":
             rows = q.get("rows") or []
             cols = q.get("columns") or []
+            matrix_type = q.get("matrixType", "radio")
+            line += f"  matrixType={matrix_type}"
             line += f"\n    ROWS: {json.dumps(rows)}  COLS: {json.dumps(cols)}"
+
+        if qtype == "date":
+            date_type = q.get("dateType", "date")
+            line += f"  dateType={date_type}"
+
+        if qtype in ("open_text", "short_text"):
+            validation = q.get("validation")
+            if validation:
+                line += f"  validation={validation}"
 
         lines.append(line)
     return "\n".join(lines)
 
 
+def _persona_guide(inp: ResponseGenInput) -> str:
+    types = {q.get("type") for q in inp.questions}
+    if "nps" in types:
+        guides = _PERSONA_GUIDES_NPS
+    elif "csat" in types:
+        guides = _PERSONA_GUIDES_CSAT
+    else:
+        guides = _PERSONA_GUIDES_GENERIC
+    return guides.get(inp.persona_mix, guides["realistic"])
+
+
 def _build_system(inp: ResponseGenInput, batch_n: int, offset: int) -> str:
-    persona_guide = _PERSONA_GUIDES.get(inp.persona_mix, _PERSONA_GUIDES["realistic"])
+    persona_guide = _persona_guide(inp)
     intent_line   = f'Survey intent: "{inp.survey_intent}"' if inp.survey_intent else ""
     questions_str = _format_questions(inp.questions)
+
+    # Use real question IDs in the example so the LLM doesn't invent ids like "q1"
+    first_q   = inp.questions[0] if inp.questions else {}
+    ex_qid    = first_q.get("id", "QUESTION_ID_FROM_LIST")
+    ex_type   = first_q.get("type", "open_text")
+    ex_value  = 8 if ex_type == "nps" else (4 if ex_type in ("csat", "rating") else "example answer")
+    has_nps      = any(q.get("type") == "nps" for q in inp.questions)
+    ex_nps_json  = "8" if has_nps else "null"
 
     return f"""\
 You are a survey response simulation expert. Generate {batch_n} realistic, distinct synthetic responses for the survey below.
@@ -135,9 +190,10 @@ RULES:
 4. Persona description should be ≤10 words (e.g. "Long-time user, frustrated with onboarding").
 5. Each response must be unique — different concerns, phrasing, scores.
 6. For multiple_choice / dropdown / ranking / checkbox: use ONLY strings from the provided OPTIONS list, verbatim.
+7. CRITICAL: Use the EXACT questionId values shown in the QUESTIONS list above — do NOT invent ids like "q1", "q2".
 
 Return ONLY valid JSON — no markdown, no explanation:
-{{"responses": [{{"persona": "...", "nps_score": 8, "answers": [{{"questionId": "q1", "type": "nps", "value": 8}}, ...]}}]}}
+{{"responses": [{{"persona": "...", "nps_score": {ex_nps_json}, "answers": [{{"questionId": "{ex_qid}", "type": "{ex_type}", "value": {json.dumps(ex_value)}}}, ...]}}]}}
 """
 
 

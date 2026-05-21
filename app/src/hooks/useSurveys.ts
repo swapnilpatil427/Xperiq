@@ -40,8 +40,8 @@ export function useSurveys() {
     try { await api.deleteSurvey(id); } catch { /* optimistic — UI removal is safe even if API call fails */ }
   }, [api]);
 
-  const publishSurvey = useCallback(async (id: string): Promise<{ publishToken: string; publishedAt?: string }> => {
-    const result = await api.publishSurvey(id);
+  const publishSurvey = useCallback(async (id: string, settings?: Parameters<typeof api.publishSurvey>[1]): Promise<{ publishToken: string; publishedAt?: string }> => {
+    const result = await api.publishSurvey(id, settings);
     setSurveys((prev) => prev.map((s) => (s.id === id ? { ...s, status: 'active' as const } : s)));
     return result;
   }, [api]);

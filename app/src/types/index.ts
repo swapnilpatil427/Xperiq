@@ -63,8 +63,14 @@ export interface Survey {
   intent?: string | null;
   thank_you_message?: string | null;
   nps_score?: number | null;
+  max_responses?: number | null;
+  auto_close_at?: string | null;
+  allow_multiple_responses?: boolean;
+  password_protected?: boolean;
   publish_token?: string | null;
   response_count?: number;
+  avg_csat?: number | null;
+  sparkline?: number[];
   created_by?: string;
   updated_by?: string | null;
   created_at: string;
@@ -90,6 +96,19 @@ export interface SurveyResponse {
   answers: Answer[];
   nps_score?: number | null;
   submitted_at: string;
+  // AI enrichment
+  ai_sentiment?: 'positive' | 'negative' | 'neutral' | 'mixed' | null;
+  ai_sentiment_score?: number | null;
+  ai_emotion?: string | null;
+  ai_effort_score?: number | null;
+  ai_topics?: string[] | null;
+  // Device / metadata
+  country?: string | null;
+  city?: string | null;
+  device_type?: string | null;
+  browser?: string | null;
+  os?: string | null;
+  completion_time_s?: number | null;
 }
 
 // ── Template ──────────────────────────────────────────────────────────────────
@@ -190,6 +209,7 @@ export interface InsightMetric {
   unit?:   string;
   scale?:  number;
   distribution?: Record<string, number>;
+  dominant_sentiment?: 'positive' | 'neutral' | 'negative';
 }
 
 export interface InsightCitation {
@@ -241,7 +261,7 @@ export interface AgenticInsight {
   metric_json?:  InsightMetric | null;
   citations_json: InsightCitation[];
   trust_score:   number;
-  trust_json:    InsightTrust;
+  trust_json:    InsightTrust | null;
   priority:      number;
   insight_hash:  string;
   audit_json:    InsightAudit;
@@ -268,12 +288,16 @@ export interface OrgProfile {
   id?: number;
   org_id?: string;
   industry?: string | null;
+  sub_vertical?: string | null;
   company_size?: string | null;
   use_case?: string | null;
+  primary_use_case?: string | null;
   target_audience?: string | null;
   website?: string | null;
   brand_description?: string | null;
   brand_name?: string | null;
+  product_name?: string | null;
+  region?: string | null;
   logo_url?: string | null;
   brand_colors?: Record<string, string>;
   brand_fonts?: Record<string, string>;
@@ -332,11 +356,97 @@ export interface SurveyTopic {
   aliases: string[];
   is_new: boolean;
   volume: number;
-  sentiment_score: number | null;  // -1 to 1
+  sentiment_score: number | null;    // -1 to 1
   dominant_emotion: string | null;
-  effort_score: number | null;  // 1-7
+  effort_score: number | null;       // 1-7
+  // Volume direction — are more people talking about this?
   trending: 'up' | 'down' | 'stable' | 'new' | null;
+  // Sentiment direction — is it getting better or worse?
+  sentiment_momentum: 'improving' | 'worsening' | 'stable' | null;
+  // Composite priority score: abs(sentiment) × √volume × (effort/7)
+  urgency_score: number | null;
+  // Volume change since last pipeline run
+  volume_delta: number | null;
+  volume_delta_pct: number | null;
+  // True when topic has been negative for 3+ consecutive runs
+  chronic: boolean;
   first_seen_at: string;
+  last_seen_at?: string;
+  nps_avg?: number | null;
+  nps_correlation?: number | null;   // Pearson r vs NPS score (-1 to 1)
+  positive_pct?: number | null;
+  negative_pct?: number | null;
+  neutral_pct?:  number | null;
+  // Hierarchy
+  parent_topic_id?: string | null;
+  hierarchy_level?: number;          // 0=root topic, 1=subtopic
+  sub_topic_count?: number;
+  theme?: string | null;             // theme group (e.g. "Checkout Experience")
+  // Specialist
+  keyword_list?: string[];
+  // Extended XM signal fingerprint
+  health_label?:         string | null;                   // 'healthy' | 'stable' | 'at-risk'
+  confidence_level?:     string | null;                   // 'high' | 'medium' | 'low'
+  velocity_pct?:         number | null;                   // response velocity change %
+  driver_score?:         number | null;                   // point-biserial correlation (-1 to 1)
+  net_sentiment?:        number | null;                   // positive_pct − negative_pct
+  nps_impact?:           number | null;                   // topic NPS impact in pts
+  promoter_pct?:         number | null;
+  detractor_pct?:        number | null;
+  passive_pct?:          number | null;
+  avg_csat?:             number | null;
+  csat_impact?:          number | null;
+  avg_effort_score?:     number | null;
+  top_verbatims?:        string[] | null;
+  emotion_distribution?: Record<string, number> | null;
+}
+
+export interface TopicTheme {
+  name: string;
+  volume: number;
+  sentiment_avg: number | null;
+  topics: Array<SurveyTopic & { subtopics?: SurveyTopic[] }>;
+}
+
+export interface TopicTrendPoint {
+  day: string;
+  volume: number;
+  avg_nps: number | null;
+  promoters: number;
+  detractors: number;
+}
+
+export interface TopicDetail {
+  trend_series: TopicTrendPoint[];
+  co_occurring: Array<{ name: string; co_count: number; lift?: number | null }>;
+  subtopics: SurveyTopic[];
+}
+
+export interface TopicVerbatim {
+  response_id: string;
+  text: string;
+  all_texts?: string[];
+  nps_score: number | null;
+  sentiment: string | null;
+  sentiment_score: number | null;
+  submitted_at: string;
+  topics: string[];
+}
+
+export interface TopicDriver {
+  id: string;
+  name: string;
+  volume: number;
+  tagged_count: number;
+  topic_avg_nps: number | null;
+  nps_delta: number | null;       // topic NPS minus overall NPS
+  impact_score: number;
+  sentiment_score: number | null;
+  effort_score: number | null;
+  trending: 'up' | 'down' | 'stable' | 'new' | null;
+  positive_pct: number | null;
+  negative_pct: number | null;
+  direction: 'positive' | 'negative' | 'neutral';
 }
 
 // ── Copilot ───────────────────────────────────────────────────────────────────

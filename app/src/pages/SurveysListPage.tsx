@@ -58,6 +58,22 @@ const fadeUp = {
 };
 const stagger = { visible: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } } };
 
+function Sparkline({ data, color = '#2a4bd9' }: { data: number[]; color?: string }) {
+  if (!data || data.length < 2) return null;
+  const max = Math.max(...data, 1);
+  const W = 48, H = 20;
+  const pts = data.map((v, i) => {
+    const x = (i / (data.length - 1)) * W;
+    const y = H - (v / max) * H * 0.85 - H * 0.05;
+    return `${x},${y}`;
+  });
+  return (
+    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} className="shrink-0">
+      <polyline points={pts.join(' ')} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 // ── Modal target type ─────────────────────────────────────────────────────────
 
 interface ModalTarget {
@@ -490,9 +506,12 @@ export function SurveysListPage() {
 
                         {/* Metrics */}
                         <div className="flex items-center gap-5 shrink-0 relative">
-                          <div className="text-right">
+                          <div className="flex flex-col items-end gap-1">
                             <p className="label-caps">{t('surveys.metrics.responses')}</p>
-                            <p className="text-xl font-black font-headline text-on-surface">{responseCount.toLocaleString()}</p>
+                            <div className="flex items-center gap-2">
+                              <Sparkline data={survey.sparkline ?? []} color={survey.status === 'active' ? '#2a4bd9' : '#94a3b8'} />
+                              <p className="text-xl font-black font-headline text-on-surface">{responseCount.toLocaleString()}</p>
+                            </div>
                           </div>
                           {npsScore !== null && (
                             <div className="text-right">
@@ -529,6 +548,11 @@ export function SurveysListPage() {
                               <Icon name="lock_open" size={14} />{t('surveys.actions.reopen')}
                             </Button>
                           )}
+                          <Button variant="ghost" size="sm"
+                            onClick={(e: React.MouseEvent) => { e.stopPropagation(); navigate(toPath(ROUTES.RESPONSE_DASHBOARD, { surveyId: survey.id })); }}
+                            className="rounded-xl bg-[rgba(5,150,105,0.08)] text-[#059669] hover:bg-[rgba(5,150,105,0.14)]">
+                            <Icon name="bar_chart" size={14} />{t('surveys.actions.responses')}
+                          </Button>
                           <Button variant="ghost" size="sm"
                             onClick={(e: React.MouseEvent) => { e.stopPropagation(); navigate(`${ROUTES.INSIGHTS}?survey=${survey.id}`); }}
                             className="rounded-xl bg-[rgba(42,75,217,0.08)] text-primary hover:bg-[rgba(42,75,217,0.14)]">

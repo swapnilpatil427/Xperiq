@@ -25,13 +25,38 @@
  * org_id is extracted from the verified token — never from request body.
  */
 const express = require('express');
-const { requireAuth } = require('../../middleware/auth');
-const agentsClient    = require('../../lib/agentsClient');
-const db              = require('../../lib/db');
-const logger          = require('../../lib/logger');
+const { requireAuth } = require('../middleware/auth');
+const agentsClient    = require('../lib/agentsClient');
+const db              = require('../lib/db');
+const logger          = require('../lib/logger');
+const { serverError } = require('../lib/httpError');
 
 const router = express.Router();
 router.use(requireAuth);
+
+
+// ── Ownership guard ───────────────────────────────────────────────────────────
+// Verifies the run belongs to the requesting user AND org before any mutation.
+// Returns false and writes a 403 response if access is denied.
+async function _requireRunOwnership(req, res) {
+  if (process.env.SKIP_AUTH === 'true') return true;
+  const { runId } = req.params;
+  try {
+    const { rows } = await db.query(
+      'SELECT id FROM agent_runs WHERE id = $1 AND org_id = $2 AND user_id = $3',
+      [runId, req.orgId, req.userId],
+    );
+    if (rows.length === 0) {
+      res.status(403).json({ error: 'Run not found or access denied' });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    logger.error({ err: err.message, runId }, 'copilot:ownership:error');
+    res.status(500).json({ error: 'Failed to verify run access' });
+    return false;
+  }
+}
 
 
 // ── Orchestration ──────────────────────────────────────────────────────────────
@@ -63,6 +88,7 @@ router.post('/orchestrate', async (req, res) => {
 
 
 router.get('/runs/:runId/status', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
   const { runId } = req.params;
   try {
     const status = await agentsClient.getRunStatus(runId, req.orgId);
@@ -75,9 +101,24 @@ router.get('/runs/:runId/status', async (req, res) => {
 });
 
 
+router.post('/runs/:runId/cancel', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
+  const { runId } = req.params;
+  try {
+    const result = await agentsClient.cancelOrchestration(runId, req.orgId);
+    res.json(result);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'Run not found' });
+    logger.error({ err: err.message, runId }, 'copilot:cancel:error');
+    res.status(502).json({ error: 'Failed to cancel run' });
+  }
+});
+
+
 // ── Copilot chat: natural-language edits ──────────────────────────────────────
 
 router.post('/runs/:runId/refine', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
   const { runId } = req.params;
   const { message, questions, orgContext, surveyTypeId, intent, conversationHistory } = req.body;
 
@@ -108,6 +149,7 @@ router.post('/runs/:runId/refine', async (req, res) => {
 // ── Skip logic ─────────────────────────────────────────────────────────────────
 
 router.post('/runs/:runId/skip-logic', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
   const { runId } = req.params;
   const { request, orgContext } = req.body;
 
@@ -133,6 +175,7 @@ router.post('/runs/:runId/skip-logic', async (req, res) => {
 // ── Question CRUD ──────────────────────────────────────────────────────────────
 
 router.post('/runs/:runId/questions', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
   const { runId } = req.params;
   const { type, afterId } = req.body;
 
@@ -151,6 +194,7 @@ router.post('/runs/:runId/questions', async (req, res) => {
 });
 
 router.delete('/runs/:runId/questions/:qId', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
   const { runId, qId } = req.params;
   try {
     const result = await agentsClient.removeQuestion(runId, qId, req.orgId);
@@ -163,6 +207,7 @@ router.delete('/runs/:runId/questions/:qId', async (req, res) => {
 });
 
 router.patch('/runs/:runId/questions/:qId', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
   const { runId, qId } = req.params;
   const { fields } = req.body;
 
@@ -182,6 +227,7 @@ router.patch('/runs/:runId/questions/:qId', async (req, res) => {
 });
 
 router.post('/runs/:runId/reorder', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
   const { runId } = req.params;
   const { order } = req.body;
 
@@ -204,6 +250,7 @@ router.post('/runs/:runId/reorder', async (req, res) => {
 // ── Recommendation dispatcher ──────────────────────────────────────────────────
 
 router.post('/runs/:runId/apply-recommendation/:actionId', async (req, res) => {
+  if (!await _requireRunOwnership(req, res)) return;
   const { runId, actionId } = req.params;
   const { parameters, orgContext, surveyTypeId, intent } = req.body;
 

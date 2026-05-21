@@ -59,12 +59,30 @@ const INDUSTRY_OPTIONS = [
   'Education', 'Hospitality / Travel', 'Media & Entertainment', 'Manufacturing',
   'Professional Services', 'Non-profit', 'Government', 'Other',
 ];
+
+// Sub-verticals per industry — specialist agents use these for deeper benchmarking
+const SUB_VERTICAL_MAP: Record<string, string[]> = {
+  'Healthcare': ['Ambulatory Care', 'Acute / Hospital', 'Dental', 'Mental Health', 'Telehealth', 'Pharma', 'Medical Devices'],
+  'SaaS / Software': ['B2B SaaS', 'Developer Tools', 'Security', 'Data & Analytics', 'HR Tech', 'FinTech SaaS', 'EdTech'],
+  'E-commerce / Retail': ['Apparel', 'Electronics', 'Grocery / FMCG', 'Beauty', 'Home & Furniture', 'Marketplace', 'DTC Brand'],
+  'Financial Services': ['Retail Banking', 'Wealth Management', 'Insurance', 'Payments / FinTech', 'Lending', 'Capital Markets'],
+  'Hospitality / Travel': ['Hotels', 'Airlines', 'Restaurants / QSR', 'Cruise', 'Theme Parks', 'OTA / Travel Tech'],
+  'Education': ['K-12', 'Higher Education', 'EdTech', 'Professional Training', 'Corporate L&D'],
+  'Media & Entertainment': ['Streaming', 'Publishing', 'Gaming', 'Live Events', 'Podcasts / Audio'],
+  'Manufacturing': ['Automotive', 'Industrial Equipment', 'Consumer Goods', 'Aerospace', 'Chemicals'],
+  'Professional Services': ['Consulting', 'Legal', 'Accounting', 'Staffing', 'Marketing Agency'],
+  'Government': ['Federal', 'State / Province', 'Municipal', 'Public Health', 'Education Authority'],
+  'Non-profit': ['NGO', 'Foundation', 'Advocacy', 'Healthcare Non-profit'],
+  'Other': [],
+};
+
 const SIZE_OPTIONS = ['1–10', '11–50', '51–200', '201–1,000', '1,001–5,000', '5,000+'];
 const USE_CASE_OPTIONS = [
   'Customer Experience (CX)', 'Employee Experience (EX)', 'Product Feedback',
   'Market Research', 'Brand Tracking', 'Event Feedback', 'Academic Research', 'Other',
 ];
 const AUDIENCE_OPTIONS = ['B2B Customers', 'B2C Consumers', 'Internal Employees', 'Mixed (B2B + B2C)', 'Partners / Vendors'];
+const REGION_OPTIONS = ['Global', 'North America', 'Europe / EMEA', 'Asia-Pacific (APAC)', 'Latin America (LATAM)', 'Middle East & Africa'];
 
 export function BrandSettingsPage() {
   const { t } = useTranslation();
@@ -87,8 +105,8 @@ export function BrandSettingsPage() {
 
   // Org profile state
   const [orgProfile, setOrgProfile] = useState<Partial<OrgProfile>>({
-    industry: '', company_size: '', use_case: '', target_audience: '',
-    website: '', brand_description: '',
+    industry: '', sub_vertical: '', company_size: '', use_case: '', primary_use_case: '',
+    target_audience: '', website: '', brand_description: '', product_name: '', region: '',
   });
   const [orgSaving, setOrgSaving] = useState(false);
   const [orgSaved, setOrgSaved] = useState(false);
@@ -103,12 +121,16 @@ export function BrandSettingsPage() {
       if (data?.profile) {
         const p = data.profile;
         setOrgProfile({
-          industry:         p.industry || '',
-          company_size:     p.company_size || '',
-          use_case:         p.use_case || '',
-          target_audience:  p.target_audience || '',
-          website:          p.website || '',
+          industry:          p.industry || '',
+          sub_vertical:      p.sub_vertical || '',
+          company_size:      p.company_size || '',
+          use_case:          p.use_case || '',
+          primary_use_case:  p.primary_use_case || '',
+          target_audience:   p.target_audience || '',
+          website:           p.website || '',
           brand_description: p.brand_description || '',
+          product_name:      p.product_name || '',
+          region:            p.region || '',
         });
         if (p.brand_name && !brandName) setBrandName(p.brand_name);
         if (p.logo_url) setLogoUrl(p.logo_url);
@@ -447,12 +469,26 @@ export function BrandSettingsPage() {
                     </div>
                   </div>
 
+                  {/* Crystal AI Context callout */}
+                  <div className="mb-6 flex items-start gap-3 px-4 py-3 rounded-xl"
+                    style={{ background: 'linear-gradient(135deg, rgba(42,75,217,0.05), rgba(0,100,124,0.05))', border: '1px solid rgba(42,75,217,0.12)' }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                      style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}>
+                      <Icon name="psychology" size={16} style={{ color: 'white' }} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-on-surface">{t('settings.orgProfile.crystalContextTitle')}</p>
+                      <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">{t('settings.orgProfile.crystalContextDesc')}</p>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Industry + Sub-vertical */}
                     <div>
                       <Label className="block text-xs font-bold uppercase tracking-widest mb-2 text-on-surface-variant">
                         {t('settings.orgProfile.industryLabel')}
                       </Label>
-                      <Select value={orgProfile.industry || '__none__'} onValueChange={(v) => setOrgProfile((p) => ({ ...p, industry: v === '__none__' ? '' : v }))}>
+                      <Select value={orgProfile.industry || '__none__'} onValueChange={(v) => setOrgProfile((p) => ({ ...p, industry: v === '__none__' ? '' : v, sub_vertical: '' }))}>
                         <SelectTrigger className="w-full h-11 rounded-[10px] bg-surface-container text-on-surface border-0 focus:ring-2 focus:ring-primary">
                           <SelectValue placeholder={t('settings.orgProfile.industryPlaceholder')} />
                         </SelectTrigger>
@@ -461,6 +497,35 @@ export function BrandSettingsPage() {
                           {INDUSTRY_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    <div>
+                      <Label className="block text-xs font-bold uppercase tracking-widest mb-2 text-on-surface-variant">
+                        {t('settings.orgProfile.subVerticalLabel')}
+                        {orgProfile.industry && (SUB_VERTICAL_MAP[orgProfile.industry]?.length ?? 0) > 0 && (
+                          <span className="ml-2 text-[10px] text-primary normal-case font-normal tracking-normal">
+                            ({t('settings.orgProfile.subVerticalHint', { industry: orgProfile.industry })})
+                          </span>
+                        )}
+                      </Label>
+                      {orgProfile.industry && (SUB_VERTICAL_MAP[orgProfile.industry]?.length ?? 0) > 0 ? (
+                        <Select value={orgProfile.sub_vertical || '__none__'} onValueChange={(v) => setOrgProfile((p) => ({ ...p, sub_vertical: v === '__none__' ? '' : v }))}>
+                          <SelectTrigger className="w-full h-11 rounded-[10px] bg-surface-container text-on-surface border-0 focus:ring-2 focus:ring-primary">
+                            <SelectValue placeholder={t('settings.orgProfile.subVerticalPlaceholder')} />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__none__">{t('settings.orgProfile.subVerticalPlaceholder')}</SelectItem>
+                            {(SUB_VERTICAL_MAP[orgProfile.industry] ?? []).map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Input
+                          value={orgProfile.sub_vertical ?? ''}
+                          onChange={(e) => setOrgProfile((p) => ({ ...p, sub_vertical: e.target.value }))}
+                          placeholder={t('settings.orgProfile.subVerticalFreeText')}
+                          className="w-full px-4 py-2.5 font-medium bg-surface-container text-on-surface rounded-[10px] border-0 focus-visible:ring-2 focus-visible:ring-primary h-11"
+                        />
+                      )}
                     </div>
 
                     <div>
@@ -474,6 +539,21 @@ export function BrandSettingsPage() {
                         <SelectContent>
                           <SelectItem value="__none__">{t('settings.orgProfile.companySizePlaceholder')}</SelectItem>
                           {SIZE_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div>
+                      <Label className="block text-xs font-bold uppercase tracking-widest mb-2 text-on-surface-variant">
+                        {t('settings.orgProfile.regionLabel')}
+                      </Label>
+                      <Select value={orgProfile.region || '__none__'} onValueChange={(v) => setOrgProfile((p) => ({ ...p, region: v === '__none__' ? '' : v }))}>
+                        <SelectTrigger className="w-full h-11 rounded-[10px] bg-surface-container text-on-surface border-0 focus:ring-2 focus:ring-primary">
+                          <SelectValue placeholder={t('settings.orgProfile.regionPlaceholder')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">{t('settings.orgProfile.regionPlaceholder')}</SelectItem>
+                          {REGION_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
@@ -510,13 +590,25 @@ export function BrandSettingsPage() {
 
                     <div>
                       <Label className="block text-xs font-bold uppercase tracking-widest mb-2 text-on-surface-variant">
+                        {t('settings.orgProfile.productNameLabel')}
+                      </Label>
+                      <Input
+                        value={orgProfile.product_name ?? ''}
+                        onChange={(e) => setOrgProfile((p) => ({ ...p, product_name: e.target.value }))}
+                        placeholder={t('settings.orgProfile.productNamePlaceholder')}
+                        className="w-full px-4 py-2.5 font-medium bg-surface-container text-on-surface rounded-[10px] border-0 focus-visible:ring-2 focus-visible:ring-primary h-11"
+                      />
+                    </div>
+
+                    <div>
+                      <Label className="block text-xs font-bold uppercase tracking-widest mb-2 text-on-surface-variant">
                         {t('settings.orgProfile.websiteLabel')}
                       </Label>
                       <Input
                         value={orgProfile.website ?? ''}
                         onChange={(e) => setOrgProfile((p) => ({ ...p, website: e.target.value }))}
                         placeholder={t('settings.orgProfile.websitePlaceholder')}
-                        className="w-full px-4 py-4 font-medium bg-surface-container text-on-surface rounded-[10px] border-0 focus-visible:ring-2 focus-visible:ring-primary"
+                        className="w-full px-4 py-2.5 font-medium bg-surface-container text-on-surface rounded-[10px] border-0 focus-visible:ring-2 focus-visible:ring-primary h-11"
                       />
                     </div>
 
@@ -555,6 +647,21 @@ export function BrandSettingsPage() {
                     )}
                   </Button>
                 </Card>
+
+                {/* Crystal AI Context banner — shown when industry is not set */}
+                {!orgProfile.industry && (
+                  <div className="flex items-start gap-4 px-5 py-4 rounded-xl border-2 border-dashed"
+                    style={{ background: 'linear-gradient(135deg, rgba(42,75,217,0.04), rgba(0,100,124,0.04))', borderColor: 'rgba(42,75,217,0.2)' }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}>
+                      <Icon name="psychology" size={20} style={{ color: 'white' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-on-surface">{t('settings.orgProfile.crystalNudgeTitle')}</p>
+                      <p className="text-xs text-on-surface-variant mt-0.5 leading-relaxed">{t('settings.orgProfile.crystalNudgeDesc')}</p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Clerk org management OR team table */}
                 {clerkKey && orgId ? (

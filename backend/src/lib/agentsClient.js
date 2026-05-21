@@ -10,8 +10,11 @@
 const fetch  = require('node-fetch');
 const logger = require('./logger');
 
-const AGENTS_URL          = process.env.AGENTS_URL          || 'http://localhost:8001';
-const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY || 'dev-internal-key-change-in-prod';
+const AGENTS_URL          = process.env.AGENTS_URL || 'http://localhost:8001';
+const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY
+  || (process.env.NODE_ENV !== 'production'
+    ? 'dev-internal-key-change-in-prod'
+    : (() => { throw new Error('AGENTS_INTERNAL_KEY must be set in production'); })());
 
 // Fast timeout: non-LLM operations (status polls, CRUD edits, registry)
 const DEFAULT_TIMEOUT_MS = 12_000;
@@ -88,6 +91,19 @@ async function startOrchestration({
  */
 async function getRunStatus(runId, orgId) {
   return _fetch(`/orchestrate/${runId}/status?org_id=${encodeURIComponent(orgId)}`);
+}
+
+/**
+ * Cancel a running orchestration. Stops the in-process asyncio task (if still live)
+ * and marks the DB record as 'cancelled'. Idempotent — safe to call on already-
+ * terminal runs; returns the current status without error.
+ * Returns { run_id, status, task_cancelled }
+ */
+async function cancelOrchestration(runId, orgId) {
+  logger.info({ runId, orgId }, 'agents:cancelOrchestration');
+  return _fetch(`/orchestrate/${runId}/cancel?org_id=${encodeURIComponent(orgId)}`, {
+    method: 'POST',
+  });
 }
 
 
@@ -260,6 +276,54 @@ async function generateSampleResponses({
 }
 
 
+// ── Insight generation ─────────────────────────────────────────────────────────
+
+/**
+ * Fire insight generation for a survey. Best-effort; caller should not await
+ * the full pipeline — only the HTTP kick-off.
+ *
+ * @param {{ surveyId, orgId, runId, trigger }} params
+ */
+async function triggerInsightGeneration({ surveyId, orgId, runId, trigger = 'manual' }) {
+  logger.info({ surveyId, orgId, runId, trigger }, 'agents:triggerInsightGeneration');
+  return _fetch('/insights/generate', {
+    method: 'POST',
+    body: JSON.stringify({ survey_id: surveyId, org_id: orgId, run_id: runId, trigger }),
+  }, 15_000);
+}
+
+
+// ── Checkpoint blobs ───────────────────────────────────────────────────────────
+
+/**
+ * Fetch a checkpoint report blob by its storage ref.
+ * In dev/dev-paid the agents service reads from the local filesystem.
+ * In staging/prod use getCheckpointReadUrl() to get a signed OCI PAR URL instead.
+ *
+ * @param {string} ref  - storage ref returned by write_checkpoint_blob (local path or OCI key)
+ * @returns {Promise<object>} parsed + schema-migrated blob
+ */
+async function getCheckpointBlob(ref) {
+  return _fetch(`/internal/checkpoint-blob?ref=${encodeURIComponent(ref)}`);
+}
+
+/**
+ * Get a readable URL for a checkpoint blob.
+ * In dev/dev-paid returns the ref itself (agents proxies it).
+ * In staging/prod returns a signed OCI Pre-Authenticated Request URL valid for 15 min.
+ *
+ * @param {string} ref           - storage ref from the DB
+ * @param {number} [expiryMin=15] - PAR expiry in minutes (ignored for local refs)
+ * @returns {Promise<string>} URL or local ref
+ */
+async function getCheckpointReadUrl(ref, expiryMin = 15) {
+  const result = await _fetch(
+    `/internal/checkpoint-read-url?ref=${encodeURIComponent(ref)}&expiry_minutes=${expiryMin}`,
+  );
+  return result.url;
+}
+
+
 // ── Registry + health ──────────────────────────────────────────────────────────
 
 /** List all agent capabilities (active + stubs). */
@@ -282,6 +346,7 @@ module.exports = {
   // Orchestration
   startOrchestration,
   getRunStatus,
+  cancelOrchestration,
   // Copilot chat
   refineRun,
   // Skip logic
@@ -295,6 +360,11 @@ module.exports = {
   applyRecommendation,
   // Sample responses
   generateSampleResponses,
+  // Insight generation
+  triggerInsightGeneration,
+  // Checkpoint blobs
+  getCheckpointBlob,
+  getCheckpointReadUrl,
   // Discovery
   getAgentRegistry,
   isHealthy,

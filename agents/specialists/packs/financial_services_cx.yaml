@@ -1,0 +1,45 @@
+id: financial_services_cx
+display_name: "Financial Services Customer Experience"
+priority: 82
+match:
+  industries: [financial_services, banking, insurance, fintech, wealth_management, credit_union, lending]
+  use_cases: [CX, customer_experience, account_experience, claims_experience]
+  survey_types: [banking_csat, claims_nps, branch_survey, digital_banking_ces, advisor_nps]
+  audiences: [customers, members, policyholders, investors]
+taxonomy:
+  canonical_topics:
+    - { name: "Digital Banking UX",      parent: "Digital Channels",  keywords: [app, mobile, online, digital, website, interface, login, transfer, deposit], weight: 1.2 }
+    - { name: "Fee Transparency",        parent: "Trust & Value",     keywords: [fee, charge, hidden, unexpected, statement, billing, overdraft, penalty], weight: 1.3 }
+    - { name: "Branch Experience",       parent: "In-Person",         keywords: [branch, teller, in-person, visit, lobby, wait, ATM, staff, manager] }
+    - { name: "Customer Service",        parent: "Support",           keywords: [support, call center, phone, hold, agent, resolution, responsive, help] }
+    - { name: "Loan & Application",      parent: "Products",          keywords: [loan, mortgage, application, approval, process, paperwork, documentation, decision] }
+    - { name: "Fraud & Security",        parent: "Trust & Value",     keywords: [fraud, security, breach, unauthorized, suspicious, phishing, scam, identity], weight: 1.4 }
+    - { name: "Advisor Relationship",    parent: "Relationship",      keywords: [advisor, planner, relationship manager, proactive, advice, personalized] }
+    - { name: "Account Management",      parent: "Products",          keywords: [account, manage, access, settings, statement, notifications, alerts] }
+    - { name: "Onboarding",              parent: "Relationship",      keywords: [open, new account, onboarding, welcome, setup, first] }
+benchmarks:
+  nps:  { p25: 20, p50: 34, p75: 48, source: "Bain Financial Services 2024" }
+  csat: { p25: 3.5, p50: 3.9, p75: 4.3, scale: 5 }
+  ces:  { p25: 5.2, p50: 4.2, p75: 3.2, scale: 7 }
+vocabulary:
+  positive_signals: [transparent, trustworthy, responsive, helpful, easy to use, secure, reliable]
+  negative_signals: [hidden fees, long hold, confusing, rejected, denied, unauthorized, hard to reach]
+  red_flags: [fraud, unauthorized transaction, data breach, discrimination, regulatory complaint, CFPB]
+  domain_terms: [NPS, CSAT, CES, retention, AUM, LTV, churn, delinquency, digital adoption]
+prompt_overlays:
+  narrate_system: |
+    You are an expert financial services CX analyst. You understand retail banking, wealth management, and insurance.
+    Weight fee transparency, digital UX, and fraud resolution as primary trust drivers.
+    Regulatory risk: flag any mentions of discrimination, unauthorized access, or CFPB-worthy complaints as CRITICAL.
+    Reference: Banking NPS median is 34; digital-native banks (Chime, Ally) average 55+; traditional banks average 25-35.
+  topics_system: |
+    Organize financial feedback by channel and product: Digital → Branch → Phone → Products → Claims/Applications.
+    Separate fee-related complaints from service complaints — fee issues are high churn risk.
+  crystal_system: |
+    You are Crystal, a financial services CX expert. You understand banking operations, digital adoption, and regulatory risk.
+    Reference industry benchmarks and flag regulatory-risk signals clearly.
+question_templates:
+  - { id: fin.recommend, text: "How likely are you to recommend us to a friend or family member?",               type: nps, theme: "Overall" }
+  - { id: fin.digital,   text: "How easy was it to complete your task using our mobile app or website?",         type: ces, theme: "Digital" }
+  - { id: fin.trust,     text: "How much do you trust us to handle your financial needs securely?",              type: csat, theme: "Trust" }
+  - { id: fin.open,      text: "What would make your banking experience better?",                                type: open_text, theme: "Open Feedback" }

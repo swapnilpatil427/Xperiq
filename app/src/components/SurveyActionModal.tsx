@@ -10,6 +10,8 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal component prop interfaces
@@ -72,10 +74,18 @@ interface ActionButtonProps {
 // Public modal prop interfaces
 // ─────────────────────────────────────────────────────────────────────────────
 
+export interface LaunchSettings {
+  maxResponses: string;
+  autoCloseAt: string;
+  allowMultiple: boolean;
+  passwordProtected: boolean;
+  password: string;
+}
+
 export interface PublishModalProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: () => Promise<void> | void;
+  onConfirm: (settings: LaunchSettings) => Promise<void> | void;
   busy?: boolean;
   surveyTitle?: string;
   questionCount?: number;
@@ -254,15 +264,32 @@ function ActionButton({ onClick, disabled, busy, busyLabel, icon, label, gradien
 export function PublishModal({ open, onClose, onConfirm, busy, surveyTitle, questionCount }: PublishModalProps) {
   const { t } = useTranslation();
   const m = 'surveys.modals.publish';
+  const [tab, setTab] = useState<'preview' | 'settings'>('preview');
+  const [settings, setSettings] = useState<LaunchSettings>({
+    maxResponses: '',
+    autoCloseAt: '',
+    allowMultiple: true,
+    passwordProtected: false,
+    password: '',
+  });
+  const [showPass, setShowPass] = useState(false);
+
   const questionLabel = questionCount && questionCount > 0
     ? t(questionCount !== 1 ? `${m}.questionStatPlural` : `${m}.questionStat`, { n: questionCount })
     : null;
 
+  const handleClose = () => {
+    setTab('preview');
+    setSettings({ maxResponses: '', autoCloseAt: '', allowMultiple: true, passwordProtected: false, password: '' });
+    onClose();
+  };
+
   return (
-    <Dialog open={open} onOpenChange={(val) => { if (!val) onClose(); }}>
+    <Dialog open={open} onOpenChange={(val) => { if (!val) handleClose(); }}>
       <DialogContent className="max-w-lg rounded-3xl p-0 overflow-hidden gap-0">
-        <div className="px-7 pt-7 pb-5">
-          <DialogHeader className="mb-5">
+        {/* Header */}
+        <div className="px-7 pt-7 pb-4">
+          <DialogHeader className="mb-4">
             <div className="flex items-start gap-4">
               <ModalIcon
                 gradient="linear-gradient(135deg, #059669, #047857)"
@@ -280,51 +307,167 @@ export function PublishModal({ open, onClose, onConfirm, busy, surveyTitle, ques
             </div>
           </DialogHeader>
 
-          {questionLabel && (
-            <StatBar responseCount={0} extra={{ icon: 'help_outline', label: questionLabel }} />
-          )}
-
-          <WhatHappensBox heading={t(`${m}.bodyHeading`)}>
-            <CheckRow icon="public" color="#059669" bg="rgba(5,150,105,0.1)"
-              text={t(`${m}.row1text`)} sub={t(`${m}.row1sub`)} />
-            <CheckRow icon="bar_chart" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
-              text={t(`${m}.row2text`)} sub={t(`${m}.row2sub`)} />
-            <CheckRow icon="auto_awesome" color="#8329c8" bg="rgba(131,41,200,0.1)"
-              text={t(`${m}.row3text`)} sub={t(`${m}.row3sub`)} />
-            <CheckRow icon="pause_circle" color="#d97706" bg="rgba(217,119,6,0.1)"
-              text={t(`${m}.row4text`)} sub={t(`${m}.row4sub`)} />
-          </WhatHappensBox>
-
-          <div className="rounded-2xl p-4 mb-4"
-            style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.12)' }}>
-            <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: 'var(--color-primary)' }}>
-              {t(`${m}.channelsHeading`)}
-            </p>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { icon: 'link',      label: t(`${m}.channel1Label`), sub: t(`${m}.channel1Sub`) },
-                { icon: 'qr_code_2', label: t(`${m}.channel2Label`), sub: t(`${m}.channel2Sub`) },
-                { icon: 'mail',      label: t(`${m}.channel3Label`), sub: t(`${m}.channel3Sub`) },
-              ].map(({ icon, label, sub }) => (
-                <div key={label} className="flex flex-col items-center text-center gap-1.5 p-2.5 rounded-xl"
-                  style={{ background: 'rgba(42,75,217,0.06)' }}>
-                  <Icon name={icon} size={18} style={{ color: 'var(--color-primary)' }} />
-                  <span className="text-xs font-bold text-foreground">{label}</span>
-                  <span className="text-[10px] text-muted-foreground">{sub}</span>
-                </div>
-              ))}
-            </div>
+          {/* Tab switcher */}
+          <div className="flex gap-1 p-1 rounded-xl mb-4"
+            style={{ background: 'rgba(0,0,0,0.04)' }}>
+            {(['preview', 'settings'] as const).map((id) => (
+              <button
+                key={id}
+                onClick={() => setTab(id)}
+                className="flex-1 py-2 px-3 text-xs font-bold rounded-lg transition-all"
+                style={{
+                  background: tab === id ? '#fff' : 'transparent',
+                  color: tab === id ? 'var(--color-on-surface)' : 'var(--color-on-surface-variant)',
+                  boxShadow: tab === id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                }}
+              >
+                <Icon name={id === 'preview' ? 'info' : 'tune'} size={13} className="inline mr-1.5" />
+                {id === 'preview' ? t(`${m}.previewTab`) : t(`${m}.settingsTab`)}
+              </button>
+            ))}
           </div>
-
-          <FooterNote icon="auto_awesome" iconColor="#8329c8" iconBg="rgba(131,41,200,0.05)">
-            <strong style={{ color: '#8329c8' }}>{t(`${m}.footerBold`)}</strong>{' '}{t(`${m}.footerNote`)}
-          </FooterNote>
         </div>
 
+        {/* Tab content */}
+        <div className="px-7 pb-5 overflow-y-auto" style={{ maxHeight: '340px' }}>
+          {tab === 'preview' ? (
+            <>
+              {questionLabel && (
+                <StatBar responseCount={0} extra={{ icon: 'help_outline', label: questionLabel }} />
+              )}
+              <WhatHappensBox heading={t(`${m}.bodyHeading`)}>
+                <CheckRow icon="public" color="#059669" bg="rgba(5,150,105,0.1)"
+                  text={t(`${m}.row1text`)} sub={t(`${m}.row1sub`)} />
+                <CheckRow icon="bar_chart" color="#2a4bd9" bg="rgba(42,75,217,0.1)"
+                  text={t(`${m}.row2text`)} sub={t(`${m}.row2sub`)} />
+                <CheckRow icon="auto_awesome" color="#8329c8" bg="rgba(131,41,200,0.1)"
+                  text={t(`${m}.row3text`)} sub={t(`${m}.row3sub`)} />
+                <CheckRow icon="pause_circle" color="#d97706" bg="rgba(217,119,6,0.1)"
+                  text={t(`${m}.row4text`)} sub={t(`${m}.row4sub`)} />
+              </WhatHappensBox>
+              <div className="rounded-2xl p-4"
+                style={{ background: 'rgba(42,75,217,0.04)', border: '1px solid rgba(42,75,217,0.12)' }}>
+                <p className="text-[10px] font-black uppercase tracking-widest mb-3" style={{ color: 'var(--color-primary)' }}>
+                  {t(`${m}.channelsHeading`)}
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { icon: 'link',      label: t(`${m}.channel1Label`), sub: t(`${m}.channel1Sub`) },
+                    { icon: 'qr_code_2', label: t(`${m}.channel2Label`), sub: t(`${m}.channel2Sub`) },
+                    { icon: 'mail',      label: t(`${m}.channel3Label`), sub: t(`${m}.channel3Sub`) },
+                  ].map(({ icon, label, sub }) => (
+                    <div key={label} className="flex flex-col items-center text-center gap-1.5 p-2.5 rounded-xl"
+                      style={{ background: 'rgba(42,75,217,0.06)' }}>
+                      <Icon name={icon} size={18} style={{ color: 'var(--color-primary)' }} />
+                      <span className="text-xs font-bold text-foreground">{label}</span>
+                      <span className="text-[10px] text-muted-foreground">{sub}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col gap-5">
+              {/* Response limit */}
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  {t(`${m}.maxResponsesLabel`)}
+                </Label>
+                <Input
+                  type="number"
+                  min={1}
+                  placeholder={t(`${m}.maxResponsesPlaceholder`)}
+                  value={settings.maxResponses}
+                  onChange={(e) => setSettings((s) => ({ ...s, maxResponses: e.target.value }))}
+                  className="rounded-xl"
+                />
+                <p className="text-[11px] text-muted-foreground">{t(`${m}.maxResponsesHint`)}</p>
+              </div>
+
+              {/* Auto-close */}
+              <div className="flex flex-col gap-1.5">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  {t(`${m}.autoCloseLabel`)}
+                </Label>
+                <Input
+                  type="datetime-local"
+                  value={settings.autoCloseAt}
+                  onChange={(e) => setSettings((s) => ({ ...s, autoCloseAt: e.target.value }))}
+                  className="rounded-xl"
+                />
+                <p className="text-[11px] text-muted-foreground">{t(`${m}.autoCloseHint`)}</p>
+              </div>
+
+              {/* Allow multiple */}
+              <div className="flex items-center justify-between gap-4 p-3 rounded-xl"
+                style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                <div>
+                  <p className="text-sm font-semibold text-on-surface">{t(`${m}.allowMultipleLabel`)}</p>
+                </div>
+                <Switch
+                  checked={settings.allowMultiple}
+                  onCheckedChange={(v) => setSettings((s) => ({ ...s, allowMultiple: v }))}
+                />
+              </div>
+
+              {/* Password protection */}
+              <div className="flex flex-col gap-3 p-3 rounded-xl"
+                style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.06)' }}>
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-on-surface">{t(`${m}.passwordProtectedLabel`)}</p>
+                    <p className="text-[11px] text-muted-foreground">{t(`${m}.passwordProtectedHint`)}</p>
+                  </div>
+                  <Switch
+                    checked={settings.passwordProtected}
+                    onCheckedChange={(v) => setSettings((s) => ({ ...s, passwordProtected: v, password: v ? s.password : '' }))}
+                  />
+                </div>
+                {settings.passwordProtected && (
+                  <div className="relative">
+                    <Input
+                      type={showPass ? 'text' : 'password'}
+                      placeholder={t(`${m}.passwordPlaceholder`)}
+                      value={settings.password}
+                      onChange={(e) => setSettings((s) => ({ ...s, password: e.target.value }))}
+                      className="rounded-xl pr-14"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-on-surface"
+                    >
+                      {showPass ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {tab === 'preview' && (
+          <div className="px-7 pb-5">
+            <FooterNote icon="auto_awesome" iconColor="#8329c8" iconBg="rgba(131,41,200,0.05)">
+              <strong style={{ color: '#8329c8' }}>{t(`${m}.footerBold`)}</strong>{' '}{t(`${m}.footerNote`)}
+            </FooterNote>
+          </div>
+        )}
+
         <DialogFooter className="flex items-center gap-3 px-7 py-5 border-t border-border sm:justify-start">
-          <CancelButton onClick={onClose} disabled={busy} label={t(`${m}.cancelButton`)} />
+          <CancelButton onClick={handleClose} disabled={busy} label={t(`${m}.cancelButton`)} />
+          {tab === 'preview' ? (
+            <Button
+              onClick={() => setTab('settings')}
+              variant="outline"
+              className="flex items-center gap-2 rounded-xl font-bold px-5"
+            >
+              <Icon name="tune" size={16} />
+              {t(`${m}.settingsTab`)}
+            </Button>
+          ) : null}
           <ActionButton
-            onClick={onConfirm}
+            onClick={() => onConfirm(settings)}
             busy={busy}
             busyLabel={t(`${m}.confirmingButton`)}
             icon="rocket_launch"
