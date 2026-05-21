@@ -89,3 +89,36 @@ def validate_thread_ownership(thread_id: str, org_id: str) -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Thread does not belong to this org",
         )
+
+
+async def check_survey_access(survey_id: str, org_id: str, db_pool=None) -> dict | None:
+    """Return survey row if survey_id belongs to org_id, None otherwise.
+
+    Raises PermissionError if org mismatch detected (not just missing).
+    """
+    # Dev bypass
+    if os.getenv("AGENTS_ENV", "production") == "dev" and org_id == "dev_org":
+        return {"id": survey_id, "org_id": org_id, "status": "active"}
+
+    try:
+        from agents.lib import db
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT id, org_id, status, title, questions FROM surveys WHERE id = %s AND deleted_at IS NULL",
+                    (survey_id,),
+                )
+                row = await cur.fetchone()
+                if row is None:
+                    return None
+                cols = [desc[0] for desc in cur.description]
+                survey = dict(zip(cols, row))
+                if str(survey["org_id"]) != str(org_id):
+                    raise PermissionError(f"Survey {survey_id} does not belong to org {org_id}")
+                return survey
+    except PermissionError:
+        raise
+    except Exception as exc:
+        from agents.lib.logger import logger
+        logger.error("check_survey_access_failed", survey_id=survey_id, error=str(exc))
+        return None

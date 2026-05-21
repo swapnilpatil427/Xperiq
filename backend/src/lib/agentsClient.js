@@ -293,6 +293,17 @@ async function triggerInsightGeneration({ surveyId, orgId, runId, trigger = 'man
 }
 
 
+/**
+ * Alias for triggerInsightGeneration — convenience wrapper for manual run triggers.
+ * @param {string} surveyId
+ * @param {string} orgId
+ * @param {object} [options]  - merged into the trigger payload (e.g. runId, force_regenerate)
+ */
+async function triggerRun(surveyId, orgId, options = {}) {
+  return triggerInsightGeneration({ surveyId, orgId, trigger: 'manual', ...options });
+}
+
+
 // ── Checkpoint blobs ───────────────────────────────────────────────────────────
 
 /**
@@ -362,6 +373,7 @@ module.exports = {
   generateSampleResponses,
   // Insight generation
   triggerInsightGeneration,
+  triggerRun,
   // Checkpoint blobs
   getCheckpointBlob,
   getCheckpointReadUrl,

@@ -36,6 +36,15 @@ from prometheus_client.exposition import generate_latest
 
 dotenv.load_dotenv()
 
+# ── Production startup validation ────────────────────────────────────────────
+_IS_PROD = os.getenv("AGENTS_ENV", "dev").lower() == "production"
+if _IS_PROD:
+    _missing = [v for v in ("DATABASE_URL", "REDIS_URL", "OPENROUTER_API_KEY", "AGENTS_INTERNAL_KEY") if not os.getenv(v)]
+    if _missing:
+        raise RuntimeError(f"Missing required env vars: {', '.join(_missing)}")
+    if os.getenv("AGENTS_INTERNAL_KEY") == "dev-internal-key-change-in-prod":
+        raise RuntimeError("AGENTS_INTERNAL_KEY must be changed from the default before deploying to production")
+
 from agents.agents import (
     ACTIVE_AGENTS, ALL_AGENTS,
     survey_creator_agent,
@@ -832,6 +841,45 @@ async def crystal_chat(request: Request, _: None = Depends(require_internal_key)
         "insight_refs": output.insight_refs,
         "citations":    output.citations,
     }
+
+
+# ── Crystal: SSE streaming ReAct endpoint ────────────────────────────────────────
+
+@app.post("/insights/crystal/stream", summary="SSE streaming Crystal ReAct loop")
+async def crystal_stream_endpoint(req: Request, _: None = Depends(require_internal_key)):
+    """SSE streaming endpoint for Crystal ReAct loop."""
+    from agents.agents.crystal import CrystalInput, _run_react_loop_streaming
+    from fastapi.responses import StreamingResponse
+
+    body = await req.json()
+    inp = CrystalInput(
+        survey_id=body.get("survey_id", ""),
+        org_id=body.get("org_id", ""),
+        message=body.get("message", ""),
+        insights=body.get("insights", []),
+        topics=body.get("topics", []),
+        survey_title=body.get("survey_title", ""),
+        survey_response_count=body.get("survey_response_count", 0),
+        metrics=body.get("metrics", {}),
+        conversation_history=body.get("conversation_history", []),
+        user_id=body.get("user_id", ""),
+        scope=body.get("scope", "survey"),
+        has_open_text=body.get("has_open_text", True),
+    )
+
+    async def event_stream():
+        async for event_json in _run_react_loop_streaming(inp):
+            yield f"data: {event_json}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Agent registry ───────────────────────────────────────────────────────────────

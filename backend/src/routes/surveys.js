@@ -642,7 +642,7 @@ router.get('/:id/analytics', requireAuth, async (req, res) => {
     });
   } catch (err) {
     logger.error({ err: err.message, surveyId: id }, 'analytics:survey:error');
-    res.status(500).json({ error: 'Failed to fetch analytics' });
+    serverError(res, err);
   }
 });
 

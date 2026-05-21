@@ -510,12 +510,19 @@ export function createApiClient(getToken: GetToken) {
 
     // ── Survey Insights (v2 — agentic) ────────────────────────────────────────
 
-    listInsights: async (surveyId: string, opts: { timeWindow?: string } = {}): Promise<{ insights: AgenticInsight[]; run_status?: string }> => {
+    listInsights: async (surveyId: string, opts: { timeWindow?: string } = {}): Promise<{
+      insights:        AgenticInsight[];
+      run_status?:     string | null;
+      survey?:         { id: string; title: string; response_count: number };
+      crystal_opening?: string | null;
+      pipeline_active?: boolean;
+      survey_status?:  string;
+    }> => {
       const params = new URLSearchParams();
       if (opts.timeWindow && opts.timeWindow !== 'all_time') params.set('time_window', opts.timeWindow);
       const qs = params.toString();
       const url = `/api/insights/${surveyId}/list${qs ? '?' + qs : ''}`;
-      const res = await http.get<{ insights: AgenticInsight[]; run_status?: string }>(url);
+      const res = await http.get(url);
       return res.data;
     },
 
@@ -707,6 +714,22 @@ export function createApiClient(getToken: GetToken) {
       top_surveys:      Array<{ id: string; title: string; response_count: number }>;
     }> => {
       const res = await http.get('/api/orgs/me/analytics');
+      return res.data;
+    },
+
+    getExperienceOverview: async (): Promise<{
+      surveys: Array<{
+        id: string; title: string; status: string;
+        response_count: number; nps_score: number | null;
+        csat_score: number | null; metrics_at: string | null;
+      }>;
+      portfolio_metrics: {
+        nps_score: number | null; csat_score: number | null;
+        response_count: number; survey_count: number; captured_at: string;
+      } | null;
+      active_survey_count: number;
+    }> => {
+      const res = await http.get('/api/experience/org/overview');
       return res.data;
     },
 

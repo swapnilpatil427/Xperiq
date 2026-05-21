@@ -5,21 +5,22 @@
 // - CIBar              — visual confidence interval
 // - LayerBadge         — descriptive | diagnostic | predictive | prescriptive
 // - GlassCard / GlassCardDark — surface wrappers
-// TODO: i18n keys for all visible strings once locales/en.js extension is done.
 
 import React from 'react';
 import { Icon } from '../../components/Icon';
+import { useTranslation } from '../../lib/i18n';
 
 // ── Layer config — single source of truth for all four insight layers ────────
 export type InsightLayer = 'descriptive' | 'diagnostic' | 'predictive' | 'prescriptive';
 
+// Visual-only config — labels/tooltips live in locales/en.ts under surveyInsights.layers
 export const LAYER_CONFIG: Record<InsightLayer, {
-  label: string; tooltip: string; color: string; bg: string; ringColor: string; textColor: string;
+  color: string; bg: string; ringColor: string; textColor: string;
 }> = {
-  descriptive:  { label: 'What happened',    tooltip: 'Summarises what occurred — response counts, NPS, sentiment distribution.',         color: '#0369a1', bg: '#e0f2fe', ringColor: '#2a4bd9', textColor: 'text-blue-700' },
-  diagnostic:   { label: 'Why it happened',  tooltip: 'Explains the drivers behind the patterns — which topics caused the score.',        color: '#7c3aed', bg: '#ede9fe', ringColor: '#8329c8', textColor: 'text-purple-700' },
-  predictive:   { label: 'What will happen', tooltip: 'Forward-looking signal — trends and patterns likely to continue or worsen.',        color: '#d97706', bg: '#fef3c7', ringColor: '#d97706', textColor: 'text-amber-700' },
-  prescriptive: { label: 'What to do',       tooltip: 'Actionable recommendation — specific steps to improve the experience or metric.',   color: '#059669', bg: '#d1fae5', ringColor: '#059669', textColor: 'text-green-700' },
+  descriptive:  { color: '#0369a1', bg: '#e0f2fe', ringColor: '#2a4bd9', textColor: 'text-blue-700'   },
+  diagnostic:   { color: '#7c3aed', bg: '#ede9fe', ringColor: '#8329c8', textColor: 'text-purple-700' },
+  predictive:   { color: '#d97706', bg: '#fef3c7', ringColor: '#d97706', textColor: 'text-amber-700'  },
+  prescriptive: { color: '#059669', bg: '#d1fae5', ringColor: '#059669', textColor: 'text-green-700'  },
 };
 
 // ── Citation chip ────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ export { SENTIMENT_BORDER };
 
 // ── Confidence chip ──────────────────────────────────────────────────────────
 export function ConfidenceChip({ value, dark = false }: { value: number; dark?: boolean }) {
+  const { t } = useTranslation();
   const tier =
     value >= 80 ? 'high' : value >= 60 ? 'mid' : 'low';
   const cls =
@@ -67,7 +69,7 @@ export function ConfidenceChip({ value, dark = false }: { value: number; dark?: 
           : 'bg-muted text-muted-foreground';
   return (
     <span className={`px-2 py-0.5 rounded-full text-[10px] font-black tracking-wide ${cls}`}>
-      CONF {value}
+      {t('surveyInsights.confidence.label', { value })}
     </span>
   );
 }
@@ -101,6 +103,7 @@ export function CIBar({ position, width = 100, dark = false }: { position: numbe
 
 // ── Layer badge ──────────────────────────────────────────────────────────────
 export function LayerBadge({ layer, icon, dark = false }: { layer: InsightLayer; icon?: string; dark?: boolean }) {
+  const { t } = useTranslation();
   const m = LAYER_CONFIG[layer];
   return (
     <div className="flex items-center gap-2">
@@ -115,7 +118,7 @@ export function LayerBadge({ layer, icon, dark = false }: { layer: InsightLayer;
         className={'text-[10px] font-black uppercase tracking-[0.18em] ' + (dark ? 'text-white/80' : m.textColor)}
         style={dark ? undefined : { color: m.ringColor }}
       >
-        {m.label}
+        {t(`surveyInsights.layers.${layer}.label`)}
       </span>
     </div>
   );

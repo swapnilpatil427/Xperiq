@@ -23,6 +23,13 @@ import { TemplateLibraryPage } from './pages/TemplateLibraryPage';
 import { TemplateEditorPage } from './pages/TemplateEditorPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
 import { DataPage } from './pages/DataPage';
+import { ExperienceHubPage } from './pages/experience/ExperienceHubPage';
+import { SurveyIntelligencePage } from './pages/experience/SurveyIntelligencePage';
+import { SurveyReportPage } from './pages/experience/SurveyReportPage';
+import { TopicAnalysisHubPage } from './pages/experience/TopicAnalysisHubPage';
+import { TopicDeepDivePage } from './pages/experience/TopicDeepDivePage';
+import { SurveyTrendsPage } from './pages/experience/SurveyTrendsPage';
+import { OrgTrendsPage } from './pages/experience/OrgTrendsPage';
 import { SignInPage } from './pages/SignInPage';
 import { SurveyFillPage } from './pages/SurveyFillPage';
 import { ErrorPage } from './pages/ErrorPage';
@@ -83,6 +90,13 @@ export default function App() {
             <Route path={ROUTES.WORKFLOWS}          element={<ErrorBoundary inline><WorkflowsPage /></ErrorBoundary>} />
             <Route path={ROUTES.SETTINGS}           element={<ErrorBoundary inline><BrandSettingsPage /></ErrorBoundary>} />
             <Route path={ROUTES.DATA}               element={<ErrorBoundary inline><DataPage /></ErrorBoundary>} />
+            <Route path={ROUTES.EXPERIENCE}              element={<ErrorBoundary inline><ExperienceHubPage /></ErrorBoundary>} />
+            <Route path={ROUTES.EXPERIENCE_ORG_TRENDS}   element={<ErrorBoundary inline><OrgTrendsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.EXPERIENCE_SURVEY}       element={<ErrorBoundary inline><SurveyIntelligencePage /></ErrorBoundary>} />
+            <Route path={ROUTES.EXPERIENCE_SURVEY_REPORT} element={<ErrorBoundary inline><SurveyReportPage /></ErrorBoundary>} />
+            <Route path={ROUTES.EXPERIENCE_SURVEY_TOPICS} element={<ErrorBoundary inline><TopicAnalysisHubPage /></ErrorBoundary>} />
+            <Route path={ROUTES.EXPERIENCE_SURVEY_TOPIC}  element={<ErrorBoundary inline><TopicDeepDivePage /></ErrorBoundary>} />
+            <Route path={ROUTES.EXPERIENCE_SURVEY_TRENDS} element={<ErrorBoundary inline><SurveyTrendsPage /></ErrorBoundary>} />
           </Route>
 
           <Route path="/app" element={<Navigate to={ROUTES.SURVEYS} replace />} />

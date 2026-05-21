@@ -68,3 +68,35 @@ circuit_breaker_state = Gauge(
     ["name"],
     registry=registry,
 )
+
+# ── Crystal ReAct metrics ──────────────────────────────────────────────────────
+crystal_tool_calls_total = Counter(
+    "crystal_tool_calls_total",
+    "Total Crystal tool calls by tool name and org",
+    ["tool", "org_id"],
+    registry=registry,
+)
+
+crystal_tool_duration_seconds = Histogram(
+    "crystal_tool_duration_seconds",
+    "Crystal tool call duration in seconds",
+    ["tool"],
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+    registry=registry,
+)
+
+crystal_react_turns_total = Counter(
+    "crystal_react_turns_total",
+    "Total Crystal ReAct loop tool turn iterations by org",
+    ["org_id"],
+    registry=registry,
+)
+
+# ── Agent run duration ─────────────────────────────────────────────────────────
+agent_run_duration_seconds = Histogram(
+    "agent_run_duration_seconds",
+    "Insight pipeline run duration in seconds by trigger type",
+    ["trigger"],
+    buckets=[5, 15, 30, 60, 120, 300, 600],
+    registry=registry,
+)

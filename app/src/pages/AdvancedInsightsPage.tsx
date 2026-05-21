@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Icon } from '../components/Icon';
 import { useSetPageTitle } from '../contexts/pageTitle';
 import { useInsights } from '../hooks/useInsights';
@@ -13,7 +13,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { CrystalPanel } from '../components/CrystalPanel';
 import { useCrystalPanel } from '../contexts/crystalPanel';
-import type { SurveyTopic, TopicDriver } from '../types';
+import type { SurveyTopic, TopicDriver, TopicTheme } from '../types';
 import { GeneratingOverlay } from './insights/GeneratingOverlay';
 
 // ── Palette for topic cards ────────────────────────────────────────────────────
@@ -103,25 +103,39 @@ export function AdvancedInsightsPage() {
   const [sortMode, setSortMode] = useState<'volume' | 'urgency'>('volume');
 
   // ── Topics ────────────────────────────────────────────────────────────────
-  const [topics,        setTopics]        = useState<SurveyTopic[]>([]);
+  const [themes,        setThemes]        = useState<TopicTheme[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
   const [runStatus,     setRunStatus]     = useState<string | null>(null);
   const [selectedId,    setSelectedId]    = useState<string | null>(null);
 
+  // Flat sorted list derived from hierarchy — used by all non-rendering logic
+  const topics = useMemo<SurveyTopic[]>(() => {
+    const flat = themes.flatMap(th => [
+      ...th.topics,
+      ...th.topics.flatMap(tp => tp.subtopics ?? []),
+    ]);
+    return sortMode === 'urgency'
+      ? [...flat].sort((a, b) => (b.urgency_score ?? 0) - (a.urgency_score ?? 0))
+      : [...flat].sort((a, b) => b.volume - a.volume);
+  }, [themes, sortMode]);
+
   const loadTopics = useCallback(async () => {
-    if (!activeSurvey?.id) { setTopics([]); return; }
+    if (!activeSurvey?.id) { setThemes([]); return; }
     setTopicsLoading(true);
     try {
-      const { topics: list, run_status } = await api.listTopics(activeSurvey.id, window, sortMode);
-      setTopics(list ?? []);
-      setRunStatus(run_status);
-      if (list?.length && !selectedId) setSelectedId(list[0].id);
+      const data = await api.getTopicHierarchy(activeSurvey.id, window);
+      setThemes(data.themes ?? []);
+      setRunStatus(null);
+      if (data.themes?.length && !selectedId) {
+        const first = data.themes[0]?.topics[0];
+        if (first) setSelectedId(first.id);
+      }
     } catch {
-      setTopics([]);
+      setThemes([]);
     } finally {
       setTopicsLoading(false);
     }
-  }, [api, activeSurvey?.id, window, sortMode]);
+  }, [api, activeSurvey?.id, window]);
 
   useEffect(() => { loadTopics(); }, [loadTopics]);
 
@@ -559,9 +573,24 @@ export function AdvancedInsightsPage() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {topics.map((topic, idx) => {
-              const palette  = TOPIC_PALETTES[idx % TOPIC_PALETTES.length];
+          <div className="space-y-6">
+            {themes.map((theme, themeIdx) => {
+              const themeTopics = sortMode === 'urgency'
+                ? [...theme.topics].sort((a, b) => (b.urgency_score ?? 0) - (a.urgency_score ?? 0))
+                : [...theme.topics].sort((a, b) => b.volume - a.volume);
+              const themeOffset = themes.slice(0, themeIdx).reduce((s, th) => s + th.topics.length, 0);
+              return (
+                <div key={theme.name} className="space-y-3">
+                  {themes.length > 1 && (
+                    <div className="flex items-center gap-3 pb-1">
+                      <h5 className="text-xs font-black uppercase tracking-widest text-on-surface/50">{theme.name}</h5>
+                      <div className="flex-1 h-px bg-muted/20" />
+                      <span className="text-xs text-muted-foreground">{theme.volume.toLocaleString()} mentions</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {themeTopics.map((topic, idx) => {
+              const palette  = TOPIC_PALETTES[(themeOffset + idx) % TOPIC_PALETTES.length];
               const signal   = topicSignal(topic.sentiment_score);
               const isActive = topic.id === selectedId;
               return (
@@ -664,6 +693,10 @@ export function AdvancedInsightsPage() {
                   <div className="absolute bottom-0 left-0 h-1 w-0 group-hover:w-full transition-all duration-500"
                     style={{ background: palette.barColor }} />
                 </button>
+              );
+            })}
+                  </div>
+                </div>
               );
             })}
           </div>

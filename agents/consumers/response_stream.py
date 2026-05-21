@@ -24,6 +24,73 @@ from datetime import datetime, timezone
 from agents.lib.logger import logger
 from agents.consumers.event_bus import consume_events
 
+# ── Progressive tier Redis client ─────────────────────────────────────────────
+
+_redis_client = None
+
+
+async def _get_redis():
+    global _redis_client
+    if _redis_client is None:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        try:
+            import redis.asyncio as _aioredis  # type: ignore[import]
+            _redis_client = await _aioredis.from_url(redis_url, decode_responses=True)
+        except Exception:
+            pass
+    return _redis_client
+
+
+async def should_trigger_progressive_tier(survey_id: str, response_count: int) -> str | None:
+    """Return the tier name if we should trigger a progressive run, else None.
+
+    Checks Redis to avoid re-triggering the same tier.
+    Thresholds: first_voices=10, early_signals=40, growing_picture=70, full_report=100.
+    """
+    from agents.lib.constants import (
+        PROGRESSIVE_TIER_FIRST_VOICES,
+        PROGRESSIVE_TIER_EARLY_SIGNALS,
+        PROGRESSIVE_TIER_GROWING_PICTURE,
+        PROGRESSIVE_TIER_FULL_REPORT,
+    )
+
+    tiers = [
+        (PROGRESSIVE_TIER_FIRST_VOICES,    "first_voices"),
+        (PROGRESSIVE_TIER_EARLY_SIGNALS,   "early_signals"),
+        (PROGRESSIVE_TIER_GROWING_PICTURE, "growing_picture"),
+        (PROGRESSIVE_TIER_FULL_REPORT,     "full_report"),
+    ]
+
+    redis = await _get_redis()
+    if redis is None:
+        return None
+
+    for threshold, tier_name in reversed(tiers):
+        if response_count >= threshold:
+            key = f"progressive:{survey_id}:{tier_name}:triggered"
+            try:
+                already = await redis.get(key)
+                if not already:
+                    return tier_name
+            except Exception:
+                pass
+            break  # Only check highest matching tier
+
+    return None
+
+
+async def mark_progressive_tier_complete(survey_id: str, tier: str) -> None:
+    """Mark a progressive tier as triggered in Redis (30-day TTL)."""
+    redis = await _get_redis()
+    if redis is None:
+        return
+    key = f"progressive:{survey_id}:{tier}:triggered"
+    try:
+        await redis.set(key, "1", ex=2592000)  # 30 days
+    except Exception:
+        pass
+
+
 _AGENTS_ENV: str = os.getenv("AGENTS_ENV", "production")
 _DEFAULT_THRESHOLD = "1" if _AGENTS_ENV in ("development", "local") else "10"
 _DEFAULT_TIME = "1" if _AGENTS_ENV in ("development", "local") else "5"
@@ -54,6 +121,40 @@ async def _should_trigger(survey_id: str) -> bool:
         datetime.now(timezone.utc) - batch["last_trigger"]
     ).total_seconds() / 60
     return elapsed_minutes >= TIME_THRESHOLD_MINUTES and batch["count"] > 0
+
+
+async def _get_survey_status(survey_id: str) -> str | None:
+    """Return survey status from DB, or None if not found."""
+    import psycopg  # type: ignore[import]
+    try:
+        async with await psycopg.AsyncConnection.connect(_DB_DSN) as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT status FROM surveys WHERE id = %s AND deleted_at IS NULL",
+                    (survey_id,),
+                )
+                row = await cur.fetchone()
+                return row[0] if row else None
+    except Exception as exc:
+        logger.warning("stream_consumer_survey_status_check_failed", survey_id=survey_id, error=str(exc))
+        return None
+
+
+async def _get_total_response_count(survey_id: str) -> int:
+    """Return the total response count for a survey from the DB."""
+    import psycopg  # type: ignore[import]
+    try:
+        async with await psycopg.AsyncConnection.connect(_DB_DSN) as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT COUNT(*) FROM responses WHERE survey_id = %s",
+                    (survey_id,),
+                )
+                row = await cur.fetchone()
+                return int(row[0]) if row else 0
+    except Exception as exc:
+        logger.warning("stream_consumer_response_count_failed", survey_id=survey_id, error=str(exc))
+        return 0
 
 
 async def _trigger_insights(survey_id: str, org_id: str) -> None:
@@ -142,15 +243,44 @@ async def run_response_stream_consumer() -> None:
     )
 
     async for events in consume_events(batch_size=50, block_ms=5000):
+        # Phase 1: accumulate all events synchronously — no I/O, no yields.
+        # Doing this before any await prevents mid-batch task execution from
+        # discarding _pending_triggers and creating duplicate trigger tasks.
+        affected: dict[str, str] = {}  # survey_id -> org_id
         for event in events:
             survey_id = event.get("survey_id", "")
-            org_id = event.get("org_id", "")
+            org_id    = event.get("org_id", "")
             if not survey_id or not org_id:
                 continue
+            _batches[survey_id]["org_id"]  = org_id
+            _batches[survey_id]["count"]  += 1
+            affected[survey_id] = org_id
 
-            _batches[survey_id]["org_id"] = org_id
-            _batches[survey_id]["count"] += 1
+        # Phase 2: one trigger decision per affected survey.
+        for survey_id, org_id in affected.items():
+            if survey_id in _pending_triggers:
+                continue
 
-            if await _should_trigger(survey_id) and survey_id not in _pending_triggers:
-                _pending_triggers.add(survey_id)
-                asyncio.create_task(_trigger_insights(survey_id, org_id))
+            should_run      = await _should_trigger(survey_id)
+            total_responses = await _get_total_response_count(survey_id)
+            tier            = await should_trigger_progressive_tier(survey_id, total_responses)
+
+            if not should_run and not tier:
+                continue
+
+            survey_status = await _get_survey_status(survey_id)
+            if survey_status not in ('active',):
+                logger.info("pipeline_skipped_survey_not_active", survey_id=survey_id, status=survey_status)
+                continue
+
+            if tier:
+                await mark_progressive_tier_complete(survey_id, tier)
+                logger.info(
+                    "stream_consumer_progressive_tier",
+                    survey_id=survey_id,
+                    tier=tier,
+                    total_responses=total_responses,
+                )
+
+            _pending_triggers.add(survey_id)
+            asyncio.create_task(_trigger_insights(survey_id, org_id))

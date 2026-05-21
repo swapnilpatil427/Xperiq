@@ -17,6 +17,7 @@ import { Link } from 'react-router-dom';
 import { Icon } from '../../components/Icon';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import type { Insight, Survey, AgenticInsight } from '../../types';
 import type { SurveyScope } from '../../components/SurveyScopePicker';
 import { useCrystalPanel } from '../../contexts/crystalPanel';
@@ -99,6 +100,8 @@ export function UnifiedInsightsView({
   const [askQuery, setAskQuery] = useState('');
   const [filterLayer,    setFilterLayer]    = useState<AgenticInsight['layer'] | 'all'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  // Audit drawer state — P10-04
+  const [auditInsight, setAuditInsight] = useState<AgenticInsight | null>(null);
   const [insightFeedback, setInsightFeedback] = useState<Record<string, { thumbs?: 'up' | 'down' | null; pinned?: boolean }>>(() =>
     Object.fromEntries(agenticInsights.map((i) => [i.id, i.user_state_json ?? {}]))
   );
@@ -138,6 +141,11 @@ export function UnifiedInsightsView({
     });
   }, [agenticInsights, filterLayer, filterCategory]);
 
+  // P11-07: Hero card — first NPS descriptive insight
+  const heroInsight = agenticInsights.find(
+    (ins) => ins.layer === 'descriptive' && ins.category === 'metric.nps',
+  );
+
 
   const nps = insights?.nps_score ?? null;
   const activeSurveys = surveys.filter((s) => s.status === 'active' && !s.deleted_at);
@@ -168,6 +176,14 @@ export function UnifiedInsightsView({
   return (
     <div className="space-y-6">
 
+      {/* P11-09: Sample data banner — shown only when scope === 'all' */}
+      {isAll && (
+        <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-xs font-bold text-amber-800 sticky top-0 z-20">
+          <Icon name="science" size={14} />
+          {t('surveyInsights.sampleDataBanner')}
+        </div>
+      )}
+
       {/* ════════════════════════════════════════════════════════════════════
           GENERATING OVERLAY — light-theme pipeline progress
       ════════════════════════════════════════════════════════════════════ */}
@@ -179,6 +195,76 @@ export function UnifiedInsightsView({
         focusSurvey={focusSurvey}
         onRetry={onGenerate}
       />
+
+      {/* P10-04: Audit drawer — opens when user clicks trust score badge */}
+      <Sheet open={!!auditInsight} onOpenChange={(open) => { if (!open) setAuditInsight(null); }}>
+        <SheetContent side="right" className="w-full max-w-sm overflow-y-auto">
+          {auditInsight && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="text-sm font-black">Insight Audit Trail</SheetTitle>
+              </SheetHeader>
+              <div className="mt-6 space-y-4 text-xs">
+                {/* Model */}
+                <div className="p-3 rounded-xl bg-muted/40 border border-outline-variant/20">
+                  <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">Model</p>
+                  <p className="font-mono text-on-surface break-all">{auditInsight.audit_json?.model ?? '—'}</p>
+                </div>
+                {/* Verifier notes */}
+                <div className="p-3 rounded-xl bg-muted/40 border border-outline-variant/20">
+                  <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">Verifier Notes</p>
+                  <p className="text-on-surface leading-relaxed">
+                    {auditInsight.audit_json?.verifier_notes
+                      ? `${auditInsight.audit_json.verifier_pass ? '✓ Passed' : '✗ Failed'} — ${auditInsight.audit_json.verifier_notes}`
+                      : '—'}
+                  </p>
+                </div>
+                {/* Trust metrics */}
+                {auditInsight.trust_json && (
+                  <div className="p-3 rounded-xl bg-muted/40 border border-outline-variant/20 space-y-2">
+                    <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">Trust Metrics</p>
+                    {([
+                      { label: 'Coverage',     value: auditInsight.trust_json.coverage,     suffix: '%' },
+                      { label: 'Consistency',  value: auditInsight.trust_json.consistency,  suffix: '%' },
+                      { label: 'Statistical',  value: auditInsight.trust_json.statistical,  suffix: '' },
+                      { label: 'Grounding',    value: auditInsight.trust_json.grounding,    suffix: '' },
+                      { label: 'Sample Size',  value: auditInsight.trust_json.sample_size,  suffix: '' },
+                    ] as const).map(({ label, value, suffix }) => (
+                      <div key={label} className="flex justify-between items-center">
+                        <span className="text-on-surface-variant">{label}</span>
+                        <span className="font-black text-on-surface">
+                          {value != null ? `${value}${suffix}` : '—'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Prompt hash */}
+                {auditInsight.audit_json?.prompt_hash && (
+                  <div className="p-3 rounded-xl bg-muted/40 border border-outline-variant/20">
+                    <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">Prompt Hash</p>
+                    <p className="font-mono text-[10px] text-on-surface break-all">{auditInsight.audit_json.prompt_hash}</p>
+                  </div>
+                )}
+                {/* Overall trust score */}
+                <div className="p-3 rounded-xl border-2 text-center"
+                  style={{
+                    borderColor: auditInsight.trust_score >= 80 ? '#059669' : auditInsight.trust_score >= 60 ? '#d97706' : '#94a3b8',
+                    background: auditInsight.trust_score >= 80 ? '#ecfdf5' : auditInsight.trust_score >= 60 ? '#fffbeb' : '#f8fafc',
+                  }}>
+                  <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">Trust Score</p>
+                  <p className="text-3xl font-black font-headline" style={{
+                    color: auditInsight.trust_score >= 80 ? '#059669' : auditInsight.trust_score >= 60 ? '#d97706' : '#94a3b8',
+                  }}>
+                    {auditInsight.trust_score}
+                    <span className="text-sm font-bold opacity-60">/100</span>
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* ════════════════════════════════════════════════════════════════════
           AGENTIC INSIGHTS SECTION — real pipeline results (light theme)
@@ -215,6 +301,68 @@ export function UnifiedInsightsView({
             </form>
           </GlassCard>
 
+          {/* P11-07: Hero narrative card — first NPS descriptive insight */}
+          {heroInsight && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <GlassCard
+                className="p-6 overflow-hidden relative"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(42,75,217,0.06) 0%, rgba(131,41,200,0.04) 100%)',
+                  borderColor: 'rgba(42,75,217,0.2)',
+                }}
+              >
+                {/* Featured label */}
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                    Featured Insight
+                  </span>
+                  <span
+                    className="px-2 py-0.5 rounded-md text-[10px] font-bold"
+                    style={{ background: '#e0f2fe', color: '#0369a1' }}
+                  >
+                    NPS
+                  </span>
+                  {heroInsight.trust_score >= 80 && (
+                    <span className="text-[10px] font-bold text-emerald-700">● Reliable</span>
+                  )}
+                </div>
+                <h2 className="text-lg font-black font-headline leading-snug mb-2 text-on-surface">
+                  {heroInsight.headline}
+                </h2>
+                {heroInsight.narrative && !/^[^:]{1,60}:\s/.test(heroInsight.narrative) && (
+                  <p className="text-sm text-on-surface-variant leading-relaxed mb-4 max-w-2xl">
+                    {heroInsight.narrative.length > 280
+                      ? heroInsight.narrative.slice(0, 280) + '…'
+                      : heroInsight.narrative}
+                  </p>
+                )}
+                {heroInsight.metric_json?.value != null && (
+                  <div className="flex items-center gap-4 mb-2">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">NPS Score</p>
+                      <p className="text-4xl font-black font-headline" style={{
+                        color: heroInsight.metric_json.value >= 50 ? '#059669'
+                          : heroInsight.metric_json.value >= 0 ? '#d97706'
+                          : '#b41340',
+                      }}>
+                        {Math.round(heroInsight.metric_json.value)}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                {/* Decorative gradient orb */}
+                <div
+                  className="absolute -right-8 -top-8 w-32 h-32 rounded-full pointer-events-none"
+                  style={{ background: 'radial-gradient(circle, rgba(42,75,217,0.12), transparent 70%)' }}
+                />
+              </GlassCard>
+            </motion.div>
+          )}
+
           {/* ── Insight filters ───────────────────────────────────────────── */}
           {(availableLayers.length > 1 || availableCategories.length > 1) && (
             <div className="space-y-2 px-1">
@@ -241,7 +389,7 @@ export function UnifiedInsightsView({
                           activeBg={cfg.bg}
                           onClick={() => setFilterLayer(filterLayer === layer ? 'all' : layer)}
                         >
-                          {cfg.label} ({count})
+                          {t(`surveyInsights.layers.${layer}.label`)} ({count})
                         </FilterPill>
                       );
                     })}
@@ -309,7 +457,8 @@ export function UnifiedInsightsView({
             ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredInsights.map((insight, i) => {
-              const layer = LAYER_CONFIG[insight.layer] ?? LAYER_CONFIG.descriptive;
+              const layerCfg = LAYER_CONFIG[insight.layer] ?? LAYER_CONFIG.descriptive;
+              const layerKey = insight.layer ?? 'descriptive';
               return (
                 <motion.div
                   key={insight.id}
@@ -321,7 +470,7 @@ export function UnifiedInsightsView({
                     {/* Top accent bar — layer colour identity at a glance */}
                     <div
                       className="rounded-t-2xl mb-4 -mx-5 -mt-5 h-0.5"
-                      style={{ background: layer.color, opacity: 0.5 }}
+                      style={{ background: layerCfg.color, opacity: 0.5 }}
                     />
 
                     {/* Row 1: layer badge + sentiment + confidence */}
@@ -331,13 +480,13 @@ export function UnifiedInsightsView({
                         <TooltipTrigger asChild>
                           <span
                             className="px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide cursor-default"
-                            style={{ background: layer.bg, color: layer.color }}
+                            style={{ background: layerCfg.bg, color: layerCfg.color }}
                           >
-                            {layer.label}
+                            {t(`surveyInsights.layers.${layerKey}.label`)}
                           </span>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="max-w-[200px] text-xs">
-                          {layer.tooltip}
+                          {t(`surveyInsights.layers.${layerKey}.tooltip`)}
                         </TooltipContent>
                       </Tooltip>
                       {insight.metric_json?.dominant_sentiment && (
@@ -358,22 +507,27 @@ export function UnifiedInsightsView({
                       <div className="flex-1" />
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <span className={`text-[10px] font-bold cursor-default ${
-                            insight.trust_score >= 80 ? 'text-emerald-700'
-                            : insight.trust_score >= 60 ? 'text-amber-700'
-                            : 'text-on-surface-variant'
-                          }`}>
+                          {/* P10-04: Click trust score to open audit drawer */}
+                          <button
+                            className={`text-[10px] font-bold cursor-pointer hover:underline ${
+                              insight.trust_score >= 80 ? 'text-emerald-700'
+                              : insight.trust_score >= 60 ? 'text-amber-700'
+                              : 'text-on-surface-variant'
+                            }`}
+                            onClick={() => setAuditInsight(insight)}
+                            title="View audit details"
+                          >
                             {insight.trust_score >= 80 ? '● Reliable finding'
                               : insight.trust_score >= 60 ? '◑ Indicative finding'
                               : '○ Low-signal'}
-                          </span>
+                          </button>
                         </TooltipTrigger>
                         <TooltipContent side="top" className="max-w-[180px] text-xs">
                           {insight.trust_score >= 80
-                            ? `Based on strong evidence (${insight.trust_score}/100). Treat as a confirmed pattern.`
+                            ? `Based on strong evidence (${insight.trust_score}/100). Click to view audit.`
                             : insight.trust_score >= 60
-                            ? `Directional signal (${insight.trust_score}/100). Verify with more responses before acting.`
-                            : `Low sample or mixed responses (${insight.trust_score}/100). Use as a hypothesis only.`}
+                            ? `Directional signal (${insight.trust_score}/100). Click to view audit.`
+                            : `Low sample or mixed responses (${insight.trust_score}/100). Click to view audit.`}
                         </TooltipContent>
                       </Tooltip>
                     </div>

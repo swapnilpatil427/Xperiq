@@ -52,6 +52,44 @@ async def _write_trace_safe(**kwargs) -> None:
     except Exception:
         pass
 
+
+async def _log_ai_operation(
+    org_id: str,
+    run_id: "str | None",
+    operation: str,
+    model: str,
+    provider: str,
+    input_tokens: int,
+    output_tokens: int,
+    cost_usd: float,
+    latency_ms: int,
+    error: "str | None" = None,
+) -> None:
+    """Insert a row into ai_operation_logs asynchronously. Never raises."""
+    try:
+        from agents.lib import db
+        async with db._pool_conn().connection() as conn:
+            await conn.execute(
+                """INSERT INTO ai_operation_logs
+                   (org_id, run_id, operation, model, provider,
+                    input_tokens, output_tokens, cost_usd, latency_ms, error)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    org_id or "",
+                    run_id or None,
+                    operation,
+                    model,
+                    provider,
+                    input_tokens,
+                    output_tokens,
+                    round(cost_usd, 6),
+                    latency_ms,
+                    error,
+                ),
+            )
+    except Exception as exc:
+        logger.debug("ai_operation_log_failed", error=str(exc))
+
 _BASE_URL  = "https://openrouter.ai/api/v1"
 _API_KEY   = os.getenv("OPENROUTER_API_KEY", "")
 _HTTP_REFS = "https://experient.app"
@@ -463,6 +501,19 @@ async def call_agent(
                     duration_ms=round(duration * 1000),
                     status="success",
                 ))
+            # Fire-and-forget audit log — never raises
+            _log_ctx = get_trace_context()
+            _asyncio.ensure_future(_log_ai_operation(
+                org_id=_log_ctx.get("org_id", ""),
+                run_id=_log_ctx.get("run_id"),
+                operation=agent_name,
+                model=config.model,
+                provider="openrouter",
+                input_tokens=usage.get("prompt_tokens", 0),
+                output_tokens=usage.get("completion_tokens", 0),
+                cost_usd=entry.cost_usd,
+                latency_ms=round(duration * 1000),
+            ))
             return parsed, entry
 
         except (ValidationError, json.JSONDecodeError, ValueError) as e:
@@ -484,6 +535,19 @@ async def call_agent(
             status="error",
             error_msg=last_parse_error[:500],
         ))
+    # Fire-and-forget audit log for error path
+    _asyncio.ensure_future(_log_ai_operation(
+        org_id=_err_ctx.get("org_id", ""),
+        run_id=_err_ctx.get("run_id"),
+        operation=agent_name,
+        model=config.model,
+        provider="openrouter",
+        input_tokens=usage.get("prompt_tokens", 0),
+        output_tokens=usage.get("completion_tokens", 0),
+        cost_usd=0.0,
+        latency_ms=round(duration * 1000),
+        error=last_parse_error[:500],
+    ))
     raise AgentOutputError(
         f"Agent '{agent_name}' output failed validation after {_MAX_RETRY + 1} attempts. "
         f"Last error: {last_parse_error}"

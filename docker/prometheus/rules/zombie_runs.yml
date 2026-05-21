@@ -1,0 +1,17 @@
+groups:
+  - name: crystal_pipeline
+    interval: 1m
+    rules:
+      - alert: ZombieRunsDetected
+        expr: |
+          sum by (org_id) (
+            count_over_time(
+              {__name__="agent_runs", status="running"}[10m]
+            )
+          ) > 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Zombie agent runs detected"
+          description: "Agent runs stuck in 'running' status for more than 10 minutes."

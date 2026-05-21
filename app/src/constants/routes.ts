@@ -23,6 +23,13 @@ export const ROUTES = {
   WORKFLOWS:          '/app/workflows',
   SETTINGS:           '/app/settings',
   DATA:               '/app/data',
+  EXPERIENCE:                  '/app/experience',
+  EXPERIENCE_ORG_TRENDS:       '/app/experience/org/trends',
+  EXPERIENCE_SURVEY:           '/app/experience/survey/:surveyId',
+  EXPERIENCE_SURVEY_REPORT:    '/app/experience/survey/:surveyId/report',
+  EXPERIENCE_SURVEY_TOPICS:    '/app/experience/survey/:surveyId/topics',
+  EXPERIENCE_SURVEY_TOPIC:     '/app/experience/survey/:surveyId/topics/:topicId',
+  EXPERIENCE_SURVEY_TRENDS:    '/app/experience/survey/:surveyId/trends',
 };
 
 /** Replace :param placeholders with concrete values */

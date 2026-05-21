@@ -11,6 +11,15 @@ from agents.tools.metrics import (
 from agents.tools.clustering import cluster_texts
 from agents.tools.sentiment import detect_dominant_emotion, score_sentiment
 from agents.schemas.insight import NarrateInsightOutput, VerifyInsightOutput
+from agents.crystal.tools import (
+    execute_get_survey_overview,
+    execute_get_metric_history,
+    execute_get_insights_list,
+    execute_get_driver_analysis,
+    execute_get_checkpoint_history,
+    execute_get_benchmark_comparison,
+)
+from agents.crystal.context import CrystalContext
 
 
 # ── Metrics ───────────────────────────────────────────────────────────────────
@@ -588,3 +597,166 @@ class TestDynamicTrustScores:
         assert "coverage" in trust_json
         assert "consistency" in trust_json
         assert "grounding" in trust_json
+
+
+# ── Crystal Tool Org Scoping ──────────────────────────────────────────────────
+
+class TestCrystalToolOrgScoping:
+    """Tests for Crystal tool executors covering org-scoping and edge cases."""
+
+    def _make_ctx(self, survey_id="survey-1", org_id="org-1"):
+        from agents.crystal.context import CrystalContext
+        return CrystalContext(
+            org_id=org_id,
+            user_id="user-1",
+            survey_id=survey_id,
+            scope="survey",
+        )
+
+    def _make_mock_pool(self, fetchone_return=None, fetchall_return=None):
+        """Return a nested mock for db._pool_conn().connection().__aenter__."""
+        mock_cur = AsyncMock()
+        mock_cur.execute = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value=fetchone_return)
+        mock_cur.fetchall = AsyncMock(return_value=fetchall_return or [])
+        mock_cur.description = []
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool_ctx = MagicMock()
+        mock_pool_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_pool_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_pool_ctx)
+
+        return mock_pool, mock_cur
+
+    @pytest.mark.asyncio
+    async def test_survey_overview_wrong_org_returns_error(self):
+        """When DB returns no rows (wrong org), result is {'error': 'survey not found'}."""
+        from agents.crystal.tools import execute_get_survey_overview
+
+        mock_pool, mock_cur = self._make_mock_pool(fetchone_return=None, fetchall_return=[])
+
+        with patch("agents.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_survey_overview(
+                self._make_ctx(), {"survey_id": "survey-wrong-org"}
+            )
+
+        assert result == {"error": "survey not found"}
+
+    @pytest.mark.asyncio
+    async def test_survey_overview_missing_survey_id_returns_error(self):
+        """CrystalContext with no survey_id and empty params returns error."""
+        from agents.crystal.tools import execute_get_survey_overview
+        from agents.crystal.context import CrystalContext
+
+        ctx = CrystalContext(
+            org_id="org-1",
+            user_id="user-1",
+            survey_id=None,
+            scope="survey",
+        )
+        result = await execute_get_survey_overview(ctx, {})
+        assert result == {"error": "survey_id required"}
+
+    @pytest.mark.asyncio
+    async def test_metric_history_empty_result(self):
+        """Empty cursor returns result with 'history' key that is a list."""
+        from agents.crystal.tools import execute_get_metric_history
+
+        mock_pool, mock_cur = self._make_mock_pool(fetchall_return=[])
+        mock_cur.description = [
+            ("nps_score",), ("csat_score",), ("ces_score",), ("response_count",), ("captured_at",)
+        ]
+
+        with patch("agents.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_metric_history(
+                self._make_ctx(), {"survey_id": "survey-1"}
+            )
+
+        assert "history" in result
+        assert isinstance(result["history"], list)
+
+    @pytest.mark.asyncio
+    async def test_insights_list_org_scoped(self):
+        """SQL for execute_get_insights_list uses org_id from context."""
+        from agents.crystal.tools import execute_get_insights_list
+
+        mock_pool, mock_cur = self._make_mock_pool(fetchall_return=[])
+        mock_cur.description = [
+            ("id",), ("layer",), ("category",), ("headline",), ("narrative",),
+            ("trust_score",), ("metric_json",)
+        ]
+
+        ctx = self._make_ctx(org_id="org-scoped-123")
+
+        with patch("agents.crystal.tools.db._pool_conn", return_value=mock_pool):
+            await execute_get_insights_list(ctx, {"survey_id": "survey-1"})
+
+        # Verify that the execute call args include org_id
+        call_args = mock_cur.execute.call_args
+        # args[1] is the params tuple; org_id should be in there
+        assert call_args is not None
+        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get("args", ())
+        assert "org-scoped-123" in params
+
+    @pytest.mark.asyncio
+    async def test_driver_analysis_scale_is_nps_range(self):
+        """Driver impact values from execute_get_driver_analysis are in [-100, 100]."""
+        from agents.crystal.tools import execute_get_driver_analysis
+
+        # Row: name, volume, nps_avg, sentiment_score, effort_score
+        mock_row = ("Shipping", 50, 42.0, 0.5, 3.0)
+        mock_pool, mock_cur = self._make_mock_pool(fetchall_return=[mock_row])
+        mock_cur.description = [
+            ("name",), ("volume",), ("nps_avg",), ("sentiment_score",), ("effort_score",)
+        ]
+
+        with patch("agents.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_driver_analysis(
+                self._make_ctx(), {"survey_id": "survey-1"}
+            )
+
+        assert "drivers" in result
+        for driver in result["drivers"]:
+            assert -100 <= driver["driver_impact"] <= 100
+
+    @pytest.mark.asyncio
+    async def test_benchmark_comparison_known_industry(self):
+        """Known industry 'technology' returns benchmark of 35 for NPS."""
+        from agents.crystal.tools import execute_get_benchmark_comparison
+
+        # Mock DB to return a current value
+        mock_pool, mock_cur = self._make_mock_pool(fetchone_return=(42.0, 3.8))
+
+        with patch("agents.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_benchmark_comparison(
+                self._make_ctx(),
+                {"industry": "technology", "metric": "nps", "survey_id": "survey-1"},
+            )
+
+        assert "benchmark" in result
+        assert result["benchmark"] == 35
+
+    @pytest.mark.asyncio
+    async def test_benchmark_comparison_unknown_industry_uses_other(self):
+        """Unknown industry falls back to 'other' benchmark (32 for NPS)."""
+        from agents.crystal.tools import execute_get_benchmark_comparison
+
+        mock_pool, mock_cur = self._make_mock_pool(fetchone_return=(25.0, 3.5))
+
+        with patch("agents.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_benchmark_comparison(
+                self._make_ctx(),
+                {"industry": "unknown_xyz", "metric": "nps", "survey_id": "survey-1"},
+            )
+
+        assert "benchmark" in result
+        assert result["benchmark"] == 32

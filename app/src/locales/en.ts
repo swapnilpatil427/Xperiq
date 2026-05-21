@@ -44,6 +44,7 @@ const en = {
     data: 'Data',
     createNewSurvey: 'Create New Survey',
     newSurvey: 'New Survey',
+    experience: 'Experience',
   },
 
   credits: {
@@ -690,6 +691,64 @@ const en = {
       critical: 'Critical Attention',
     },
     layerTagline: 'The AI-aware experience layer for modern enterprises',
+
+    state: {
+      collecting:           'Collecting first responses…',
+      generating:           'Generating insights…',
+      ready:                'Insights are up to date',
+      stale:                'Insights may be outdated',
+      error:                'Failed to generate insights',
+      generateInsight:      'Generate new insights',
+      refreshLimitReached:  'Daily limit reached (3/day)',
+      scoreOnlySurvey: {
+        message: 'This survey has no open-text questions. Insights are based on score metrics only.',
+      },
+      surveySuspended: {
+        paused:        'Survey is paused — new responses will not be collected',
+        closed:        'Survey is closed',
+        responseCount: '{n} total responses collected',
+        resume:        'Resume survey',
+      },
+    },
+    tier: {
+      collecting:      { label: 'Collecting first responses' },
+      first_voices:    { label: 'First voices heard' },
+      early_signals:   { label: 'Early signals emerging' },
+      growing_picture: { label: 'Growing picture' },
+      full_report:     { label: 'Full report' },
+    },
+    trust: {
+      low:    'Low confidence',
+      medium: 'Moderate confidence',
+      high:   'High confidence',
+    },
+    progressive: {
+      collecting:      "We're collecting your first responses. Check back soon!",
+      first_voices:    'Early insights from your first respondents.',
+      early_signals:   'Patterns are starting to emerge.',
+      growing_picture: 'A clearer picture is forming.',
+      full_report:     'Full intelligence report ready.',
+    },
+    crystal: {
+      opening: {
+        label:           "Crystal's opening observation",
+        collecting:      'Waiting for responses to begin analysis.',
+        first_voices:    'Early signals detected — ask me anything.',
+        early_signals:   'Patterns emerging — I\'m ready to help.',
+        growing_picture: 'Good data volume — deep analysis available.',
+        full_report:     'Full dataset — all Crystal capabilities unlocked.',
+      },
+    },
+    topics: {
+      title:    'Topic Analysis',
+      empty:    'No topics discovered yet',
+      notFound: 'Topic not found',
+    },
+    verbatims: {
+      title: 'Respondent Verbatims',
+      empty: 'No verbatims available for this topic',
+    },
+    sampleDataBanner: 'Viewing cross-survey sample data — insights may span multiple surveys',
   },
 
   surveyInsights: {
@@ -806,6 +865,24 @@ const en = {
     },
     confidence: {
       label: 'CONF {value}',
+    },
+    layers: {
+      descriptive:  {
+        label:   'What happened',
+        tooltip: 'Summarises what occurred — response counts, NPS, sentiment distribution.',
+      },
+      diagnostic:   {
+        label:   'Why it happened',
+        tooltip: 'Explains the drivers behind the patterns — which topics caused the score.',
+      },
+      predictive:   {
+        label:   'What will happen',
+        tooltip: 'Forward-looking signal — trends and patterns likely to continue or worsen.',
+      },
+      prescriptive: {
+        label:   'What to do',
+        tooltip: 'Actionable recommendation — specific steps to improve the experience or metric.',
+      },
     },
     sampleDataBanner: 'Sample data — select a survey above for real insights',
   },
@@ -1375,6 +1452,24 @@ const en = {
       general: 'General',
       users: 'Users',
       apiKeys: 'API Keys',
+      notifications: 'Notifications',
+    },
+    notifications: {
+      heading: 'Notification Preferences',
+      description: 'Choose how and when Experient alerts you about your surveys and AI insights.',
+      comingSoonBadge: 'Coming Soon',
+      channels: {
+        inApp: { label: 'In-App',  desc: 'Alerts appear inside the Experient dashboard.' },
+        email: { label: 'Email',   desc: 'Receive digest emails for key events.' },
+        push:  { label: 'Push',    desc: 'Browser or mobile push notifications.' },
+      },
+      events: {
+        new_insights_ready:       'New insights are ready',
+        response_threshold:       'Response count milestone reached',
+        anomaly_detected:         'Anomaly or trend spike detected',
+        survey_closed:            'Survey closed or response limit reached',
+        progressive_tier_upgrade: 'Data tier upgraded (more responses unlocked)',
+      },
     },
     general: {
       heading: 'Visual Identity',
@@ -1508,6 +1603,68 @@ const en = {
     prevPage: 'Previous',
     nextPage: 'Next',
     page: 'Page {n}',
+  },
+
+  experience: {
+    hub: {
+      subtitle: 'Your experience intelligence portfolio',
+      noSurveys: 'No active surveys yet',
+    },
+  },
+
+  trends: {
+    title:      'Survey Trends',
+    npsHistory: 'NPS History',
+    noData:     'No trend data available yet',
+    org: {
+      title: 'Portfolio Trends',
+    },
+    anomaly: {
+      new_anomaly:   'New anomaly',
+      ongoing_issue: 'Ongoing issue',
+    },
+    persistence: {
+      confirmed:         'Confirmed',
+      second_occurrence: 'Emerging',
+      first_occurrence:  'First seen',
+      reversal:          'Reversing',
+      stable:            'Stable',
+    },
+    checkpoint: {
+      title:         'Checkpoint History',
+      select:        'Select checkpoint:',
+      latest:        'Latest',
+      markers:       'Checkpoint markers',
+      noCheckpoints: 'No checkpoints yet',
+    },
+  },
+
+  notifications: {
+    settings: {
+      title:      'Notification Settings',
+      inApp:      'In-app',
+      email:      'Email',
+      push:       'Push',
+      comingSoon: 'Coming soon',
+    },
+  },
+
+  crystal: {
+    tool: {
+      get_survey_overview:      'Loading survey overview',
+      get_topic_details:        'Loading topic details',
+      get_metric_history:       'Loading metric history',
+      get_insights_list:        'Loading insights',
+      get_verbatims:            'Loading verbatims',
+      get_benchmark_comparison: 'Loading benchmarks',
+      get_driver_analysis:      'Analyzing drivers',
+      get_segment_breakdown:    'Analyzing segments',
+      get_checkpoint_history:   'Loading checkpoint history',
+      compare_surveys:          'Comparing surveys',
+      get_org_portfolio:        'Loading portfolio',
+      get_cross_survey_themes:  'Finding cross-survey themes',
+      get_anomaly_events:       'Checking for anomalies',
+    },
   },
 
   topicsAnalysis: {

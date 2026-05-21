@@ -53,10 +53,27 @@ src/
 - `DATABASE_URL` — Postgres connection string
 - `REDIS_URL` — Redis connection string (optional, in-memory fallback)
 - `OPENROUTER_API_KEY` — AI API key
+- `AGENTS_INTERNAL_KEY` — Shared secret with the Python agents service (must match). Default `dev-internal-key-change-in-prod` is rejected in production by startup validation in `index.js`.
+- `CLERK_SECRET_KEY` — Clerk JWT verification key
+- `ALLOWED_ORIGIN` — CORS allowed origin (frontend URL)
 - `SKIP_AUTH=true` — Bypasses auth for LOCAL DEV ONLY
+
+## Crystal Intelligence (AI) routes
+`routes/insights.js` exposes the Crystal/AI endpoints:
+- `POST /api/insights/:surveyId/generate` — trigger insight pipeline via `agentsClient.js`
+- `GET  /api/insights/:surveyId/crystal` — Crystal SSE stream (streamed ReAct loop response)
+- `GET  /api/insights/:surveyId/topics` — flat topic list with sort/window params
+- `GET  /api/insights/:surveyId/topics/hierarchy` — topic hierarchy grouped by theme
+- `GET  /api/insights/:surveyId/crystal/history` — Crystal conversation history
+- `DELETE /api/insights/:surveyId/crystal/history` — clear Crystal history
 
 ## Postgres schema highlights
 See docs/SURVEY_DATA_MODEL.md for full schema.
-Key tables: surveys, responses, templates, workflows, orgs
-surveys.questions: JSONB column storing array of question objects
-surveys.status: CHECK constraint — 'draft' | 'active' | 'paused' | 'closed'
+Key tables: surveys, responses, templates, workflows, orgs, insights, survey_topics, crystal_threads, agent_runs
+- `surveys.questions`: JSONB array of question objects
+- `surveys.status`: CHECK constraint — 'draft' | 'active' | 'paused' | 'closed'
+- `insights`: per-survey agentic insight records (layer/category/headline/trust_score)
+- `survey_topics`: canonical topic registry per survey per run
+- `crystal_threads`: Crystal AI conversation threads (7-day TTL via `last_active_at`)
+- `agent_runs`: pipeline run tracking with `status`, `heartbeat_at`, `stream_events`
+- `notification_preferences` + `notification_events`: notification infrastructure (channels: in_app/email/push)

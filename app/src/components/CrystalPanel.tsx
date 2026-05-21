@@ -8,10 +8,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from './Icon';
 import { Button } from '@/components/ui/button';
 import { useCrystalPanel, type CrystalCtx } from '../contexts/crystalPanel';
-import { GlassCard, CitationChip, ConfidenceChip } from '../pages/insights/shared';
+import { GlassCard, CitationChip, ConfidenceChip, SENTIMENT_BORDER } from '../pages/insights/shared';
 import { useApi } from '../hooks/useApi';
+import { useAppAuth } from '../lib/auth';
 import type { SurveyScope } from './SurveyScopePicker';
 import type { Insight, Survey, AgenticInsight, SurveyTopic } from '../types';
+
+// Feature flag: set VITE_CRYSTAL_STREAMING=true to enable SSE streaming
+const CRYSTAL_STREAMING = import.meta.env.VITE_CRYSTAL_STREAMING === 'true';
 
 interface Message {
   id: string;
@@ -19,11 +23,25 @@ interface Message {
   content: string;
   timestamp: Date;
   confidence?: number;
-  citations?: string[];       // insight_refs from the real API
-  suggestions?: string[];     // follow-up prompts from the real API
+  citations?: CrystalCitation[];  // rich citation objects from streaming API
+  suggestions?: string[];          // follow-up prompts from the real API
   thumbs?: 'up' | 'down' | null;
   pinned?: boolean;
 }
+
+// Citation object returned from the streaming crystal endpoint
+interface CrystalCitation {
+  id: string;
+  quote?: string;
+  sentiment?: 'positive' | 'negative' | 'neutral';
+}
+
+// Streaming state during a live SSE response
+type StreamingPhase =
+  | { phase: 'thinking'; tool?: string; message?: string }
+  | { phase: 'observation'; tool?: string; summary?: string }
+  | { phase: 'synthesizing' }
+  | null;
 
 interface CrystalPanelProps {
   scope: SurveyScope;
@@ -53,12 +71,15 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isThinking, setIsThinking] = useState(false);
+  const [streamingState, setStreamingState] = useState<StreamingPhase>(null);
+  const [streamError, setStreamError] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const lastSubmittedQuery = useRef('');
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const api = useApi();
+  const { getToken } = useAppAuth();
 
   const isAll = scope === 'all';
   const activeSurveys = surveys.filter((s) => s.status === 'active' && !s.deleted_at);
@@ -101,6 +122,8 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
         { id: crypto.randomUUID(), role: 'user', content: query.trim(), timestamp: new Date() },
       ]);
       setIsThinking(true);
+      setStreamingState(null);
+      setStreamError(null);
 
       // All-surveys scope: no surveyId to call against
       if (isAll) {
@@ -119,11 +142,136 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
       }
 
       const activeCtx = overrideCtx ?? crystalCtx;
+
+      // ── Streaming path (VITE_CRYSTAL_STREAMING=true) ──────────────────────
+      if (CRYSTAL_STREAMING) {
+        try {
+          const token = await getToken();
+          const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          const response = await fetch(
+            `${BASE}/api/experience/${scope}/crystal/stream`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+              },
+              body: JSON.stringify({
+                survey_id: scope,
+                message: query.trim(),
+                insights: agenticInsights ?? [],
+                topics: topics ?? [],
+                survey_title: focusSurvey?.title ?? '',
+                survey_response_count: responseCount ?? 0,
+                metrics: {},
+                conversation_history: messages
+                  .filter((m) => m.role !== 'user' || true) // include all
+                  .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
+                scope: 'survey',
+                window: activeCtx.window,
+                focused_topic: activeCtx.focused_topic,
+              }),
+            },
+          );
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+          }
+
+          const reader = response.body?.getReader();
+          const decoder = new TextDecoder();
+          if (!reader) throw new Error('No response stream');
+
+          let buffer = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            // Process complete SSE lines from the buffer
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const data = line.slice(6).trim();
+              if (data === '[DONE]') break;
+              try {
+                const event = JSON.parse(data) as {
+                  type: string;
+                  tool?: string;
+                  message?: string;
+                  summary?: string;
+                  answer?: string;
+                  citations?: Array<{ id: string; quote?: string; sentiment?: 'positive' | 'negative' | 'neutral' }>;
+                  suggestions?: string[];
+                };
+                if (event.type === 'thinking') {
+                  setStreamingState({ phase: 'thinking', tool: event.tool, message: event.message });
+                } else if (event.type === 'observation') {
+                  setStreamingState({ phase: 'observation', tool: event.tool, summary: event.summary });
+                } else if (event.type === 'synthesizing') {
+                  setStreamingState({ phase: 'synthesizing' });
+                } else if (event.type === 'answer') {
+                  setStreamingState(null);
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      id: crypto.randomUUID(),
+                      role: 'crystal',
+                      content: event.answer ?? '',
+                      timestamp: new Date(),
+                      citations: event.citations ?? [],
+                      suggestions: event.suggestions ?? [],
+                    },
+                  ]);
+                } else if (event.type === 'error') {
+                  setStreamingState(null);
+                  setStreamError(event.message ?? 'An error occurred');
+                  setMessages((prev) => [
+                    ...prev,
+                    {
+                      id: crypto.randomUUID(),
+                      role: 'crystal',
+                      content: event.message ?? 'Something went wrong. Please try again.',
+                      timestamp: new Date(),
+                    },
+                  ]);
+                }
+              } catch {
+                // ignore malformed SSE lines
+              }
+            }
+          }
+        } catch (err) {
+          const isServiceDown = err instanceof Error && (
+            err.message.includes('fetch') || err.message.includes('503') || err.message.includes('502')
+          );
+          setStreamingState(null);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: 'crystal',
+              content: isServiceDown
+                ? 'The agents service isn\'t reachable right now. Make sure it\'s running and try again.'
+                : 'Something went wrong. Please try your question again.',
+              timestamp: new Date(),
+            },
+          ]);
+        } finally {
+          setIsThinking(false);
+          setStreamingState(null);
+        }
+        return;
+      }
+
+      // ── Legacy path ────────────────────────────────────────────────────────
       try {
         const { answer, suggestions, insight_refs } = await api.crystalChat(scope, query, {
           window: activeCtx.window,
           focused_topic: activeCtx.focused_topic,
         });
+        // Map legacy string refs to CrystalCitation objects
+        const citations: CrystalCitation[] = (insight_refs ?? []).map((id) => ({ id }));
         setMessages((prev) => [
           ...prev,
           {
@@ -131,7 +279,7 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
             role: 'crystal',
             content: answer,
             timestamp: new Date(),
-            citations: insight_refs,
+            citations,
             suggestions,
           },
         ]);
@@ -154,7 +302,8 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
         setIsThinking(false);
       }
     },
-    [isAll, isThinking, api, scope, crystalCtx],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isAll, isThinking, api, scope, crystalCtx, getToken, agenticInsights, topics, focusSurvey, responseCount, messages],
   );
 
   // Auto-submit when panel opens with a pre-loaded query
@@ -222,8 +371,8 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
       const newThumbs = m.thumbs === 'up' ? null : 'up';
       // Persist to all cited insight IDs (fire-and-forget)
       if (!isAll && m.citations?.length) {
-        m.citations.forEach(insightId => {
-          api.updateInsightFeedback(insightId, { thumbs: newThumbs }).catch(() => {});
+        m.citations.forEach(c => {
+          api.updateInsightFeedback(c.id, { thumbs: newThumbs }).catch(() => {});
         });
       }
       return { ...m, thumbs: newThumbs };
@@ -236,8 +385,8 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
       const newThumbs = m.thumbs === 'down' ? null : 'down';
       // Persist to all cited insight IDs (fire-and-forget)
       if (!isAll && m.citations?.length) {
-        m.citations.forEach(insightId => {
-          api.updateInsightFeedback(insightId, { thumbs: newThumbs }).catch(() => {});
+        m.citations.forEach(c => {
+          api.updateInsightFeedback(c.id, { thumbs: newThumbs }).catch(() => {});
         });
       }
       return { ...m, thumbs: newThumbs };
@@ -447,7 +596,14 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
                       />
                     ),
                   )}
-                  {isThinking && <ThinkingBubble />}
+                  {isThinking && (
+                    streamingState
+                      ? <StreamingBubble state={streamingState} />
+                      : <ThinkingBubble />
+                  )}
+                  {streamError && !isThinking && (
+                    <div className="text-xs text-red-500 px-2">{streamError}</div>
+                  )}
                 </div>
               )}
             </div>
@@ -666,11 +822,32 @@ function CrystalBubble({
         </div>
         <p className="text-sm leading-relaxed mb-3">{message.content}</p>
         {message.citations && message.citations.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1 mt-3 pt-3 border-t border-outline-variant/20">
-            <span className="text-[10px] text-on-surface-variant font-bold mr-1">Sources</span>
-            {message.citations.map((c) => (
-              <CitationChip key={c} id={c} />
+          <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-outline-variant/20">
+            <span className="text-[10px] text-on-surface-variant font-bold">Sources</span>
+            {/* Verbatim quote citations with sentiment border */}
+            {message.citations.filter(c => c.quote).map((c) => (
+              <div
+                key={c.id}
+                className="px-3 py-2 rounded-lg bg-muted/50 text-xs leading-relaxed"
+                style={{
+                  borderLeft: `3px solid ${
+                    c.sentiment === 'positive' ? SENTIMENT_BORDER.positive
+                    : c.sentiment === 'negative' ? SENTIMENT_BORDER.negative
+                    : SENTIMENT_BORDER.neutral
+                  }`,
+                }}
+              >
+                &ldquo;{c.quote}&rdquo;
+              </div>
             ))}
+            {/* ID-only citations as chips */}
+            {message.citations.filter(c => !c.quote).length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {message.citations.filter(c => !c.quote).map((c) => (
+                  <CitationChip key={c.id} id={c.id} />
+                ))}
+              </div>
+            )}
           </div>
         )}
         {message.suggestions && message.suggestions.length > 0 && (
@@ -738,6 +915,60 @@ function CrystalBubble({
             <Icon name="thumb_down" size={13} fill={message.thumbs === 'down' ? 1 : 0} />
           </Button>
         </div>
+      </GlassCard>
+    </div>
+  );
+}
+
+// ── Streaming status bubble — shown during SSE streaming phases ───────────────
+function StreamingBubble({ state }: { state: NonNullable<StreamingPhase> }) {
+  return (
+    <div className="flex gap-3">
+      <div
+        className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
+        style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
+      >
+        <Icon name="diamond" size={14} style={{ color: 'white' }} />
+      </div>
+      <GlassCard className="rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-3 flex-1">
+        {state.phase === 'thinking' && (
+          <>
+            <Icon name="psychology" size={16} className="text-primary animate-spin" style={{ animation: 'spin 2s linear infinite' }} />
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-tertiary block mb-0.5">Crystal · Thinking</span>
+              <p className="text-xs text-on-surface-variant truncate">
+                {state.tool ? `Using ${state.tool}…` : state.message ?? 'Reasoning…'}
+              </p>
+            </div>
+          </>
+        )}
+        {state.phase === 'observation' && (
+          <>
+            <Icon name="search" size={16} className="text-amber-600" />
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block mb-0.5">
+                {state.tool ? `Observed · ${state.tool}` : 'Observation'}
+              </span>
+              <p className="text-xs text-on-surface-variant truncate">{state.summary ?? 'Processing results…'}</p>
+            </div>
+          </>
+        )}
+        {state.phase === 'synthesizing' && (
+          <>
+            <div
+              className="w-4 h-4 rounded-full border-2 flex-shrink-0"
+              style={{
+                borderColor: 'rgba(42,75,217,0.2)',
+                borderTopColor: 'var(--color-primary, #2a4bd9)',
+                animation: 'spin 1s linear infinite',
+              }}
+            />
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-tertiary block mb-0.5">Crystal</span>
+              <p className="text-xs text-on-surface-variant">Putting it together…</p>
+            </div>
+          </>
+        )}
       </GlassCard>
     </div>
   );

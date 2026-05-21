@@ -200,8 +200,9 @@ export function BrandSettingsPage() {
   const { isAdmin } = usePermissions();
 
   const tabs = [
-    { key: 'General',      label: t('settings.tabs.general') },
-    { key: 'Organization', label: 'Organization' },
+    { key: 'General',       label: t('settings.tabs.general') },
+    { key: 'Organization',  label: 'Organization' },
+    { key: 'Notifications', label: t('settings.tabs.notifications') },
     ...(isAdmin ? [{ key: 'API Keys', label: t('settings.tabs.apiKeys') }] : []),
   ];
 
@@ -737,6 +738,73 @@ export function BrandSettingsPage() {
                     </div>
                   </Card>
                 )}
+              </div>
+            )}
+
+            {/* ── Notifications Tab ── */}
+            {activeTab === 'Notifications' && (
+              <div className="mt-8 space-y-6">
+                <Card
+                  className="p-8 bg-white rounded-2xl border-0"
+                  style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}
+                >
+                  <h3 className="text-xl font-bold mb-1 font-headline text-on-surface">
+                    {t('settings.notifications.heading')}
+                  </h3>
+                  <p className="text-sm text-on-surface-variant mb-8">
+                    {t('settings.notifications.description')}
+                  </p>
+
+                  <div className="space-y-8">
+                    {([
+                      { key: 'inApp', icon: 'notifications',  comingSoon: false },
+                      { key: 'email', icon: 'mail',            comingSoon: true  },
+                      { key: 'push',  icon: 'mobile_friendly', comingSoon: true  },
+                    ] as const).map(({ key, icon, comingSoon }) => {
+                      const channelCfg = (t('settings.notifications.channels') as unknown as Record<string, { label: string; desc: string }>)[key];
+                      const events = t('settings.notifications.events') as unknown as Record<string, string>;
+                      return (
+                        <div key={key} className="rounded-2xl border border-muted/15 p-6 space-y-4">
+                          {/* Channel header */}
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                              <Icon name={icon} size={18} className="text-primary" />
+                            </div>
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-sm text-on-surface">{channelCfg?.label}</p>
+                                {comingSoon && (
+                                  <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full"
+                                    style={{ background: '#eef2ff', color: '#4f46e5' }}>
+                                    {t('settings.notifications.comingSoonBadge')}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-muted-foreground">{channelCfg?.desc}</p>
+                            </div>
+                          </div>
+
+                          {/* Event toggles (all disabled/coming-soon) */}
+                          <div className="space-y-2 pl-12">
+                            {Object.entries(events).map(([eventKey, label]) => (
+                              <div key={eventKey}
+                                className="flex items-center justify-between py-2 border-b border-muted/10 last:border-0">
+                                <span className="text-sm text-on-surface-variant">{label}</span>
+                                <div
+                                  className="w-9 h-5 rounded-full flex items-center px-0.5 cursor-not-allowed opacity-40"
+                                  style={{ background: '#e2e8f0' }}
+                                  title={t('settings.notifications.comingSoonBadge')}
+                                >
+                                  <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
               </div>
             )}
 
