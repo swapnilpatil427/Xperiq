@@ -16,7 +16,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from agents.lib.logger import logger
 
-_DSN  = os.getenv("AGENTS_DB_DSN", "postgresql://postgres:postgres@localhost:5432/experient")
+_DSN  = os.getenv("AGENTS_DB_DSN") or os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/experient")
 _pool: AsyncConnectionPool | None = None
 
 
@@ -297,7 +297,7 @@ async def list_runs(
         clauses.append("survey_id = %s")
         params.append(survey_id)
 
-    params += [min(limit, 100), max(offset, 0)]
+    params += [min(limit, 100), max(0, min(offset, 10_000))]
     where  = " AND ".join(clauses)
 
     async with _pool_conn().connection() as conn:
@@ -356,21 +356,28 @@ async def get_run_questions(run_id: str, org_id: str) -> list[dict] | None:
     return row.get("result_questions") or []
 
 
-async def save_run_questions(run_id: str, questions: list[dict]) -> None:
-    """Overwrite result_questions for a run (used by CRUD endpoints)."""
+async def save_run_questions(run_id: str, questions: list[dict], org_id: str = "") -> None:
+    """Overwrite result_questions for a run (used by CRUD endpoints).
+
+    org_id is required to prevent cross-tenant writes — pass the org from the
+    verified request, not from user input.
+    """
     async with _pool_conn().connection() as conn:
         await conn.execute(
-            "UPDATE agent_runs SET result_questions = %s::jsonb WHERE id = %s",
-            (json.dumps(questions), run_id),
+            "UPDATE agent_runs SET result_questions = %s::jsonb WHERE id = %s AND (org_id = %s OR %s = '')",
+            (json.dumps(questions), run_id, org_id, org_id),
         )
 
 
-async def cancel_run(run_id: str) -> None:
-    """Mark a run as cancelled and record its completion timestamp."""
+async def cancel_run(run_id: str, org_id: str = "") -> None:
+    """Mark a run as cancelled and record its completion timestamp.
+
+    org_id is required to prevent cross-tenant writes.
+    """
     async with _pool_conn().connection() as conn:
         await conn.execute(
-            "UPDATE agent_runs SET status = 'cancelled', completed_at = NOW() WHERE id = %s",
-            (run_id,),
+            "UPDATE agent_runs SET status = 'cancelled', completed_at = NOW() WHERE id = %s AND (org_id = %s OR %s = '')",
+            (run_id, org_id, org_id),
         )
 
 

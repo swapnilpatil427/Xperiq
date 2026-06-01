@@ -64,5 +64,8 @@ CRYSTAL_THREAD_INACTIVITY_TTL_DAYS = 7     # inactive thread TTL before reset
 CRYSTAL_THREAD_CONTEXT_WINDOW_TURNS = 6    # turns included in Crystal context
 CRYSTAL_THREAD_STORAGE_TTL_DAYS = 90       # thread storage retention period
 
+# ── Tiered report agent ───────────────────────────────────────────────────────
+REPORT_MAX_RESPONSES_WINDOW = 200          # max responses sent to LLM for any tiered report
+
 # ── Response velocity ─────────────────────────────────────────────────────────
 RESPONSE_VELOCITY_UNIT = "per_day"         # velocity = response_count / days_since_first_response

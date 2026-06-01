@@ -29,7 +29,7 @@ async def require_internal_key(
     x_internal_key: str = Header(..., alias="X-Internal-Key"),
 ) -> None:
     """FastAPI dependency — rejects requests without the correct internal key."""
-    if not hmac.compare_digest(x_internal_key, _INTERNAL_KEY):
+    if not hmac.compare_digest(x_internal_key.encode(), _INTERNAL_KEY.encode()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid internal API key",
@@ -92,12 +92,13 @@ def validate_thread_ownership(thread_id: str, org_id: str) -> None:
 
 
 async def check_survey_access(survey_id: str, org_id: str, db_pool=None) -> dict | None:
-    """Return survey row if survey_id belongs to org_id, None otherwise.
+    """Return survey row if survey_id belongs to org_id, None if not found.
 
     Raises PermissionError if org mismatch detected (not just missing).
+    Raises HTTPException 503 on DB failure — callers must not treat DB errors as 404.
     """
-    # Dev bypass
-    if os.getenv("AGENTS_ENV", "production") == "dev" and org_id == "dev_org":
+    # Dev bypass — only active when AGENTS_ENV is explicitly "dev" (same default as main.py)
+    if os.getenv("AGENTS_ENV", "dev") == "dev" and org_id == "dev_org":
         return {"id": survey_id, "org_id": org_id, "status": "active"}
 
     try:
@@ -121,4 +122,7 @@ async def check_survey_access(survey_id: str, org_id: str, db_pool=None) -> dict
     except Exception as exc:
         from agents.lib.logger import logger
         logger.error("check_survey_access_failed", survey_id=survey_id, error=str(exc))
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database unavailable — cannot verify survey access",
+        )

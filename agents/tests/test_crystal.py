@@ -307,11 +307,13 @@ async def test_crystal_agent_passes_conversation_history(agent):
 
 
 async def test_crystal_agent_truncates_long_history(agent):
-    """Conversation history is truncated to last 10 messages."""
-    # 12 messages total — only last 10 should be sent
+    """Conversation history is truncated to last CRYSTAL_CONVERSATION_WINDOW * 2 messages."""
+    from agents.lib.constants import CRYSTAL_CONVERSATION_WINDOW
+    window = CRYSTAL_CONVERSATION_WINDOW * 2
+    # Create more messages than the window to trigger truncation
     history = [
         {"role": "user" if i % 2 == 0 else "assistant", "content": f"message {i}"}
-        for i in range(12)
+        for i in range(window + 4)
     ]
     inp = CrystalInput(
         survey_id="s",
@@ -332,7 +334,7 @@ async def test_crystal_agent_truncates_long_history(agent):
     with patch("agents.agents.crystal.call_agent", new=capture):
         await agent.run(inp)
 
-    assert len(captured["prior_messages"]) <= 10
+    assert len(captured["prior_messages"]) <= window
 
 
 async def test_crystal_agent_no_history_passes_none(agent):
@@ -614,9 +616,9 @@ class TestReactLoop:
 
         captured = {}
 
-        async def capture_call(agent_name, system, user, output_schema, prior_messages=None):
+        async def capture_call(agent_name, system, user, output_schema, current_tokens=0, prior_messages=None):
             captured["prior_messages"] = prior_messages
-            return (_make_output(), [])
+            return (_make_output(), make_credit("crystal"))
 
         with (
             patch("agents.agents.crystal.call_agent", new=capture_call),
@@ -651,7 +653,7 @@ class TestReactLoopStreaming:
         events = []
         # dispatch_tool is imported locally inside the function, patch at source
         mock_dispatch = AsyncMock(return_value={"overview": "test data"})
-        mock_call_agent = AsyncMock(return_value=(_make_output(), []))
+        mock_call_agent = AsyncMock(return_value=(_make_output(), make_credit("crystal")))
 
         patches_ctx = [
             patch("agents.crystal.tools.dispatch_tool", new=mock_dispatch),

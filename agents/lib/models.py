@@ -30,7 +30,7 @@ import os
 from dataclasses import dataclass
 from typing import Literal
 
-AgentName = Literal["creator", "qc", "qc_validator", "compliance", "recommender", "skip-logic", "copilot", "insight_narrate", "insight_verify", "insight_topics", "crystal", "response_gen", "insight_expert", "insight_evaluate", "crystal_eval", "survey_bias", "survey_evaluate"]
+AgentName = Literal["creator", "qc", "qc_validator", "compliance", "recommender", "skip-logic", "copilot", "insight_narrate", "insight_verify", "insight_topics", "crystal", "response_gen", "insight_expert", "insight_evaluate", "crystal_eval", "survey_bias", "survey_evaluate", "report_headline", "report_summary", "report_full"]
 EnvName   = Literal["dev", "dev-paid", "staging", "prod"]
 
 _VALID_ENVS = {"dev", "dev-paid", "staging", "prod"}
@@ -101,6 +101,11 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
         "skip-logic":      ModelConfig("qwen/qwen3-coder:free",                        max_tokens=1200, temperature=0.1,  context_window=32_000),
         "survey_bias":     ModelConfig("qwen/qwen3-coder:free",                        max_tokens=800,  temperature=0.0,  context_window=32_000),
         "survey_evaluate": ModelConfig("qwen/qwen3-coder:free",                        max_tokens=600,  temperature=0.0,  context_window=32_000),
+
+        # Tiered report agents (dev free: use same pools as their equivalent roles)
+        "report_headline": ModelConfig("google/gemma-4-31b-it:free",                   max_tokens=4000, temperature=0.1,  context_window=128_000),
+        "report_summary":  ModelConfig("arcee-ai/trinity-large-thinking:free",         max_tokens=6000, temperature=0.1,  context_window=32_000),
+        "report_full":     ModelConfig("deepseek/deepseek-r1:free",                    max_tokens=20000, temperature=0.0, context_window=64_000),
     },
 
     # ── dev-paid ─────────────────────────────────────────────────────────────────
@@ -139,6 +144,11 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
         "crystal_eval":    ModelConfig("openai/gpt-4o-mini",           max_tokens=600,  temperature=0.0,  context_window=128_000),
         "survey_bias":     ModelConfig("openai/gpt-4o-mini",           max_tokens=1000, temperature=0.0,  context_window=128_000),
         "survey_evaluate": ModelConfig("openai/gpt-4o-mini",           max_tokens=800,  temperature=0.0,  context_window=128_000),
+
+        # Tiered report agents
+        "report_headline": ModelConfig("openai/gpt-4o-mini",           max_tokens=4000, temperature=0.1,  context_window=128_000),
+        "report_summary":  ModelConfig("openai/gpt-4o",                max_tokens=8000, temperature=0.1,  context_window=128_000),
+        "report_full":     ModelConfig("openai/gpt-4o",                max_tokens=20000, temperature=0.0, context_window=128_000),
     },
 
     # ── staging ──────────────────────────────────────────────────────────────────
@@ -230,6 +240,11 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
         "crystal_eval":    ModelConfig("google/gemini-2.0-flash-001", max_tokens=600,  temperature=0.0, context_window=1_000_000),  # Fast hallucination check
         "survey_bias":     ModelConfig("deepseek/deepseek-chat",       max_tokens=1000, temperature=0.0, context_window=64_000),    # Cross-vendor QA
         "survey_evaluate": ModelConfig("deepseek/deepseek-chat",       max_tokens=800,  temperature=0.0, context_window=64_000),    # Cross-vendor QA
+
+        # Tiered report agents (staging: DeepSeek R1 for full report reasoning)
+        "report_headline": ModelConfig("google/gemini-2.5-flash",      max_tokens=4000,  temperature=0.1, context_window=1_000_000),
+        "report_summary":  ModelConfig("deepseek/deepseek-r1",         max_tokens=8000,  temperature=0.1, context_window=128_000),
+        "report_full":     ModelConfig("deepseek/deepseek-r1",         max_tokens=25000, temperature=0.0, context_window=128_000),
     },
 
     # ── prod ─────────────────────────────────────────────────────────────────────
@@ -322,6 +337,11 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
         "crystal_eval":    ModelConfig("google/gemini-2.0-flash-001", max_tokens=600,  temperature=0.0, context_window=1_000_000),  # Fast hallucination check
         "survey_bias":     ModelConfig("deepseek/deepseek-chat",       max_tokens=1000, temperature=0.0, context_window=64_000),    # Cross-vendor QA
         "survey_evaluate": ModelConfig("deepseek/deepseek-chat",       max_tokens=800,  temperature=0.0, context_window=64_000),    # Cross-vendor QA
+
+        # Tiered report agents (prod: DeepSeek R1 full report, Gemini 2.5 Flash for headline/summary)
+        "report_headline": ModelConfig("google/gemini-2.5-flash",      max_tokens=4000,  temperature=0.1, context_window=1_000_000),
+        "report_summary":  ModelConfig("deepseek/deepseek-r1",         max_tokens=8000,  temperature=0.1, context_window=128_000),
+        "report_full":     ModelConfig("deepseek/deepseek-r1",         max_tokens=30000, temperature=0.0, context_window=128_000),
     },
 }
 

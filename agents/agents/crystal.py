@@ -95,6 +95,7 @@ async def get_or_create_thread(ctx, db_pool) -> dict:
                                WHERE id = %s""",
                             (thread_id,),
                         )
+                        await conn.commit()
                         logger.info("crystal_thread_reset_stale", thread_id=str(thread_id), stale_days=stale_days)
                         return {"id": str(thread_id), "messages": [], "is_new": True}
 
@@ -132,11 +133,15 @@ async def append_to_thread(thread_id: str, role: str, content: str) -> None:
         async with _db._pool_conn().connection() as conn:
             await conn.execute(
                 """UPDATE crystal_threads
-                   SET messages = messages || %s::jsonb,
+                   SET messages = CASE
+                           WHEN jsonb_array_length(messages) >= 100
+                           THEN (messages - 0) || %s::jsonb
+                           ELSE messages || %s::jsonb
+                       END,
                        last_active_at = NOW(),
                        message_count = message_count + 1
                    WHERE id = %s""",
-                (f"[{msg}]", thread_id),
+                (f"[{msg}]", f"[{msg}]", thread_id),
             )
     except Exception as exc:
         logger.warning("crystal_thread_append_failed", thread_id=thread_id, error=str(exc))
@@ -316,27 +321,29 @@ Return ONLY valid JSON matching this schema — no markdown, no extra text:
 async def _generate_response(
     inp: CrystalInput,
     correction: str = "",
-) -> CrystalOutput:
-    """Single LLM call to generate Crystal's response."""
+    current_tokens: int = 0,
+) -> tuple[CrystalOutput, int]:
+    """Single LLM call to generate Crystal's response. Returns (output, tokens_used)."""
+    from agents.lib.constants import CRYSTAL_CONVERSATION_WINDOW
     system = _build_system_prompt(inp, correction=correction)
 
     prior_messages: list[dict] | None = None
     if inp.conversation_history:
         prior_messages = [
-            {"role": m["role"], "content": m["content"]}
-            for m in inp.conversation_history[-10:]
+            {"role": str(m["role"])[:20], "content": str(m["content"])[:2000]}
+            for m in inp.conversation_history[-CRYSTAL_CONVERSATION_WINDOW * 2:]
             if m.get("role") in ("user", "assistant") and m.get("content")
         ]
 
-    output, _ = await call_agent(
+    output, entry = await call_agent(
         agent_name="crystal",
         system=system,
         user=inp.message,
         output_schema=CrystalOutput,
-        current_tokens=0,
+        current_tokens=current_tokens,
         prior_messages=prior_messages,
     )
-    return output
+    return output, entry.input_tokens + entry.output_tokens
 
 
 async def _run_crystal(inp: CrystalInput) -> CrystalOutput:
@@ -347,10 +354,12 @@ async def _run_crystal(inp: CrystalInput) -> CrystalOutput:
     best_output: CrystalOutput | None = None
     best_score = -1
     correction = ""
+    cumulative_tokens = 0
 
     for attempt in range(3):
         try:
-            output = await _generate_response(inp, correction=correction)
+            output, tokens_used = await _generate_response(inp, correction=correction, current_tokens=cumulative_tokens)
+            cumulative_tokens += tokens_used
         except Exception as exc:
             logger.warning("crystal_generate_failed", attempt=attempt, error=str(exc))
             if best_output is not None:
@@ -498,18 +507,19 @@ async def _run_react_loop(inp: CrystalInput, db_pool=None) -> CrystalOutput:
         has_open_text=inp.has_open_text,
     )
 
-    # Rate limit: 10 req/min per org
+    # Rate limit: 10 req/min per org — try/finally ensures connection is always closed
     try:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         r = await _redis_mod.from_url(redis_url)
-        rate_key = f"crystal:{inp.org_id}:rpm"
-        count = await r.incr(rate_key)
-        if count == 1:
-            await r.expire(rate_key, 60)
-        if count > 10:
+        try:
+            rate_key = f"crystal:{inp.org_id}:rpm"
+            count = await r.incr(rate_key)
+            if count == 1:
+                await r.expire(rate_key, 60)
+        finally:
             await r.close()
+        if count > 10:
             raise ValueError("Rate limit exceeded: 10 requests per minute per org")
-        await r.close()
     except ValueError:
         raise
     except Exception:
@@ -583,23 +593,34 @@ async def _run_react_loop_streaming(inp: CrystalInput, db_pool=None):
         has_open_text=inp.has_open_text,
     )
 
-    # Rate limit
+    # Rate limit — try/finally ensures connection is always closed before first yield
+    _rate_count = 0
     try:
         redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
         r = await _redis_mod.from_url(redis_url)
-        rate_key = f"crystal:{inp.org_id}:rpm"
-        count = await r.incr(rate_key)
-        if count == 1:
-            await r.expire(rate_key, 60)
-        await r.close()
-        if count > 10:
-            yield _json.dumps({"type": "error", "message": "Rate limit exceeded"})
-            return
+        try:
+            rate_key = f"crystal:{inp.org_id}:rpm"
+            _rate_count = await r.incr(rate_key)
+            if _rate_count == 1:
+                await r.expire(rate_key, 60)
+        finally:
+            await r.close()
     except Exception:
-        pass
+        pass  # Redis not available — skip rate limiting
+    if _rate_count > 10:
+        yield _json.dumps({"type": "error", "message": "Rate limit exceeded"})
+        return
 
-    # Collect data from relevant tools based on the question
-    tools_to_run = get_tools_for_scope(ctx.scope)[:3]  # Run top 3 relevant tools
+    # Select tools by keyword relevance to the user's question
+    _q_lower = inp.message.lower()
+    _all_tools = get_tools_for_scope(ctx.scope)
+    _scored = []
+    for _t in _all_tools:
+        _s = sum(2 for kw in _t["name"].replace("_", " ").split() if kw in _q_lower)
+        _s += sum(1 for w in _q_lower.split() if len(w) > 3 and w in (_t.get("description") or "").lower())
+        _scored.append((_s, _t))
+    _scored.sort(key=lambda x: x[0], reverse=True)
+    tools_to_run = [t for _, t in _scored[:3]] or _all_tools[:3]
     tool_results = []
 
     for tool_def in tools_to_run[:CRYSTAL_MAX_TOOL_TURNS]:
@@ -639,26 +660,27 @@ async def _run_react_loop_streaming(inp: CrystalInput, db_pool=None):
 
     yield _json.dumps({"type": "synthesizing", "message": "Putting it all together..."})
 
-    # Generate final answer using accumulated tool results
-    context_block = (
-        "\n\n## Retrieved Data\n" + "\n".join(
-            f"**{r['tool']}**: {_json.dumps(r['result'])[:800]}"
-            for r in tool_results
-        )
-        if tool_results else ""
-    )
+    # Pass tool results as prior conversation context — not appended to user message
+    tool_context_history = list(inp.conversation_history or [])
+    if tool_results:
+        tool_context_history.append({
+            "role": "assistant",
+            "content": "## Retrieved Data\n" + "\n".join(
+                f"**{r['tool']}**: {_json.dumps(r['result'])[:500]}"
+                for r in tool_results
+            ),
+        })
 
-    # Augment the input with tool results for final generation
     augmented_inp = CrystalInput(
         survey_id=inp.survey_id,
         org_id=inp.org_id,
-        message=inp.message + context_block,
+        message=inp.message,
         insights=inp.insights,
         topics=inp.topics,
         survey_title=inp.survey_title,
         survey_response_count=inp.survey_response_count,
         metrics=inp.metrics,
-        conversation_history=inp.conversation_history,
+        conversation_history=tool_context_history,
         user_id=inp.user_id,
         scope=inp.scope,
         has_open_text=inp.has_open_text,

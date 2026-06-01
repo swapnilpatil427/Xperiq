@@ -445,31 +445,37 @@ async def build_topic_hierarchy(
 
     for parent_name, child_names in parent_categories.items():
         try:
-            # Find or create the parent record
+            # Upsert the parent record — INSERT if new, skip if the topic already
+            # exists under any hierarchy_level (e.g. upsert_survey_topics already
+            # created it as a regular topic with the same name).
             async with conn.cursor() as cur:
                 await cur.execute(
-                    """SELECT id FROM survey_topics
-                       WHERE survey_id = %s AND name = %s AND time_window = %s
-                         AND hierarchy_level = 0
-                       LIMIT 1""",
-                    (survey_id, parent_name, time_window),
+                    """INSERT INTO survey_topics
+                         (survey_id, org_id, run_id, time_window, name,
+                          hierarchy_level, is_new, volume, sentiment_score,
+                          dominant_emotion, effort_score, trending)
+                       VALUES (%s,%s,%s,%s,%s, 0, false, 0, 0.0, 'neutral', 4.0, 'stable')
+                       ON CONFLICT (survey_id, name, time_window) DO NOTHING
+                       RETURNING id""",
+                    (survey_id, org_id, run_id, time_window, parent_name),
                 )
                 row = await cur.fetchone()
 
             if row:
                 parent_id = str(row[0])
             else:
+                # Row already existed — look it up without filtering by hierarchy_level
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        """INSERT INTO survey_topics
-                             (survey_id, org_id, run_id, time_window, name,
-                              hierarchy_level, is_new, volume, sentiment_score,
-                              dominant_emotion, effort_score, trending)
-                           VALUES (%s,%s,%s,%s,%s, 0, false, 0, 0.0, 'neutral', 4.0, 'stable')
-                           RETURNING id""",
-                        (survey_id, org_id, run_id, time_window, parent_name),
+                        """SELECT id FROM survey_topics
+                           WHERE survey_id = %s AND name = %s AND time_window = %s
+                           LIMIT 1""",
+                        (survey_id, parent_name, time_window),
                     )
-                    parent_id = str((await cur.fetchone())[0])
+                    existing = await cur.fetchone()
+                if not existing:
+                    continue
+                parent_id = str(existing[0])
 
             parent_db_ids[parent_name] = parent_id
 

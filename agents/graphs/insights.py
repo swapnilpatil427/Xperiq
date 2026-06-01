@@ -57,6 +57,7 @@ from agents.agents.insight_experts import (
     TrendExpertOutput, PrescriptiveExpertOutput,
 )
 from agents.graphs.nodes.context import node_context, node_route_specialists
+from agents.agents.tiered_report import run_tiered_report_agent
 from agents.specialists.registry import get_registry
 from agents.schemas.context import OrgContextModel, SurveyContextModel
 from agents.lib.checkpoint_store import write_checkpoint_blob
@@ -86,7 +87,7 @@ def extract_signals_from_response(answers: list, questions: list) -> dict:
         elif qtype == "rating":
             try: signals["rating_value"] = float(val)
             except (TypeError, ValueError): pass
-        elif qtype in ("text", "textarea"):
+        elif qtype in ("open_text", "short_text", "text", "textarea"):
             if val and str(val).strip():
                 signals.setdefault("open_text", []).append(str(val).strip())
         elif qtype == "boolean":
@@ -105,7 +106,7 @@ def compute_survey_capability_flags(questions: list) -> dict:
         "has_nps":       "nps" in types,
         "has_csat":      "csat" in types,
         "has_ces":       "ces" in types,
-        "has_open_text": bool(types & {"text", "textarea"}),
+        "has_open_text": bool(types & {"open_text", "short_text", "text", "textarea"}),
         "has_ratings":   "rating" in types,
     }
 
@@ -432,23 +433,23 @@ async def node_ingest(state: dict) -> dict:
             if q:
                 if q.get("type") == "nps":
                     try:
-                        r["nps_score"] = int(answer.get("value", 0))
-                    except (ValueError, TypeError):
+                        r["nps_score"] = int(answer["value"])
+                    except (ValueError, TypeError, KeyError):
                         pass
                 elif q.get("type") == "csat":
                     try:
-                        r["csat_score"] = float(answer.get("value", 0))
-                    except (ValueError, TypeError):
+                        r["csat_score"] = float(answer["value"])
+                    except (ValueError, TypeError, KeyError):
                         pass
                 elif q.get("type") == "ces":
                     try:
-                        r["ces_score"] = float(answer.get("value", 0))
-                    except (ValueError, TypeError):
+                        r["ces_score"] = float(answer["value"])
+                    except (ValueError, TypeError, KeyError):
                         pass
                 elif q.get("type") == "rating":
                     try:
-                        r["rating_score"] = float(answer.get("value", 0))
-                    except (ValueError, TypeError):
+                        r["rating_score"] = float(answer["value"])
+                    except (ValueError, TypeError, KeyError):
                         pass
         responses.append(r)
 
@@ -2619,22 +2620,83 @@ async def _publish_one(
     )
 
 
+# ── Node: report_agent (tiered narrative report) ─────────────────────────────
+
+async def node_report_agent(state: dict) -> dict:
+    """Generate a tier-appropriate narrative report from raw responses.
+
+    Runs AFTER node_narrate so both Track 1 (metric-based) and Track 2 (AI narrative)
+    insights are available before verify/evaluate/publish.
+
+    Skips if:
+    - The survey has no open-text questions (score-only surveys)
+    - No open texts were extracted by node_extract_texts
+    - Not enough responses for the minimum tier threshold (< 10)
+    - Insights came from cache and force_regenerate is False (no new data)
+    """
+    run_id = state["run_id"]
+    await _update_heartbeat(run_id)
+
+    # Skip entirely for score-only surveys
+    if not state.get("has_open_text"):
+        logger.info("node_report_agent_skipped_no_text", survey_id=state.get("survey_id"))
+        await _emit_event(run_id, "node_complete", "report_agent", {"skipped": "no_open_text"})
+        return state
+
+    # Skip if insights came from cache and no new responses (avoid redundant LLM costs)
+    if state.get("insights_from_cache") and not state.get("force_regenerate"):
+        await _emit_event(run_id, "node_complete", "report_agent", {"skipped": "cache_hit"})
+        return state
+
+    try:
+        report_insights = await run_tiered_report_agent(state)
+    except Exception as exc:
+        logger.error("node_report_agent_failed", run_id=run_id, error=str(exc), traceback=traceback.format_exc())
+        await _emit_event(run_id, "node_complete", "report_agent", {"error": str(exc)})
+        return state
+
+    if not report_insights:
+        await _emit_event(run_id, "node_complete", "report_agent", {"insight_count": 0})
+        return state
+
+    # Determine the tier that was generated for logging
+    metrics = state.get("metrics", {})
+    total   = metrics.get("total_responses", 0)
+    if total < 40:
+        tier = "headline"
+    elif total < 70:
+        tier = "summary"
+    else:
+        tier = "full_report"
+
+    existing_insights = list(state.get("insights") or [])
+    combined = existing_insights + report_insights
+
+    await _emit_event(run_id, "node_complete", "report_agent", {
+        "tier": tier,
+        "report_insight_count": len(report_insights),
+        "total_insight_count":  len(combined),
+    })
+
+    return {**state, "insights": combined}
+
+
 # ── Build the graph ───────────────────────────────────────────────────────────
 
 def build_insight_graph():
     """Construct and compile the insight generation LangGraph.
 
     Pipeline:
-      ingest → context → route_specialists → embed → metrics → extract_texts → absa → cluster
-            → topics → narrate → verify → evaluate → publish
+      ingest → context → route_specialists → embed → [metrics + extract_texts] → absa → cluster
+            → topics → narrate → report_agent → verify → evaluate → publish
 
-    context:          Loads org + survey context from the survey payload.
-    route_specialists: Matches context to specialist agents; stores IDs in state.
-    narrate:          Expert domain-specific agents (NPS, CSAT, Topic, Trend, Prescriptive)
-                      run in parallel via asyncio.gather inside the node.
-    verify:           Per-insight hallucination check against citation quotes.
-    evaluate:         Holistic quality audit (coverage, balance, actionability, redundancy).
-    publish:          DB upsert + per-window metric snapshots.
+    narrate:      Track 1 — metric-based expert insights (NPS, CSAT, Topic, Trend, Prescriptive).
+    report_agent: Track 2 — tier-routed narrative report from raw responses.
+                  headline_insights (10-39), summary (40-69), full_report (70+).
+                  Both tracks are merged before verify/evaluate/publish.
+    verify:       Per-insight hallucination check against citation quotes.
+    evaluate:     Holistic quality audit (coverage, balance, actionability, redundancy).
+    publish:      DB upsert + per-window metric snapshots.
     """
     g = StateGraph(InsightState)
     g.add_node("ingest",            node_ingest)
@@ -2646,26 +2708,28 @@ def build_insight_graph():
     g.add_node("absa",              node_absa)
     g.add_node("cluster",           node_cluster)
     g.add_node("topics",            node_topics)
-    g.add_node("narrate",           node_narrate)
-    g.add_node("verify",            node_verify)
-    g.add_node("evaluate",          node_evaluate)
-    g.add_node("publish",           node_publish)
+    g.add_node("narrate",            node_narrate)
+    g.add_node("report_agent",       node_report_agent)
+    g.add_node("verify",             node_verify)
+    g.add_node("evaluate",           node_evaluate)
+    g.add_node("publish",            node_publish)
 
     g.set_entry_point("ingest")
-    g.add_edge("ingest",            "context")
-    g.add_edge("context",           "route_specialists")
+    g.add_edge("ingest",             "context")
+    g.add_edge("context",            "route_specialists")
     g.add_edge("route_specialists",  "embed")
-    g.add_edge("embed",          "metrics")
-    g.add_edge("embed",          "extract_texts")
-    g.add_edge("metrics",        "absa")
-    g.add_edge("extract_texts",  "absa")
-    g.add_edge("absa",              "cluster")
-    g.add_edge("cluster",           "topics")
-    g.add_edge("topics",            "narrate")
-    g.add_edge("narrate",           "verify")
-    g.add_edge("verify",            "evaluate")
-    g.add_edge("evaluate",          "publish")
-    g.add_edge("publish",           END)
+    g.add_edge("embed",              "metrics")
+    g.add_edge("embed",              "extract_texts")
+    g.add_edge("metrics",            "absa")
+    g.add_edge("extract_texts",      "absa")
+    g.add_edge("absa",               "cluster")
+    g.add_edge("cluster",            "topics")
+    g.add_edge("topics",             "narrate")
+    g.add_edge("narrate",            "report_agent")
+    g.add_edge("report_agent",       "verify")
+    g.add_edge("verify",             "evaluate")
+    g.add_edge("evaluate",           "publish")
+    g.add_edge("publish",            END)
 
     return g.compile()
 

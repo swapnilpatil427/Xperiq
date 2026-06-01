@@ -158,7 +158,7 @@ async def execute_get_metric_history(ctx: CrystalContext, params: dict) -> dict:
                     """SELECT nps_score, csat_score, ces_score, response_count, captured_at
                        FROM survey_metric_snapshots
                        WHERE survey_id = %s AND org_id = %s
-                         AND captured_at > NOW() - INTERVAL '%s days'
+                         AND captured_at > NOW() - (%s * INTERVAL '1 day')
                        ORDER BY captured_at ASC""",
                     (survey_id, ctx.org_id, days),
                 )
@@ -382,8 +382,8 @@ async def execute_get_segment_breakdown(ctx: CrystalContext, params: dict) -> di
         async with db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT answers, ai_sentiment, ai_sentiment_score, nps_score FROM responses WHERE survey_id = %s",
-                    (survey_id,),
+                    "SELECT answers, ai_sentiment, ai_sentiment_score, nps_score FROM responses WHERE survey_id = %s AND org_id = %s",
+                    (survey_id, ctx.org_id),
                 )
                 rows = await cur.fetchall()
 
@@ -588,7 +588,7 @@ async def execute_get_anomaly_events(ctx: CrystalContext, params: dict) -> dict:
         days = min(int(params.get("days", 30)), 365)
         limit = min(int(params.get("limit", 10)), 50)
 
-        conditions = ["org_id = %s", "captured_at > NOW() - INTERVAL '%s days'"]
+        conditions = ["org_id = %s", "captured_at > NOW() - (%s * INTERVAL '1 day')"]
         args: list = [ctx.org_id, days]
         if survey_id:
             conditions.append("survey_id = %s")
