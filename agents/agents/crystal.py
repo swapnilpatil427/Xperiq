@@ -26,6 +26,82 @@ import json
 
 from pydantic import BaseModel
 
+
+def _format_tool_result(tool_name: str, result: dict, char_limit: int = 2000) -> str:
+    """Format a tool result as a concise structured summary for LLM context.
+
+    Replaces the raw JSON[:500] truncation with tool-aware summaries that
+    preserve the most important signals within a larger character budget.
+    Enterprise surveys with 30+ topics can saturate 500 chars in a single topic.
+    """
+    if not isinstance(result, dict):
+        return str(result)[:char_limit]
+
+    if result.get("error"):
+        return f"[error: {result['error']}]"
+
+    # Topics tool — most important for enterprise
+    if tool_name in ("get_topics", "list_topics"):
+        topics = result.get("topics", [])
+        lines = [f"Topics ({len(topics)} total):"]
+        for t in topics[:12]:
+            name    = t.get("name", "?")
+            vol     = t.get("volume") or t.get("response_count", 0)
+            sent    = t.get("sentiment_score", 0.0)
+            impact  = t.get("nps_impact")
+            urgency = t.get("urgency_score", 0.0)
+            trend   = t.get("trending", "")
+            impact_str = f", NPS_impact={impact:+.1f}" if impact is not None else ""
+            trend_str  = f" [{trend}]" if trend in ("up", "down") else ""
+            lines.append(f"  {name}{trend_str}: vol={vol}, sentiment={sent:.2f}{impact_str}, urgency={urgency:.1f}")
+        return "\n".join(lines)[:char_limit]
+
+    # Insights tool
+    if tool_name in ("get_insights", "list_insights"):
+        insights = result.get("insights", [])
+        lines = [f"Insights ({len(insights)} total):"]
+        for ins in insights[:10]:
+            cat  = ins.get("category", "")
+            head = ins.get("headline", "")[:80]
+            trust = ins.get("trust_score", 0)
+            lines.append(f"  [{cat}] {head} (trust={trust})")
+        return "\n".join(lines)[:char_limit]
+
+    # Metrics / NPS tool
+    if "nps" in tool_name or "metrics" in tool_name or "score" in tool_name:
+        lines = []
+        for k, v in result.items():
+            if isinstance(v, dict):
+                score = v.get("score")
+                n     = v.get("n")
+                if score is not None:
+                    lines.append(f"  {k}: {score}" + (f" (n={n})" if n else ""))
+            elif v is not None and not isinstance(v, (list, dict)):
+                lines.append(f"  {k}: {v}")
+        return ("Metrics:\n" + "\n".join(lines)) if lines else json.dumps(result)[:char_limit]
+
+    # Verbatims / quotes tool
+    if "verbatim" in tool_name or "quote" in tool_name or "response" in tool_name:
+        verbatims = result.get("verbatims") or result.get("quotes") or result.get("responses", [])
+        if verbatims:
+            lines = [f"Verbatims ({len(verbatims)} total):"]
+            for v in verbatims[:8]:
+                text = (v.get("text") or str(v))[:120]
+                sent = v.get("sentiment", "")
+                lines.append(f'  [{sent}] "{text}"')
+            return "\n".join(lines)[:char_limit]
+
+    # Default: flatten to key: value pairs, skipping large nested objects
+    lines = []
+    for k, v in result.items():
+        if isinstance(v, list):
+            lines.append(f"{k}: [{len(v)} items]")
+        elif isinstance(v, dict):
+            lines.append(f"{k}: {json.dumps(v)[:100]}")
+        elif v is not None:
+            lines.append(f"{k}: {v}")
+    return "\n".join(lines)[:char_limit]
+
 from agents.lib.openrouter import call_agent
 from agents.lib.logger import logger
 from agents.lib.constants import CRYSTAL_EVAL_PASS_THRESHOLD
@@ -544,7 +620,7 @@ async def _run_react_loop(inp: CrystalInput, db_pool=None) -> CrystalOutput:
         # Build tool results context block
         if tool_results_accumulated:
             context_block = "\n\n## Tool Results\n" + "\n".join(
-                f"**{r['tool']}**: {json.dumps(r['result'])[:500]}"
+                f"**{r['tool']}**:\n{_format_tool_result(r['tool'], r['result'])}"
                 for r in tool_results_accumulated
             )
             current_context = inp.message + context_block
@@ -666,7 +742,7 @@ async def _run_react_loop_streaming(inp: CrystalInput, db_pool=None):
         tool_context_history.append({
             "role": "assistant",
             "content": "## Retrieved Data\n" + "\n".join(
-                f"**{r['tool']}**: {_json.dumps(r['result'])[:500]}"
+                f"**{r['tool']}**:\n{_format_tool_result(r['tool'], r['result'])}"
                 for r in tool_results
             ),
         })

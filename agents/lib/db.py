@@ -381,6 +381,34 @@ async def cancel_run(run_id: str, org_id: str = "") -> None:
         )
 
 
+# ── metric snapshot helpers ────────────────────────────────────────────────────
+
+async def get_prior_metric_snapshots(survey_id: str, limit: int = 5) -> list[dict]:
+    """Return the last N metric snapshots for a survey, newest first.
+
+    Used by node_ingest to feed longitudinal NPS/CSAT history into node_narrate
+    so experts can produce delta narratives ("NPS up 12 pts since last month").
+    Returns [] gracefully when table is empty or doesn't exist yet.
+    """
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT nps, csat, response_count, captured_at
+                       FROM survey_metric_snapshots
+                       WHERE survey_id = %s
+                       ORDER BY captured_at DESC
+                       LIMIT %s""",
+                    (survey_id, limit),
+                )
+                rows = await cur.fetchall()
+                cols = [desc[0] for desc in cur.description]
+                return [dict(zip(cols, row)) for row in rows]
+    except Exception as exc:
+        logger.warning("get_prior_metric_snapshots_failed", survey_id=survey_id, error=str(exc))
+        return []
+
+
 # ── access guards ──────────────────────────────────────────────────────────────
 
 async def check_survey_access(survey_id: str, user_id: str, org_id: str) -> bool:

@@ -28,7 +28,11 @@ import structlog
 from langgraph.graph import StateGraph, END
 
 from agents.lib import db
-from agents.lib.constants import WINDOW_MIN_RESPONSES, TOPIC_ASSIGNMENT_THRESHOLD
+from agents.lib.constants import (
+    WINDOW_MIN_RESPONSES, TOPIC_ASSIGNMENT_THRESHOLD,
+    INGEST_STRATIFIED_BUCKETS, INGEST_ANCHOR_RESPONSES,
+    NARRATE_MAX_ATTEMPTS, REPORT_QUALITY_RENARRATE_THRESHOLD,
+)
 from agents.lib.logger import logger
 from agents.lib.openrouter import call_agent
 from agents.schemas.insight import (
@@ -130,10 +134,12 @@ class InsightState(TypedDict, total=False):
     absa_results:         list[dict[str, Any]]
     clusters:             list[dict[str, Any]]
     topics:               list[Any]
+    topic_signals:        dict[str, Any]          # name → full_topic_signals dict from node_topics
     drivers:              list[Any]
     stream_events:        list[Any]
     insights:             list[dict[str, Any]]
     insights_from_cache:  bool
+    narrate_attempt:      int                     # re-narration loop counter (capped at NARRATE_MAX_ATTEMPTS)
     errors:               list[str]
     org_context:          dict[str, Any]
     survey_context:       dict[str, Any]
@@ -143,6 +149,8 @@ class InsightState(TypedDict, total=False):
     has_csat:             bool
     has_ces:              bool
     survey_questions:     list[dict[str, Any]]
+    prior_snapshots:      list[dict[str, Any]]    # recent survey_metric_snapshots for longitudinal context
+    last_report_response_count: int               # response count when last report.* insights were generated
 
 
 # ── Model config ──────────────────────────────────────────────────────────────
@@ -404,23 +412,114 @@ async def node_ingest(state: dict) -> dict:
     response_limit    = 300 if is_bootstrap else 200
     new_response_cap  = 50   # max new responses to ABSA/cluster per incremental run
 
-    # Load responses
+    # ── Stratified response sampling ─────────────────────────────────────────
+    # Instead of always loading the most-recent N, sample proportionally across
+    # the survey's lifetime so old responses are not permanently ignored.
+    # Strategy:
+    #   1. Load all (id, submitted_at, nps_score) — lightweight index scan
+    #   2. If total <= cap, use all (no sampling needed)
+    #   3. Otherwise: anchor set (extreme NPS responses) + proportional time-bucket sample
     response_rows = []
-    async with db._pool_conn().connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """SELECT id, answers, submitted_at,
-                          ai_enriched_at, ai_sentiment, ai_sentiment_score,
-                          ai_emotion, ai_effort_score, nps_score, ai_topics
-                   FROM responses
-                   WHERE survey_id = %s
-                   ORDER BY submitted_at DESC NULLS LAST
-                   LIMIT %s""",
-                (survey_id, response_limit),
-            )
-            rows = await cur.fetchall()
-            cols = [desc[0] for desc in cur.description]
-            response_rows = [dict(zip(cols, r)) for r in rows]
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Step 1: lightweight metadata query
+                await cur.execute(
+                    """SELECT id, submitted_at, nps_score
+                       FROM responses
+                       WHERE survey_id = %s AND deleted_at IS NULL
+                       ORDER BY submitted_at ASC NULLS LAST""",
+                    (survey_id,),
+                )
+                meta_rows = await cur.fetchall()
+
+        total_available = len(meta_rows)
+
+        if total_available <= response_limit:
+            # No sampling needed — load all
+            selected_ids = [str(r[0]) for r in meta_rows]
+        else:
+            selected_ids_set: set[str] = set()
+
+            # Anchor set: extreme NPS responses (promoters 9-10, detractors 0-3)
+            # These are highest-signal for topic discovery and should always be in scope
+            anchor_ids: list[str] = []
+            for rid, _ts, nps in meta_rows:
+                if nps is not None:
+                    try:
+                        nps_v = float(nps)
+                        if nps_v <= 3 or nps_v >= 9:
+                            anchor_ids.append(str(rid))
+                    except (TypeError, ValueError):
+                        pass
+            # Cap anchor set; prefer extreme detractors (most actionable)
+            anchor_ids = anchor_ids[:INGEST_ANCHOR_RESPONSES]
+            selected_ids_set.update(anchor_ids)
+
+            # Proportional time-bucket sampling
+            # Divide timeline into INGEST_STRATIFIED_BUCKETS equal buckets
+            slots_remaining = response_limit - len(selected_ids_set)
+            per_bucket = max(1, slots_remaining // INGEST_STRATIFIED_BUCKETS)
+            bucket_size = max(1, total_available // INGEST_STRATIFIED_BUCKETS)
+
+            for bucket_idx in range(INGEST_STRATIFIED_BUCKETS):
+                start = bucket_idx * bucket_size
+                end   = start + bucket_size if bucket_idx < INGEST_STRATIFIED_BUCKETS - 1 else total_available
+                bucket = [str(r[0]) for r in meta_rows[start:end] if str(r[0]) not in selected_ids_set]
+                # Take evenly-spaced samples within the bucket to preserve distribution
+                if len(bucket) <= per_bucket:
+                    selected_ids_set.update(bucket)
+                else:
+                    step = len(bucket) / per_bucket
+                    sampled = [bucket[int(i * step)] for i in range(per_bucket)]
+                    selected_ids_set.update(sampled)
+
+            selected_ids = list(selected_ids_set)[:response_limit]
+
+        # Step 2: load full data for selected IDs only
+        if selected_ids:
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT id, answers, submitted_at,
+                                  ai_enriched_at, ai_sentiment, ai_sentiment_score,
+                                  ai_emotion, ai_effort_score, nps_score, ai_topics
+                           FROM responses
+                           WHERE survey_id = %s AND id = ANY(%s)
+                           ORDER BY submitted_at ASC NULLS LAST""",
+                        (survey_id, selected_ids),
+                    )
+                    rows = await cur.fetchall()
+                    cols = [desc[0] for desc in cur.description]
+                    response_rows = [dict(zip(cols, r)) for r in rows]
+
+        logger.info(
+            "node_ingest_sampling",
+            survey_id=survey_id,
+            total_available=total_available,
+            selected=len(response_rows),
+            anchor_count=len(anchor_ids) if total_available > response_limit else 0,
+            stratified=total_available > response_limit,
+        )
+
+    except Exception as exc:
+        # Fallback to simple recency-based query if stratified sampling fails
+        logger.warning("node_ingest_stratified_failed", error=str(exc))
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT id, answers, submitted_at,
+                              ai_enriched_at, ai_sentiment, ai_sentiment_score,
+                              ai_emotion, ai_effort_score, nps_score, ai_topics
+                       FROM responses
+                       WHERE survey_id = %s
+                       ORDER BY submitted_at DESC NULLS LAST
+                       LIMIT %s""",
+                    (survey_id, response_limit),
+                )
+                rows = await cur.fetchall()
+                cols = [desc[0] for desc in cur.description]
+                response_rows = [dict(zip(cols, r)) for r in rows]
 
     responses = []
     for r in response_rows:
@@ -511,6 +610,34 @@ async def node_ingest(state: dict) -> dict:
     else:
         new_response_ids = all_new_ids
 
+    # Load prior metric snapshots for longitudinal NPS/CSAT comparison
+    prior_snapshots: list[dict] = []
+    try:
+        prior_snapshots = await db.get_prior_metric_snapshots(survey_id, limit=5)
+    except Exception as exc:
+        logger.warning("node_ingest_prior_snapshots_failed", error=str(exc))
+
+    # Load response count from most recent report.* insight for tiered report delta check
+    last_report_response_count = 0
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT metric_json->>'response_count'
+                       FROM insights
+                       WHERE survey_id = %s AND org_id = %s
+                         AND category LIKE 'report.%%'
+                         AND superseded_at IS NULL
+                       ORDER BY generated_at DESC
+                       LIMIT 1""",
+                    (survey_id, org_id),
+                )
+                row = await cur.fetchone()
+                if row and row[0]:
+                    last_report_response_count = int(row[0])
+    except Exception:
+        pass
+
     # Persist response count so the scheduler can skip re-runs on unchanged data.
     try:
         async with db._pool_conn().connection() as conn:
@@ -526,20 +653,24 @@ async def node_ingest(state: dict) -> dict:
         "survey_id": survey_id, "response_count": len(responses),
         "new_response_count": len(new_response_ids),
         "industry": survey["org_context"]["industry"],
+        "prior_snapshots": len(prior_snapshots),
     })
 
     return {
         **state,
-        "survey":           survey,
-        "responses":        responses,
-        "new_response_ids": new_response_ids,
-        "force_regenerate": state.get("force_regenerate", False),
-        "is_bootstrap":     is_bootstrap,
-        "has_open_text":    flags["has_open_text"],
-        "has_nps":          flags["has_nps"],
-        "has_csat":         flags["has_csat"],
-        "has_ces":          flags["has_ces"],
-        "survey_questions": questions,
+        "survey":                      survey,
+        "responses":                   responses,
+        "new_response_ids":            new_response_ids,
+        "force_regenerate":            state.get("force_regenerate", False),
+        "is_bootstrap":                is_bootstrap,
+        "has_open_text":               flags["has_open_text"],
+        "has_nps":                     flags["has_nps"],
+        "has_csat":                    flags["has_csat"],
+        "has_ces":                     flags["has_ces"],
+        "survey_questions":            questions,
+        "prior_snapshots":             prior_snapshots,
+        "last_report_response_count":  last_report_response_count,
+        "narrate_attempt":             0,
     }
 
 
@@ -1546,7 +1677,12 @@ async def node_topics(state: dict) -> dict:
     except Exception as exc:
         logger.warning("node_topics_windows_failed", error=str(exc), traceback=traceback.format_exc())
 
-    return {**state, "topics": [t.model_dump() for t in all_topics], "clusters": enriched_clusters}
+    return {
+        **state,
+        "topics":        [t.model_dump() for t in all_topics],
+        "clusters":      enriched_clusters,
+        "topic_signals": topic_signals,   # name → full_topic_signals; consumed by node_narrate + node_report_agent
+    }
 
 
 # ── Node: narrate (expert domain-specific agents) ────────────────────────────
@@ -1730,6 +1866,7 @@ async def node_narrate(state: dict) -> dict:
         nps_task = narrate_nps_insight(
             score=nps_score, n=n, ci_low=ci_low, ci_high=ci_high,
             promoters=m.get("promoters"), passives=m.get("passives"), detractors=m.get("detractors"),
+            prior_snapshots=state.get("prior_snapshots"),
         )
 
     if "csat" in metrics and csat_score is not None:
@@ -1796,12 +1933,27 @@ async def node_narrate(state: dict) -> dict:
         top    = negative_clusters[0]
         aspect = top.get("canonical_name") or top["aspect"]
         size_  = top["size"]
+        # Build NPS-impact-sorted driver list from topic_signals for specific action grounding
+        _topic_sigs = state.get("topic_signals", {})
+        _top_drivers: list[dict] = []
+        if _topic_sigs:
+            _driver_items = [
+                {"name": name, **sig}
+                for name, sig in _topic_sigs.items()
+                if sig.get("nps_impact") is not None
+            ]
+            _top_drivers = sorted(
+                _driver_items,
+                key=lambda x: abs(x.get("nps_impact") or 0),
+                reverse=True,
+            )[:5]
         prescriptive_task = narrate_prescriptive_insight(
             aspect=aspect, size=size_, sentiment="negative",
             friction_type=_infer_friction_type(aspect),
             nps_score=nps_score, csat_score=csat_score,
             effort_score=float(top.get("avg_sentiment_score", 0) or 0),
             overlay=specialist_overlay,
+            top_drivers=_top_drivers or None,
         )
 
     # ── Fire all parallel expert calls ───────────────────────────────────────
@@ -2251,13 +2403,17 @@ async def node_verify(state: dict) -> dict:
                 ins["trust_score"] = min(ins["trust_score"], 55)
                 ins["trust_json"]["verifier_pass"] = False
                 ins["trust_json"]["verifier_notes"] = result.reason
-                # Recompute grounding component
                 ins["trust_json"]["grounding"] = _trust_grounding(False)
             else:
                 ins["trust_json"]["verifier_pass"] = True
                 ins["trust_json"]["grounding"] = _trust_grounding(True)
-        except Exception:
-            pass  # verification failure → keep insight, don't demote
+        except Exception as _ve:
+            # Verification service unavailable — mark explicitly so audit trail shows it.
+            # Do NOT silently keep the insight at full trust; demote slightly.
+            ins["trust_json"]["verifier_pass"] = None   # None = unverified (distinct from True/False)
+            ins["trust_json"]["verifier_notes"] = "verification_unavailable"
+            ins["trust_score"] = min(ins.get("trust_score", 70), 65)
+            logger.warning("verify_service_error", headline=ins.get("headline", ""), error=str(_ve))
 
     await _emit_event(run_id, "node_complete", "verify", {"verified_count": len(insights)})
     return {**state, "insights": insights}
@@ -2557,13 +2713,37 @@ async def _publish_one(
 
     Preserves user_state_json (pins, thumbs, dismissals) from the previous
     generation when the insight changes by carrying state forward by category.
+
+    Hash uses a stable_key derived from category + topic/metric identifier so
+    headline rewrites update the existing row rather than creating orphan rows.
     """
-    canonical = json.dumps({
-        "survey_id":   survey_id,
-        "category":    ins["category"],
-        "headline":    ins["headline"],
-        "time_window": time_window,
-    }, sort_keys=True)
+    import re as _re
+
+    def _stable_key(ins: dict) -> str:
+        category    = ins["category"]
+        metric_json = ins.get("metric_json") or {}
+        if category == "voice.topic":
+            # Normalize topic name: lowercase, strip punctuation, sort words for stability
+            topic = metric_json.get("topic") or metric_json.get("theme") or ins.get("headline", "")
+            normalized = " ".join(sorted(_re.sub(r"[^a-z0-9 ]", "", topic.lower()).split()))
+            return f"{category}:{normalized}"
+        elif category in ("metric.nps", "metric.csat", "metric.ces", "metric.trend", "metric.completion"):
+            return category  # Only one per survey per window
+        elif category.startswith("report."):
+            # For report insights, use category + normalized theme name (not full headline)
+            theme = metric_json.get("theme") or metric_json.get("report_tier", "")
+            if theme:
+                norm = _re.sub(r"[^a-z0-9 ]", "", theme.lower())[:30].strip()
+                return f"{category}:{norm}"
+            # Structural report insights (executive_summary, priority_action) — use category
+            return category
+        else:
+            # Default: category + first 40 chars of normalized headline
+            norm = _re.sub(r"[^a-z0-9 ]", "", ins.get("headline", "").lower())[:40].strip()
+            return f"{category}:{norm}"
+
+    stable_key   = _stable_key(ins)
+    canonical    = json.dumps({"survey_id": survey_id, "key": stable_key, "time_window": time_window}, sort_keys=True)
     insight_hash = hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
     audit_json = {
@@ -2623,27 +2803,34 @@ async def _publish_one(
 # ── Node: report_agent (tiered narrative report) ─────────────────────────────
 
 async def node_report_agent(state: dict) -> dict:
-    """Generate a tier-appropriate narrative report from raw responses.
+    """Generate a tier-appropriate narrative report using pre-computed topic signals.
 
-    Runs AFTER node_narrate so both Track 1 (metric-based) and Track 2 (AI narrative)
-    insights are available before verify/evaluate/publish.
+    Runs AFTER node_narrate so Track 1 (metric-based) insights are in state.
+    node_merge_tracks then fuses Track 1 + Track 2 before verify/evaluate/publish.
 
     Skips if:
-    - The survey has no open-text questions (score-only surveys)
-    - No open texts were extracted by node_extract_texts
-    - Not enough responses for the minimum tier threshold (< 10)
-    - Insights came from cache and force_regenerate is False (no new data)
+    - Survey has no open-text questions (score-only surveys)
+    - No topic_signals in state (node_topics didn't run or found no topics)
+    - Not enough responses for minimum tier threshold (< 10)
+    - Delta threshold not met (< REPORT_REGEN_MIN_NEW_RESPONSES new responses
+      since last report) unless force_regenerate=True or trigger='manual'
+    - Insights from cache and no force_regenerate
     """
     run_id = state["run_id"]
     await _update_heartbeat(run_id)
 
-    # Skip entirely for score-only surveys
+    # Skip for score-only surveys
     if not state.get("has_open_text"):
         logger.info("node_report_agent_skipped_no_text", survey_id=state.get("survey_id"))
         await _emit_event(run_id, "node_complete", "report_agent", {"skipped": "no_open_text"})
         return state
 
-    # Skip if insights came from cache and no new responses (avoid redundant LLM costs)
+    # Skip if topic signals not computed (topics node skipped or insufficient clusters)
+    if not state.get("topic_signals"):
+        await _emit_event(run_id, "node_complete", "report_agent", {"skipped": "no_topic_signals"})
+        return state
+
+    # Skip if insights came from cache and no new responses
     if state.get("insights_from_cache") and not state.get("force_regenerate"):
         await _emit_event(run_id, "node_complete", "report_agent", {"skipped": "cache_hit"})
         return state
@@ -2681,6 +2868,114 @@ async def node_report_agent(state: dict) -> dict:
     return {**state, "insights": combined}
 
 
+# ── Node: merge_tracks (dedup Track 1 + Track 2) ──────────────────────────────
+
+def _normalize_topic_name(name: str) -> str:
+    """Stable key for topic name comparison — lowercase, no punctuation, sorted words."""
+    import re as _re
+    words = sorted(_re.sub(r"[^a-z0-9 ]", "", name.lower()).split())
+    return " ".join(words)
+
+
+async def node_merge_tracks(state: dict) -> dict:
+    """Merge Track 1 (metric-based) and Track 2 (narrative report) insights.
+
+    Track 1 (voice.topic) insights have rich NPS-driver signals.
+    Track 2 (report.*_theme) insights have grounded verbatim quotes and narrative depth.
+    Rather than publishing two cards about the same topic, we enrich the Track 1
+    insight with Track 2's grounded citations and drop the Track 2 duplicate.
+
+    Structural Track 2 insights that have no Track 1 counterpart are kept as-is:
+      - report.executive_summary  → unique high-level overview
+      - report.summary_overview   → same
+      - report.priority_action    → cross-theme prescriptive (no Track 1 analogue)
+      - report.*_theme with no matching voice.topic → kept (new theme only found by report)
+    """
+    run_id   = state["run_id"]
+    insights = list(state.get("insights") or [])
+
+    # Build index of Track 1 topic insights by normalized name
+    track1_by_topic: dict[str, int] = {}   # normalized_name → index in insights list
+    for idx, ins in enumerate(insights):
+        if ins.get("category") == "voice.topic":
+            topic_name = (ins.get("metric_json") or {}).get("topic") or ins.get("headline", "")
+            key = _normalize_topic_name(topic_name)
+            if key:
+                track1_by_topic[key] = idx
+
+    # Structural report categories always kept (no Track 1 counterpart)
+    _KEEP_AS_IS = {
+        "report.executive_summary",
+        "report.summary_overview",
+        "report.priority_action",
+    }
+
+    merged_insights: list[dict] = list(insights)
+    indices_to_drop: list[int] = []
+    merges = 0
+
+    for idx, ins in enumerate(insights):
+        category = ins.get("category", "")
+        if not category.startswith("report."):
+            continue
+        if category in _KEEP_AS_IS:
+            continue
+
+        # This is a report.*_theme insight — try to match it to a voice.topic
+        theme_name = (ins.get("metric_json") or {}).get("theme") or ins.get("headline", "")
+        key = _normalize_topic_name(theme_name)
+        track1_idx = track1_by_topic.get(key)
+
+        if track1_idx is not None:
+            # Found a matching voice.topic — enrich it with Track 2's grounded citations
+            t1 = merged_insights[track1_idx]
+            existing_quotes = {c.get("quote", "") for c in (t1.get("citations_json") or [])}
+            new_citations = [
+                c for c in (ins.get("citations_json") or [])
+                if c.get("quote") and c["quote"] not in existing_quotes
+            ]
+            if new_citations:
+                merged_insights[track1_idx] = {
+                    **t1,
+                    "citations_json": (t1.get("citations_json") or []) + new_citations[:3],
+                }
+            # Boost trust slightly since we now have two independent sources agreeing
+            cur_trust = merged_insights[track1_idx].get("trust_score", 60)
+            merged_insights[track1_idx]["trust_score"] = min(95, cur_trust + 3)
+
+            # Also inherit business_impact / root_cause if Track 2 has them and Track 1 doesn't
+            t1_meta = merged_insights[track1_idx].get("metric_json") or {}
+            t2_meta = ins.get("metric_json") or {}
+            if not t1_meta.get("business_impact") and t2_meta.get("business_impact"):
+                new_meta = {**t1_meta, "business_impact": t2_meta["business_impact"]}
+                if t2_meta.get("root_cause_hypothesis"):
+                    new_meta["root_cause_hypothesis"] = t2_meta["root_cause_hypothesis"]
+                merged_insights[track1_idx] = {**merged_insights[track1_idx], "metric_json": new_meta}
+
+            # Schedule Track 2 duplicate for removal
+            indices_to_drop.append(idx)
+            merges += 1
+        # else: Track 2 found a topic not in Track 1 — keep it (new theme)
+
+    # Remove duplicates (highest index first to preserve lower indices)
+    for idx in sorted(set(indices_to_drop), reverse=True):
+        if 0 <= idx < len(merged_insights):
+            merged_insights.pop(idx)
+
+    await _emit_event(run_id, "node_complete", "merge_tracks", {
+        "total_insights":  len(merged_insights),
+        "merged":          merges,
+        "dropped":         len(indices_to_drop),
+    })
+    logger.info(
+        "node_merge_tracks_done",
+        merged=merges,
+        dropped=len(indices_to_drop),
+        remaining=len(merged_insights),
+    )
+    return {**state, "insights": merged_insights}
+
+
 # ── Build the graph ───────────────────────────────────────────────────────────
 
 def build_insight_graph():
@@ -2688,12 +2983,13 @@ def build_insight_graph():
 
     Pipeline:
       ingest → context → route_specialists → embed → [metrics + extract_texts] → absa → cluster
-            → topics → narrate → report_agent → verify → evaluate → publish
+            → topics → narrate → report_agent → merge_tracks → verify → evaluate → publish
 
     narrate:      Track 1 — metric-based expert insights (NPS, CSAT, Topic, Trend, Prescriptive).
-    report_agent: Track 2 — tier-routed narrative report from raw responses.
-                  headline_insights (10-39), summary (40-69), full_report (70+).
-                  Both tracks are merged before verify/evaluate/publish.
+    report_agent: Track 2 — tier-routed narrative report driven by topic_signals.
+                  headline (10-39), summary (40-69), full_report (70+).
+    merge_tracks: Fuses Track 1 + Track 2: enriches voice.topic with Track 2 verbatims,
+                  drops Track 2 duplicates of topics already covered by Track 1.
     verify:       Per-insight hallucination check against citation quotes.
     evaluate:     Holistic quality audit (coverage, balance, actionability, redundancy).
     publish:      DB upsert + per-window metric snapshots.
@@ -2710,6 +3006,7 @@ def build_insight_graph():
     g.add_node("topics",            node_topics)
     g.add_node("narrate",            node_narrate)
     g.add_node("report_agent",       node_report_agent)
+    g.add_node("merge_tracks",       node_merge_tracks)
     g.add_node("verify",             node_verify)
     g.add_node("evaluate",           node_evaluate)
     g.add_node("publish",            node_publish)
@@ -2726,7 +3023,8 @@ def build_insight_graph():
     g.add_edge("cluster",            "topics")
     g.add_edge("topics",             "narrate")
     g.add_edge("narrate",            "report_agent")
-    g.add_edge("report_agent",       "verify")
+    g.add_edge("report_agent",       "merge_tracks")
+    g.add_edge("merge_tracks",       "verify")
     g.add_edge("verify",             "evaluate")
     g.add_edge("evaluate",           "publish")
     g.add_edge("publish",            END)
@@ -2774,9 +3072,13 @@ async def run_insight_generation(
         "embedded_texts": [],
         "absa_results": [], "clusters": [],
         "topics": [],
+        "topic_signals": {},
         "drivers": [], "stream_events": [],
         "insights": [], "errors": [],
         "insights_from_cache": False,
+        "narrate_attempt":      0,
+        "prior_snapshots":      [],
+        "last_report_response_count": 0,
         "org_context":          {},
         "survey_context":       {},
         "selected_specialists": [],
