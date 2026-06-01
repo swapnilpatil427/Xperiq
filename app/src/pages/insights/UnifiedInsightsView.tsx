@@ -596,7 +596,7 @@ export function UnifiedInsightsView({
                             className={`text-xs gap-1 px-2 h-7 ${fb.thumbs === 'up' ? 'text-emerald-600' : ''}`}
                             onClick={() => handleThumb(insight.id, 'up')}
                           >
-                            <Icon name={fb.thumbs === 'up' ? 'thumb_up' : 'thumb_up'} size={13}
+                            <Icon name="thumb_up" size={13}
                               style={fb.thumbs === 'up' ? { color: '#059669' } : undefined} />
                             Helpful
                           </Button>
@@ -609,6 +609,17 @@ export function UnifiedInsightsView({
                             <Icon name="push_pin" size={13}
                               style={fb.pinned ? { color: 'var(--color-primary)' } : undefined} />
                             {fb.pinned ? 'Pinned' : 'Pin'}
+                          </Button>
+                          {/* Ask Crystal about this specific insight */}
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-xs gap-1 px-2 h-7 text-primary hover:bg-primary/8"
+                            onClick={() => openCrystal(insight.headline)}
+                            title="Ask Crystal to explain or expand on this insight"
+                          >
+                            <Icon name="psychology" size={13} style={{ color: 'var(--color-primary)' }} />
+                            Ask Crystal
                           </Button>
                           <div className="flex-1" />
                           <span className="text-[10px] text-on-surface-variant/60">

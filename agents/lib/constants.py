@@ -2,16 +2,73 @@
 
 All hardcoded thresholds, limits, and tuning values live here.
 Import from this module — never hardcode these values in pipeline files.
+
+Environment-aware constants (AGENTS_ENV):
+  dev        — local development; small limits for fast iteration
+  dev-paid   — development with paid LLM API; medium limits
+  staging    — pre-production; near-production limits
+  prod       — production; enterprise-grade limits
+
+All per-env defaults can be overridden via environment variables.
 """
+from __future__ import annotations
+import os
+
+_ENV = os.getenv("AGENTS_ENV", "dev").lower()
 
 # ── Streaming consumer ────────────────────────────────────────────────────────
 METRIC_SNAPSHOT_RESPONSE_THRESHOLD = 50    # write metric snapshot every N responses
 CHECKPOINT_FULL_RESPONSE_THRESHOLD = 200   # write full checkpoint blob every N responses
 CHECKPOINT_FULL_MAX_DAYS = 7               # also write full checkpoint if N days have passed
 
-# ── Response loading ──────────────────────────────────────────────────────────
-INGEST_MAX_RESPONSES_BOOTSTRAP = 300       # max responses loaded on first pipeline run
-INGEST_MAX_RESPONSES_CAP = 250             # max responses loaded on incremental runs
+# ── Response loading (environment-aware) ──────────────────────────────────────
+#
+# Why per-env limits matter:
+#   Statistical quality:  NPS margin of error at 95% CI ≈ 1.96 × SE(NPS)
+#     n=100  → MOE ≈ ±14 pts   (acceptable for quick pulse)
+#     n=300  → MOE ≈ ±8 pts    (good for dev-paid)
+#     n=500  → MOE ≈ ±6 pts    (good for staging)
+#     n=1000 → MOE ≈ ±4 pts    (enterprise quality; Bain/Satmetrix standard)
+#     n=1500 → MOE ≈ ±3 pts    (high confidence bootstrap)
+#
+#   Sampling note: these caps apply after stratified sampling selects
+#   a representative cross-section of ALL responses, not just the most recent.
+#
+# Bootstrap = first run (seeds topic centroids; needs more data)
+# Cap       = incremental runs (only new responses need ABSA/clustering)
+
+if _ENV == "prod":
+    _BOOTSTRAP_DEFAULT = "1500"
+    _CAP_DEFAULT       = "1000"
+    _ABSA_CAP_DEFAULT  = "150"
+    _ANCHOR_DEFAULT    = "75"
+elif _ENV == "staging":
+    _BOOTSTRAP_DEFAULT = "750"
+    _CAP_DEFAULT       = "500"
+    _ABSA_CAP_DEFAULT  = "100"
+    _ANCHOR_DEFAULT    = "50"
+elif _ENV == "dev-paid":
+    _BOOTSTRAP_DEFAULT = "500"
+    _CAP_DEFAULT       = "300"
+    _ABSA_CAP_DEFAULT  = "75"
+    _ANCHOR_DEFAULT    = "30"
+else:                                       # dev / local / test
+    _BOOTSTRAP_DEFAULT = "100"
+    _CAP_DEFAULT       = "100"
+    _ABSA_CAP_DEFAULT  = "50"
+    _ANCHOR_DEFAULT    = "10"
+
+INGEST_MAX_RESPONSES_BOOTSTRAP: int = int(os.getenv("INGEST_MAX_RESPONSES_BOOTSTRAP", _BOOTSTRAP_DEFAULT))
+INGEST_MAX_RESPONSES_CAP:       int = int(os.getenv("INGEST_MAX_RESPONSES_CAP",       _CAP_DEFAULT))
+INGEST_NEW_RESPONSE_ABSA_CAP:   int = int(os.getenv("INGEST_NEW_RESPONSE_ABSA_CAP",   _ABSA_CAP_DEFAULT))
+INGEST_ANCHOR_RESPONSES:        int = int(os.getenv("INGEST_ANCHOR_RESPONSES",        _ANCHOR_DEFAULT))
+
+# Surveys with more total responses than this use SQL-level NTILE sampling
+# (never loading all IDs into Python). Below this threshold, Python-side
+# sampling is fine (< 1000 rows × ~30 bytes ≈ 30 KB).
+INGEST_LARGE_SURVEY_THRESHOLD: int = int(os.getenv("INGEST_LARGE_SURVEY_THRESHOLD", "1000"))
+
+INGEST_STRATIFIED_BUCKETS = 6  # time buckets for proportional response sampling
 
 # ── Manual refresh ────────────────────────────────────────────────────────────
 MANUAL_REFRESH_MIN_NEW_RESPONSES = 10      # min new responses required to allow manual refresh
@@ -25,12 +82,12 @@ WINDOW_MIN_RESPONSES = {                   # min responses needed per window
     "last_7d": 5,
 }
 TOPIC_CONFIDENCE_LOW = 0.5                 # below this: low confidence
-TOPIC_CONFIDENCE_MEDIUM = 0.65            # below this: medium confidence
-TOPIC_CONFIDENCE_HIGH = 0.80              # above this: high confidence
+TOPIC_CONFIDENCE_MEDIUM = 0.65             # below this: medium confidence
+TOPIC_CONFIDENCE_HIGH = 0.80               # above this: high confidence
 
 # ── Trust score ───────────────────────────────────────────────────────────────
 TRUST_STATISTICAL_MODERATE_MIN = 30        # min responses for moderate statistical trust
-TRUST_STATISTICAL_HIGH_MIN = 50            # min responses for high statistical trust
+TRUST_STATISTICAL_HIGH_MIN = 100           # min responses for high statistical trust (was 50)
 TRUST_LOW_MAX = 40                         # trust score ≤ this → low
 TRUST_MEDIUM_MAX = 70                      # trust score ≤ this → medium
 TRUST_HIGH_MAX = 100                       # trust score ≤ this → high
@@ -67,10 +124,6 @@ CRYSTAL_THREAD_STORAGE_TTL_DAYS = 90       # thread storage retention period
 # ── Tiered report agent ───────────────────────────────────────────────────────
 REPORT_MAX_RESPONSES_WINDOW = 200          # max responses sent to LLM for any tiered report
 REPORT_REGEN_MIN_NEW_RESPONSES = 25        # min new responses since last report to trigger re-run
-
-# ── Stratified response sampling ─────────────────────────────────────────────
-INGEST_STRATIFIED_BUCKETS = 5              # time buckets for proportional response sampling
-INGEST_ANCHOR_RESPONSES = 50              # high-signal (extreme NPS) responses always included
 
 # ── Narration quality loop ────────────────────────────────────────────────────
 NARRATE_MAX_ATTEMPTS = 2                   # max re-narration retries after low evaluate score

@@ -54,9 +54,12 @@ async function _fetch(path, opts = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   }
 }
 
-// Response generation: ceil(count/5) LLM batches × ~15s each + 30s buffer, capped at 5 min.
+// Response generation: ceil(count/5) LLM batches × ~45s each + 60s buffer, capped at 10 min.
+// Free-tier OpenRouter models (dev env) take 20–60s per batch under load and may hit
+// rate-limit Retry-After headers that add up to another 8s per attempt.
+// Previous value of 15s/batch caused premature AbortController fires → 502 errors.
 function _responseGenTimeout(count) {
-  return Math.min(Math.ceil(count / 5) * 15_000 + 30_000, 300_000);
+  return Math.min(Math.ceil(count / 5) * 45_000 + 60_000, 600_000);
 }
 
 

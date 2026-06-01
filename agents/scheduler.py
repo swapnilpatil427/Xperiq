@@ -295,9 +295,11 @@ async def run_org_aggregation() -> None:
             async with conn.cursor() as cur:
                 # Get all active orgs with responses
                 await cur.execute(
-                    """SELECT DISTINCT org_id FROM surveys
+                    """SELECT DISTINCT org_id FROM surveys s
                        WHERE status = 'active' AND deleted_at IS NULL
-                         AND response_count > 0"""
+                         AND EXISTS (
+                             SELECT 1 FROM responses r WHERE r.survey_id = s.id
+                         )"""
                 )
                 org_rows = await cur.fetchall()
 
@@ -306,7 +308,7 @@ async def run_org_aggregation() -> None:
                 async with _pool_conn().connection() as conn:
                     async with conn.cursor() as cur:
                         await cur.execute(
-                            """SELECT AVG(nps_score), AVG(csat_score), SUM(response_count),
+                            """SELECT AVG(sms.nps), AVG(sms.csat), SUM(sms.response_count),
                                       COUNT(*) as survey_count
                                FROM survey_metric_snapshots sms
                                INNER JOIN surveys s ON s.id = sms.survey_id
@@ -324,18 +326,11 @@ async def run_org_aggregation() -> None:
 
                         avg_nps, avg_csat, total_responses, survey_count = row
 
-                    # Upsert org metric snapshot
                     async with conn.cursor() as cur:
                         await cur.execute(
                             """INSERT INTO org_metric_snapshots
-                               (org_id, nps_score, csat_score, response_count, survey_count, captured_at)
-                               VALUES (%s, %s, %s, %s, %s, NOW())
-                               ON CONFLICT (org_id, date_trunc('hour', captured_at))
-                               DO UPDATE SET
-                                   nps_score = EXCLUDED.nps_score,
-                                   csat_score = EXCLUDED.csat_score,
-                                   response_count = EXCLUDED.response_count,
-                                   survey_count = EXCLUDED.survey_count""",
+                               (org_id, captured_at, avg_nps, avg_csat, total_responses, active_survey_count)
+                               VALUES (%s, NOW(), %s, %s, %s, %s)""",
                             (org_id, avg_nps, avg_csat, total_responses, survey_count),
                         )
                     await conn.commit()

@@ -46,13 +46,15 @@ type StreamingPhase =
 interface CrystalPanelProps {
   scope: SurveyScope;
   surveys: Survey[];
-  insights: Insight | null;
+  insights?: Insight | null;
+  // agenticInsights / topics can still be passed as props for backward compat,
+  // but the global panel reads them from context (set by whichever page is active).
   agenticInsights?: AgenticInsight[];
   topics?: SurveyTopic[];
 }
 
 const SINGLE_PROMPTS = [
-  { icon: 'trending_down', label: 'Why did NPS drop May 10?' },
+  { icon: 'trending_down', label: 'Why did NPS drop recently?' },
   { icon: 'warning', label: 'Highest churn-risk segment?' },
   { icon: 'lightbulb', label: 'What would raise CSAT most?' },
   { icon: 'compare', label: 'Compare to last quarter' },
@@ -65,8 +67,21 @@ const ALL_PROMPTS = [
   { icon: 'lightbulb', label: 'Top portfolio action right now?' },
 ];
 
-export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], topics = [] }: CrystalPanelProps) {
-  const { isOpen, initialQuery, crystalCtx, setCrystalCtx, closeCrystal } = useCrystalPanel();
+export function CrystalPanel({
+  scope, surveys, insights = null,
+  agenticInsights: propAgentic,
+  topics: propTopics,
+}: CrystalPanelProps) {
+  const {
+    isOpen, initialQuery, crystalCtx, setCrystalCtx, closeCrystal,
+    // Context-injected data from the active page (falls back to prop values)
+    agenticInsights: ctxAgentic,
+    topics: ctxTopics,
+  } = useCrystalPanel();
+
+  // Prefer prop values (page explicitly passed richer data) over context values
+  const agenticInsights = propAgentic ?? ctxAgentic;
+  const topics          = propTopics  ?? ctxTopics;
   const [isExpanded, setIsExpanded] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -76,7 +91,11 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
   const [isListening, setIsListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const lastSubmittedQuery = useRef('');
+  // Tracks the last initialQuery that was auto-submitted by the effect below.
+  // Deliberately separate from the general submit path — overwriting this ref
+  // in submitQuery() would corrupt the guard and cause the initial query to
+  // re-fire every time the user clicks a suggestion chip.
+  const autoSubmittedQuery = useRef('');
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const api = useApi();
   const { getToken } = useAppAuth();
@@ -116,7 +135,6 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
   const submitQuery = useCallback(
     async (query: string, overrideCtx?: CrystalCtx) => {
       if (!query.trim() || isThinking) return;
-      lastSubmittedQuery.current = query;
       setMessages((prev) => [
         ...prev,
         { id: crypto.randomUUID(), role: 'user', content: query.trim(), timestamp: new Date() },
@@ -148,8 +166,11 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
         try {
           const token = await getToken();
           const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+          // Backend validates `:scope` must be 'survey' or 'org' — NOT the survey UUID.
+          // The actual survey ID goes in the request body as `survey_id`.
+          const streamScope = isAll ? 'org' : 'survey';
           const response = await fetch(
-            `${BASE}/api/experience/${scope}/crystal/stream`,
+            `${BASE}/api/experience/${streamScope}/crystal/stream`,
             {
               method: 'POST',
               headers: {
@@ -167,7 +188,7 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
                 conversation_history: messages
                   .filter((m) => m.role !== 'user' || true) // include all
                   .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
-                scope: 'survey',
+                scope: streamScope,
                 window: activeCtx.window,
                 focused_topic: activeCtx.focused_topic,
               }),
@@ -212,6 +233,11 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
                   setStreamingState({ phase: 'synthesizing' });
                 } else if (event.type === 'answer') {
                   setStreamingState(null);
+                  // Agents return citations as string[] (insight IDs); normalise to CrystalCitation[]
+                  const rawCitations: unknown[] = event.citations ?? [];
+                  const normCitations: CrystalCitation[] = rawCitations.map((c) =>
+                    typeof c === 'string' ? { id: c } : (c as CrystalCitation),
+                  );
                   setMessages((prev) => [
                     ...prev,
                     {
@@ -219,7 +245,7 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
                       role: 'crystal',
                       content: event.answer ?? '',
                       timestamp: new Date(),
-                      citations: event.citations ?? [],
+                      citations: normCitations,
                       suggestions: event.suggestions ?? [],
                     },
                   ]);
@@ -306,9 +332,13 @@ export function CrystalPanel({ scope, surveys, insights, agenticInsights = [], t
     [isAll, isThinking, api, scope, crystalCtx, getToken, agenticInsights, topics, focusSurvey, responseCount, messages],
   );
 
-  // Auto-submit when panel opens with a pre-loaded query
+  // Auto-submit when panel opens with a pre-loaded query.
+  // Uses autoSubmittedQuery (not lastSubmittedQuery) so that suggestion chip
+  // clicks — which call submitQuery() directly — cannot corrupt the guard and
+  // accidentally re-fire the original initialQuery on every message update.
   useEffect(() => {
-    if (isOpen && initialQuery && initialQuery !== lastSubmittedQuery.current) {
+    if (isOpen && initialQuery && initialQuery !== autoSubmittedQuery.current) {
+      autoSubmittedQuery.current = initialQuery;
       setInput('');
       submitQuery(initialQuery);
     }

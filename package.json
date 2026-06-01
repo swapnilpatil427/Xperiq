@@ -7,7 +7,7 @@
   "scripts": {
     "start":       "npm run dev",
     "predev":      "node -e \"const [maj,min]=process.versions.node.split('.').map(Number);if(maj<20||(maj===20&&min<19)){console.error('\\n✗ Node '+process.version+' detected. Vite requires Node >=20.19 or >=22.12.\\n  Run: nvm use 22\\n');process.exit(1)}\"",
-    "dev":         "docker compose up -d && node scripts/migrate.js && concurrently --kill-others-on-fail -n \"api,web,agents\" -c \"cyan,magenta,green\" \"npm --prefix backend run dev\" \"npm --prefix app run dev\" \"npm --prefix backend run start:agents\"",
+    "dev":         "DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose up -d && node scripts/migrate.js && concurrently --kill-others-on-fail -n \"api,web,agents\" -c \"cyan,magenta,green\" \"npm --prefix backend run dev\" \"npm --prefix app run dev\" \"npm --prefix backend run start:agents\"",
     "dev:dev-paid": "AGENTS_ENV=dev-paid npm run dev",
     "migrate":     "node scripts/migrate.js",
     "infra":       "DOCKER_BUILDKIT=1 COMPOSE_DOCKER_CLI_BUILD=1 docker compose up -d",

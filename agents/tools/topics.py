@@ -268,16 +268,21 @@ async def discover_topics(
 # ── DB upsert ────────────────────────────────────────────────────────────────
 
 def _compute_urgency(sentiment_score: float, volume: int, effort_score: float) -> float:
-    """Urgency = how much this topic demands immediate attention.
+    """Bootstrap urgency estimate for the DB INSERT in upsert_survey_topics.
 
-    Formula: abs(sentiment) × sqrt(volume) × (effort / 7)
-    Range roughly 0–20+. Topics above ~5 are worth flagging.
-    Negative sentiment amplifies urgency; positive sentiment reduces it to near-zero.
+    This value is a lightweight placeholder computed before all topics are known.
+    node_topics overwrites it with the normalized composite formula once the full
+    topic set and total_responses are available (which requires all clusters).
+
+    Formula: negativity × √volume × (effort/7), capped at 10.
+    Uses negativity (not abs) — positive topics should never be flagged as urgent.
+    Capped at 10 for consistency with the composite formula range [0, 10].
     """
     import math
-    negativity = max(0.0, -sentiment_score)           # only negative sentiment drives urgency
+    negativity    = max(0.0, -sentiment_score)
     effort_weight = max(0.0, effort_score) / 7.0
-    return round(negativity * math.sqrt(max(0, volume)) * effort_weight, 2)
+    raw = negativity * math.sqrt(max(0, volume)) * effort_weight
+    return round(min(10.0, raw), 2)
 
 
 async def upsert_survey_topics(

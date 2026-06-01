@@ -4,11 +4,10 @@ Provider strategy: Chinese + Google models via OpenRouter across all envs.
 No OpenAI or Anthropic SDK — equivalent quality at significantly lower cost.
 
 Environments:
-  dev        Free OpenRouter models. Currently deepseek-r1:free (only stable free model).
+  dev        Free OpenRouter models. OpenAI OSS reasoning pools + cross-vendor free models.
              $0 cost. Use for local solo development.
-  dev-paid   Cheapest Chinese/Google models. Gemini 2.5 Flash + DeepSeek Chat.
-             Price caps: $0.50/1M (fast roles), $1/1M (medium), $2/1M (complex).
-             ~$0.002–0.005/run. Use when 2+ devs test simultaneously.
+  dev-paid   OpenAI reasoning + gpt-4.1-mini structured/writing + Claude Haiku 4.5 QC.
+             ~$0.015–0.035/run. Paid tier, no free-pool rate limits.
   staging    Better Chinese/Google models. DeepSeek R1 for reasoning roles
              (insight_topics, insight_expert, creator), Gemini 2.5 Flash for narration,
              Gemini 2.0 Flash for fast structured roles. ~$0.010–0.020/run.
@@ -52,103 +51,97 @@ class ModelConfig:
 _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
 
     # ── dev ─────────────────────────────────────────────────────────────────────
-    # 8-pool free-tier setup — each pool is a distinct rate-limit bucket.
-    # All models verified live on OpenRouter free tier as of 2026-05-15.
-    # Run `python -m agents.skills.openrouter_scan --check-stale` to verify.
+    # 6-pool free-tier setup — each pool is a distinct rate-limit bucket.
+    # Verified live on OpenRouter as of 2026-06-01. Run openrouter_scan --check-stale to verify.
     #
-    # Pool | Model                                   | Strengths           | Roles
-    # ─────┼─────────────────────────────────────────┼─────────────────────┼───────────────────────
-    #  R1  | deepseek/deepseek-r1:free               | Reasoning + tools   | creator
-    #  V4F | deepseek/deepseek-v4-flash:free          | Fast structured     | qc_validator, compliance, recommender, copilot
-    #  Q80 | qwen/qwen3-next-80b-a3b-instruct:free   | XL reasoning, cross-vendor QC | qc, insight_topics
-    #  GEM | google/gemma-4-31b-it:free              | Quality writing     | insight_narrate, crystal
-    #  MMX | minimax/minimax-m2.5:free               | 1M ctx synthesis    | response_gen, insight_evaluate
-    #  ARC | arcee-ai/trinity-large-thinking:free    | Thinking model      | insight_expert
-    #  NNO | nvidia/nemotron-nano-9b-v2:free         | Ultra-fast, small   | insight_verify, crystal_eval
-    #  QCD | qwen/qwen3-coder:free                   | Structured JSON     | survey_bias, survey_evaluate, skip-logic
+    # Pool | Model                                   | Strengths                    | Roles
+    # ─────┼─────────────────────────────────────────┼──────────────────────────────┼────────────────────────────
+    # OSS120 | openai/gpt-oss-120b:free              | OpenAI reasoning + tools     | creator, insight_topics/expert, report
+    # OSS20  | openai/gpt-oss-20b:free               | Fast OpenAI reasoning        | qc_validator, compliance, recommender, copilot
+    # Q80    | qwen/qwen3-next-80b-a3b-instruct:free | Cross-vendor QC + evaluation | qc, insight_evaluate
+    # GEM    | google/gemma-4-31b-it:free            | Quality writing              | insight_narrate, crystal, report_headline
+    # NNO    | nvidia/nemotron-nano-9b-v2:free       | Ultra-fast verify            | insight_verify, crystal_eval
+    # QCD    | qwen/qwen3-coder:free                 | Structured JSON              | skip-logic, survey QA
+    # KIMI   | moonshotai/kimi-k2.6:free             | Long-context synthesis       | response_gen
     #
     "dev": {
-        # R1 — Reasoning + tool use
-        "creator":         ModelConfig("deepseek/deepseek-r1:free",                    max_tokens=4000, temperature=0.3,  context_window=64_000),
+        # OSS-120B — OpenAI free reasoning pool (tools + reasoning param)
+        "creator":         ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=4000, temperature=0.3,  context_window=128_000),
+        "insight_topics":  ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=6000, temperature=0.0,  context_window=128_000),
+        "insight_expert":  ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=1000, temperature=0.1,  context_window=128_000),
+        "report_summary":  ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=6000, temperature=0.1,  context_window=128_000),
+        "report_full":     ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=20000, temperature=0.0, context_window=128_000),
 
-        # V4Flash — Fast structured (tools for compliance/recommender/copilot)
-        "qc_validator":    ModelConfig("deepseek/deepseek-v4-flash:free",              max_tokens=400,  temperature=0.1,  context_window=64_000),
-        "compliance":      ModelConfig("deepseek/deepseek-v4-flash:free",              max_tokens=600,  temperature=0.1,  context_window=64_000),
-        "recommender":     ModelConfig("deepseek/deepseek-v4-flash:free",              max_tokens=500,  temperature=0.4,  context_window=64_000),
-        "copilot":         ModelConfig("deepseek/deepseek-v4-flash:free",              max_tokens=1500, temperature=0.3,  context_window=64_000),
+        # OSS-20B — Fast OpenAI reasoning pool (separate rate-limit bucket from 120B)
+        "qc_validator":    ModelConfig("openai/gpt-oss-20b:free",                      max_tokens=400,  temperature=0.1,  context_window=128_000),
+        "compliance":      ModelConfig("openai/gpt-oss-20b:free",                      max_tokens=600,  temperature=0.1,  context_window=128_000),
+        "recommender":     ModelConfig("openai/gpt-oss-20b:free",                      max_tokens=500,  temperature=0.4,  context_window=128_000),
+        "copilot":         ModelConfig("openai/gpt-oss-20b:free",                      max_tokens=1500, temperature=0.3,  context_window=128_000),
 
-        # Qwen 80B — Cross-vendor QC (different provider from deepseek!) + topic reasoning
-        "qc":              ModelConfig("qwen/qwen3-next-80b-a3b-instruct:free",        max_tokens=1000, temperature=0.1,  context_window=32_000),
-        "insight_topics":  ModelConfig("qwen/qwen3-next-80b-a3b-instruct:free",        max_tokens=6000, temperature=0.0,  context_window=32_000),
+        # Qwen 80B — Cross-vendor QC (OpenAI creator → Qwen reviewer)
+        "qc":              ModelConfig("qwen/qwen3-next-80b-a3b-instruct:free",        max_tokens=1000, temperature=0.1,  context_window=262_144),
+        "insight_evaluate":ModelConfig("qwen/qwen3-next-80b-a3b-instruct:free",        max_tokens=2500, temperature=0.0,  context_window=262_144),
 
         # Gemma 4 31B — Quality instruction-following writing (Google, cross-vendor)
         # ABSA uses this model via insight_narrate — dev free-tier tuning: concurrency=3, batch=10, cap=100
-        "insight_narrate": ModelConfig("google/gemma-4-31b-it:free",                   max_tokens=800,  temperature=0.1,  context_window=128_000, absa_concurrency=3,  absa_batch_size=10, absa_cap=100),
-        "crystal":         ModelConfig("google/gemma-4-31b-it:free",                   max_tokens=800,  temperature=0.3,  context_window=128_000),
+        "insight_narrate": ModelConfig("google/gemma-4-31b-it:free",                   max_tokens=800,  temperature=0.1,  context_window=262_144, absa_concurrency=3,  absa_batch_size=10, absa_cap=100),
+        "crystal":         ModelConfig("google/gemma-4-31b-it:free",                   max_tokens=800,  temperature=0.3,  context_window=262_144),
+        "report_headline": ModelConfig("google/gemma-4-31b-it:free",                   max_tokens=4000, temperature=0.1,  context_window=262_144),
 
-        # MiniMax M2.5 — 1M context window, excellent for large-batch synthesis
-        "response_gen":    ModelConfig("minimax/minimax-m2.5:free",                    max_tokens=6000, temperature=0.7,  context_window=1_000_000),
-        "insight_evaluate":ModelConfig("minimax/minimax-m2.5:free",                    max_tokens=2500, temperature=0.0,  context_window=1_000_000),
-
-        # Arcee Trinity — Thinking model for XM domain expert reasoning
-        "insight_expert":  ModelConfig("arcee-ai/trinity-large-thinking:free",         max_tokens=1000, temperature=0.1,  context_window=32_000),
+        # Kimi K2.6 — Long-context synthetic response generation
+        "response_gen":    ModelConfig("moonshotai/kimi-k2.6:free",                    max_tokens=6000, temperature=0.7,  context_window=262_144),
 
         # NVIDIA Nemotron Nano — Smallest/fastest for tiny-output verification
-        "insight_verify":  ModelConfig("nvidia/nemotron-nano-9b-v2:free",              max_tokens=300,  temperature=0.0,  context_window=16_000),
-        "crystal_eval":    ModelConfig("nvidia/nemotron-nano-9b-v2:free",              max_tokens=500,  temperature=0.0,  context_window=16_000),
+        "insight_verify":  ModelConfig("nvidia/nemotron-nano-9b-v2:free",              max_tokens=300,  temperature=0.0,  context_window=128_000),
+        "crystal_eval":    ModelConfig("nvidia/nemotron-nano-9b-v2:free",              max_tokens=500,  temperature=0.0,  context_window=128_000),
 
-        # Qwen3 Coder — Exceptional at structured JSON output (skip-logic branching rules, QA scoring)
-        "skip-logic":      ModelConfig("qwen/qwen3-coder:free",                        max_tokens=1200, temperature=0.1,  context_window=32_000),
-        "survey_bias":     ModelConfig("qwen/qwen3-coder:free",                        max_tokens=800,  temperature=0.0,  context_window=32_000),
-        "survey_evaluate": ModelConfig("qwen/qwen3-coder:free",                        max_tokens=600,  temperature=0.0,  context_window=32_000),
-
-        # Tiered report agents (dev free: use same pools as their equivalent roles)
-        "report_headline": ModelConfig("google/gemma-4-31b-it:free",                   max_tokens=4000, temperature=0.1,  context_window=128_000),
-        "report_summary":  ModelConfig("arcee-ai/trinity-large-thinking:free",         max_tokens=6000, temperature=0.1,  context_window=32_000),
-        "report_full":     ModelConfig("deepseek/deepseek-r1:free",                    max_tokens=20000, temperature=0.0, context_window=64_000),
+        # Qwen3 Coder — Structured JSON output (skip-logic branching rules, QA scoring)
+        "skip-logic":      ModelConfig("qwen/qwen3-coder:free",                        max_tokens=1200, temperature=0.1,  context_window=1_048_576),
+        "survey_bias":     ModelConfig("qwen/qwen3-coder:free",                        max_tokens=800,  temperature=0.0,  context_window=1_048_576),
+        "survey_evaluate": ModelConfig("qwen/qwen3-coder:free",                        max_tokens=600,  temperature=0.0,  context_window=1_048_576),
     },
 
     # ── dev-paid ─────────────────────────────────────────────────────────────────
-    # Provider: OpenAI only via OpenRouter (uses OPENROUTER_API_KEY).
-    # GPT-4o context window = 128K — do not exceed context_window=128_000.
-    # Cross-vendor QC rule waived for dev-paid (single-vendor, dev simplicity).
+    # OpenAI + Anthropic via OpenRouter. One step above budget tier — still well below staging.
     #
-    # Role          Model          $/1M in   $/1M out   Used for
-    # ──────────────────────────────────────────────────────────────────────────
-    # gpt-4o        $2.50          $10.00    creator, copilot, insight_topics, insight_expert
-    # gpt-4o-mini   $0.15          $0.60     all other roles (fast structured tasks)
+    # Tier | Model                      $/1M in  $/1M out  Used for
+    # ─────┼──────────────────────────────────────────────────────────────────────────
+    #  A   | openai/o3                  $2.00    $8.00     creator, insight_topics, report_full
+    #  B   | openai/o4-mini             $1.10    $4.40     insight_expert, report_summary, copilot
+    #  C   | openai/gpt-4.1-mini        $0.40    $1.60     narrate, verify, crystal, survey QA, ABSA
+    #  D   | anthropic/claude-haiku-4.5 $1.00    $5.00     qc (cross-vendor; structured output)
     #
-    # ~$0.03–0.05 per full orchestration run.
+    # ~$0.015–0.035 per full orchestration run.
     "dev-paid": {
-        "creator":         ModelConfig("openai/gpt-4o",                max_tokens=4000, temperature=0.3,  context_window=128_000),
+        # Tier A — Deep reasoning (survey design, topic discovery, long reports)
+        "creator":         ModelConfig("openai/o3",                      max_tokens=4000, temperature=0.3,  context_window=200_000),
+        "insight_topics":  ModelConfig("openai/o3",                      max_tokens=6000, temperature=0.0,  context_window=200_000),
+        "report_full":     ModelConfig("openai/o3",                      max_tokens=20000, temperature=0.0, context_window=200_000),
 
-        # QC — gpt-4o-mini is the cheapest OpenAI model capable of structured scoring.
-        # Cross-vendor rule intentionally waived for dev-paid (single-vendor simplicity).
-        "qc":              ModelConfig("openai/gpt-4o-mini",           max_tokens=1000, temperature=0.1,  context_window=128_000),
+        # Tier B — Mid reasoning (expert narrators, interactive copilot, report summary)
+        "insight_expert":  ModelConfig("openai/o4-mini",                 max_tokens=1500, temperature=0.1,  context_window=200_000),
+        "report_summary":  ModelConfig("openai/o4-mini",                 max_tokens=8000, temperature=0.1,  context_window=200_000),
+        "copilot":         ModelConfig("openai/o4-mini",                 max_tokens=2000, temperature=0.3,  context_window=200_000),
 
-        # GPT-4o-mini — fast structured roles
-        "qc_validator":    ModelConfig("openai/gpt-4o-mini",           max_tokens=400,  temperature=0.1,  context_window=128_000),
-        "compliance":      ModelConfig("openai/gpt-4o-mini",           max_tokens=600,  temperature=0.1,  context_window=128_000),
-        "recommender":     ModelConfig("openai/gpt-4o-mini",           max_tokens=600,  temperature=0.4,  context_window=128_000),
-        "skip-logic":      ModelConfig("openai/gpt-4o-mini",           max_tokens=1200, temperature=0.1,  context_window=128_000),
-        "copilot":         ModelConfig("openai/gpt-4o",                max_tokens=2000, temperature=0.3,  context_window=128_000),
+        # Tier D — Cross-vendor QC (Anthropic vs OpenAI creator; Haiku 4.5 has JSON mode)
+        "qc":              ModelConfig("anthropic/claude-haiku-4.5",     max_tokens=1000, temperature=0.1,  context_window=200_000),
+
+        # Tier C — Fast structured + quality writing (gpt-4.1-mini: better JSON fidelity than 4o-mini)
+        "qc_validator":    ModelConfig("openai/gpt-4.1-mini",            max_tokens=400,  temperature=0.1,  context_window=1_047_576),
+        "compliance":      ModelConfig("openai/gpt-4.1-mini",            max_tokens=600,  temperature=0.1,  context_window=1_047_576),
+        "recommender":     ModelConfig("openai/gpt-4.1-mini",            max_tokens=600,  temperature=0.4,  context_window=1_047_576),
+        "skip-logic":      ModelConfig("openai/gpt-4.1-mini",            max_tokens=1200, temperature=0.1,  context_window=1_047_576),
 
         # ABSA uses insight_narrate — dev-paid tuning: concurrency=5, batch=25, cap=250
-        "insight_narrate": ModelConfig("openai/gpt-4o-mini",           max_tokens=1200, temperature=0.1,  context_window=128_000, absa_concurrency=5, absa_batch_size=25, absa_cap=250),
-        "insight_verify":  ModelConfig("openai/gpt-4o-mini",           max_tokens=400,  temperature=0.0,  context_window=128_000),
-        "insight_topics":  ModelConfig("openai/gpt-4o",                max_tokens=6000, temperature=0.0,  context_window=128_000),
-        "crystal":         ModelConfig("openai/gpt-4o-mini",           max_tokens=1000, temperature=0.3,  context_window=128_000),
-        "response_gen":    ModelConfig("openai/gpt-4o-mini",           max_tokens=8000, temperature=0.8,  context_window=128_000),
-        "insight_expert":  ModelConfig("openai/gpt-4o",                max_tokens=1500, temperature=0.1,  context_window=128_000),
-        "insight_evaluate":ModelConfig("openai/gpt-4o-mini",           max_tokens=2500, temperature=0.0,  context_window=128_000),
-        "crystal_eval":    ModelConfig("openai/gpt-4o-mini",           max_tokens=600,  temperature=0.0,  context_window=128_000),
-        "survey_bias":     ModelConfig("openai/gpt-4o-mini",           max_tokens=1000, temperature=0.0,  context_window=128_000),
-        "survey_evaluate": ModelConfig("openai/gpt-4o-mini",           max_tokens=800,  temperature=0.0,  context_window=128_000),
-
-        # Tiered report agents
-        "report_headline": ModelConfig("openai/gpt-4o-mini",           max_tokens=4000, temperature=0.1,  context_window=128_000),
-        "report_summary":  ModelConfig("openai/gpt-4o",                max_tokens=8000, temperature=0.1,  context_window=128_000),
-        "report_full":     ModelConfig("openai/gpt-4o",                max_tokens=20000, temperature=0.0, context_window=128_000),
+        "insight_narrate": ModelConfig("openai/gpt-4.1-mini",            max_tokens=1200, temperature=0.1,  context_window=1_047_576, absa_concurrency=5, absa_batch_size=25, absa_cap=250),
+        "insight_verify":  ModelConfig("openai/gpt-4.1-mini",            max_tokens=400,  temperature=0.0,  context_window=1_047_576),
+        "crystal":         ModelConfig("openai/gpt-4.1-mini",            max_tokens=1000, temperature=0.3,  context_window=1_047_576),
+        "response_gen":    ModelConfig("openai/gpt-4.1-mini",            max_tokens=8000, temperature=0.8,  context_window=1_047_576),
+        "insight_evaluate":ModelConfig("openai/gpt-4.1-mini",            max_tokens=2500, temperature=0.0,  context_window=1_047_576),
+        "crystal_eval":    ModelConfig("openai/gpt-4.1-mini",            max_tokens=600,  temperature=0.0,  context_window=1_047_576),
+        "survey_bias":     ModelConfig("openai/gpt-4.1-mini",            max_tokens=1000, temperature=0.0,  context_window=1_047_576),
+        "survey_evaluate": ModelConfig("openai/gpt-4.1-mini",            max_tokens=800,  temperature=0.0,  context_window=1_047_576),
+        "report_headline": ModelConfig("openai/gpt-4.1-mini",            max_tokens=4000, temperature=0.1,  context_window=1_047_576),
     },
 
     # ── staging ──────────────────────────────────────────────────────────────────

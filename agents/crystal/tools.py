@@ -51,7 +51,9 @@ async def execute_get_survey_overview(ctx: CrystalContext, params: dict) -> dict
             async with conn.cursor() as cur:
                 # Survey metadata
                 await cur.execute(
-                    """SELECT id, title, status, response_count, created_at
+                    """SELECT id, title, status, created_at,
+                              (SELECT COUNT(*)::int FROM responses r
+                               WHERE r.survey_id = surveys.id) AS response_count
                        FROM surveys WHERE id = %s AND org_id = %s AND deleted_at IS NULL""",
                     (survey_id, ctx.org_id),
                 )
@@ -62,7 +64,8 @@ async def execute_get_survey_overview(ctx: CrystalContext, params: dict) -> dict
 
                 # Latest metric snapshot
                 await cur.execute(
-                    """SELECT nps_score, csat_score, ces_score, response_count, captured_at
+                    """SELECT nps AS nps_score, csat AS csat_score,
+                              effort_score AS ces_score, response_count, captured_at
                        FROM survey_metric_snapshots
                        WHERE survey_id = %s AND org_id = %s
                        ORDER BY captured_at DESC LIMIT 1""",
@@ -155,7 +158,8 @@ async def execute_get_metric_history(ctx: CrystalContext, params: dict) -> dict:
         async with db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    """SELECT nps_score, csat_score, ces_score, response_count, captured_at
+                    """SELECT nps AS nps_score, csat AS csat_score,
+                              effort_score AS ces_score, response_count, captured_at
                        FROM survey_metric_snapshots
                        WHERE survey_id = %s AND org_id = %s
                          AND captured_at > NOW() - (%s * INTERVAL '1 day')
@@ -295,7 +299,7 @@ async def execute_get_benchmark_comparison(ctx: CrystalContext, params: dict) ->
         async with db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    """SELECT nps_score, csat_score FROM survey_metric_snapshots
+                    """SELECT nps, csat FROM survey_metric_snapshots
                        WHERE survey_id = %s AND org_id = %s
                        ORDER BY captured_at DESC LIMIT 1""",
                     (survey_id, ctx.org_id),
@@ -476,7 +480,10 @@ async def execute_compare_surveys(ctx: CrystalContext, params: dict) -> dict:
             async with db._pool_conn().connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        """SELECT title, response_count FROM surveys
+                        """SELECT title,
+                                  (SELECT COUNT(*)::int FROM responses r
+                                   WHERE r.survey_id = surveys.id) AS response_count
+                           FROM surveys
                            WHERE id = %s AND org_id = %s AND deleted_at IS NULL""",
                         (sid, ctx.org_id),
                     )
@@ -486,7 +493,7 @@ async def execute_compare_surveys(ctx: CrystalContext, params: dict) -> dict:
                     results[label] = {"survey_id": sid, "title": row[0], "response_count": row[1]}
 
                     await cur.execute(
-                        """SELECT nps_score, csat_score, ces_score FROM survey_metric_snapshots
+                        """SELECT nps, csat, effort_score FROM survey_metric_snapshots
                            WHERE survey_id = %s AND org_id = %s ORDER BY captured_at DESC LIMIT 1""",
                         (sid, ctx.org_id),
                     )
@@ -517,15 +524,18 @@ async def execute_get_org_portfolio(ctx: CrystalContext, params: dict) -> dict:
         async with db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    """SELECT s.id, s.title, s.status, s.response_count,
+                    """SELECT s.id, s.title, s.status,
+                              (SELECT COUNT(*)::int FROM responses r
+                               WHERE r.survey_id = s.id) AS response_count,
                               m.nps_score, m.csat_score
                        FROM surveys s
                        LEFT JOIN LATERAL (
-                           SELECT nps_score, csat_score FROM survey_metric_snapshots
+                           SELECT nps AS nps_score, csat AS csat_score
+                           FROM survey_metric_snapshots
                            WHERE survey_id = s.id ORDER BY captured_at DESC LIMIT 1
                        ) m ON true
                        WHERE s.org_id = %s AND s.status = 'active' AND s.deleted_at IS NULL
-                       ORDER BY s.response_count DESC NULLS LAST
+                       ORDER BY response_count DESC NULLS LAST
                        LIMIT %s""",
                     (ctx.org_id, limit),
                 )
@@ -594,13 +604,14 @@ async def execute_get_anomaly_events(ctx: CrystalContext, params: dict) -> dict:
             conditions.append("survey_id = %s")
             args.append(survey_id)
         # Filter for significant metric drops (anomalies)
-        conditions.append("(nps_score < -10 OR csat_score < 2.5)")
+        conditions.append("(nps < -10 OR csat < 2.5 OR anomaly_flag = true)")
         args.append(limit)
 
         async with db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    f"""SELECT survey_id, nps_score, csat_score, response_count, captured_at
+                    f"""SELECT survey_id, nps AS nps_score, csat AS csat_score,
+                               response_count, captured_at
                         FROM survey_metric_snapshots
                         WHERE {' AND '.join(conditions)}
                         ORDER BY captured_at DESC LIMIT %s""",

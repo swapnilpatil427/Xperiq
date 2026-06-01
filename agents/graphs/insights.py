@@ -30,7 +30,9 @@ from langgraph.graph import StateGraph, END
 from agents.lib import db
 from agents.lib.constants import (
     WINDOW_MIN_RESPONSES, TOPIC_ASSIGNMENT_THRESHOLD,
-    INGEST_STRATIFIED_BUCKETS, INGEST_ANCHOR_RESPONSES,
+    INGEST_MAX_RESPONSES_BOOTSTRAP, INGEST_MAX_RESPONSES_CAP,
+    INGEST_NEW_RESPONSE_ABSA_CAP, INGEST_ANCHOR_RESPONSES,
+    INGEST_STRATIFIED_BUCKETS, INGEST_LARGE_SURVEY_THRESHOLD,
     NARRATE_MAX_ATTEMPTS, REPORT_QUALITY_RENARRATE_THRESHOLD,
 )
 from agents.lib.logger import logger
@@ -278,8 +280,15 @@ async def _verify(claim: str, context: str) -> VerifyInsightOutput:
     """Call the verify agent to check if a claim is supported by context."""
     output, _ = await call_agent(
         agent_name="insight_verify",
-        system="You are a fact-checker. Determine if the claim is supported by the provided response excerpts.",
-        user=f"Claim: {claim}\n\nContext (response excerpts):\n{context}",
+        system=(
+            "You are a fact-checker for survey insight claims. "
+            "Determine whether the claim is directly supported by the provided response excerpts.\n\n"
+            "You MUST respond with a JSON object containing exactly these two fields:\n"
+            '  "supported": true or false  (boolean — is the claim backed by the excerpts?)\n'
+            '  "reason": "one sentence explanation"\n\n'
+            "Example: {\"supported\": true, \"reason\": \"Three excerpts directly mention this issue.\"}"
+        ),
+        user=f"Claim: {claim}\n\nResponse excerpts:\n{context}",
         output_schema=VerifyInsightOutput,
     )
     return output
@@ -409,75 +418,49 @@ async def node_ingest(state: dict) -> dict:
     except Exception:
         pass  # table may not exist yet — treat as bootstrap
 
-    response_limit    = 300 if is_bootstrap else 200
-    new_response_cap  = 50   # max new responses to ABSA/cluster per incremental run
+    response_limit   = INGEST_MAX_RESPONSES_BOOTSTRAP if is_bootstrap else INGEST_MAX_RESPONSES_CAP
+    new_response_cap = INGEST_NEW_RESPONSE_ABSA_CAP
 
     # ── Stratified response sampling ─────────────────────────────────────────
-    # Instead of always loading the most-recent N, sample proportionally across
-    # the survey's lifetime so old responses are not permanently ignored.
-    # Strategy:
-    #   1. Load all (id, submitted_at, nps_score) — lightweight index scan
-    #   2. If total <= cap, use all (no sampling needed)
-    #   3. Otherwise: anchor set (extreme NPS responses) + proportional time-bucket sample
-    response_rows = []
+    # Goal: load a representative sample of responses across the survey's lifetime.
+    # A simple ORDER BY submitted_at DESC LIMIT N causes permanent recency bias —
+    # a 6-month survey with 10,000 responses would always ignore months 1-5.
+    #
+    # Strategy (three tiers based on total response count):
+    #
+    #   Tier 1 — Small survey (total ≤ cap):
+    #     Load everything directly. No sampling overhead.
+    #
+    #   Tier 2 — Medium survey (cap < total ≤ INGEST_LARGE_SURVEY_THRESHOLD):
+    #     COUNT(*) first (cheap index scan), then load all IDs into Python,
+    #     sample in-process. Acceptable at <1,000 rows (~30KB payload).
+    #
+    #   Tier 3 — Large survey (total > INGEST_LARGE_SURVEY_THRESHOLD):
+    #     Use SQL NTILE to divide the survey lifetime into time buckets and sample
+    #     directly in Postgres. Never loads more than `cap` rows into Python,
+    #     regardless of how many responses exist (10,000 or 10,000,000).
+    #
+    # In all tiers, an anchor set of extreme-NPS responses (0-3 detractors and
+    # 9-10 promoters) is loaded separately and merged in. These are highest-signal
+    # for topic discovery (clear pain/delight) and are always included.
+
+    response_rows: list[dict] = []
+    _total_available = 0
+    _used_sql_ntile  = False
+
     try:
+        # ── Step 1: Count total available responses (O(1) index scan) ────────
         async with db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
-                # Step 1: lightweight metadata query
                 await cur.execute(
-                    """SELECT id, submitted_at, nps_score
-                       FROM responses
-                       WHERE survey_id = %s AND deleted_at IS NULL
-                       ORDER BY submitted_at ASC NULLS LAST""",
+                    "SELECT COUNT(*) FROM responses WHERE survey_id = %s",
                     (survey_id,),
                 )
-                meta_rows = await cur.fetchall()
+                row = await cur.fetchone()
+                _total_available = int(row[0]) if row else 0
 
-        total_available = len(meta_rows)
-
-        if total_available <= response_limit:
-            # No sampling needed — load all
-            selected_ids = [str(r[0]) for r in meta_rows]
-        else:
-            selected_ids_set: set[str] = set()
-
-            # Anchor set: extreme NPS responses (promoters 9-10, detractors 0-3)
-            # These are highest-signal for topic discovery and should always be in scope
-            anchor_ids: list[str] = []
-            for rid, _ts, nps in meta_rows:
-                if nps is not None:
-                    try:
-                        nps_v = float(nps)
-                        if nps_v <= 3 or nps_v >= 9:
-                            anchor_ids.append(str(rid))
-                    except (TypeError, ValueError):
-                        pass
-            # Cap anchor set; prefer extreme detractors (most actionable)
-            anchor_ids = anchor_ids[:INGEST_ANCHOR_RESPONSES]
-            selected_ids_set.update(anchor_ids)
-
-            # Proportional time-bucket sampling
-            # Divide timeline into INGEST_STRATIFIED_BUCKETS equal buckets
-            slots_remaining = response_limit - len(selected_ids_set)
-            per_bucket = max(1, slots_remaining // INGEST_STRATIFIED_BUCKETS)
-            bucket_size = max(1, total_available // INGEST_STRATIFIED_BUCKETS)
-
-            for bucket_idx in range(INGEST_STRATIFIED_BUCKETS):
-                start = bucket_idx * bucket_size
-                end   = start + bucket_size if bucket_idx < INGEST_STRATIFIED_BUCKETS - 1 else total_available
-                bucket = [str(r[0]) for r in meta_rows[start:end] if str(r[0]) not in selected_ids_set]
-                # Take evenly-spaced samples within the bucket to preserve distribution
-                if len(bucket) <= per_bucket:
-                    selected_ids_set.update(bucket)
-                else:
-                    step = len(bucket) / per_bucket
-                    sampled = [bucket[int(i * step)] for i in range(per_bucket)]
-                    selected_ids_set.update(sampled)
-
-            selected_ids = list(selected_ids_set)[:response_limit]
-
-        # Step 2: load full data for selected IDs only
-        if selected_ids:
+        if _total_available <= response_limit:
+            # ── Tier 1: load everything ───────────────────────────────────────
             async with db._pool_conn().connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
@@ -485,25 +468,149 @@ async def node_ingest(state: dict) -> dict:
                                   ai_enriched_at, ai_sentiment, ai_sentiment_score,
                                   ai_emotion, ai_effort_score, nps_score, ai_topics
                            FROM responses
-                           WHERE survey_id = %s AND id = ANY(%s)
+                           WHERE survey_id = %s
                            ORDER BY submitted_at ASC NULLS LAST""",
-                        (survey_id, selected_ids),
+                        (survey_id,),
                     )
                     rows = await cur.fetchall()
                     cols = [desc[0] for desc in cur.description]
                     response_rows = [dict(zip(cols, r)) for r in rows]
 
+        elif _total_available <= INGEST_LARGE_SURVEY_THRESHOLD:
+            # ── Tier 2: Python-side stratified sampling ───────────────────────
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT id, submitted_at, nps_score
+                           FROM responses
+                           WHERE survey_id = %s
+                           ORDER BY submitted_at ASC NULLS LAST""",
+                        (survey_id,),
+                    )
+                    meta_rows = await cur.fetchall()
+
+            selected_ids_set: set[str] = set()
+
+            # Anchor: extreme-NPS responses (promoters 9-10, detractors 0-3)
+            anchor_ids: list[str] = []
+            for rid, _ts, nps in meta_rows:
+                if nps is not None:
+                    try:
+                        if float(nps) <= 3 or float(nps) >= 9:
+                            anchor_ids.append(str(rid))
+                    except (TypeError, ValueError):
+                        pass
+            selected_ids_set.update(anchor_ids[:INGEST_ANCHOR_RESPONSES])
+
+            # Stratified time-bucket sampling
+            slots = max(1, response_limit - len(selected_ids_set))
+            per_bucket  = max(1, slots // INGEST_STRATIFIED_BUCKETS)
+            bucket_size = max(1, _total_available // INGEST_STRATIFIED_BUCKETS)
+
+            for b in range(INGEST_STRATIFIED_BUCKETS):
+                start  = b * bucket_size
+                end    = start + bucket_size if b < INGEST_STRATIFIED_BUCKETS - 1 else _total_available
+                bucket = [str(r[0]) for r in meta_rows[start:end] if str(r[0]) not in selected_ids_set]
+                if len(bucket) <= per_bucket:
+                    selected_ids_set.update(bucket)
+                else:
+                    # Evenly-spaced selection within the bucket preserves time distribution
+                    step    = len(bucket) / per_bucket
+                    sampled = [bucket[int(i * step)] for i in range(per_bucket)]
+                    selected_ids_set.update(sampled)
+
+            selected_ids = list(selected_ids_set)[:response_limit]
+            if selected_ids:
+                async with db._pool_conn().connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """SELECT id, answers, submitted_at,
+                                      ai_enriched_at, ai_sentiment, ai_sentiment_score,
+                                      ai_emotion, ai_effort_score, nps_score, ai_topics
+                               FROM responses
+                               WHERE survey_id = %s AND id = ANY(%s)
+                               ORDER BY submitted_at ASC NULLS LAST""",
+                            (survey_id, selected_ids),
+                        )
+                        rows = await cur.fetchall()
+                        cols = [desc[0] for desc in cur.description]
+                        response_rows = [dict(zip(cols, r)) for r in rows]
+
+        else:
+            # ── Tier 3: SQL NTILE sampling for large surveys ──────────────────
+            # Divides the survey's response timeline into INGEST_STRATIFIED_BUCKETS
+            # equal-size buckets and samples per_bucket rows from each using
+            # ORDER BY id (UUID — deterministic, effectively random).
+            # Never loads more than `response_limit` rows into Python regardless
+            # of total survey size.
+            _used_sql_ntile = True
+            per_bucket = max(1, (response_limit - INGEST_ANCHOR_RESPONSES) // INGEST_STRATIFIED_BUCKETS)
+
+            async with db._pool_conn().connection() as conn:
+                # Anchor query (extreme NPS) — runs separately, fast with index
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT id FROM responses
+                           WHERE survey_id = %s
+                             AND nps_score IS NOT NULL
+                             AND (nps_score <= 3 OR nps_score >= 9)
+                           ORDER BY id
+                           LIMIT %s""",
+                        (survey_id, INGEST_ANCHOR_RESPONSES),
+                    )
+                    anchor_ids_sql = [str(r[0]) for r in await cur.fetchall()]
+
+                # NTILE stratified sample
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """WITH bucketed AS (
+                               SELECT id,
+                                      NTILE(%s) OVER (ORDER BY submitted_at ASC NULLS LAST) AS bucket
+                               FROM responses
+                               WHERE survey_id = %s
+                           ),
+                           ranked AS (
+                               SELECT id,
+                                      ROW_NUMBER() OVER (PARTITION BY bucket ORDER BY id) AS rn
+                               FROM bucketed
+                           )
+                           SELECT id FROM ranked
+                           WHERE rn <= %s
+                           ORDER BY id
+                           LIMIT %s""",
+                        (INGEST_STRATIFIED_BUCKETS, survey_id, per_bucket, response_limit),
+                    )
+                    ntile_ids = [str(r[0]) for r in await cur.fetchall()]
+
+                # Merge anchor + NTILE sample, deduplicate, respect cap
+                merged_ids = list({*anchor_ids_sql, *ntile_ids})[:response_limit]
+
+                if merged_ids:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """SELECT id, answers, submitted_at,
+                                      ai_enriched_at, ai_sentiment, ai_sentiment_score,
+                                      ai_emotion, ai_effort_score, nps_score, ai_topics
+                               FROM responses
+                               WHERE survey_id = %s AND id = ANY(%s)
+                               ORDER BY submitted_at ASC NULLS LAST""",
+                            (survey_id, merged_ids),
+                        )
+                        rows = await cur.fetchall()
+                        cols = [desc[0] for desc in cur.description]
+                        response_rows = [dict(zip(cols, r)) for r in rows]
+
         logger.info(
             "node_ingest_sampling",
             survey_id=survey_id,
-            total_available=total_available,
+            total_available=_total_available,
             selected=len(response_rows),
-            anchor_count=len(anchor_ids) if total_available > response_limit else 0,
-            stratified=total_available > response_limit,
+            cap=response_limit,
+            sql_ntile=_used_sql_ntile,
         )
 
     except Exception as exc:
-        # Fallback to simple recency-based query if stratified sampling fails
+        # Fallback: simple recency-based query — never fails the pipeline
         logger.warning("node_ingest_stratified_failed", error=str(exc))
         async with db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
@@ -1505,11 +1612,20 @@ async def node_topics(state: dict) -> dict:
         if topic_name:
             topic_signals[topic_name] = compute_full_topic_signals(cluster, all_responses, survey_metrics)
 
-    # Post-pass: compute composite urgency score per spec (§3)
-    # Requires max_volume across all topics — not available per-cluster.
+    # Post-pass: compute composite urgency score [0, 10].
+    # Formula:
+    #   urgency = negativity × 5.0 × √(volume_share × 100) × (effort/7) × trend_mult
+    #
+    # Key design decisions vs previous version:
+    # 1. negativity = max(0, -sentiment) — ONLY negative sentiment drives urgency.
+    #    Previously used abs(sentiment), which wrongly flagged highly positive topics
+    #    (sentiment=0.8) as urgent as highly negative ones (sentiment=-0.8).
+    # 2. volume_share = vol / total_responses — fraction of ALL survey responses.
+    #    Previously divided by max_volume (most popular topic), which made urgency
+    #    depend on what other topics existed in the same run (non-deterministic).
+    # 3. trend_mult only amplifies NEGATIVE trending topics, not positive ones.
     import math as _math
-    max_volume = max((sig.get("response_count", 1) for sig in topic_signals.values()), default=1)
-    max_volume = max(1, max_volume)
+    _total_for_urgency = max(1, len(all_responses))
 
     # Look up prior trending for trend_multiplier (best-effort — default to "stable")
     trending_lookup: dict[str, str] = {}
@@ -1526,23 +1642,29 @@ async def node_topics(state: dict) -> dict:
         pass
 
     for tname, sig in topic_signals.items():
-        vol          = sig.get("response_count", 0)
+        vol           = sig.get("response_count", 0)
         avg_sentiment = sig.get("avg_sentiment_score", 0.0)
-        avg_effort   = sig.get("avg_effort_score", 4.0) or 4.0
-        trending     = trending_lookup.get(tname, "stable") or "stable"
+        avg_effort    = sig.get("avg_effort_score", 4.0) or 4.0
+        trending      = trending_lookup.get(tname, "stable") or "stable"
 
+        # Negativity: only negative topics are urgent (positive = strength, not urgent)
+        negativity    = max(0.0, -avg_sentiment)
+
+        # Trend multiplier: only amplify negative topics that are worsening
         if trending == "up" and avg_sentiment < 0:
-            trend_mult = 1.5
-        elif trending == "up":
-            trend_mult = 1.2
-        elif trending == "down":
-            trend_mult = 0.8
+            trend_mult = 1.5   # getting worse and growing — high urgency
+        elif trending == "down" and avg_sentiment < 0:
+            trend_mult = 0.85  # negative but shrinking — slightly reduced urgency
         else:
             trend_mult = 1.0
 
+        # Volume share: fraction of all survey responses (stable cross-run reference)
+        volume_share = vol / _total_for_urgency
+
         sig["urgency_score"] = round(min(10.0, (
-            abs(avg_sentiment) * 5.0
-            * _math.sqrt(vol / max_volume)
+            negativity
+            * 5.0
+            * _math.sqrt(volume_share * 100)
             * (avg_effort / 7.0)
             * trend_mult
         )), 2)

@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import type { SurveyScope } from '../components/SurveyScopePicker';
+import type { AgenticInsight, SurveyTopic } from '../types';
 
 export interface CrystalCtx {
   window?: 'all_time' | '30d' | '7d';
@@ -7,15 +8,20 @@ export interface CrystalCtx {
 }
 
 interface CrystalPanelContextValue {
-  isOpen: boolean;
-  initialQuery: string;
-  crystalCtx: CrystalCtx;
-  scope: SurveyScope;
-  openCrystal: (query?: string, ctx?: CrystalCtx) => void;
-  closeCrystal: () => void;
-  toggleCrystal: () => void;
-  setScope: (scope: SurveyScope) => void;
-  setCrystalCtx: (ctx: CrystalCtx) => void;
+  isOpen:         boolean;
+  initialQuery:   string;
+  crystalCtx:     CrystalCtx;
+  scope:          SurveyScope;
+  // Page-injected data — set by pages that load agentic insights / topics
+  agenticInsights: AgenticInsight[];
+  topics:          SurveyTopic[];
+  openCrystal:     (query?: string, ctx?: CrystalCtx) => void;
+  closeCrystal:    () => void;
+  toggleCrystal:   () => void;
+  setScope:        (scope: SurveyScope) => void;
+  setCrystalCtx:   (ctx: CrystalCtx) => void;
+  // Inject page-level insight / topic data so the global panel is always context-aware
+  setCrystalData:  (agenticInsights: AgenticInsight[], topics: SurveyTopic[]) => void;
 }
 
 const CrystalPanelContext = createContext<CrystalPanelContextValue>({
@@ -23,18 +29,23 @@ const CrystalPanelContext = createContext<CrystalPanelContextValue>({
   initialQuery: '',
   crystalCtx: {},
   scope: 'all',
+  agenticInsights: [],
+  topics: [],
   openCrystal: () => {},
   closeCrystal: () => {},
   toggleCrystal: () => {},
   setScope: () => {},
   setCrystalCtx: () => {},
+  setCrystalData: () => {},
 });
 
 export function CrystalPanelProvider({ children }: { children: ReactNode }) {
-  const [isOpen, setIsOpen] = useState(false);
-  const [initialQuery, setInitialQuery] = useState('');
-  const [scope, setScope] = useState<SurveyScope>('all');
-  const [crystalCtx, setCrystalCtx] = useState<CrystalCtx>({});
+  const [isOpen,          setIsOpen]          = useState(false);
+  const [initialQuery,    setInitialQuery]    = useState('');
+  const [scope,           setScope]           = useState<SurveyScope>('all');
+  const [crystalCtx,      setCrystalCtx]      = useState<CrystalCtx>({});
+  const [agenticInsights, setAgenticInsights] = useState<AgenticInsight[]>([]);
+  const [topics,          setTopics]          = useState<SurveyTopic[]>([]);
 
   const openCrystal = useCallback((query = '', ctx?: CrystalCtx) => {
     setInitialQuery(query);
@@ -42,13 +53,20 @@ export function CrystalPanelProvider({ children }: { children: ReactNode }) {
     setIsOpen(true);
   }, []);
 
-  const closeCrystal = useCallback(() => setIsOpen(false), []);
-
+  const closeCrystal  = useCallback(() => setIsOpen(false), []);
   const toggleCrystal = useCallback(() => setIsOpen((prev) => !prev), []);
+
+  const setCrystalData = useCallback((ai: AgenticInsight[], tp: SurveyTopic[]) => {
+    setAgenticInsights(ai);
+    setTopics(tp);
+  }, []);
 
   return (
     <CrystalPanelContext.Provider
-      value={{ isOpen, initialQuery, crystalCtx, scope, openCrystal, closeCrystal, toggleCrystal, setScope, setCrystalCtx }}
+      value={{
+        isOpen, initialQuery, crystalCtx, scope, agenticInsights, topics,
+        openCrystal, closeCrystal, toggleCrystal, setScope, setCrystalCtx, setCrystalData,
+      }}
     >
       {children}
     </CrystalPanelContext.Provider>

@@ -46,8 +46,8 @@ const QUESTION_TYPE_ICONS: Record<string, string> = {
   statement:       'info',
 };
 
-// estimated seconds per 5-response batch
-const EST_SECS_PER_BATCH = 8;
+// estimated seconds per 5-response batch (matches backend _responseGenTimeout: 45s/batch)
+const EST_SECS_PER_BATCH = 45;
 
 function estimatedSeconds(count: number): number {
   return Math.ceil(count / 5) * EST_SECS_PER_BATCH;
