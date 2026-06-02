@@ -1,4 +1,5 @@
 /// <reference types="vite/client" />
+/// <reference types="@testing-library/jest-dom" />
 
 // Web Speech API types — not in lib.dom.d.ts by default in all TS versions
 interface SpeechRecognitionEvent extends Event {

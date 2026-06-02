@@ -17,8 +17,8 @@ const METRICS_PATH       = _require.resolve(resolve(__dirname, '../lib/metrics')
 const AGENTS_PATH        = _require.resolve(resolve(__dirname, '../lib/agentsClient'));
 const REDIS_STREAM_PATH  = _require.resolve(resolve(__dirname, '../lib/redisStream'));
 const AUTO_ANALYZE_PATH  = _require.resolve(resolve(__dirname, '../triggers/autoAnalyze'));
-const SURVEYS_ROUTER     = _require.resolve(resolve(__dirname, '../routes/local/surveys'));
-const ORGS_ROUTER        = _require.resolve(resolve(__dirname, '../routes/local/orgs'));
+const SURVEYS_ROUTER     = _require.resolve(resolve(__dirname, '../routes/surveys'));
+const ORGS_ROUTER        = _require.resolve(resolve(__dirname, '../routes/orgs'));
 
 function fakeMod(id, exports) {
   return { id, filename: id, loaded: true, exports, children: [] };
@@ -157,7 +157,7 @@ describe('GET /api/surveys/:id/analytics', () => {
   it('returns 200 with correct shape when survey exists', async () => {
     const app = buildSurveysApp({
       ownership: { rows: [{ id: 'survey-1', title: 'Test' }] },
-      agg:       { rows: [{ total_responses: 100, avg_nps: '52.5', promoters: 50, passives: 30, detractors: 20 }] },
+      agg:       { rows: [{ total_responses: 100, avg_nps: '52.5', promoters: 50, passives: 30, detractors: 20, completed_responses: 100 }] },
       daily:     { rows: [{ day: '2024-01-01', count: 10 }, { day: '2024-01-02', count: 15 }] },
     });
     const { status, body } = await api(app, 'GET', '/api/surveys/survey-1/analytics');

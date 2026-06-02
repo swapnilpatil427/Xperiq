@@ -15,7 +15,7 @@ const REQUIRE_ROLE_PATH = _require.resolve(resolve(__dirname, '../middleware/req
 const DB_PATH          = _require.resolve(resolve(__dirname, '../lib/db'));
 const ADMIN_PATH       = _require.resolve(resolve(__dirname, '../lib/admin'));
 const CLERK_PATH       = _require.resolve('@clerk/backend');
-const ROUTER_PATH      = _require.resolve(resolve(__dirname, '../routes/local/orgs'));
+const ROUTER_PATH      = _require.resolve(resolve(__dirname, '../routes/orgs'));
 
 // Module-scoped mocks referenced by lazy closures inside route handlers
 let mockQuery;
@@ -131,7 +131,7 @@ describe('GET /api/orgs/me', () => {
     mockQuery.mockRejectedValueOnce(new Error('connection refused'));
     const { status, body } = await api(app, 'GET', '/api/orgs/me');
     expect(status).toBe(500);
-    expect(body.error).toBe('connection refused');
+    expect(body.error).toBe('Something went wrong. Please try again.');
   });
 });
 
@@ -221,7 +221,7 @@ describe('PUT /api/orgs/me', () => {
     mockQuery.mockRejectedValueOnce(new Error('DB unavailable'));
     const { status, body } = await api(app, 'PUT', '/api/orgs/me', { name: 'Fail Corp' });
     expect(status).toBe(500);
-    expect(body.error).toBe('DB unavailable');
+    expect(body.error).toBe('Something went wrong. Please try again.');
   });
 });
 

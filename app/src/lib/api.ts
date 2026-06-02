@@ -579,7 +579,7 @@ export function createApiClient(getToken: GetToken) {
         velocity_pct:       coerce(t.velocity_pct),
         // Hierarchy fields — pass parent_topic_id as-is (UUID string or null)
         parent_topic_id:    t.parent_topic_id ?? null,
-        hierarchy_level:    t.hierarchy_level != null ? Number(t.hierarchy_level) : null,
+        hierarchy_level:    t.hierarchy_level != null ? Number(t.hierarchy_level) : undefined,
         sub_topic_count:    t.sub_topic_count != null ? Number(t.sub_topic_count) : 0,
       }));
       return { ...res.data, topics };
@@ -675,7 +675,8 @@ export function createApiClient(getToken: GetToken) {
       );
       // Postgres NUMERIC columns arrive as strings — coerce topic fields in every theme.
       const coerce = (v: unknown) => (v == null ? null : Number(v));
-      const coerceTopic = (t: SurveyTopic): SurveyTopic => ({
+      type TopicWithSubtopics = SurveyTopic & { subtopics?: SurveyTopic[] };
+      const coerceTopic = (t: TopicWithSubtopics): TopicWithSubtopics => ({
         ...t,
         sentiment_score:   coerce(t.sentiment_score),
         effort_score:      coerce(t.effort_score),
@@ -695,7 +696,7 @@ export function createApiClient(getToken: GetToken) {
         detractor_pct:     coerce(t.detractor_pct),
         passive_pct:       coerce(t.passive_pct),
         subtopics:         t.subtopics?.map(coerceTopic),
-      } as SurveyTopic);
+      });
       const themes = (res.data.themes ?? []).map((theme) => ({
         ...theme,
         topics: (theme.topics ?? []).map(coerceTopic),

@@ -15,7 +15,7 @@ const REQUIRE_ROLE_PATH = _require.resolve(resolve(__dirname, '../middleware/req
 const DB_PATH          = _require.resolve(resolve(__dirname, '../lib/db'));
 const ADMIN_PATH       = _require.resolve(resolve(__dirname, '../lib/admin'));
 const CLERK_PATH       = _require.resolve('@clerk/backend');
-const ROUTER_PATH      = _require.resolve(resolve(__dirname, '../routes/local/members'));
+const ROUTER_PATH      = _require.resolve(resolve(__dirname, '../routes/members'));
 
 // Module-scoped mock state — closure in createClerkClient reads this at call time
 let mockClerkOrgs;
@@ -132,7 +132,7 @@ describe('GET /api/orgs/me/members', () => {
     mockClerkOrgs.getOrganizationMembershipList.mockRejectedValueOnce(new Error('Clerk unavailable'));
     const { status, body } = await api(app, 'GET', '/api/orgs/me/members');
     expect(status).toBe(500);
-    expect(body.error).toBe('Clerk unavailable');
+    expect(body.error).toBe('Something went wrong. Please try again.');
   });
 });
 
@@ -208,7 +208,7 @@ describe('POST /api/orgs/me/invitations', () => {
       email: 'bob@acme.com',
     });
     expect(status).toBe(500);
-    expect(body.error).toBe('invite failed');
+    expect(body.error).toBe('Something went wrong. Please try again.');
   });
 });
 
@@ -242,7 +242,7 @@ describe('DELETE /api/orgs/me/members/:userId', () => {
     mockClerkOrgs.deleteOrganizationMembership.mockRejectedValueOnce(new Error('user not a member'));
     const { status, body } = await api(app, 'DELETE', '/api/orgs/me/members/u1');
     expect(status).toBe(500);
-    expect(body.error).toBe('user not a member');
+    expect(body.error).toBe('Something went wrong. Please try again.');
   });
 });
 
@@ -288,6 +288,6 @@ describe('PUT /api/orgs/me/members/:userId/role', () => {
       role: 'org:viewer',
     });
     expect(status).toBe(500);
-    expect(body.error).toBe('user not found');
+    expect(body.error).toBe('Something went wrong. Please try again.');
   });
 });
