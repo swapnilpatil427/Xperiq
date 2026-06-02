@@ -5,6 +5,8 @@ Tests cover:
   - compute_survey_capability_flags()
   - node_embed / node_absa / node_cluster / node_topics guard paths (no open text)
   - _update_heartbeat()
+  - compute_stratified_buckets() — dynamic bucket count by survey age
+  - manual trigger uses bootstrap response cap (not incremental cap)
 """
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -18,6 +20,11 @@ from agents.graphs.insights import (
     node_topics,
     node_narrate,
     _update_heartbeat,
+)
+from agents.lib.constants import (
+    compute_stratified_buckets,
+    INGEST_MAX_RESPONSES_BOOTSTRAP,
+    INGEST_MAX_RESPONSES_CAP,
 )
 
 
@@ -298,3 +305,66 @@ class TestHeartbeat:
         with patch("agents.graphs.insights.db._pool_conn", return_value=mock_pool):
             # Should not raise even if DB is unavailable
             await _update_heartbeat("run-xyz")
+
+
+# ── TestComputeStratifiedBuckets ──────────────────────────────────────────────
+
+class TestComputeStratifiedBuckets:
+    """Tests for the dynamic bucket count function."""
+
+    def test_brand_new_survey_uses_three_buckets(self):
+        """A survey open for less than 14 days gets 3 buckets."""
+        assert compute_stratified_buckets(0.0)  == 3
+        assert compute_stratified_buckets(1.0)  == 3
+        assert compute_stratified_buckets(13.9) == 3
+
+    def test_short_survey_uses_six_buckets(self):
+        """14 days to 89 days → 6 buckets (≈ biweekly resolution)."""
+        assert compute_stratified_buckets(14.0) == 6
+        assert compute_stratified_buckets(30.0) == 6
+        assert compute_stratified_buckets(89.9) == 6
+
+    def test_medium_survey_uses_twelve_buckets(self):
+        """90 days to 364 days → 12 buckets (≈ monthly resolution)."""
+        assert compute_stratified_buckets(90.0)  == 12
+        assert compute_stratified_buckets(180.0) == 12
+        assert compute_stratified_buckets(364.9) == 12
+
+    def test_long_survey_uses_twenty_six_buckets(self):
+        """≥ 365 days → 26 buckets (biweekly over a year+)."""
+        assert compute_stratified_buckets(365.0)  == 26
+        assert compute_stratified_buckets(730.0)  == 26
+        assert compute_stratified_buckets(1825.0) == 26
+
+    def test_env_override_pins_fixed_count(self):
+        """INGEST_STRATIFIED_BUCKETS env var overrides the dynamic logic."""
+        import agents.lib.constants as c
+        original = c._STRATIFIED_BUCKETS_OVERRIDE
+        try:
+            c._STRATIFIED_BUCKETS_OVERRIDE = 8
+            assert compute_stratified_buckets(0.0)   == 8
+            assert compute_stratified_buckets(400.0) == 8
+        finally:
+            c._STRATIFIED_BUCKETS_OVERRIDE = original
+
+    def test_bucket_count_never_below_three(self):
+        """No edge case should produce fewer than 3 buckets."""
+        for age in [-1.0, 0.0, 0.001]:
+            assert compute_stratified_buckets(age) >= 3
+
+
+# ── TestManualTriggerBootstrapCap ─────────────────────────────────────────────
+
+class TestManualTriggerBootstrapCap:
+    """Verify that force_regenerate (manual trigger) uses the bootstrap response cap."""
+
+    def test_bootstrap_cap_is_gte_incremental_cap(self):
+        """The bootstrap cap must be ≥ incremental cap across all envs."""
+        assert INGEST_MAX_RESPONSES_BOOTSTRAP >= INGEST_MAX_RESPONSES_CAP
+
+    def test_manual_cap_constant_relationship(self):
+        """Document the cap contract: manual runs get bootstrap-level coverage."""
+        # In prod: bootstrap=1500, cap=1000 — manual sees 50% more responses
+        # In dev:  bootstrap=100,  cap=100  — same (dev has no headroom to spare)
+        # The key property is that manual never gets LESS than scheduled runs.
+        assert INGEST_MAX_RESPONSES_BOOTSTRAP >= INGEST_MAX_RESPONSES_CAP

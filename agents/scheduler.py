@@ -14,9 +14,9 @@ Or via the Makefile:
   make scheduler
 
 Interval env vars:
-  INSIGHT_INTERVAL_FREE_MIN   default: 60   (minutes between free-tier runs)
-  INSIGHT_INTERVAL_PAID_MIN   default: 5    (minutes between paid-tier runs)
-  SCHEDULER_POLL_SEC          default: 30   (how often scheduler checks the queue)
+  INSIGHT_INTERVAL_FREE_MIN   default: 120  (minutes between free-tier runs)
+  INSIGHT_INTERVAL_PAID_MIN   default: 15   (minutes between paid-tier runs)
+  SCHEDULER_POLL_SEC          default: env-aware (dev: 300s, prod: 3600s)
 """
 from __future__ import annotations
 
@@ -36,9 +36,23 @@ from agents.lib.logger import logger
 AGENTS_URL          = os.getenv("AGENTS_URL",          "http://localhost:8001")
 AGENTS_INTERNAL_KEY = os.getenv("AGENTS_INTERNAL_KEY", "dev-internal-key-change-in-prod")
 
+_ENV = os.getenv("AGENTS_ENV", "dev").lower()
+
+# How often the scheduler wakes up and checks for surveys that need processing.
+# Prod: 1 hour — avoids unnecessary DB scans and LLM costs at enterprise scale.
+# Dev/staging: 5 minutes — tighter feedback loop during development.
+# Override via SCHEDULER_POLL_SEC for any env.
+_POLL_SEC_DEFAULTS = {
+    "prod":     3600,   # 1 hour
+    "staging":  300,    # 5 minutes
+    "dev-paid": 300,    # 5 minutes
+    "dev":      300,    # 5 minutes
+}
+_POLL_SEC_DEFAULT = _POLL_SEC_DEFAULTS.get(_ENV, 300)
+
 INTERVAL_FREE_MIN = int(os.getenv("INSIGHT_INTERVAL_FREE_MIN", "120"))  # 2 hours
 INTERVAL_PAID_MIN = int(os.getenv("INSIGHT_INTERVAL_PAID_MIN", "15"))   # 15 minutes
-POLL_SEC          = int(os.getenv("SCHEDULER_POLL_SEC",        "120"))  # 2 minutes
+POLL_SEC          = int(os.getenv("SCHEDULER_POLL_SEC", str(_POLL_SEC_DEFAULT)))
 
 
 async def _trigger_generation(survey_id: str, org_id: str) -> bool:

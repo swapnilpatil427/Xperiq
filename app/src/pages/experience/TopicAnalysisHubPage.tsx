@@ -58,11 +58,13 @@ function sentBg(s: number | null | undefined) {
 }
 
 // ── Urgency helpers ───────────────────────────────────────────────────────────
+// urgency_score is [0, 100] — % of mentions with high-intensity emotion.
+// Thresholds: 30 = medium, 50 = high, 80 = critical.
 function urgencyLabel(score: number | null, t: (k: string) => string) {
-  if (score == null || score < 3) return null;
-  if (score >= 8) return { label: t('experience.topics.urgency.critical'), bg: '#fef2f2', color: '#b91c1c' };
-  if (score >= 5) return { label: t('experience.topics.urgency.high'),     bg: '#fff7ed', color: '#c2410c' };
-  return           { label: t('experience.topics.urgency.medium'), bg: '#fefce8', color: '#854d0e' };
+  if (score == null || score < 30) return null;
+  if (score >= 80) return { label: t('experience.topics.urgency.critical'), bg: '#fef2f2', color: '#b91c1c' };
+  if (score >= 50) return { label: t('experience.topics.urgency.high'),     bg: '#fff7ed', color: '#c2410c' };
+  return            { label: t('experience.topics.urgency.medium'), bg: '#fefce8', color: '#854d0e' };
 }
 
 // ── Page ─────────────────────────────────────────────────────────────────────
@@ -287,7 +289,7 @@ export function TopicAnalysisHubPage() {
               icon:     'priority_high',
               iconColor:'#d97706',
               sub:      topUrgency
-                ? t('experience.topics.summary.urgencyDetail', { score: topUrgency.urgency_score?.toFixed(1) ?? '—', volume: String(topUrgency.volume) })
+                ? t('experience.topics.summary.urgencyDetail', { score: topUrgency.urgency_score?.toFixed(0) ?? '—', volume: String(topUrgency.volume) })
                 : t('experience.topics.summary.noUrgentTopics'),
               truncate: true,
             },

@@ -260,7 +260,7 @@ function SentimentBar({
 
 export function TopicCard({ topic, onSelect, onAskCrystal }: TopicCardProps) {
   const { t } = useTranslation();
-  const isUrgent = (topic.urgency_score ?? 0) > 3;
+  const isUrgent = (topic.urgency_score ?? 0) >= 30; // urgency_score is [0,100] — 30% = medium threshold
   const deltaPct = formatVolumeDelta(topic.volume_delta_pct);
   const deltaPositive = (topic.volume_delta_pct ?? 0) >= 0;
 

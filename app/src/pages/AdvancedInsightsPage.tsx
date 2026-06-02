@@ -352,9 +352,18 @@ export function AdvancedInsightsPage() {
                 <strong>{topic.name}</strong> is trending negative
                 {topic.negative_pct != null ? ` — ${Math.round(topic.negative_pct)}% of mentions are critical` : ''}
               </span>
-              <button className="ml-auto text-xs opacity-60 hover:opacity-100" onClick={() => setSelectedId(topic.id)}>
-                View topic →
-              </button>
+              {activeSurvey?.id ? (
+                <Link
+                  to={toPath(ROUTES.EXPERIENCE_SURVEY_TOPIC, { surveyId: activeSurvey.id, topicId: topic.id })}
+                  className="ml-auto text-xs opacity-60 hover:opacity-100 transition-opacity"
+                >
+                  View topic →
+                </Link>
+              ) : (
+                <button className="ml-auto text-xs opacity-60 hover:opacity-100" onClick={() => setSelectedId(topic.id)}>
+                  View topic →
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -659,13 +668,14 @@ export function AdvancedInsightsPage() {
                     </div>
                     <div className="flex flex-wrap items-end gap-1 justify-end">
                       {/* Urgency badge — only show medium+ */}
-                      {(topic.urgency_score ?? 0) >= 3 && (
+                      {/* urgency_score [0-100]: 30=medium, 80=critical */}
+                      {(topic.urgency_score ?? 0) >= 30 && (
                         <span className="text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide"
                           style={{
-                            background: (topic.urgency_score ?? 0) >= 8 ? '#fef2f2' : '#fff7ed',
-                            color:      (topic.urgency_score ?? 0) >= 8 ? '#b91c1c' : '#c2410c',
+                            background: (topic.urgency_score ?? 0) >= 80 ? '#fef2f2' : '#fff7ed',
+                            color:      (topic.urgency_score ?? 0) >= 80 ? '#b91c1c' : '#c2410c',
                           }}>
-                          {(topic.urgency_score ?? 0) >= 8 ? t('advancedInsights.urgencyCritical') : t('advancedInsights.urgencyHigh')}
+                          {(topic.urgency_score ?? 0) >= 80 ? t('advancedInsights.urgencyCritical') : t('advancedInsights.urgencyHigh')}
                         </span>
                       )}
                       {/* Chronic badge */}
@@ -968,10 +978,11 @@ export function AdvancedInsightsPage() {
                               <span className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                                 {t('advancedInsights.netSentimentLabel')}
                               </span>
+                              {/* net_sentiment is already [-100, +100] — do NOT multiply by 100 */}
                               <span className="text-[11px] font-black" style={{
-                                color: sel.net_sentiment > 0.1 ? '#059669' : sel.net_sentiment < -0.1 ? '#b41340' : '#64748b',
+                                color: sel.net_sentiment > 10 ? '#059669' : sel.net_sentiment < -10 ? '#b41340' : '#64748b',
                               }}>
-                                {sel.net_sentiment > 0 ? '+' : ''}{(sel.net_sentiment * 100).toFixed(0)}%
+                                {sel.net_sentiment > 0 ? '+' : ''}{sel.net_sentiment.toFixed(0)}%
                               </span>
                             </div>
                           )}

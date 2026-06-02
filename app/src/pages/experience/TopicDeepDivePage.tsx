@@ -8,6 +8,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import {
+  AreaChart, Area, LineChart, Line, ComposedChart, Bar,
+  XAxis, YAxis, CartesianGrid, Tooltip as RechartsTip,
+  ResponsiveContainer, ReferenceLine,
+} from 'recharts';
 import { useTranslation } from '../../lib/i18n';
 import { useApi } from '../../hooks/useApi';
 import { useSurveys } from '../../hooks/useSurveys';
@@ -61,6 +66,7 @@ export function TopicDeepDivePage() {
   const [verbatimsLoading, setVerbatimsLoading] = useState(false);
   const [hasMore,         setHasMore]         = useState(false);
   const [sentFilter,      setSentFilter]      = useState('');
+  const [npsFilter,       setNpsFilter]       = useState('');  // 'promoter'|'passive'|'detractor'|''
   const [offset,          setOffset]          = useState(0);
   const PAGE = 10;
 
@@ -97,10 +103,14 @@ export function TopicDeepDivePage() {
           urgency_score:      n(r.topic.urgency_score),
           volume:             r.topic.volume != null ? Number(r.topic.volume) : null,
           volume_delta_pct:   n(r.topic.volume_delta_pct),
+          positive_pct:       n(r.topic.positive_pct),
+          negative_pct:       n(r.topic.negative_pct),
+          neutral_pct:        n(r.topic.neutral_pct),
           promoter_pct:       n(r.topic.promoter_pct),
           detractor_pct:      n(r.topic.detractor_pct),
           passive_pct:        n(r.topic.passive_pct),
           net_sentiment:      n(r.topic.net_sentiment),
+          nps_correlation:    n(r.topic.nps_correlation),
           csat_impact:        n(r.topic.csat_impact),
           avg_csat:           n(r.topic.avg_csat),
           avg_effort_score:   n(r.topic.avg_effort_score),
@@ -124,17 +134,17 @@ export function TopicDeepDivePage() {
       .finally(() => setDetailLoading(false));
   }, [api, surveyId, topicId]);
 
-  // Load verbatims (re-runs when filter or page changes)
-  const loadVerbatims = useCallback(async (off: number, sentiment: string) => {
+  // Load verbatims — passes both sentiment and nps_bucket filters
+  const loadVerbatims = useCallback(async (off: number, sentiment: string, nps: string) => {
     if (!surveyId || !topicId) return;
     setVerbatimsLoading(true);
     try {
       const r = await api.getTopicVerbatims(surveyId, topicId, {
-        limit: PAGE,
-        offset: off,
-        sentiment: sentiment || undefined,
+        limit:      PAGE,
+        offset:     off,
+        sentiment:  sentiment  || undefined,
+        nps_bucket: nps        || undefined,
       });
-      // Always use functional update to avoid stale closure — safe for both reset and append
       setVerbatims((prev) => off === 0 ? r.verbatims : [...prev, ...r.verbatims]);
       setVerbatimsTotal(r.total);
       setHasMore(r.has_more);
@@ -148,13 +158,14 @@ export function TopicDeepDivePage() {
   useEffect(() => {
     setOffset(0);
     setVerbatims([]);
-    loadVerbatims(0, sentFilter);
-  }, [loadVerbatims, sentFilter]);
+    loadVerbatims(0, sentFilter, npsFilter);
+  }, [loadVerbatims, sentFilter, npsFilter]);
 
   const loadMore = () => {
     const next = offset + PAGE;
     setOffset(next);
-    loadVerbatims(next, sentFilter);
+    loadVerbatims(next, sentFilter, npsFilter);
+    // loadVerbatims already called above with correct filters
   };
 
   const askCrystal = () => {
@@ -277,31 +288,55 @@ export function TopicDeepDivePage() {
                 )}
               </div>
 
-              {/* Stat row */}
-              <div className="flex items-center gap-5 text-sm text-on-surface-variant flex-wrap">
+              {/* Stat row — primary signals */}
+              <div className="flex items-center gap-4 text-sm text-on-surface-variant flex-wrap">
                 <span className="flex items-center gap-1">
                   <Icon name="chat_bubble_outline" size={14} />
-                  {t('experience.topicDetail.hero.mentions', { n: topic.volume?.toLocaleString() ?? '—' })}
+                  <strong className="text-on-surface">{topic.volume?.toLocaleString() ?? '—'}</strong>
+                  {t('insights.anomalyMentions')}
+                  {topic.volume_delta_pct != null && topic.volume_delta_pct !== 0 && (
+                    <span className="text-[10px] font-bold ml-0.5"
+                      style={{ color: topic.volume_delta_pct > 0 ? '#d97706' : '#059669' }}>
+                      {topic.volume_delta_pct > 0 ? '↑' : '↓'}{Math.abs(topic.volume_delta_pct).toFixed(0)}%
+                    </span>
+                  )}
                 </span>
-                {topic.sentiment_score != null && (
-                  <span className="flex items-center gap-1">
-                    <Icon name="sentiment_satisfied" size={14} />
-                    {t('experience.topicDetail.hero.sentiment', { n: (topic.sentiment_score * 100).toFixed(0) })}
-                  </span>
-                )}
-                {topic.effort_score != null && (
-                  <span className="flex items-center gap-1">
-                    <Icon name="speed" size={14} />
-                    {t('experience.topicDetail.hero.effort', { n: topic.effort_score.toFixed(1) })}
-                  </span>
-                )}
                 {topic.nps_impact != null && (
                   <span className="flex items-center gap-1">
                     <Icon name="trending_flat" size={14} />
                     <strong style={{ color: topic.nps_impact > 0 ? '#059669' : '#b41340' }}>
                       {topic.nps_impact > 0 ? '+' : ''}{topic.nps_impact.toFixed(1)}
                     </strong>
-                    {' '}{t('experience.topicDetail.hero.npsImpactSuffix')}
+                    {t('experience.topicDetail.hero.npsImpactSuffix')}
+                  </span>
+                )}
+                {topic.effort_score != null && (
+                  <span className="flex items-center gap-1">
+                    <Icon name="speed" size={14} />
+                    <strong className="text-on-surface"
+                      style={{ color: topic.effort_score >= 5.5 ? '#b41340' : topic.effort_score >= 3.5 ? '#d97706' : '#059669' }}>
+                      {topic.effort_score.toFixed(1)}/7
+                    </strong>
+                    {t('insights.anomalyEffort').replace('effort ', '')}
+                  </span>
+                )}
+                {/* urgency_score [0-100]: show when >= 30% high-intensity emotion */}
+                {topic.urgency_score != null && topic.urgency_score >= 30 && (
+                  <span className="flex items-center gap-1">
+                    <Icon name="priority_high" size={14} />
+                    <strong className="text-on-surface"
+                      style={{ color: topic.urgency_score >= 80 ? '#b91c1c' : topic.urgency_score >= 50 ? '#c2410c' : '#d97706' }}>
+                      {t('experience.topics.signals.urgencyScore')}: {topic.urgency_score.toFixed(0)}%
+                    </strong>
+                  </span>
+                )}
+                {topic.sentiment_momentum && topic.sentiment_momentum !== 'stable' && (
+                  <span className="flex items-center gap-1 text-xs font-bold"
+                    style={{ color: topic.sentiment_momentum === 'improving' ? '#059669' : '#b41340' }}>
+                    <Icon name={topic.sentiment_momentum === 'improving' ? 'arrow_upward' : 'arrow_downward'} size={12} />
+                    {topic.sentiment_momentum === 'improving'
+                      ? t('experience.topics.signals.improving')
+                      : t('experience.topics.signals.worsening')}
                   </span>
                 )}
               </div>
@@ -321,6 +356,335 @@ export function TopicDeepDivePage() {
           </div>
         </GlassCard>
       </motion.div>
+
+      {/* ── Signal Fingerprint — every available metric in organized groups ── */}
+      {(() => {
+        const hasLoyalty  = topic.nps_avg != null || topic.promoter_pct != null || topic.driver_score != null || topic.nps_correlation != null;
+        const hasSent     = topic.positive_pct != null || topic.negative_pct != null || topic.neutral_pct != null || topic.net_sentiment != null;
+        const hasEffort   = topic.avg_csat != null || topic.csat_impact != null || topic.avg_effort_score != null;
+        const hasHealth   = topic.health_label != null || topic.confidence_level != null || topic.velocity_pct != null;
+        const hasKeywords = (topic.aliases?.length ?? 0) > 0 || (topic.keyword_list?.length ?? 0) > 0;
+        const hasEmotion  = topic.emotion_distribution && Object.keys(topic.emotion_distribution).length > 0;
+        if (!hasLoyalty && !hasSent && !hasEffort && !hasHealth && !hasKeywords && !hasEmotion) return null;
+        return (
+          <motion.section initial="hidden" animate="visible" variants={rise}>
+            <h2 className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
+              {t('experience.topicDetail.signals.sectionTitle')}
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+
+              {/* NPS & Loyalty */}
+              {hasLoyalty && (
+                <GlassCard className="p-4">
+                  <h3 className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
+                    {t('experience.topicDetail.signals.loyalty')}
+                  </h3>
+                  <div className="space-y-2.5">
+                    {topic.nps_avg != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.npsAvg')}</span>
+                        <span className="text-sm font-black"
+                          style={{ color: topic.nps_avg >= 50 ? '#059669' : topic.nps_avg >= 0 ? '#d97706' : '#b41340' }}>
+                          {topic.nps_avg > 0 ? '+' : ''}{topic.nps_avg.toFixed(0)}
+                        </span>
+                      </div>
+                    )}
+                    {topic.nps_impact != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.hero.npsImpactSuffix')}</span>
+                        <span className="text-sm font-black"
+                          style={{ color: topic.nps_impact > 0 ? '#059669' : '#b41340' }}>
+                          {topic.nps_impact > 0 ? '+' : ''}{topic.nps_impact.toFixed(1)} pts
+                        </span>
+                      </div>
+                    )}
+                    {topic.driver_score != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.driverScore')}</span>
+                        <span className="text-sm font-black"
+                          style={{ color: Math.abs(topic.driver_score) > 0.3 ? '#2a4bd9' : '#94a3b8' }}>
+                          {topic.driver_score > 0 ? '+' : ''}{topic.driver_score.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                    {topic.promoter_pct != null && (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between text-[10px] text-on-surface-variant">
+                          <span>{t('experience.topicDetail.signals.promoters')}</span>
+                          <span>{t('experience.topicDetail.signals.passives')}</span>
+                          <span>{t('experience.topicDetail.signals.detractors')}</span>
+                        </div>
+                        <div className="flex h-2 rounded-full overflow-hidden gap-px">
+                          <div className="bg-emerald-500 transition-all" style={{ width: `${topic.promoter_pct ?? 0}%` }} />
+                          <div className="bg-slate-300 transition-all"  style={{ width: `${topic.passive_pct ?? 0}%` }} />
+                          <div className="bg-red-500 transition-all"    style={{ width: `${topic.detractor_pct ?? 0}%` }} />
+                        </div>
+                        <div className="flex items-center justify-between text-[9px] font-bold">
+                          <span className="text-emerald-600">{(topic.promoter_pct ?? 0).toFixed(0)}%</span>
+                          <span className="text-slate-400">{(topic.passive_pct ?? 0).toFixed(0)}%</span>
+                          <span className="text-red-600">{(topic.detractor_pct ?? 0).toFixed(0)}%</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </GlassCard>
+              )}
+
+              {/* Sentiment breakdown */}
+              {hasSent && (
+                <GlassCard className="p-4">
+                  <h3 className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
+                    {t('experience.topicDetail.signals.sentiment')}
+                  </h3>
+                  <div className="space-y-2.5">
+                    {topic.net_sentiment != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.netSentiment')}</span>
+                        {/* net_sentiment is already a percentage [-100, +100] — do NOT multiply by 100 */}
+                        <span className="text-sm font-black"
+                          style={{ color: topic.net_sentiment > 10 ? '#059669' : topic.net_sentiment < -10 ? '#b41340' : '#94a3b8' }}>
+                          {topic.net_sentiment > 0 ? '+' : ''}{topic.net_sentiment.toFixed(0)}%
+                        </span>
+                      </div>
+                    )}
+                    {[
+                      { pct: topic.positive_pct, label: t('experience.common.sentiment.positive'), color: '#059669', bg: '#dcfce7' },
+                      { pct: topic.neutral_pct,  label: t('experience.common.sentiment.mixed'),    color: '#94a3b8', bg: '#f1f5f9' },
+                      { pct: topic.negative_pct, label: t('experience.common.sentiment.critical'),  color: '#b41340', bg: '#fee2e2' },
+                    ].map(({ pct, label, color, bg }) => pct != null ? (
+                      <div key={label}>
+                        <div className="flex justify-between text-[10px] mb-1">
+                          <span className="font-bold" style={{ color }}>{label}</span>
+                          <span className="font-mono text-on-surface-variant">{pct.toFixed(0)}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-surface-container overflow-hidden">
+                          <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color, opacity: 0.7 }} />
+                        </div>
+                      </div>
+                    ) : null)}
+                  </div>
+                </GlassCard>
+              )}
+
+              {/* Effort & CSAT */}
+              {hasEffort && (
+                <GlassCard className="p-4">
+                  <h3 className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
+                    {t('experience.topicDetail.signals.effort')}
+                  </h3>
+                  <div className="space-y-2.5">
+                    {topic.effort_score != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.hero.effort', { n: '' }).replace(' ', '')}</span>
+                        <span className="text-sm font-black"
+                          style={{ color: topic.effort_score >= 5.5 ? '#b41340' : topic.effort_score >= 3.5 ? '#d97706' : '#059669' }}>
+                          {topic.effort_score.toFixed(1)}/7
+                        </span>
+                      </div>
+                    )}
+                    {topic.avg_effort_score != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.avgEffort')}</span>
+                        <span className="text-sm font-black">{topic.avg_effort_score.toFixed(1)}/7</span>
+                      </div>
+                    )}
+                    {topic.avg_csat != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.avgCsat')}</span>
+                        <span className="text-sm font-black">{topic.avg_csat.toFixed(2)}</span>
+                      </div>
+                    )}
+                    {topic.csat_impact != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.csatImpact')}</span>
+                        <span className="text-sm font-black"
+                          style={{ color: topic.csat_impact > 0 ? '#059669' : '#b41340' }}>
+                          {topic.csat_impact > 0 ? '+' : ''}{topic.csat_impact.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </GlassCard>
+              )}
+
+              {/* Health & confidence */}
+              {hasHealth && (
+                <GlassCard className="p-4">
+                  <h3 className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
+                    {t('experience.topicDetail.signals.healthSection')}
+                  </h3>
+                  <div className="space-y-2.5">
+                    {topic.health_label && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.healthLabel')}</span>
+                        <span className="text-xs font-black px-2 py-0.5 rounded-full capitalize"
+                          style={{
+                            background: topic.health_label === 'healthy' ? '#dcfce7' : topic.health_label === 'at-risk' ? '#fee2e2' : '#f1f5f9',
+                            color:      topic.health_label === 'healthy' ? '#059669' : topic.health_label === 'at-risk' ? '#b41340' : '#64748b',
+                          }}>
+                          {({
+                            'healthy': t('experience.topicDetail.signals.health.healthy'),
+                            'at-risk': t('experience.topicDetail.signals.health.at-risk'),
+                            'stable':  t('experience.topicDetail.signals.health.stable'),
+                          } as Record<string, string>)[topic.health_label] ?? topic.health_label}
+                        </span>
+                      </div>
+                    )}
+                    {topic.confidence_level && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.confidenceLabel')}</span>
+                        <span className="text-xs font-black capitalize"
+                          style={{ color: topic.confidence_level === 'high' ? '#059669' : topic.confidence_level === 'low' ? '#94a3b8' : '#d97706' }}>
+                          {({
+                            'high':   t('experience.topicDetail.signals.confidence.high'),
+                            'medium': t('experience.topicDetail.signals.confidence.medium'),
+                            'low':    t('experience.topicDetail.signals.confidence.low'),
+                          } as Record<string, string>)[topic.confidence_level!] ?? topic.confidence_level}
+                        </span>
+                      </div>
+                    )}
+                    {topic.velocity_pct != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.velocity')}</span>
+                        <span className="text-sm font-black flex items-center gap-1"
+                          style={{ color: topic.velocity_pct > 0 ? '#d97706' : '#059669' }}>
+                          <Icon name={topic.velocity_pct > 0 ? 'trending_up' : 'trending_down'} size={12} />
+                          {topic.velocity_pct > 0 ? '+' : ''}{topic.velocity_pct.toFixed(0)}%
+                        </span>
+                      </div>
+                    )}
+                    {topic.urgency_score != null && (
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-on-surface-variant">{t('experience.topicDetail.signals.urgencyScore')}</span>
+                        {/* urgency_score is [0, 100] — % of mentions with high-intensity emotion */}
+                        <span className="text-sm font-black"
+                          style={{ color: topic.urgency_score >= 80 ? '#b91c1c' : topic.urgency_score >= 50 ? '#c2410c' : topic.urgency_score >= 30 ? '#d97706' : '#94a3b8' }}>
+                          {topic.urgency_score.toFixed(0)}%
+                        </span>
+                      </div>
+                    )}
+                    {(topic.first_seen_at || topic.last_seen_at) && (
+                      <div className="space-y-1 pt-1 border-t border-outline-variant/15">
+                        {topic.first_seen_at && (
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-on-surface-variant">{t('experience.topicDetail.signals.firstSeen')}</span>
+                            <span className="font-mono text-on-surface-variant/70">
+                              {new Date(topic.first_seen_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                            </span>
+                          </div>
+                        )}
+                        {topic.last_seen_at && (
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-on-surface-variant">{t('experience.topicDetail.signals.lastSeen')}</span>
+                            <span className="font-mono text-on-surface-variant/70">
+                              {new Date(topic.last_seen_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </GlassCard>
+              )}
+
+              {/* Emotion distribution */}
+              {hasEmotion && (
+                <GlassCard className="p-4">
+                  <h3 className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
+                    {t('experience.topicDetail.signals.emotionTitle')}
+                  </h3>
+                  <div className="space-y-2">
+                    {Object.entries(topic.emotion_distribution!)
+                      .sort(([,a],[,b]) => b - a)
+                      .slice(0, 5)
+                      .map(([emotion, count]) => {
+                        const maxCount = Math.max(...Object.values(topic.emotion_distribution!));
+                        const pct = Math.round((count / maxCount) * 100);
+                        return (
+                          <div key={emotion}>
+                            <div className="flex justify-between text-[10px] mb-0.5">
+                              <span className="font-bold capitalize text-on-surface">{emotion}</span>
+                              <span className="font-mono text-on-surface-variant/60">{count}</span>
+                            </div>
+                            <div className="h-1 rounded-full bg-surface-container overflow-hidden">
+                              <div className="h-full rounded-full bg-primary/60" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </GlassCard>
+              )}
+
+              {/* Aliases & keywords */}
+              {hasKeywords && (
+                <GlassCard className="p-4">
+                  <h3 className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
+                    {t('experience.topicDetail.signals.keywords')}
+                  </h3>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[...(topic.aliases ?? []), ...(topic.keyword_list ?? [])].slice(0, 20).map((kw) => (
+                      <span key={kw} className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-surface-container text-on-surface-variant">
+                        {kw}
+                      </span>
+                    ))}
+                  </div>
+                </GlassCard>
+              )}
+            </div>
+          </motion.section>
+        );
+      })()}
+
+      {/* ── Trend sparkline from detail.trend_series ─────────────────────────── */}
+      {detail?.trend_series && detail.trend_series.length >= 3 && (
+        <motion.section initial="hidden" animate="visible" variants={rise}>
+          <h2 className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
+            {t('experience.topicDetail.signals.trendTitle')}
+          </h2>
+          <GlassCard className="p-4">
+            <ResponsiveContainer width="100%" height={130}>
+              <ComposedChart
+                data={detail.trend_series.map((p) => ({
+                  day:  new Date(p.day).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                  vol:  p.volume,
+                  nps:  p.avg_nps != null ? Math.round(p.avg_nps) : null,
+                }))}
+                margin={{ top: 6, right: 10, bottom: 0, left: 0 }}
+              >
+                <defs>
+                  <linearGradient id="volGradTopic" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%"  stopColor="#2a4bd9" stopOpacity={0.2} />
+                    <stop offset="100%" stopColor="#2a4bd9" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid stroke="rgba(0,0,0,0.04)" strokeDasharray="3 3" />
+                <XAxis dataKey="day" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                <YAxis yAxisId="left"  tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={24} />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={28} />
+                <ReferenceLine yAxisId="right" y={0} stroke="rgba(0,0,0,0.12)" strokeDasharray="3 3" />
+                <Area yAxisId="left"  type="monotone" dataKey="vol" stroke="#2a4bd9" strokeWidth={2}
+                  fill="url(#volGradTopic)" dot={false} name={t('experience.topicDetail.signals.volumeLabel')} />
+                <Line yAxisId="right" type="monotone" dataKey="nps" stroke="#d97706" strokeWidth={2}
+                  dot={false} strokeDasharray="4 3" name="NPS" />
+                <RechartsTip
+                  contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: 11 }}
+                  formatter={(v, name) => {
+                    const label = String(name ?? '');
+                    return [
+                      label === 'NPS' ? (v != null ? `${Number(v) > 0 ? '+' : ''}${v}` : '—') : String(v),
+                      label,
+                    ];
+                  }}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+            <p className="text-[9px] text-on-surface-variant/50 mt-2 text-center">
+              {t('experience.topicDetail.signals.trendVolumeLeft')}
+            </p>
+          </GlassCard>
+        </motion.section>
+      )}
 
       {/* ── Subtopics ───────────────────────────────────────────────────────── */}
       {subtopics.length > 0 && (
@@ -402,23 +766,45 @@ export function TopicDeepDivePage() {
               </span>
             )}
           </div>
-          {/* Sentiment filter */}
-          <div className="flex items-center gap-1">
-            {SENTIMENT_FILTERS.map((f) => (
-              <button key={f.value}
-                onClick={() => setSentFilter(f.value)}
-                className="px-2.5 py-1 rounded-full text-[11px] font-bold transition-all"
-                style={sentFilter === f.value ? {
-                  background: 'var(--color-primary)',
-                  color: 'white',
-                } : {
-                  background: 'var(--color-surface-container)',
-                  color: 'var(--color-on-surface-variant)',
-                }}
-              >
-                {t(f.labelKey)}
-              </button>
-            ))}
+          {/* Filters: sentiment + NPS bucket */}
+          <div className="flex flex-wrap gap-2">
+            <div className="flex items-center gap-1">
+              {SENTIMENT_FILTERS.map((f) => (
+                <button key={f.value}
+                  onClick={() => setSentFilter(f.value)}
+                  className="px-2.5 py-1 rounded-full text-[11px] font-bold transition-all"
+                  style={sentFilter === f.value
+                    ? { background: 'var(--color-primary)', color: 'white' }
+                    : { background: 'var(--color-surface-container)', color: 'var(--color-on-surface-variant)' }
+                  }>
+                  {t(f.labelKey)}
+                </button>
+              ))}
+            </div>
+            {/* NPS bucket filter — only show if we have NPS data */}
+            {verbatimsTotal > 0 && (
+              <div className="flex items-center gap-1">
+                {([
+                  { value: '',          labelKey: 'experience.topicDetail.verbatims.npsAll' },
+                  { value: 'promoter',  labelKey: 'experience.topicDetail.verbatims.npsPromoter' },
+                  { value: 'passive',   labelKey: 'experience.topicDetail.verbatims.npsPassive' },
+                  { value: 'detractor', labelKey: 'experience.topicDetail.verbatims.npsDetractor' },
+                ] as const).map((f) => (
+                  <button key={f.value}
+                    onClick={() => setNpsFilter(f.value)}
+                    className="px-2.5 py-1 rounded-full text-[11px] font-bold transition-all"
+                    style={npsFilter === f.value
+                      ? {
+                          background: f.value === 'promoter' ? '#059669' : f.value === 'detractor' ? '#b41340' : f.value === 'passive' ? '#94a3b8' : 'var(--color-secondary)',
+                          color: 'white',
+                        }
+                      : { background: 'var(--color-surface-container)', color: 'var(--color-on-surface-variant)' }
+                    }>
+                    {t(f.labelKey)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -430,7 +816,19 @@ export function TopicDeepDivePage() {
               style={{ borderLeft: `3px solid ${sentimentColor(v.sentiment)}` }}>
               <div className="flex items-start gap-3">
                 <div className="flex-1 min-w-0">
+                  {/* Primary quote */}
                   <p className="text-sm leading-relaxed text-on-surface">"{v.text}"</p>
+                  {/* Additional answer texts from other questions in same response */}
+                  {v.all_texts && v.all_texts.length > 1 && (
+                    <div className="mt-2 space-y-1">
+                      {v.all_texts.filter((txt) => txt !== v.text).slice(0, 2).map((txt, ti) => (
+                        <p key={ti} className="text-[11px] text-on-surface-variant/70 italic pl-3 border-l-2 border-outline-variant/30">
+                          "{txt.slice(0, 140)}{txt.length > 140 ? '…' : ''}"
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  {/* Metadata row */}
                   <div className="flex items-center gap-3 mt-2 text-[10px] text-on-surface-variant flex-wrap">
                     {v.sentiment && (
                       <span className="px-1.5 py-0.5 rounded font-bold capitalize"
@@ -440,12 +838,22 @@ export function TopicDeepDivePage() {
                     )}
                     {v.nps_score != null && (
                       <span className="flex items-center gap-1">
-                        NPS <strong style={{
-                          color: v.nps_score >= 9 ? '#059669' : v.nps_score >= 7 ? '#d97706' : '#b41340',
-                        }}>{v.nps_score}</strong>
+                        NPS{' '}
+                        <strong style={{ color: v.nps_score >= 9 ? '#059669' : v.nps_score >= 7 ? '#d97706' : '#b41340' }}>
+                          {v.nps_score}
+                        </strong>
+                        <span className="text-[9px] opacity-60">
+                          {v.nps_score >= 9 ? t('experience.topicDetail.signals.npsSegment.promoter') : v.nps_score >= 7 ? t('experience.topicDetail.signals.npsSegment.passive') : t('experience.topicDetail.signals.npsSegment.detractor')}
+                        </span>
                       </span>
                     )}
-                    <span>{new Date(v.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+                    <span>{new Date(v.submitted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' })}</span>
+                    {v.sentiment_score != null && (
+                      <span className="font-mono opacity-60"
+                        style={{ color: v.sentiment_score > 0 ? '#059669' : v.sentiment_score < 0 ? '#b41340' : '#94a3b8' }}>
+                        {v.sentiment_score > 0 ? '+' : ''}{(v.sentiment_score * 100).toFixed(0)}%
+                      </span>
+                    )}
                   </div>
                 </div>
                 <button
@@ -477,13 +885,13 @@ export function TopicDeepDivePage() {
           {!verbatimsLoading && verbatims.length === 0 && (
             <GlassCard className="p-8 text-center">
               <Icon name="chat_bubble_outline" size={28} style={{ color: 'var(--color-outline-variant)', margin: '0 auto 8px' }} />
-              {sentFilter ? (
+              {(sentFilter || npsFilter) ? (
                 <>
                   <p className="text-sm font-bold text-on-surface mb-1">{t('experience.topicDetail.verbatims.noMatchTitle', { sentiment: sentFilter })}</p>
                   <p className="text-xs text-on-surface-variant mb-3">
                     {t('experience.topicDetail.verbatims.noMatchBody', { sentiment: sentFilter })}
                   </p>
-                  <button onClick={() => setSentFilter('')}
+                  <button onClick={() => { setSentFilter(''); setNpsFilter(''); }}
                     className="text-xs font-bold text-primary hover:underline">
                     {t('experience.topicDetail.verbatims.clearFilter')}
                   </button>
