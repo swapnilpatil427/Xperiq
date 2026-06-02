@@ -103,7 +103,7 @@ export function ExperienceHubPage() {
               if (r.crystal_opening) setCrystalOpening(r.crystal_opening);
               return (r.insights ?? []).map((ins) => ({
                 ...ins,
-                surveyTitle: s.title || 'Survey',
+                surveyTitle: s.title || t('experience.hubHero.surveyFallback'),
                 surveyId:    s.id,
               } as RichInsight));
             })
@@ -160,7 +160,7 @@ export function ExperienceHubPage() {
 
   return (
     <TooltipProvider delayDuration={200}>
-    <div className="max-w-7xl mx-auto w-full space-y-6">
+    <div className="max-w-7xl mx-auto w-full space-y-6 pt-6 md:pt-8">
 
       {/* ══════════════════════════════════════════════════════════════════
           § 1  DARK CINEMATIC HERO
@@ -237,11 +237,10 @@ export function ExperienceHubPage() {
                 {t('experience.hub.hero.tagline')}
               </div>
 
-              {/* Data-driven headline */}
-              <h1 className="font-headline font-black text-3xl md:text-4xl xl:text-5xl tracking-tight leading-tight text-white mb-4">
-                {crystalOpening ? (
-                  <span className="line-clamp-2">{crystalOpening}</span>
-                ) : portfolioNps != null ? (
+              {/* Headline — portfolio NPS if available, brand tagline otherwise.
+                  crystalOpening is a full paragraph — never use as a headline. */}
+              <h1 className="font-headline font-black text-3xl md:text-4xl xl:text-5xl tracking-tight leading-tight text-white mb-3">
+                {portfolioNps != null ? (
                   <>
                     {t('experience.hub.kpi.nps')}{' '}
                     <span style={{ color: portfolioNps>=50?'#34d399':portfolioNps>=0?'#fcd34d':'#f87171' }}>
@@ -254,44 +253,29 @@ export function ExperienceHubPage() {
                 )}
               </h1>
 
-              <p className="text-sm text-white/50 mb-6 max-w-xl leading-relaxed">
+              {/* crystalOpening rendered as a brief narrative line, not a heading */}
+              {crystalOpening && (
+                <p className="text-sm text-white/70 mb-4 max-w-2xl leading-relaxed line-clamp-3">
+                  {crystalOpening}
+                </p>
+              )}
+
+              <p className="text-sm text-white/45 mb-6 max-w-xl leading-relaxed">
                 {t('experience.hub.hero.trust')}
               </p>
 
-              {/* Ask bar */}
-              <form
-                onSubmit={(e) => { e.preventDefault(); handleAsk(askQuery); }}
-                className="flex items-center gap-2 p-2 rounded-2xl max-w-2xl mb-4"
-                style={{
-                  background:'rgba(255,255,255,0.07)',
-                  backdropFilter:'blur(24px) saturate(180%)',
-                  WebkitBackdropFilter:'blur(24px) saturate(180%)',
-                  border:'1px solid rgba(255,255,255,0.13)',
-                }}
-              >
-                <button type="button" className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 hover:bg-white/10 transition-colors">
-                  <Icon name="mic" size={20} style={{ color:'rgba(255,255,255,0.60)' }} />
-                </button>
-                <input
-                  type="text"
-                  value={askQuery}
-                  onChange={(e) => setAskQuery(e.target.value)}
-                  placeholder={t('experience.hub.hero.askPlaceholder')}
-                  className="flex-1 px-3 py-2.5 bg-transparent focus:outline-none text-sm text-white placeholder:text-white/35"
-                />
-                <Button
-                  type="submit"
-                  size="sm"
-                  className="flex-shrink-0 text-xs font-bold text-white border-0 shadow-lg"
-                  style={{ background:'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
-                >
-                  <Icon name="arrow_upward" size={15} />
-                  {t('experience.hub.hero.askButton')}
-                </Button>
-              </form>
+              {/* Survey cards are the entry point to Crystal — the hub ask bar
+                  is removed because Crystal can't answer usefully without a survey.
+                  Open Crystal from any survey card's ⚡ button instead. */}
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-[11px] text-white/50 font-bold uppercase tracking-widest">
+                  {t('experience.hubHero.selectSurvey')}
+                </span>
+                <Icon name="arrow_downward" size={13} style={{ color: 'rgba(255,255,255,0.45)' }} />
+              </div>
 
-              {/* Prompt chips */}
-              <div className="flex flex-wrap gap-2">
+              {/* Quick-nav prompt chips that open specific surveys */}
+              <div className="flex flex-wrap gap-2 mt-3">
                 {PROMPTS.map((p) => (
                   <button
                     key={p.label}

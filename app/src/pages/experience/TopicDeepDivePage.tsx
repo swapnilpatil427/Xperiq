@@ -80,12 +80,46 @@ export function TopicDeepDivePage() {
     return () => setCrystalCtx({});
   }, [topic?.name, setCrystalCtx]);
 
-  // Load topic detail
+  // Load topic detail — coerce all Postgres NUMERIC columns to JS numbers.
+  // pg returns NUMERIC as strings; .toFixed() / arithmetic will crash without this.
   useEffect(() => {
     if (!surveyId || !topicId) return;
     setDetailLoading(true);
     api.getTopicDetail(surveyId, topicId)
-      .then((r) => { setTopic(r.topic); setDetail(r.detail); })
+      .then((r) => {
+        const n = (v: unknown) => (v == null ? null : Number(v));
+        const topic = r.topic ? {
+          ...r.topic,
+          sentiment_score:    n(r.topic.sentiment_score),
+          effort_score:       n(r.topic.effort_score),
+          nps_impact:         n(r.topic.nps_impact),
+          nps_avg:            n(r.topic.nps_avg),
+          urgency_score:      n(r.topic.urgency_score),
+          volume:             r.topic.volume != null ? Number(r.topic.volume) : null,
+          volume_delta_pct:   n(r.topic.volume_delta_pct),
+          promoter_pct:       n(r.topic.promoter_pct),
+          detractor_pct:      n(r.topic.detractor_pct),
+          passive_pct:        n(r.topic.passive_pct),
+          net_sentiment:      n(r.topic.net_sentiment),
+          csat_impact:        n(r.topic.csat_impact),
+          avg_csat:           n(r.topic.avg_csat),
+          avg_effort_score:   n(r.topic.avg_effort_score),
+          driver_score:       n(r.topic.driver_score),
+          velocity_pct:       n(r.topic.velocity_pct),
+        } : null;
+        // Coerce sub-topic numeric fields too
+        const detail = r.detail ? {
+          ...r.detail,
+          subtopics: (r.detail.subtopics ?? []).map((s: any) => ({
+            ...s,
+            sentiment_score: n(s.sentiment_score),
+            effort_score:    n(s.effort_score),
+            volume:          s.volume != null ? Number(s.volume) : null,
+          })),
+        } : null;
+        setTopic(topic as any);
+        setDetail(detail as any);
+      })
       .catch(() => {})
       .finally(() => setDetailLoading(false));
   }, [api, surveyId, topicId]);
@@ -175,7 +209,8 @@ export function TopicDeepDivePage() {
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div className="max-w-4xl mx-auto w-full space-y-5">
+    {/* pt-6 fills the gap that PageHeader normally provides — AppShell only adds horizontal gutters */}
+    <div className="max-w-4xl mx-auto w-full space-y-5 pt-6 md:pt-8">
 
       {/* ── Sub-nav ─────────────────────────────────────────────────────────── */}
       {surveyId && (
@@ -270,6 +305,18 @@ export function TopicDeepDivePage() {
                   </span>
                 )}
               </div>
+
+              {/* Ask Crystal inline — primary action on the hero card itself */}
+              <div className="mt-4 pt-4 border-t border-outline-variant/20 flex items-center gap-2">
+                <Button size="sm" onClick={askCrystal}
+                  className="text-xs font-bold text-white border-0"
+                  style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+                  <Icon name="psychology" size={13} /> {t('experience.topicDetail.ask')}
+                </Button>
+                <span className="text-[11px] text-on-surface-variant/60">
+                  {t('experience.topicDetail.askHint')}
+                </span>
+              </div>
             </div>
           </div>
         </GlassCard>
@@ -281,23 +328,36 @@ export function TopicDeepDivePage() {
           <h2 className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant mb-3">
             {t('experience.topicDetail.subtopics.title', { n: String(subtopics.length) })}
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {subtopics.map((sub) => {
-              const sc = sub.sentiment_score;
+              const sc  = sub.sentiment_score;
               const sc2 = sc == null ? '#94a3b8' : sc > 0.3 ? '#059669' : sc < -0.3 ? '#b41340' : '#d97706';
               return (
-                <GlassCard key={sub.id} className="px-4 py-3 flex items-center gap-3 group hover:shadow-md transition-shadow">
+                <GlassCard key={sub.id}
+                  className="px-4 py-3 flex items-center gap-3 hover:shadow-md transition-all duration-200 hover:scale-[1.005] group">
                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: sc2 }} />
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold truncate">{sub.name}</div>
-                    <div className="text-[10px] text-on-surface-variant">{t('experience.topicDetail.subtopics.mentions', { n: String(sub.volume) })}</div>
+                    <Link
+                      to={toPath(ROUTES.EXPERIENCE_SURVEY_TOPIC, { surveyId: surveyId!, topicId: sub.id })}
+                      className="text-sm font-bold truncate block hover:text-primary transition-colors">
+                      {sub.name}
+                    </Link>
+                    <div className="text-[10px] text-on-surface-variant">
+                      {t('experience.topicDetail.subtopics.mentions', { n: String(sub.volume) })}
+                    </div>
                   </div>
+                  {/* Ask Crystal — always visible, not just on hover */}
                   <button
-                    onClick={() => { if (surveyId) setScope(surveyId); openCrystal(t('experience.topicDetail.subtopics.query', { name: sub.name }), { focused_topic: sub.name }); }}
-                    className="opacity-0 group-hover:opacity-100 flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all hover:bg-primary/10"
+                    onClick={() => {
+                      if (surveyId) setScope(surveyId);
+                      openCrystal(t('experience.topicDetail.subtopics.query', { name: sub.name }), { focused_topic: sub.name });
+                    }}
+                    className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors hover:bg-primary/10"
                     style={{ color: 'var(--color-primary)' }}
+                    title={t('experience.topicDetail.ask')}
                   >
-                    <Icon name="psychology" size={11} /> {t('experience.topicDetail.subtopics.ask')}
+                    <Icon name="psychology" size={12} />
+                    <span className="hidden sm:inline">{t('experience.topicDetail.subtopics.ask')}</span>
                   </button>
                 </GlassCard>
               );

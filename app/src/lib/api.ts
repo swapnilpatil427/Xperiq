@@ -577,6 +577,10 @@ export function createApiClient(getToken: GetToken) {
         avg_effort_score:   coerce(t.avg_effort_score),
         driver_score:       coerce(t.driver_score),
         velocity_pct:       coerce(t.velocity_pct),
+        // Hierarchy fields — pass parent_topic_id as-is (UUID string or null)
+        parent_topic_id:    t.parent_topic_id ?? null,
+        hierarchy_level:    t.hierarchy_level != null ? Number(t.hierarchy_level) : null,
+        sub_topic_count:    t.sub_topic_count != null ? Number(t.sub_topic_count) : 0,
       }));
       return { ...res.data, topics };
     },

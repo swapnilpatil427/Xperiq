@@ -4,18 +4,18 @@
 //   § 1  Sticky command strip    — survey title, KPI chips, sub-nav, regenerate
 //   § 2  Tier progression banner — collecting → first_voices → early_signals → growing_picture
 //   § 3  Pipeline animation      — 10-node progress when generating
-//   § 4  Hero                    — Conversation Studio crystal (no insights) or
-//                                  Editorial headline + cited brief (with insights)
-//   § 5  Metric tiles            — Cockpit KPI strip: NPS gauge, CSAT, Top Action
-//   § 6  Priority feed           — Cockpit severity-bordered rows, all insights by priority
-//   § 7  Deeper findings bento   — Editorial 12-col grid: driver + anomaly + voice + prescriptive
-//   § 8  Crystal ask bar         — always accessible inline
-//   § 9  Trust footer            — citation validity, last scan, sample quality
+//   § 4  Hero                    — Crystal (no insights) or Editorial narrative brief (with insights)
+//   § 5  Metric tiles            — NPS gauge, CSAT, Top Action
+//   § 6  Industry nudge          — prompts to configure industry for specialist agents
+//   § 7  Anomaly alerts          — rising negative topics with "Ask Crystal why"
+//   § 8  Featured insight + insight grid — /app/insights card patterns: featured NPS card,
+//                                  layer+type filters, 2-col masonry with inline citations
+//   § 9  Crystal ask bar         — always accessible inline
+//   § 10 Trust footer            — citation validity, last scan, sample quality
 //
-// Business logic: all data flows from real API — crystal_opening, agenticInsights,
-// survey metrics, pipeline polling. Nothing is hardcoded.
+// Business logic: all data flows from real API. Nothing is hardcoded.
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from '../../lib/i18n';
@@ -27,6 +27,7 @@ import { useCrystalPanel } from '../../contexts/crystalPanel';
 import { Icon } from '../../components/Icon';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { ROUTES, toPath } from '../../constants/routes';
 import {
   GlassCard, CitationChip, ConfidenceChip, CIBar, LayerBadge,
@@ -34,7 +35,7 @@ import {
 } from '../insights/shared';
 import { GeneratingOverlay } from '../insights/GeneratingOverlay';
 import { ProgressArc } from '../../components/insights/ProgressArc';
-import type { AgenticInsight } from '../../types';
+import type { AgenticInsight, SurveyTopic } from '../../types';
 
 // Pipeline node IDs — labels resolved via t() inside the component
 const PIPELINE_NODE_IDS = ['ingest','embed','metrics','absa','cluster','topics','narrate','verify','evaluate','publish'] as const;
@@ -95,6 +96,36 @@ export function SurveyIntelligencePage() {
   const [agenticLoading,  setAgenticLoading]  = useState(false);
   const [crystalOpening,  setCrystalOpening]  = useState<string | null>(null);
 
+  // ── Topics (for anomaly alerts + Crystal context) ─────────────────────────
+  const [topics,           setTopics]          = useState<SurveyTopic[]>([]);
+  const [dismissedTopics,  setDismissedTopics] = useState<Set<string>>(new Set());
+
+  // ── Org industry (for nudge banner) ──────────────────────────────────────
+  const [orgIndustry,    setOrgIndustry]    = useState<string | null | undefined>(undefined);
+  const [nudgeDismissed, setNudgeDismissed] = useState(false);
+
+  // ── Insight feedback + audit drawer (mirrors UnifiedInsightsView) ─────────
+  const [auditInsight, setAuditInsight] = useState<AgenticInsight | null>(null);
+  const [insightFeedback, setInsightFeedback] = useState<Record<string, { thumbs?: 'up' | 'down' | null; pinned?: boolean }>>({});
+
+  const handleThumb = useCallback(async (insightId: string, thumbs: 'up' | 'down') => {
+    setInsightFeedback((prev) => {
+      const cur = prev[insightId] ?? {};
+      return { ...prev, [insightId]: { ...cur, thumbs: cur.thumbs === thumbs ? null : thumbs } };
+    });
+    const next = insightFeedback[insightId]?.thumbs === thumbs ? null : thumbs;
+    try { await api.updateInsightFeedback(insightId, { thumbs: next }); } catch { /* optimistic */ }
+  }, [api, insightFeedback]);
+
+  const handlePin = useCallback(async (insightId: string) => {
+    setInsightFeedback((prev) => {
+      const cur = prev[insightId] ?? {};
+      return { ...prev, [insightId]: { ...cur, pinned: !cur.pinned } };
+    });
+    const next = !insightFeedback[insightId]?.pinned;
+    try { await api.updateInsightFeedback(insightId, { pinned: next }); } catch { /* optimistic */ }
+  }, [api, insightFeedback]);
+
   // ── Pipeline state ───────────────────────────────────────────────────────
   const [generating, setGenerating] = useState(false);
   const [nodesDone,  setNodesDone]  = useState<string[]>([]);
@@ -136,6 +167,21 @@ export function SurveyIntelligencePage() {
     loadAgentic();
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [loadAgentic]);
+
+  // Load topics for anomaly detection + Crystal context
+  useEffect(() => {
+    if (!surveyId) return;
+    api.listTopics(surveyId)
+      .then((r) => { setTopics(r.topics ?? []); setCrystalData(agenticInsights, r.topics ?? []); })
+      .catch(() => {});
+  }, [api, surveyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Load org profile to decide whether to show the industry nudge
+  useEffect(() => {
+    api.getOrgProfile()
+      .then((d) => setOrgIndustry(d?.profile?.industry ?? null))
+      .catch(() => setOrgIndustry(null));
+  }, [api]);
 
   // Trigger pipeline + poll for completion
   const handleGenerate = useCallback(async () => {
@@ -243,7 +289,64 @@ export function SurveyIntelligencePage() {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="max-w-7xl mx-auto w-full space-y-5">
+
+      {/* ── Insight audit drawer ────────────────────────────────────────── */}
+      <Sheet open={!!auditInsight} onOpenChange={(open) => { if (!open) setAuditInsight(null); }}>
+        <SheetContent side="right" className="w-full max-w-sm overflow-y-auto">
+          {auditInsight && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="text-sm font-black">{t('experience.audit.title')}</SheetTitle>
+              </SheetHeader>
+              <div className="mt-6 space-y-4 text-xs">
+                <div className="p-3 rounded-xl bg-muted/40 border border-outline-variant/20">
+                  <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">{t('experience.audit.modelLabel')}</p>
+                  <p className="font-mono text-on-surface break-all">{auditInsight.audit_json?.model ?? '—'}</p>
+                </div>
+                <div className="p-3 rounded-xl bg-muted/40 border border-outline-variant/20">
+                  <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">{t('experience.audit.verifierLabel')}</p>
+                  <p className="text-on-surface leading-relaxed">
+                    {auditInsight.audit_json?.verifier_notes
+                      ? `${auditInsight.audit_json.verifier_pass ? t('experience.audit.verifierPass') : t('experience.audit.verifierFail')} — ${auditInsight.audit_json.verifier_notes}`
+                      : '—'}
+                  </p>
+                </div>
+                {auditInsight.trust_json && (
+                  <div className="p-3 rounded-xl bg-muted/40 border border-outline-variant/20 space-y-2">
+                    <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">{t('experience.audit.trustMetrics')}</p>
+                    {([
+                      { labelKey: 'experience.audit.coverage',    value: auditInsight.trust_json.coverage,    suffix: '%' },
+                      { labelKey: 'experience.audit.consistency', value: auditInsight.trust_json.consistency, suffix: '%' },
+                      { labelKey: 'experience.audit.statistical', value: auditInsight.trust_json.statistical, suffix: '' },
+                      { labelKey: 'experience.audit.grounding',   value: auditInsight.trust_json.grounding,   suffix: '' },
+                      { labelKey: 'experience.audit.sampleSize',  value: auditInsight.trust_json.sample_size, suffix: '' },
+                    ] as const).map(({ labelKey, value, suffix }) => (
+                      <div key={labelKey} className="flex justify-between items-center">
+                        <span className="text-on-surface-variant">{t(labelKey)}</span>
+                        <span className="font-black text-on-surface">{value != null ? `${value}${suffix}` : '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="p-3 rounded-xl border-2 text-center"
+                  style={{
+                    borderColor: auditInsight.trust_score >= 80 ? '#059669' : auditInsight.trust_score >= 60 ? '#d97706' : '#94a3b8',
+                    background:  auditInsight.trust_score >= 80 ? '#ecfdf5' : auditInsight.trust_score >= 60 ? '#fffbeb' : '#f8fafc',
+                  }}>
+                  <p className="font-bold uppercase tracking-wide text-on-surface-variant mb-1">{t('experience.audit.trustScore')}</p>
+                  <p className="text-3xl font-black font-headline" style={{
+                    color: auditInsight.trust_score >= 80 ? '#059669' : auditInsight.trust_score >= 60 ? '#d97706' : '#94a3b8',
+                  }}>
+                    {auditInsight.trust_score}<span className="text-sm font-bold opacity-60">{t('experience.audit.scoreMax')}</span>
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <div className="max-w-7xl mx-auto w-full space-y-5 pt-6 md:pt-8">
 
         {/* ══════════════════════════════════════════════════════════════════
             § 1  STICKY COMMAND STRIP
@@ -413,27 +516,108 @@ export function SurveyIntelligencePage() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════════
-            § 6  PRIORITY INTELLIGENCE FEED (Cockpit severity-bordered rows)
+            § 6  INDUSTRY NUDGE — only when org.industry is unset
         ══════════════════════════════════════════════════════════════════ */}
-        {hasInsights && !generating && sortedInsights.length > 0 && (
-          <PriorityFeed
-            insights={sortedInsights}
-            surveyId={surveyId!}
-            onAskCrystal={(headline) => openCrystal(headline)}
-          />
+        {orgIndustry === null && !nudgeDismissed && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.35 }}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl border flex-wrap"
+            style={{ background: 'rgba(234,179,8,0.06)', borderColor: 'rgba(234,179,8,0.3)' }}
+          >
+            <Icon name="lightbulb" fill={1} size={18} style={{ color: '#b45309', flexShrink: 0 }} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold" style={{ color: '#92400e' }}>
+                {t('insights.industryNudgeTitle')}
+              </p>
+              <p className="text-xs mt-0.5" style={{ color: '#b45309' }}>
+                {t('insights.industryNudgeDesc')}
+              </p>
+            </div>
+            <Link to={ROUTES.SETTINGS}
+              className="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 hover:opacity-90 transition-opacity"
+              style={{ background: '#b45309', color: '#fff' }}>
+              <Icon name="settings" size={13} />
+              {t('insights.industryNudgeCta')}
+            </Link>
+            <button onClick={() => setNudgeDismissed(true)}
+              className="shrink-0 p-1 rounded-full opacity-60 hover:opacity-100 transition-opacity"
+              style={{ color: '#b45309' }} aria-label="Dismiss">
+              <Icon name="close" size={16} />
+            </button>
+          </motion.div>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════
-            § 7  DEEPER FINDINGS BENTO (Editorial 12-col asymmetric grid)
-            Uses the best single insight from each layer
+            § 7  ANOMALY ALERTS — rising negative topics from pipeline
         ══════════════════════════════════════════════════════════════════ */}
-        {hasInsights && !generating && (
-          <DeeperFindings
-            topDiagnostic={topDiagnostic ?? null}
-            topPredictive={topPredictive ?? null}
-            topVoice={topVoice ?? null}
-            topPrescriptive={topPrescriptive ?? null}
-            onAskCrystal={(headline) => openCrystal(headline)}
+        {hasInsights && !generating && (() => {
+          const anomalies = topics.filter(
+            (tp) => tp.trending === 'up' && (tp.sentiment_score ?? 0) < -0.3 && !dismissedTopics.has(tp.id),
+          );
+          if (!anomalies.length) return null;
+          return (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, staggerChildren: 0.05 }}
+              className="space-y-2"
+            >
+              {anomalies.map((tp, i) => (
+                <motion.div key={tp.id}
+                  initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }}
+                  transition={{ duration: 0.3, delay: i * 0.06 }}
+                  className="flex items-center gap-3 rounded-xl px-4 py-3 border"
+                  style={{ background: '#fff1f2', borderColor: '#fecdd3' }}
+                >
+                  <Icon name="warning" fill={1} size={18} style={{ color: '#b41340', flexShrink: 0 }} />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-sm" style={{ color: '#9f1239' }}>
+                      {t('insights.anomalyRising')} <span className="font-black">{tp.name}</span>
+                    </p>
+                    <p className="text-xs mt-0.5" style={{ color: '#be123c' }}>
+                      {tp.volume} {t('insights.anomalyMentions')}
+                      {tp.sentiment_score != null ? ` · ${tp.sentiment_score.toFixed(2)}` : ''}
+                      {tp.effort_score != null ? ` · ${t('insights.anomalyEffort')} ${tp.effort_score.toFixed(1)}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => openCrystal(
+                      `Why is "${tp.name}" rising negatively? What are customers saying and what should we do?`,
+                      { focused_topic: tp.name },
+                    )}
+                    className="shrink-0 text-[11px] font-bold px-3 py-1.5 rounded-full flex items-center gap-1 hover:opacity-90 transition-opacity"
+                    style={{ background: '#b41340', color: '#fff' }}
+                  >
+                    <Icon name="psychology" size={13} />
+                    {t('insights.anomalyAskCrystal')}
+                  </button>
+                  <button
+                    onClick={() => setDismissedTopics((prev) => new Set([...prev, tp.id]))}
+                    className="shrink-0 p-1 rounded-full opacity-60 hover:opacity-100 transition-opacity"
+                    style={{ color: '#b41340' }} aria-label="Dismiss"
+                  >
+                    <Icon name="close" size={16} />
+                  </button>
+                </motion.div>
+              ))}
+            </motion.div>
+          );
+        })()}
+
+        {/* ══════════════════════════════════════════════════════════════════
+            § 8  FEATURED INSIGHT + FULL INSIGHT GRID
+            Matches /app/insights: featured NPS card, layer+type filters,
+            2-column masonry with inline citations, reliability badge,
+            Helpful | Pin | Ask Crystal per-card actions.
+        ══════════════════════════════════════════════════════════════════ */}
+        {hasInsights && !generating && sortedInsights.length > 0 && (
+          <InsightGrid
+            insights={sortedInsights}
+            onAskCrystal={(q, ctx) => openCrystal(q, ctx)}
+            onAudit={(ins) => setAuditInsight(ins)}
+            insightFeedback={insightFeedback}
+            onThumb={handleThumb}
+            onPin={handlePin}
           />
         )}
 
@@ -476,6 +660,7 @@ function EditorialHero({
   nps: number | null; resCount: number; crystalOpening: string | null;
   topInsight: AgenticInsight | null; onGenerate: () => void; isGenerating: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <motion.section
       initial={{ opacity: 0, y: 10 }}
@@ -497,43 +682,37 @@ function EditorialHero({
 
       <div className="flex-1 min-w-0">
         <div className="text-[10px] font-black uppercase tracking-[0.2em] text-tertiary mb-2">
-          Crystal · Generated insight brief
+          {t('experience.intelligence.hero.editorialTagline')}
         </div>
-        {/* crystalOpening is the LLM-generated narrative — never hardcoded */}
-        {crystalOpening ? (
-          <h2 className="text-3xl md:text-4xl font-black font-headline tracking-tight leading-tight mb-4 max-w-3xl">
-            {crystalOpening}
-          </h2>
-        ) : topInsight ? (
-          <h2 className="text-3xl md:text-4xl font-black font-headline tracking-tight leading-tight mb-4 max-w-3xl">
-            {topInsight.headline}
-          </h2>
-        ) : (
-          <h2 className="text-3xl font-black font-headline tracking-tight leading-tight mb-4 text-on-surface-variant max-w-2xl">
-            Intelligence ready — {resCount.toLocaleString()} responses analysed
-          </h2>
-        )}
 
-        {/* Brief glass card with top citation if available */}
-        {topInsight?.narrative && (
+        {/* Headline: short and punchy — always use topInsight.headline, never the long narrative */}
+        <h2 className="text-xl md:text-2xl font-black font-headline tracking-tight leading-snug mb-3 max-w-3xl text-on-surface">
+          {topInsight ? topInsight.headline
+            : t('experience.intelligence.hero.responsesCount', { n: resCount.toLocaleString() })}
+        </h2>
+
+        {/* crystalOpening is a full narrative paragraph — render as body text, not heading */}
+        {(crystalOpening || topInsight?.narrative) && (
           <GlassCard className="p-5 max-w-3xl mb-4">
             <p className="text-sm leading-relaxed font-medium text-on-surface">
-              {topInsight.narrative.length > 280
-                ? topInsight.narrative.slice(0, 280) + '…'
-                : topInsight.narrative}
-              {topInsight.citations_json.slice(0, 3).map((c) => (
+              {(() => {
+                const text = crystalOpening ?? topInsight?.narrative ?? '';
+                const truncated = text.length > 300 ? text.slice(0, 300) + '…' : text;
+                return truncated;
+              })()}
+              {topInsight?.citations_json.slice(0, 3).map((c) => (
                 <CitationChip key={c.response_id} id={c.response_id.slice(-4)} title={c.quote} />
               ))}
             </p>
             <div className="flex items-center gap-3 mt-4 pt-4 border-t border-outline-variant/25">
-              <ConfidenceChip value={topInsight.trust_score} />
+              <ConfidenceChip value={topInsight?.trust_score ?? 0} />
               <span className="text-xs text-on-surface-variant">
-                {topInsight.citations_json.length} cited responses · n={resCount.toLocaleString()}
+                {topInsight?.citations_json.length ?? 0} cited responses · n={resCount.toLocaleString()}
               </span>
               <div className="flex-1" />
               <Button variant="outline" size="sm" className="text-xs"
                 onClick={() => onGenerate()} disabled={isGenerating}>
-                <Icon name="refresh" size={13} /> Refresh
+                <Icon name="refresh" size={13} /> {t('experience.intelligence.hero.refresh')}
               </Button>
             </div>
           </GlassCard>
@@ -745,244 +924,335 @@ function MetricTiles({
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// § 6  PRIORITY INTELLIGENCE FEED (Cockpit severity-bordered rows)
-// All insights sorted by priority, real pipeline data
+// § 8  INSIGHT GRID — Featured insight + layer/type filters + 2-col masonry cards
+// Matches /app/insights: FEATURED INSIGHT card, layer badge, reliability badge,
+// inline citation quotes, Helpful | Pin | Ask Crystal per-card action bar.
 // ══════════════════════════════════════════════════════════════════════════════
-function PriorityFeed({
-  insights, surveyId, onAskCrystal,
+
+function InsightGrid({
+  insights, onAskCrystal, onAudit, insightFeedback, onThumb, onPin,
 }: {
   insights: AgenticInsight[];
-  surveyId: string;
-  onAskCrystal: (headline: string) => void;
+  onAskCrystal: (q: string, ctx?: { focused_topic?: string }) => void;
+  onAudit: (ins: AgenticInsight) => void;
+  insightFeedback: Record<string, { thumbs?: 'up' | 'down' | null; pinned?: boolean }>;
+  onThumb: (id: string, thumbs: 'up' | 'down') => void;
+  onPin: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const [filter, setFilter] = useState<AgenticInsight['layer'] | 'all'>('all');
-  const filtered = filter === 'all' ? insights : insights.filter((i) => i.layer === filter);
-  const layerCounts = {
-    prescriptive: insights.filter((i) => i.layer === 'prescriptive').length,
-    predictive:   insights.filter((i) => i.layer === 'predictive').length,
-    diagnostic:   insights.filter((i) => i.layer === 'diagnostic').length,
-    descriptive:  insights.filter((i) => i.layer === 'descriptive').length,
-  };
+  const [filterLayer,    setFilterLayer]    = useState<AgenticInsight['layer'] | 'all'>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+
+  const availableLayers = useMemo(() => {
+    const present = new Set(insights.map((i) => i.layer));
+    return (['descriptive','diagnostic','predictive','prescriptive'] as const).filter((l) => present.has(l));
+  }, [insights]);
+
+  const availableCategories = useMemo(() => {
+    const cats = [...new Set(insights.map((i) => i.category).filter(Boolean))];
+    return cats.sort();
+  }, [insights]);
+
+  const filtered = useMemo(() => insights.filter((ins) => {
+    if (filterLayer    !== 'all' && ins.layer    !== filterLayer)    return false;
+    if (filterCategory !== 'all' && ins.category !== filterCategory) return false;
+    return true;
+  }), [insights, filterLayer, filterCategory]);
+
+  // Hero: first NPS descriptive insight
+  const heroInsight = insights.find((i) => i.layer === 'descriptive' && i.category === 'metric.nps');
+
+  function prettifyCategory(cat: string) {
+    const MAP: Record<string, string> = {
+      'voice.topic': t('experience.insightGrid.category.topics'),
+      'metric.nps':  t('experience.insightGrid.category.nps'),
+      'metric.csat': t('experience.insightGrid.category.csat'),
+      'metric.ces':  t('experience.insightGrid.category.ces'),
+      'meta.bias':   t('experience.insightGrid.category.bias'),
+    };
+    return MAP[cat] ?? (cat.split('.').pop()?.replace(/_/g, ' ') ?? cat);
+  }
 
   return (
-    <motion.section
+    <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.15 }}
+      transition={{ duration: 0.5, delay: 0.1 }}
+      className="space-y-5"
     >
-      <GlassCard className="overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center gap-2 px-5 py-3 border-b border-outline-variant/20 sticky top-[4.5rem] z-10 bg-white/80 backdrop-blur-lg flex-wrap">
-          <Icon name="bolt" size={17} style={{ color: 'var(--color-primary)' }} />
-          <span className="font-headline font-bold text-sm">{t('experience.intelligence.feed.title')}</span>
-          <span className="px-1.5 py-0.5 rounded bg-surface-container text-[9px] font-black font-mono text-on-surface-variant">{insights.length}</span>
-          <div className="flex-1" />
-          {/* Filter pills */}
-          <div className="flex items-center gap-1">
-            {([
-              { id: 'all'          as const, label: t('experience.intelligence.feed.filters.all')          },
-              { id: 'prescriptive' as const, label: t('experience.intelligence.feed.filters.prescriptive') },
-              { id: 'predictive'   as const, label: t('experience.intelligence.feed.filters.predictive')   },
-              { id: 'diagnostic'   as const, label: t('experience.intelligence.feed.filters.diagnostic')   },
-              { id: 'descriptive'  as const, label: t('experience.intelligence.feed.filters.descriptive')  },
-            ] as const).map(({ id, label }) => (
-              <button key={id}
-                onClick={() => setFilter(id)}
-                className="px-2.5 py-1 rounded-full text-[11px] font-bold transition-all"
-                style={filter === id
-                  ? { background: id === 'all' ? 'var(--color-primary)' : SEV_COLOR[id as AgenticInsight['layer']] ?? 'var(--color-primary)', color: 'white' }
-                  : { background: 'transparent', color: 'var(--color-on-surface-variant)' }}>
-                {label}
-                {id !== 'all' && layerCounts[id as keyof typeof layerCounts] > 0 && (
-                  <span className="ml-1 opacity-70">({layerCounts[id as keyof typeof layerCounts]})</span>
-                )}
-              </button>
-            ))}
-          </div>
+      {/* ── Featured insight card ──────────────────────────────────────── */}
+      {heroInsight && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}>
+          <GlassCard className="p-6 overflow-hidden relative"
+            style={{ background: 'linear-gradient(135deg, rgba(42,75,217,0.06) 0%, rgba(131,41,200,0.04) 100%)', borderColor: 'rgba(42,75,217,0.2)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                {t('experience.insightGrid.featuredLabel')}
+              </span>
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold"
+                style={{ background: '#e0f2fe', color: '#0369a1' }}>NPS</span>
+              {heroInsight.trust_score >= 80 && (
+                <span className="text-[10px] font-bold text-emerald-700">● Reliable</span>
+              )}
+            </div>
+            <h2 className="text-lg font-black font-headline leading-snug mb-2 text-on-surface">
+              {heroInsight.headline}
+            </h2>
+            {heroInsight.narrative && !/^[^:]{1,60}:\s/.test(heroInsight.narrative) && (
+              <p className="text-sm text-on-surface-variant leading-relaxed mb-4 max-w-2xl">
+                {heroInsight.narrative.length > 280 ? heroInsight.narrative.slice(0, 280) + '…' : heroInsight.narrative}
+              </p>
+            )}
+            {heroInsight.metric_json?.value != null && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{t('experience.insightGrid.npsScoreLabel')}</p>
+                <p className="text-4xl font-black font-headline" style={{
+                  color: heroInsight.metric_json.value >= 50 ? '#059669' : heroInsight.metric_json.value >= 0 ? '#d97706' : '#b41340',
+                }}>
+                  {Math.round(heroInsight.metric_json.value)}
+                </p>
+              </div>
+            )}
+            <div
+              className="absolute -right-8 -top-8 w-32 h-32 rounded-full pointer-events-none"
+              style={{ background: 'radial-gradient(circle, rgba(42,75,217,0.12), transparent 70%)' }}
+            />
+          </GlassCard>
+        </motion.div>
+      )}
+
+      {/* ── Filters ────────────────────────────────────────────────────── */}
+      {(availableLayers.length > 1 || availableCategories.length > 1) && (
+        <div className="space-y-2 px-1">
+          {availableLayers.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-12 shrink-0">
+                {t('surveyInsights.filters.layerLabel')}
+              </span>
+              <div className="flex gap-1.5 flex-wrap">
+                <FilterPill active={filterLayer === 'all'} onClick={() => setFilterLayer('all')}>
+                  {t('surveyInsights.filters.all')} ({insights.length})
+                </FilterPill>
+                {availableLayers.map((layer) => {
+                  const cfg = LAYER_CONFIG[layer];
+                  const count = insights.filter((i) => i.layer === layer).length;
+                  return (
+                    <FilterPill key={layer} active={filterLayer === layer}
+                      activeColor={cfg.color} activeBg={cfg.bg}
+                      onClick={() => setFilterLayer(filterLayer === layer ? 'all' : layer)}>
+                      {t(`surveyInsights.layers.${layer}.label`)} ({count})
+                    </FilterPill>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {availableCategories.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant w-12 shrink-0">
+                {t('surveyInsights.filters.typeLabel')}
+              </span>
+              <div className="flex gap-1.5 flex-wrap">
+                <FilterPill active={filterCategory === 'all'} onClick={() => setFilterCategory('all')}>
+                  {t('surveyInsights.filters.all')}
+                </FilterPill>
+                {availableCategories.map((cat) => {
+                  const count = insights.filter((i) => i.category === cat).length;
+                  return (
+                    <FilterPill key={cat} active={filterCategory === cat}
+                      onClick={() => setFilterCategory(filterCategory === cat ? 'all' : cat)}>
+                      {prettifyCategory(cat)} ({count})
+                    </FilterPill>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
+      )}
 
-        {/* Feed rows */}
-        <div className="divide-y divide-outline-variant/12">
-          {filtered.slice(0, 10).map((insight, idx) => {
-            const sevColor = insight.trust_score < 60 ? '#b41340' : SEV_COLOR[insight.layer];
-            const topQuote = insight.citations_json[0];
+      {/* ── Count divider ──────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3">
+        <div className="h-px flex-1 bg-outline-variant/25" />
+        <span className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[0.22em] text-on-surface-variant">
+          <Icon name="auto_awesome" size={12} />
+          {t('experience.insightGrid.generatedCount', { n: String(filtered.length) })}
+        </span>
+        <div className="h-px flex-1 bg-outline-variant/25" />
+      </div>
+
+      {/* ── 2-column insight cards ─────────────────────────────────────── */}
+      {filtered.length === 0 ? (
+        <div className="py-10 text-center">
+          <p className="text-sm text-on-surface-variant mb-3">{t('surveyInsights.filters.noResults')}</p>
+          <button onClick={() => { setFilterLayer('all'); setFilterCategory('all'); }}
+            className="text-xs font-bold text-primary hover:underline">
+            {t('surveyInsights.filters.clearFilters')}
+          </button>
+        </div>
+      ) : (
+        <motion.div variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.05 } } }}
+          initial="hidden" animate="visible"
+          className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filtered.map((insight, i) => {
+            const layerCfg = LAYER_CONFIG[insight.layer] ?? LAYER_CONFIG.descriptive;
+            const fb = insightFeedback[insight.id] ?? {};
             return (
-              <motion.div
-                key={insight.id}
-                initial={{ opacity: 0, x: -6 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ duration: 0.3, delay: idx * 0.04 }}
-                className="group flex items-start gap-4 px-5 py-4 hover:bg-surface-container/40 transition-colors"
-                style={{ borderLeft: `3px solid ${sevColor}` }}
+              <motion.div key={insight.id}
+                variants={{ hidden: { opacity: 0, y: 14 }, visible: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.22, 1, 0.36, 1] as [number,number,number,number] } } }}
+                custom={i}
+                className="group"
               >
-                {/* Layer icon */}
-                <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                  style={{ background: LAYER_CONFIG[insight.layer]?.bg ?? '#e0f2fe' }}>
-                  <Icon name={
-                    insight.layer === 'prescriptive' ? 'flag' :
-                    insight.layer === 'predictive'   ? 'insights' :
-                    insight.layer === 'diagnostic'   ? 'local_fire_department' : 'bar_chart'
-                  } size={15} style={{ color: LAYER_CONFIG[insight.layer]?.color ?? '#0369a1' }} />
-                </div>
+                <GlassCard className="p-5 h-full flex flex-col overflow-hidden transition-shadow duration-200 hover:shadow-lg">
+                  {/* Coloured top accent bar */}
+                  <div className="-mx-5 -mt-5 mb-4 h-[3px] rounded-t-2xl"
+                    style={{ background: layerCfg.color }} />
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <span className="text-[9px] font-black uppercase tracking-widest" style={{ color: sevColor }}>
-                      {insight.layer} · {insight.category?.split('.').pop() ?? ''}
+                  {/* Row 1: layer badge + reliability badge */}
+                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold tracking-wide"
+                      style={{ background: layerCfg.bg, color: layerCfg.color }}>
+                      {t(`surveyInsights.layers.${insight.layer}.label`)}
                     </span>
-                    <ConfidenceChip value={insight.trust_score} />
-                    {insight.citations_json.length > 0 && (
-                      <span className="text-[9px] text-on-surface-variant font-mono">{t('experience.common.citations', { n: String(insight.citations_json.length) })}</span>
+                    {insight.metric_json?.dominant_sentiment && (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                        insight.metric_json.dominant_sentiment === 'positive' ? 'bg-emerald-50 text-emerald-700' :
+                        insight.metric_json.dominant_sentiment === 'negative' ? 'bg-red-50 text-red-700' :
+                        'bg-muted text-on-surface-variant'}`}>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{
+                          background: insight.metric_json.dominant_sentiment === 'positive' ? '#059669' :
+                                      insight.metric_json.dominant_sentiment === 'negative' ? '#dc2626' : '#94a3b8'
+                        }} />
+                        {insight.metric_json.dominant_sentiment}
+                      </span>
                     )}
+                    <div className="flex-1" />
+                    <button
+                      className={`text-[10px] font-bold cursor-pointer hover:underline transition-colors ${
+                        insight.trust_score >= 80 ? 'text-emerald-700' :
+                        insight.trust_score >= 60 ? 'text-amber-700' : 'text-on-surface-variant'}`}
+                      onClick={() => onAudit(insight)}
+                      title={t('experience.insightGrid.auditTooltip')}
+                    >
+                      {insight.trust_score >= 80 ? t('experience.insightGrid.reliable') :
+                       insight.trust_score >= 60 ? t('experience.insightGrid.indicative') : t('experience.insightGrid.lowSignal')}
+                    </button>
                   </div>
-                  <p className="text-sm font-semibold text-on-surface leading-snug mb-1">{insight.headline}</p>
-                  {topQuote?.quote && (
-                    <p className="text-[11px] text-on-surface-variant/70 italic line-clamp-1">
-                      "{topQuote.quote}"
-                    </p>
-                  )}
-                  {insight.recommended_action && (
-                    <div className="mt-1.5 flex items-center gap-1.5">
-                      <Icon name="bolt" size={11} style={{ color: 'var(--color-primary)' }} />
-                      <span className="text-[11px] font-semibold text-primary">{insight.recommended_action.label}</span>
+
+                  {/* Headline */}
+                  <h3 className="text-sm font-black font-headline leading-snug mb-2">
+                    {insight.headline}
+                  </h3>
+
+                  {/* Narrative */}
+                  {(() => {
+                    const raw = insight.narrative ?? '';
+                    const isRawDump = /^[^:]{1,60}:\s/.test(raw) && raw.split(' ').length < 14;
+                    return !isRawDump && raw.length > 0 ? (
+                      <p className="text-xs text-on-surface-variant leading-relaxed flex-1 mb-3">
+                        {raw.length > 200 ? raw.slice(0, 200) + '…' : raw}
+                      </p>
+                    ) : <div className="flex-1" />;
+                  })()}
+
+                  {/* Inline citation quotes — real verbatims from respondents */}
+                  {insight.citations_json.length > 0 && (
+                    <div className="space-y-1.5 mb-3">
+                      {insight.citations_json.slice(0, 2).map((c) => (
+                        <div key={c.response_id}
+                          className="px-3 py-2 rounded-lg text-xs leading-relaxed text-on-surface italic"
+                          style={{
+                            background: 'var(--color-surface-container)',
+                            borderLeft: `2px solid ${SENTIMENT_BORDER[c.sentiment] ?? 'var(--color-outline-variant)'}`,
+                          }}>
+                          "{c.quote.length > 120 ? c.quote.slice(0, 120) + '…' : c.quote}"
+                        </div>
+                      ))}
+                      {insight.citations_json.length > 2 && (
+                        <button
+                          onClick={() => onAskCrystal(insight.headline)}
+                          className="text-[10px] font-bold text-primary hover:underline px-1">
+                          {t('experience.insightGrid.moreQuotes', { n: String(insight.citations_json.length - 2) })}
+                        </button>
+                      )}
                     </div>
                   )}
-                </div>
 
-                {/* Ask Crystal per-insight */}
-                <button
-                  onClick={() => onAskCrystal(insight.headline)}
-                  className="opacity-0 group-hover:opacity-100 flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:bg-primary/10 self-start mt-1"
-                  style={{ color: 'var(--color-primary)' }}
-                  title={t('experience.intelligence.feed.askTooltip')}
-                >
-                  <Icon name="psychology" size={13} /> {t('experience.common.askShort')}
-                </button>
+                  {/* Recommended action */}
+                  {insight.recommended_action && (
+                    <div className="flex items-start gap-2 p-2.5 rounded-lg bg-primary/5 border border-primary/15 mb-3">
+                      <Icon name="bolt" size={13} style={{ color: 'var(--color-primary)', flexShrink: 0, marginTop: 1 }} />
+                      <div>
+                        <p className="text-xs font-semibold text-on-surface leading-snug">
+                          {insight.recommended_action.label}
+                        </p>
+                        {insight.recommended_action.target && (
+                          <p className="text-[10px] text-on-surface-variant mt-0.5 font-mono">
+                            {insight.recommended_action.target}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action bar: Helpful | Pin | Ask Crystal + category */}
+                  <div className="flex items-center gap-1 pt-2.5 border-t border-outline-variant/20">
+                    <Button size="sm" variant="ghost"
+                      className={`text-xs gap-1 px-2 h-7 transition-colors ${fb.thumbs === 'up' ? 'text-emerald-600' : ''}`}
+                      onClick={() => onThumb(insight.id, 'up')}>
+                      <Icon name="thumb_up" size={13} style={fb.thumbs === 'up' ? { color: '#059669' } : undefined} />
+                      {t('experience.insightGrid.helpful')}
+                    </Button>
+                    <Button size="sm" variant="ghost"
+                      className={`text-xs gap-1 px-2 h-7 transition-colors ${fb.pinned ? 'text-primary' : ''}`}
+                      onClick={() => onPin(insight.id)}>
+                      <Icon name="push_pin" size={13} style={fb.pinned ? { color: 'var(--color-primary)' } : undefined} />
+                      {fb.pinned ? t('experience.insightGrid.pinned') : t('experience.insightGrid.pin')}
+                    </Button>
+                    <Button size="sm" variant="ghost"
+                      className="text-xs gap-1 px-2 h-7 text-primary hover:bg-primary/8"
+                      onClick={() => onAskCrystal(insight.headline)}>
+                      <Icon name="psychology" size={13} style={{ color: 'var(--color-primary)' }} />
+                      {t('experience.insightGrid.askCrystal')}
+                    </Button>
+                    <div className="flex-1" />
+                    <span className="text-[10px] text-on-surface-variant/50 capitalize">
+                      {prettifyCategory(insight.category)}
+                    </span>
+                  </div>
+                </GlassCard>
               </motion.div>
             );
           })}
-
-          {/* Streaming tail */}
-          <div className="px-5 py-3 flex items-center gap-3 text-on-surface-variant/60 text-xs">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" style={{ animation: 'pulse-glow 2s ease-in-out infinite' }} />
-            <span className="font-medium">{t('experience.intelligence.feed.monitoring')}</span>
-          </div>
-        </div>
-      </GlassCard>
-    </motion.section>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// § 7  DEEPER FINDINGS BENTO (Editorial asymmetric 12-col grid)
-// ══════════════════════════════════════════════════════════════════════════════
-function DeeperFindings({
-  topDiagnostic, topPredictive, topVoice, topPrescriptive, onAskCrystal,
-}: {
-  topDiagnostic: AgenticInsight | null; topPredictive: AgenticInsight | null;
-  topVoice: AgenticInsight | null; topPrescriptive: AgenticInsight | null;
-  onAskCrystal: (headline: string) => void;
-}) {
-  const { t } = useTranslation();
-  if (!topDiagnostic && !topPredictive && !topVoice && !topPrescriptive) return null;
-
-  return (
-    <motion.section
-      initial={{ opacity: 0, y: 16 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.2 }}
-      className="space-y-4"
-    >
-      <div className="flex items-center gap-3">
-        <div className="h-px flex-1 bg-outline-variant/25" />
-        <span className="text-[10px] font-black uppercase tracking-[0.2em] text-on-surface-variant">{t('experience.intelligence.feed.deeper')}</span>
-        <div className="h-px flex-1 bg-outline-variant/25" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Diagnostic / Driver — wide */}
-        {topDiagnostic && (
-          <div className="lg:col-span-7">
-            <BentoCard insight={topDiagnostic} onAskCrystal={onAskCrystal} />
-          </div>
-        )}
-
-        {/* Predictive / Anomaly — narrow */}
-        {topPredictive && (
-          <div className="lg:col-span-5">
-            <BentoCard insight={topPredictive} onAskCrystal={onAskCrystal}
-              borderAccent={topPredictive.trust_score < 80 ? '#d97706' : undefined} />
-          </div>
-        )}
-
-        {/* Voice topic — narrow */}
-        {topVoice && (
-          <div className="lg:col-span-5">
-            <BentoCard insight={topVoice} onAskCrystal={onAskCrystal} />
-          </div>
-        )}
-
-        {/* Prescriptive action — wide */}
-        {topPrescriptive && (
-          <div className={topVoice ? 'lg:col-span-7' : 'lg:col-span-12'}>
-            <BentoCard insight={topPrescriptive} onAskCrystal={onAskCrystal} />
-          </div>
-        )}
-      </div>
-    </motion.section>
-  );
-}
-
-function BentoCard({
-  insight, onAskCrystal, borderAccent,
-}: {
-  insight: AgenticInsight;
-  onAskCrystal: (h: string) => void;
-  borderAccent?: string;
-}) {
-  const { t } = useTranslation();
-  const layerCfg = LAYER_CONFIG[insight.layer] ?? LAYER_CONFIG.descriptive;
-  return (
-    <GlassCard
-      className="p-6 h-full flex flex-col group"
-      style={borderAccent ? { borderLeft: `4px solid ${borderAccent}` } : undefined}
-    >
-      <div className="flex items-center justify-between mb-3">
-        <LayerBadge layer={insight.layer}
-          icon={insight.layer === 'prescriptive' ? 'flag' : insight.layer === 'predictive' ? 'insights' : insight.layer === 'diagnostic' ? 'local_fire_department' : 'bar_chart'} />
-        <ConfidenceChip value={insight.trust_score} />
-      </div>
-
-      <h3 className="text-base font-black font-headline leading-snug mb-2">{insight.headline}</h3>
-
-      {insight.narrative && !/^[^:]{1,60}:\s/.test(insight.narrative) && (
-        <p className="text-sm text-on-surface-variant leading-relaxed flex-1 mb-3">
-          {insight.narrative.length > 180 ? insight.narrative.slice(0, 180) + '…' : insight.narrative}
-        </p>
+        </motion.div>
       )}
-
-      {/* Top citation quote */}
-      {insight.citations_json[0]?.quote && (
-        <div className="px-3 py-2 rounded-xl mb-3 text-xs leading-relaxed italic"
-          style={{ background: 'var(--color-surface-container)', borderLeft: `2px solid ${SENTIMENT_BORDER[insight.citations_json[0].sentiment] ?? 'var(--color-outline-variant)'}` }}>
-          "{insight.citations_json[0].quote.slice(0, 120)}{insight.citations_json[0].quote.length > 120 ? '…' : ''}"
-        </div>
-      )}
-
-      <div className="flex items-center gap-1 pt-3 border-t border-outline-variant/20">
-        <button
-          onClick={() => onAskCrystal(insight.headline)}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition-colors hover:bg-primary/10"
-          style={{ color: 'var(--color-primary)' }}>
-          <Icon name="psychology" size={12} /> {t('experience.common.ask')}
-        </button>
-        <div className="flex-1" />
-        <span className="text-[10px] text-on-surface-variant/50">{t('experience.common.citations', { n: String(insight.citations_json.length) })}</span>
-      </div>
-    </GlassCard>
+    </motion.div>
   );
 }
+
+// ── Filter pill ───────────────────────────────────────────────────────────────
+function FilterPill({
+  children, active, onClick, activeColor, activeBg,
+}: {
+  children: React.ReactNode;
+  active: boolean;
+  onClick: () => void;
+  activeColor?: string;
+  activeBg?: string;
+}) {
+  return (
+    <button onClick={onClick}
+      className="px-2.5 py-1 rounded-full text-xs font-bold transition-all border"
+      style={active
+        ? { background: activeBg ?? 'var(--color-primary)', color: activeColor ?? 'white', borderColor: activeColor ?? 'var(--color-primary)' }
+        : { background: 'transparent', color: 'var(--color-on-surface-variant)', borderColor: 'var(--color-outline-variant)' }
+      }>
+      {children}
+    </button>
+  );
+}
+
 
 // ══════════════════════════════════════════════════════════════════════════════
 // § 8  CRYSTAL ASK BAR (always visible inline)

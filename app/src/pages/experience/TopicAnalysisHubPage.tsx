@@ -80,7 +80,7 @@ export function TopicAnalysisHubPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto w-full space-y-5">
+    <div className="max-w-5xl mx-auto w-full space-y-5 pt-6 md:pt-8">
 
       {/* Sub-nav strip (mirrors SurveyIntelligencePage) */}
       <div className="flex items-center gap-1 flex-wrap">

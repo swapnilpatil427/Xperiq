@@ -22,9 +22,14 @@ const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY
     ? 'dev-internal-key-change-in-prod'
     : (() => { throw new Error('AGENTS_INTERNAL_KEY must be set in production'); })());
 
-async function _agentsFetch(path, opts = {}) {
+// Crystal (ReAct loop + eval agent) regularly takes 10–20s on dev free-tier models.
+// All other agents operations (status polls, feedback writes) complete in <5s.
+const CRYSTAL_TIMEOUT_MS = 90_000;  // 90s — covers ReAct + eval + network
+const DEFAULT_AGENTS_TIMEOUT_MS = 15_000;
+
+async function _agentsFetch(path, opts = {}, timeoutMs = DEFAULT_AGENTS_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${AGENTS_URL}${path}`, {
       ...opts,
@@ -551,10 +556,11 @@ router.get('/:surveyId/topics', async (req, res) => {
               first_seen_at, last_seen_at, nps_avg, positive_pct, negative_pct,
               net_sentiment, nps_impact, promoter_pct, detractor_pct, passive_pct,
               driver_score, avg_csat, csat_impact, avg_effort_score,
-              confidence_level, top_verbatims, emotion_distribution
+              confidence_level, top_verbatims, emotion_distribution,
+              parent_topic_id, hierarchy_level, sub_topic_count
        FROM survey_topics
        WHERE survey_id = $1 AND org_id = $2 AND time_window = $3
-       ORDER BY ${sortBy} LIMIT 30`,
+       ORDER BY ${sortBy} LIMIT 50`,
       [surveyId, req.orgId, window],
     ).catch(() => ({ rows: [] }));
 
@@ -896,7 +902,7 @@ router.post('/:surveyId/crystal', async (req, res) => {
     const response = await _agentsFetch('/insights/crystal', {
       method: 'POST',
       body:   JSON.stringify(agentPayload),
-    });
+    }, CRYSTAL_TIMEOUT_MS);
 
     // Persist thread — keep last 20 exchanges (40 messages)
     const userMsg      = { role: 'user',      content: message.trim(),  created_at: new Date().toISOString() };

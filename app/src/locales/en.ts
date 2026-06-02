@@ -1920,6 +1920,7 @@ const en = {
         backHub:    '← Experience hub',
       },
       ask:        'Ask Crystal about this topic',
+      askHint:    'Ask about sentiment, trends, and actions for this topic',
       hero: {
         mentions:   '{n} mentions',
         sentiment:  '{n}% sentiment',
@@ -1964,6 +1965,53 @@ const en = {
         topic:    'Tell me about the "{name}" topic — what are respondents saying, what\'s the sentiment trend, and what action should we take?',
         verbatim: 'A respondent said: "{quote}" — what does this tell us about the {topic} topic and what should we do?',
       },
+    },
+
+    // ── Audit drawer (trust / verifier breakdown) ────────────────────────────
+    audit: {
+      title:          'Insight Audit Trail',
+      modelLabel:     'Model',
+      verifierLabel:  'Verifier Notes',
+      verifierPass:   '✓ Passed',
+      verifierFail:   '✗ Failed',
+      trustMetrics:   'Trust Metrics',
+      trustScore:     'Trust Score',
+      scoreMax:       '/100',
+      coverage:       'Coverage',
+      consistency:    'Consistency',
+      statistical:    'Statistical',
+      grounding:      'Grounding',
+      sampleSize:     'Sample Size',
+    },
+
+    // ── Insight grid (§8 featured insight + 2-col cards) ────────────────────
+    insightGrid: {
+      featuredLabel:     'Featured Insight',
+      npsScoreLabel:     'NPS Score',
+      generatedCount:    '{n} AI insights generated',
+      auditTooltip:      'View audit details',
+      reliable:          '● Reliable finding',
+      indicative:        '◑ Indicative finding',
+      lowSignal:         '○ Low-signal',
+      moreQuotes:        '+{n} more quotes',
+      helpful:           'Helpful',
+      pinned:            'Pinned',
+      pin:               'Pin',
+      askCrystal:        'Ask Crystal',
+      // Category display labels used in filter pills and card footers
+      category: {
+        topics:     'Topics',
+        nps:        'NPS',
+        csat:       'CSAT',
+        ces:        'CES',
+        bias:       'Bias',
+      },
+    },
+
+    // ── Hub hero ─────────────────────────────────────────────────────────────
+    hubHero: {
+      selectSurvey:    'Select a survey below to analyse with Crystal',
+      surveyFallback:  'Survey',
     },
   },
 
