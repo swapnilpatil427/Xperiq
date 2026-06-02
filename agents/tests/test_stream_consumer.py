@@ -162,6 +162,8 @@ class TestBatchAccumulation:
         with (
             patch("agents.consumers.response_stream.consume_events", fake_consume),
             patch("agents.consumers.response_stream._should_trigger", fake_should_trigger),
+            patch("agents.consumers.response_stream._get_total_response_count", new=AsyncMock(return_value=0)),
+            patch("agents.consumers.response_stream.should_trigger_progressive_tier", new=AsyncMock(return_value=None)),
         ):
             # run_response_stream_consumer is an infinite loop; we need it to stop
             # after one iteration. The fake_consume above yields once then returns.
@@ -206,6 +208,9 @@ class TestBatchAccumulation:
         with (
             patch("agents.consumers.response_stream.consume_events", fake_consume),
             patch("agents.consumers.response_stream._trigger_insights", fake_trigger),
+            patch("agents.consumers.response_stream._get_survey_status", new=AsyncMock(return_value="active")),
+            patch("agents.consumers.response_stream._get_total_response_count", new=AsyncMock(return_value=10)),
+            patch("agents.consumers.response_stream.should_trigger_progressive_tier", new=AsyncMock(return_value=None)),
         ):
             try:
                 await asyncio.wait_for(
@@ -242,3 +247,141 @@ class TestRedisConsumerDegradation:
 
         redis_mod._redis = original_redis
         assert collected == []
+
+
+# ---------------------------------------------------------------------------
+# Progressive tier system
+# ---------------------------------------------------------------------------
+
+class TestProgressiveTierSystem:
+    """Tests for should_trigger_progressive_tier and mark_progressive_tier_complete."""
+
+    def _make_mock_redis(self, get_return=None):
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value=get_return)
+        mock_redis.set = AsyncMock()
+        return mock_redis
+
+    @pytest.mark.asyncio
+    async def test_triggers_at_first_voices_threshold(self):
+        """response_count=10 triggers 'first_voices' when Redis key not set."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        mock_redis = self._make_mock_redis(get_return=None)
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=10)
+
+        assert result == "first_voices"
+
+    @pytest.mark.asyncio
+    async def test_triggers_at_early_signals_threshold(self):
+        """response_count=40 triggers 'early_signals' (not 'first_voices')."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        mock_redis = self._make_mock_redis(get_return=None)
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=40)
+
+        assert result == "early_signals"
+
+    @pytest.mark.asyncio
+    async def test_triggers_at_growing_picture_threshold(self):
+        """response_count=70 triggers 'growing_picture'."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        mock_redis = self._make_mock_redis(get_return=None)
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=70)
+
+        assert result == "growing_picture"
+
+    @pytest.mark.asyncio
+    async def test_triggers_at_full_report_threshold(self):
+        """response_count=100 triggers 'full_report'."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        mock_redis = self._make_mock_redis(get_return=None)
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=100)
+
+        assert result == "full_report"
+
+    @pytest.mark.asyncio
+    async def test_does_not_trigger_below_threshold(self):
+        """response_count=9 returns None (below all thresholds)."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        mock_redis = self._make_mock_redis(get_return=None)
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=9)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_dedup_prevents_retrigger(self):
+        """Redis key already set ('1') means tier was triggered; returns None."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        mock_redis = self._make_mock_redis(get_return="1")
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=10)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_redis_unavailable(self):
+        """Returns None gracefully when _get_redis() returns None."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=None)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=50)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_mark_tier_complete_sets_redis_key(self):
+        """mark_progressive_tier_complete sets the correct Redis key with 30-day TTL."""
+        from agents.consumers.response_stream import mark_progressive_tier_complete
+
+        mock_redis = AsyncMock()
+        mock_redis.set = AsyncMock()
+
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            await mark_progressive_tier_complete("survey-1", "first_voices")
+
+        mock_redis.set.assert_called_once_with(
+            "progressive:survey-1:first_voices:triggered",
+            "1",
+            ex=2592000,
+        )
+
+    @pytest.mark.asyncio
+    async def test_highest_tier_checked_first(self):
+        """response_count=100 with full_report already set returns None (no fallback to lower tiers)."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        async def fake_get(key):
+            # full_report is already triggered; growing_picture is not
+            if "full_report" in key:
+                return "1"
+            return None
+
+        mock_redis = AsyncMock()
+        mock_redis.get = fake_get
+
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=100)
+
+        # The highest matching tier (full_report) is already done → None
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_growing_picture_triggers_when_full_report_not_yet_reached(self):
+        """response_count=70 with growing_picture not yet triggered fires growing_picture."""
+        from agents.consumers.response_stream import should_trigger_progressive_tier
+
+        mock_redis = self._make_mock_redis(get_return=None)
+        with patch("agents.consumers.response_stream._get_redis", new=AsyncMock(return_value=mock_redis)):
+            result = await should_trigger_progressive_tier("survey-1", response_count=75)
+
+        assert result == "growing_picture"

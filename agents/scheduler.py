@@ -115,6 +115,45 @@ async def _recover_stale_runs() -> int:
         return 0
 
 
+async def sweep_zombie_runs() -> None:
+    """Mark stale running runs as failed and enqueue retries for eligible ones."""
+    from agents.lib.constants import MAX_RUN_HEARTBEAT_STALE_MINUTES, MAX_RUN_DURATION_MINUTES
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT id, survey_id, org_id, retry_count
+                       FROM agent_runs
+                       WHERE status = 'running'
+                         AND (
+                           last_heartbeat_at < NOW() - INTERVAL '%s minutes'
+                           OR created_at < NOW() - INTERVAL '%s minutes'
+                         )""",
+                    (MAX_RUN_HEARTBEAT_STALE_MINUTES, MAX_RUN_DURATION_MINUTES),
+                )
+                zombies = await cur.fetchall()
+
+        for zombie_id, survey_id, org_id, retry_count in zombies:
+            async with _pool_conn().connection() as conn:
+                await conn.execute(
+                    """UPDATE agent_runs
+                       SET status = 'failed',
+                           failure_reason = 'zombie_timeout',
+                           failed_at = NOW()
+                       WHERE id = %s AND status = 'running'""",
+                    (zombie_id,),
+                )
+            logger.warning(
+                "zombie_run_killed",
+                run_id=str(zombie_id),
+                survey_id=str(survey_id) if survey_id else None,
+            )
+            if (retry_count or 0) < 2 and survey_id and org_id:
+                await _trigger_generation(str(survey_id), str(org_id))
+    except Exception as exc:
+        logger.error("zombie_sweep_failed", error=str(exc))
+
+
 async def _auto_close_by_date() -> int:
     """Close active/paused surveys that have passed their auto_close_at datetime."""
     try:
@@ -239,12 +278,90 @@ async def _get_current_response_count(survey_id: str) -> int:
         return 0
 
 
+_zombie_sweep_last_run: float = 0.0
+_ZOMBIE_SWEEP_INTERVAL_SEC = 300  # 5 minutes
+
+_org_aggregation_last_run: float = 0.0
+_ORG_AGGREGATION_INTERVAL_SEC = 3600  # 1 hour
+
+
+async def run_org_aggregation() -> None:
+    """Aggregate NPS/CSAT across all active surveys per org into org_metric_snapshots.
+
+    Runs hourly. Provides data for Crystal's get_org_portfolio tool.
+    """
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Get all active orgs with responses
+                await cur.execute(
+                    """SELECT DISTINCT org_id FROM surveys s
+                       WHERE status = 'active' AND deleted_at IS NULL
+                         AND EXISTS (
+                             SELECT 1 FROM responses r WHERE r.survey_id = s.id
+                         )"""
+                )
+                org_rows = await cur.fetchall()
+
+        for (org_id,) in org_rows:
+            try:
+                async with _pool_conn().connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """SELECT AVG(sms.nps), AVG(sms.csat), SUM(sms.response_count),
+                                      COUNT(*) as survey_count
+                               FROM survey_metric_snapshots sms
+                               INNER JOIN surveys s ON s.id = sms.survey_id
+                               WHERE sms.org_id = %s AND s.status = 'active'
+                                 AND s.deleted_at IS NULL
+                                 AND sms.captured_at = (
+                                     SELECT MAX(captured_at) FROM survey_metric_snapshots
+                                     WHERE survey_id = sms.survey_id
+                                 )""",
+                            (org_id,),
+                        )
+                        row = await cur.fetchone()
+                        if not row or row[3] == 0:
+                            continue
+
+                        avg_nps, avg_csat, total_responses, survey_count = row
+
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """INSERT INTO org_metric_snapshots
+                               (org_id, captured_at, avg_nps, avg_csat, total_responses, active_survey_count)
+                               VALUES (%s, NOW(), %s, %s, %s, %s)""",
+                            (org_id, avg_nps, avg_csat, total_responses, survey_count),
+                        )
+                    await conn.commit()
+                    logger.info("org_aggregation_written", org_id=org_id, survey_count=survey_count)
+            except Exception as exc:
+                logger.warning("org_aggregation_org_failed", org_id=org_id, error=str(exc))
+
+    except Exception as exc:
+        logger.error("org_aggregation_failed", error=str(exc))
+
+
 async def run_scheduler_once() -> None:
     """Run a single scheduler tick (useful for testing and inline embedding)."""
+    global _zombie_sweep_last_run, _org_aggregation_last_run
+
     # Always clean up stale runs first so they don't block re-triggering.
     await _recover_stale_runs()
     await _auto_close_by_date()
     await _auto_close_by_response_count()
+
+    now = time.time()
+
+    # Zombie sweep runs every 5 minutes (not every poll tick)
+    if now - _zombie_sweep_last_run >= _ZOMBIE_SWEEP_INTERVAL_SEC:
+        await sweep_zombie_runs()
+        _zombie_sweep_last_run = now
+
+    # Org aggregation runs hourly
+    if now - _org_aggregation_last_run >= _ORG_AGGREGATION_INTERVAL_SEC:
+        await run_org_aggregation()
+        _org_aggregation_last_run = now
 
     surveys = await _get_surveys_due(INTERVAL_FREE_MIN)
     if surveys:

@@ -2,52 +2,47 @@
 
 ## Architecture
 
-- **Frontend**: React + Vite + Tailwind (`app/`)
-- **Backend**: Google Cloud Functions 2nd gen, Node.js 20 (`functions/`)
-- **Auth**: Clerk (JWT-verified in Cloud Functions, ClerkProvider in frontend)
-- **Database**: Firestore (real-time subscriptions in frontend, admin SDK in functions)
+- **Frontend**: React + Vite + Tailwind (`app/`) — served via Firebase Hosting
+- **Backend**: Node.js Express API (`backend/`) — deployed to Fly.io
+- **Agents Service**: Python FastAPI (`agents/`) — AI pipeline + Crystal Intelligence — deployed to Fly.io
+- **Auth**: Clerk (JWT-verified in backend, ClerkProvider in frontend)
+- **Database**: Postgres (primary datastore for all services)
+- **Cache / Streams**: Redis (rate limiting, Crystal SSE, response stream consumer)
 - **AI**: OpenRouter (server-side only — key never exposed to browser)
-- **Storage**: Firebase Storage (signed URL pattern, not yet implemented)
-- **Hosting**: Firebase Hosting
+- **Checkpoints**: Local filesystem in dev; GCS bucket in production (set `CHECKPOINT_BUCKET`)
+- **Monitoring**: Prometheus + Grafana + Loki (local Docker Compose)
 
 ---
 
 ## Prerequisites
 
-- Node.js 20+ (functions) and Node.js 22 (local dev)
-- Firebase CLI: `npm install -g firebase-tools`
-- A Google account
+- Node.js 22+ (backend + app)
+- Python 3.11+ (agents service)
+- Docker + Docker Compose (local Postgres + Redis + monitoring)
+- Fly.io CLI: `brew install flyctl`
+- Firebase CLI (hosting only): `npm install -g firebase-tools`
 
 ---
 
-## Step 1 — Create Firebase Project
+## Step 1 — Clone and Install
 
-1. Go to https://console.firebase.google.com
-2. Click "Create a project" → name it `experient-prod`
-3. Enable Firestore (Native mode, region `us-central1`)
-4. Enable Firebase Storage
-5. Enable Firebase Hosting
+```bash
+git clone <repo-url>
+cd Experient
 
----
+# Frontend
+cd app && npm install && cd ..
 
-## Step 2 — Get Firebase Config for Frontend
+# Backend
+cd backend && npm install && cd ..
 
-1. In Firebase Console → Project Settings → General → Your apps → Add web app
-2. Register the app (name it "Experient Web")
-3. Copy the config values into `app/.env`:
-
-```env
-VITE_FIREBASE_API_KEY=AIzaSy...
-VITE_FIREBASE_AUTH_DOMAIN=experient-prod.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=experient-prod
-VITE_FIREBASE_STORAGE_BUCKET=experient-prod.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=123456789
-VITE_FIREBASE_APP_ID=1:123456789:web:abc123
+# Agents
+cd agents && python -m venv .venv && .venv/bin/pip install -r requirements.txt && cd ..
 ```
 
 ---
 
-## Step 3 — Create Clerk Account & Application
+## Step 2 — Create Clerk Application
 
 1. Go to https://clerk.com → sign up (free tier is sufficient)
 2. Create a new application → name it "Experient"
@@ -55,115 +50,152 @@ VITE_FIREBASE_APP_ID=1:123456789:web:abc123
 4. In Clerk Dashboard → API Keys:
    - Copy **Publishable Key** (`pk_live_...`)
    - Copy **Secret Key** (`sk_live_...`)
-5. Add to `app/.env`:
-
-```env
-VITE_CLERK_PUBLISHABLE_KEY=pk_live_...
-```
-
-6. Add to `functions/.env`:
-
-```env
-CLERK_SECRET_KEY=sk_live_...
-```
 
 ---
 
-## Step 4 — Get OpenRouter API Key (free)
+## Step 3 — Get OpenRouter API Key
 
 1. Go to https://openrouter.ai → sign up
 2. Dashboard → API Keys → Create key
-3. Free tier includes `meta-llama/llama-3.1-8b-instruct:free` — no credit card needed
-4. Add to `functions/.env`:
+3. Free tier includes `meta-llama/llama-3.1-8b-instruct:free`
+
+---
+
+## Step 4 — Start Local Infrastructure
+
+```bash
+docker-compose up -d   # Postgres on :5432, Redis on :6379, Grafana on :3000, Prometheus on :9090
+```
+
+Run the Postgres migrations:
+
+```bash
+# Applies all migrations in supabase/migrations/ in order
+for f in supabase/migrations/*.sql; do
+  echo "Applying $f..."
+  psql "$DATABASE_URL" -f "$f"
+done
+```
+
+---
+
+## Step 5 — Configure Environment Variables
+
+### Root `.env` (shared secrets — loaded by both backend and agents)
 
 ```env
+# Postgres
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/experient
+
+# Redis
+REDIS_URL=redis://localhost:6379
+
+# AI
 OPENROUTER_API_KEY=sk-or-v1-...
+
+# Internal service-to-service auth (CHANGE THIS IN PRODUCTION)
+AGENTS_INTERNAL_KEY=dev-internal-key-change-in-prod
+
+# Clerk
+CLERK_SECRET_KEY=sk_live_...
+```
+
+### `app/.env`
+
+```env
+VITE_CLERK_PUBLISHABLE_KEY=pk_live_...
+VITE_API_URL=http://localhost:3001
+```
+
+### `backend/.env` (if separate from root)
+
+```env
+NODE_ENV=development
+ALLOWED_ORIGIN=http://localhost:5173
+SKIP_AUTH=true   # LOCAL DEV ONLY — never set in production
+```
+
+### `agents/.env` (if separate from root)
+
+```env
+AGENTS_ENV=development   # set to 'production' for Fly.io deploy
+DATABASE_URL=postgres://postgres:postgres@localhost:5432/experient
+REDIS_URL=redis://localhost:6379
+OPENROUTER_API_KEY=sk-or-v1-...
+AGENTS_INTERNAL_KEY=dev-internal-key-change-in-prod
+
+# Checkpoint blob storage (local dev uses /tmp/checkpoints)
+# In production, set GCS_BUCKET and GCS_SERVICE_ACCOUNT_KEY:
+# CHECKPOINT_BUCKET=gs://your-bucket/checkpoints
+# GCS_SERVICE_ACCOUNT_KEY={"type":"service_account",...}
 ```
 
 ---
 
-## Step 5 — Set Cloud Function Environment Variables
+## Step 6 — Run Locally
 
-Before deploying, set runtime env vars for the functions:
+Open three terminals:
 
 ```bash
-firebase functions:secrets:set CLERK_SECRET_KEY
-firebase functions:secrets:set OPENROUTER_API_KEY
-```
+# Terminal 1 — Backend API
+cd backend && npm start          # Listens on :3001
 
-Or use `.env` files in the `functions/` directory (read by `dotenv` at startup). For production, Firebase Functions v2 supports env vars via the Firebase console under Functions → Configuration.
+# Terminal 2 — Agents service
+cd agents && .venv/bin/python -m uvicorn main:app --reload --port 8000
+
+# Terminal 3 — Frontend
+cd app && npm run dev            # Listens on :5173
+```
 
 ---
 
-## Step 6 — Deploy
+## Step 7 — Deploy to Fly.io (Backend + Agents)
+
+### Backend
 
 ```bash
-# From project root (/Users/spatil/Documents/Projects/Experient/)
+cd backend
+fly launch                     # First time only
+fly secrets set DATABASE_URL=... REDIS_URL=... CLERK_SECRET_KEY=... \
+  OPENROUTER_API_KEY=... AGENTS_INTERNAL_KEY=<strong-random-secret>
+fly deploy
+```
 
-# Log in to Firebase
-firebase login
+### Agents Service
 
-# Set the project
-firebase use experient-prod
+```bash
+cd agents
+fly launch                     # First time only
+fly secrets set DATABASE_URL=... REDIS_URL=... OPENROUTER_API_KEY=... \
+  AGENTS_INTERNAL_KEY=<same-key-as-backend> \
+  CHECKPOINT_BUCKET=gs://your-bucket/checkpoints \
+  GCS_SERVICE_ACCOUNT_KEY='{"type":"service_account",...}'
+fly secrets set AGENTS_ENV=production
+fly deploy
+```
 
-# Deploy everything
-firebase deploy
+### Frontend
 
-# Or deploy only functions
-firebase deploy --only functions
-
-# Or deploy only hosting
+```bash
+cd app
+VITE_API_URL=https://your-backend.fly.dev npm run build
 firebase deploy --only hosting
 ```
 
 ---
 
-## Step 7 — Set VITE_API_URL for Production
+## Step 8 — GCS Checkpoint Bucket Setup (Production)
 
-After deploying functions, set the API URL in your hosting environment:
+Crystal Intelligence checkpoints are written to GCS in production.
 
-```env
-VITE_API_URL=https://us-central1-experient-prod.cloudfunctions.net/api
-```
-
-Rebuild the frontend with this value:
-
-```bash
-cd app
-npm run build
-firebase deploy --only hosting
-```
-
----
-
-## Local Development (Firebase Emulator)
-
-1. Install emulators:
-
-```bash
-firebase setup:emulators:firestore
-firebase setup:emulators:functions
-```
-
-2. Start emulators:
-
-```bash
-firebase emulators:start --only functions,firestore
-```
-
-3. In `app/.env`, set:
-
-```env
-VITE_USE_EMULATOR=true
-VITE_API_URL=http://localhost:5001/experient-prod/us-central1/api
-```
-
-4. In a separate terminal:
-
-```bash
-cd app
-npm run dev
-```
+1. Create a GCS bucket: `gs://your-org-experient-checkpoints`
+2. Create a service account with `Storage Object Admin` on the bucket
+3. Download the JSON key
+4. Set the env vars on the agents Fly.io deployment:
+   ```bash
+   fly secrets set CHECKPOINT_BUCKET=gs://your-org-experient-checkpoints/checkpoints
+   fly secrets set GCS_SERVICE_ACCOUNT_KEY="$(cat service-account-key.json)"
+   ```
 
 ---
 
@@ -171,61 +203,63 @@ npm run dev
 
 ### `app/.env`
 
-| Variable | Description |
-|---|---|
-| `VITE_FIREBASE_API_KEY` | Firebase web API key |
-| `VITE_FIREBASE_AUTH_DOMAIN` | Firebase auth domain |
-| `VITE_FIREBASE_PROJECT_ID` | Firebase project ID |
-| `VITE_FIREBASE_STORAGE_BUCKET` | Firebase storage bucket |
-| `VITE_FIREBASE_MESSAGING_SENDER_ID` | Firebase messaging sender ID |
-| `VITE_FIREBASE_APP_ID` | Firebase app ID |
-| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key (`pk_live_...`) |
-| `VITE_API_URL` | Cloud Functions base URL (default: local emulator) |
-| `VITE_USE_EMULATOR` | Set to `true` to connect Firestore to local emulator |
+| Variable | Required | Description |
+|---|---|---|
+| `VITE_CLERK_PUBLISHABLE_KEY` | Yes | Clerk publishable key |
+| `VITE_API_URL` | Yes | Backend API base URL |
 
-### `functions/.env`
+### Backend (Fly.io secrets or `.env`)
 
-| Variable | Description |
-|---|---|
-| `CLERK_SECRET_KEY` | Clerk secret key (`sk_live_...`) for JWT verification |
-| `OPENROUTER_API_KEY` | OpenRouter API key for AI generation |
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | Yes | Postgres connection string |
+| `CLERK_SECRET_KEY` | Yes | Clerk secret key for JWT verification |
+| `AGENTS_INTERNAL_KEY` | Yes | Shared secret with agents service — **change from default!** |
+| `ALLOWED_ORIGIN` | Yes | CORS allowed origin (frontend URL) |
+| `REDIS_URL` | Recommended | Redis for rate limiting |
+| `OPENROUTER_API_KEY` | Yes | OpenRouter for AI generation |
+| `SKIP_AUTH` | No | `true` for local dev only — never in production |
+| `NODE_ENV` | No | Set to `production` on Fly.io |
 
----
+### Agents Service (Fly.io secrets or `.env`)
 
-## Data Model
-
-```
-/orgs/{orgId}/
-  surveys/{surveyId}
-    title, status, questions[], publishToken, createdBy, orgId, createdAt, updatedAt
-    responses/{responseId}
-      answers[], npsScore, submittedAt, orgId, surveyId
-    insights/{insightId}
-      summary, npsScore, topics[], sentimentBreakdown, topPhrases, generatedAt, responseCount
-  workflows/{workflowId}
-    name, condition, action, status, triggerCount, createdBy, orgId, createdAt
-```
+| Variable | Required | Description |
+|---|---|---|
+| `DATABASE_URL` | Yes | Postgres connection string |
+| `REDIS_URL` | Yes | Redis for SSE streaming and response consumer |
+| `OPENROUTER_API_KEY` | Yes | OpenRouter for Crystal AI and insight LLMs |
+| `AGENTS_INTERNAL_KEY` | Yes | Must match backend value — **change from default!** |
+| `AGENTS_ENV` | Yes | Set to `production` on Fly.io |
+| `CHECKPOINT_BUCKET` | Production | GCS bucket URI for Crystal checkpoints |
+| `GCS_SERVICE_ACCOUNT_KEY` | Production | JSON service account key for GCS access |
 
 ---
 
-## API Endpoints
+## Production Security Checklist
 
-| Method | Path | Auth | Description |
-|---|---|---|---|
-| GET | `/api/health` | None | Health check |
-| GET | `/api/surveys` | JWT | List surveys for org |
-| POST | `/api/surveys` | JWT | Create survey |
-| GET | `/api/surveys/:id` | JWT | Get survey |
-| PUT | `/api/surveys/:id` | JWT | Update survey |
-| DELETE | `/api/surveys/:id` | JWT | Delete survey |
-| POST | `/api/surveys/:id/publish` | JWT | Publish survey |
-| POST | `/api/surveys/:id/responses` | None | Submit response (public) |
-| GET | `/api/surveys/:id/responses` | JWT | Get responses |
-| GET | `/api/surveys/:id/insights` | JWT | Get latest insights |
-| POST | `/api/ai/generate-survey` | JWT | Generate survey from intent |
-| POST | `/api/ai/analyze-insights` | JWT | Analyze survey responses |
-| GET | `/api/workflows` | JWT | List workflows |
-| POST | `/api/workflows` | JWT | Create workflow |
-| PUT | `/api/workflows/:id` | JWT | Update workflow |
-| DELETE | `/api/workflows/:id` | JWT | Delete workflow |
-| POST | `/api/workflows/:id/toggle` | JWT | Toggle workflow status |
+- [ ] `AGENTS_INTERNAL_KEY` is a strong random secret (not `dev-internal-key-change-in-prod`)
+- [ ] `SKIP_AUTH` is NOT set (or explicitly `false`) on any production service
+- [ ] `DATABASE_URL` uses SSL (`?sslmode=require` for managed Postgres)
+- [ ] GCS bucket has restrictive IAM (only the agents service account has write access)
+- [ ] Clerk JWT signing key is rotated after any suspected compromise
+- [ ] Redis is not publicly accessible (use private networking on Fly.io)
+
+---
+
+## Local Monitoring
+
+- **Grafana**: http://localhost:3000 (admin/admin) — dashboards for request rates, error rates, AI latency
+- **Prometheus**: http://localhost:9090 — raw metrics scrape
+- **Loki**: structured logs from backend + agents (via Grafana Explore)
+
+---
+
+## Running Tests
+
+```bash
+# Frontend
+cd app && PATH=~/.nvm/versions/node/v22.22.0/bin:$PATH npx vitest run
+
+# Python (agents)
+cd agents && .venv/bin/pytest
+```

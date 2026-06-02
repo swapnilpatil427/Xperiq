@@ -17,7 +17,6 @@ import { Icon } from '../components/Icon';
 import { Button } from '@/components/ui/button';
 import { SurveyScopePicker, type SurveyScope } from '../components/SurveyScopePicker';
 import { UnifiedInsightsView } from './insights/UnifiedInsightsView';
-import { CrystalPanel } from '../components/CrystalPanel';
 import { useCrystalPanel } from '../contexts/crystalPanel';
 import type { AgenticInsight, SurveyTopic } from '../types';
 
@@ -45,7 +44,7 @@ export function InsightsDashboardPage() {
   useSetPageTitle(t('insights.pageTitle'), t('insights.dateFilter'));
 
   const { surveys, loading: surveysLoading } = useSurveys();
-  const { setScope: setCrystalScope, openCrystal } = useCrystalPanel();
+  const { setScope: setCrystalScope, openCrystal, setCrystalData } = useCrystalPanel();
 
   // ── Scope: URL is the source of truth. ?survey=ID for single survey, nothing for 'all'. ──
   const scope = useMemo<SurveyScope>(
@@ -136,17 +135,19 @@ export function InsightsDashboardPage() {
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadAgentic = useCallback(async () => {
-    if (!focusSurveyId) { setAgenticInsights([]); return; }
+    if (!focusSurveyId) { setAgenticInsights([]); setCrystalData([], []); return; }
     setAgenticLoading(true);
     try {
       const { insights: list } = await api.listInsights(focusSurveyId);
-      setAgenticInsights(list ?? []);
+      const loaded = list ?? [];
+      setAgenticInsights(loaded);
+      setCrystalData(loaded, topics);
     } catch {
       setAgenticInsights([]);
     } finally {
       setAgenticLoading(false);
     }
-  }, [api, focusSurveyId]);
+  }, [api, focusSurveyId, topics, setCrystalData]);
 
   useEffect(() => {
     loadAgentic();
@@ -345,8 +346,7 @@ export function InsightsDashboardPage() {
         orgAvgNps={orgNps}
       />
 
-      {/* Crystal Panel — fixed overlay on the right, wired to useCrystalPanel context */}
-      <CrystalPanel scope={scope} surveys={surveys} insights={insights} agenticInsights={agenticInsights} topics={topics} />
+      {/* Crystal Panel is mounted globally in AppShell; data injected via setCrystalData() */}
     </div>
   );
 }

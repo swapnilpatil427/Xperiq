@@ -78,8 +78,8 @@ class TestDevEnv:
             assert cfg.temperature is not None, f"dev/{agent} temperature must be set (no thinking)"
 
     def test_two_pools(self):
-        """Dev uses two DeepSeek free models for independent rate-limit pools.
-        Pool A: deepseek-r1:free (reasoning roles). Pool B: deepseek-v4-flash:free (fast roles).
+        """Dev uses multiple free model pools for independent rate-limit buckets.
+        Pool A: openai/gpt-oss-120b:free (reasoning). Pool B: openai/gpt-oss-20b:free (fast).
         """
         models_used = set(_ROUTING["dev"][agent].model for agent in ALL_AGENTS)
         assert len(models_used) >= 2, (
@@ -108,14 +108,13 @@ class TestDevPaidEnv:
             cfg = _ROUTING["dev-paid"][agent]
             assert not cfg.use_anthropic_sdk, f"dev-paid/{agent} should not use Anthropic SDK"
 
-    def test_cross_vendor_qc_intentionally_waived(self):
-        # dev-paid is single-vendor (all openai) for cost simplicity.
-        # Cross-vendor QC is enforced in staging and prod — not required here.
+    def test_cross_vendor_qc(self):
+        """QC uses Claude Haiku 4.5 — different vendor from OpenAI reasoning creator."""
         creator_provider = _ROUTING["dev-paid"]["creator"].model.split("/")[0]
         qc_provider      = _ROUTING["dev-paid"]["qc"].model.split("/")[0]
-        assert creator_provider == qc_provider == "openai", (
-            "dev-paid must use a single openai vendor for cost simplicity"
-        )
+        assert creator_provider == "openai", f"dev-paid creator should be OpenAI, got '{creator_provider}'"
+        assert qc_provider == "anthropic", f"dev-paid QC should be Anthropic, got '{qc_provider}'"
+        assert creator_provider != qc_provider
 
     def test_all_models_support_tools(self):
         """dev-paid uses paid variants of same tool-capable models as dev."""

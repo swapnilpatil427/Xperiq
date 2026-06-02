@@ -316,30 +316,36 @@ def compute_nps_alignment(
         non_nps_score  = round((non_promoters / n0_nm - non_detractors / n0_nm) * 100, 1)
         nps_impact = round(topic_nps_score - non_nps_score, 1)
 
-    # Point-biserial driver_score — only meaningful with enough data
+    # Point-biserial driver_score: does mentioning this topic predict NPS?
+    # Computed at n≥10 for internal ranking, but only reliable (publishable)
+    # at n≥30 — flagged via driver_score_reliable.
+    # Formula: r_pb = (M1 - M0) / σ_Y × √(n1·n0 / n²)
+    # σ_Y uses POPULATION std (÷n, not n-1) per point-biserial definition.
     driver_score: float | None = None
+    driver_score_reliable = False
     n0 = len(non_mentioner_scores)
     n  = n1 + n0
     if n >= 10 and n1 > 0 and n0 > 0:
-        all_nps = mentioner_scores + non_mentioner_scores
-        M1 = sum(mentioner_scores) / n1
-        M0 = sum(non_mentioner_scores) / n0
-        # Population std (divides by n) — correct for point-biserial formula
+        all_nps  = mentioner_scores + non_mentioner_scores
+        M1       = sum(mentioner_scores) / n1
+        M0       = sum(non_mentioner_scores) / n0
         mean_all = sum(all_nps) / n
         variance = sum((x - mean_all) ** 2 for x in all_nps) / n
-        sigma_Y = math.sqrt(variance) if variance > 0 else 0.0
+        sigma_Y  = math.sqrt(variance) if variance > 0 else 0.0
         if sigma_Y > 0:
-            r_pb = (M1 - M0) / sigma_Y * math.sqrt(n1 * n0 / (n * n))
+            r_pb         = (M1 - M0) / sigma_Y * math.sqrt(n1 * n0 / (n * n))
             driver_score = round(max(-1.0, min(1.0, r_pb)), 3)
+        driver_score_reliable = (n >= 30)  # reliable for publishing at n≥30
 
     return {
-        "avg_nps_response": avg_nps_response,
-        "topic_nps_score":  topic_nps_score,
-        "nps_impact":       nps_impact,
-        "promoter_pct":     promoter_pct,
-        "detractor_pct":    detractor_pct,
-        "passive_pct":      passive_pct,
-        "driver_score":     driver_score,
+        "avg_nps_response":     avg_nps_response,
+        "topic_nps_score":      topic_nps_score,
+        "nps_impact":           nps_impact,
+        "promoter_pct":         promoter_pct,
+        "detractor_pct":        detractor_pct,
+        "passive_pct":          passive_pct,
+        "driver_score":         driver_score,
+        "driver_score_reliable": driver_score_reliable,
     }
 
 
@@ -511,14 +517,25 @@ def compute_full_topic_signals(
     # (cluster["size"] is ABSA items; one respondent answering 2 open-text questions
     # contributes 2 items but is ONE respondent — overcounting inflates response_pct
     # and shifts confidence_level thresholds incorrectly).
-    response_count   = len(cluster_response_ids) if cluster_response_ids else cluster.get("size", len(absa_results))
-    total_responses  = max(1, survey_metrics.get("total_responses", 1))
-    response_pct     = round(response_count / total_responses * 100, 1)
-    coverage = response_count / total_responses  # total_responses already max'd to 1 above
-    confidence_level = (
-        "high"   if response_count >= 30 and coverage >= 0.3
-        else ("low" if response_count < 5 else "medium")
-    )
+    response_count  = len(cluster_response_ids) if cluster_response_ids else cluster.get("size", len(absa_results))
+    total_responses = max(1, survey_metrics.get("total_responses", 1))
+    response_pct    = round(response_count / total_responses * 100, 1)
+
+    # Confidence based purely on sample size (industry standard: Medallia/Qualtrics).
+    # The old coverage >= 0.3 threshold was wrong for enterprise surveys: at n=1000
+    # total, a topic mentioned by 50 people (5% coverage, n=50) is statistically
+    # solid (MOE < 14%) but was labelled "medium" by the coverage rule.
+    #
+    # Thresholds (based on MOE for a proportion at 95% CI):
+    #   low:    n < 10   — MOE > 60%; virtually no statistical reliability
+    #   medium: 10≤n<30  — MOE 18-60%; directional only, treat with caution
+    #   high:   n ≥ 30   — MOE < 18%; meets Bain/Satmetrix minimum for NPS
+    if response_count >= 30:
+        confidence_level = "high"
+    elif response_count >= 10:
+        confidence_level = "medium"
+    else:
+        confidence_level = "low"
 
     return {
         # Volume

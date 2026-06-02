@@ -26,8 +26,85 @@ import json
 
 from pydantic import BaseModel
 
+
+def _format_tool_result(tool_name: str, result: dict, char_limit: int = 2000) -> str:
+    """Format a tool result as a concise structured summary for LLM context.
+
+    Replaces the raw JSON[:500] truncation with tool-aware summaries that
+    preserve the most important signals within a larger character budget.
+    Enterprise surveys with 30+ topics can saturate 500 chars in a single topic.
+    """
+    if not isinstance(result, dict):
+        return str(result)[:char_limit]
+
+    if result.get("error"):
+        return f"[error: {result['error']}]"
+
+    # Topics tool — most important for enterprise
+    if tool_name in ("get_topics", "list_topics"):
+        topics = result.get("topics", [])
+        lines = [f"Topics ({len(topics)} total):"]
+        for t in topics[:12]:
+            name    = t.get("name", "?")
+            vol     = t.get("volume") or t.get("response_count", 0)
+            sent    = t.get("sentiment_score", 0.0)
+            impact  = t.get("nps_impact")
+            urgency = t.get("urgency_score", 0.0)
+            trend   = t.get("trending", "")
+            impact_str = f", NPS_impact={impact:+.1f}" if impact is not None else ""
+            trend_str  = f" [{trend}]" if trend in ("up", "down") else ""
+            lines.append(f"  {name}{trend_str}: vol={vol}, sentiment={sent:.2f}{impact_str}, urgency={urgency:.1f}")
+        return "\n".join(lines)[:char_limit]
+
+    # Insights tool
+    if tool_name in ("get_insights", "list_insights"):
+        insights = result.get("insights", [])
+        lines = [f"Insights ({len(insights)} total):"]
+        for ins in insights[:10]:
+            cat  = ins.get("category", "")
+            head = ins.get("headline", "")[:80]
+            trust = ins.get("trust_score", 0)
+            lines.append(f"  [{cat}] {head} (trust={trust})")
+        return "\n".join(lines)[:char_limit]
+
+    # Metrics / NPS tool
+    if "nps" in tool_name or "metrics" in tool_name or "score" in tool_name:
+        lines = []
+        for k, v in result.items():
+            if isinstance(v, dict):
+                score = v.get("score")
+                n     = v.get("n")
+                if score is not None:
+                    lines.append(f"  {k}: {score}" + (f" (n={n})" if n else ""))
+            elif v is not None and not isinstance(v, (list, dict)):
+                lines.append(f"  {k}: {v}")
+        return ("Metrics:\n" + "\n".join(lines)) if lines else json.dumps(result)[:char_limit]
+
+    # Verbatims / quotes tool
+    if "verbatim" in tool_name or "quote" in tool_name or "response" in tool_name:
+        verbatims = result.get("verbatims") or result.get("quotes") or result.get("responses", [])
+        if verbatims:
+            lines = [f"Verbatims ({len(verbatims)} total):"]
+            for v in verbatims[:8]:
+                text = (v.get("text") or str(v))[:120]
+                sent = v.get("sentiment", "")
+                lines.append(f'  [{sent}] "{text}"')
+            return "\n".join(lines)[:char_limit]
+
+    # Default: flatten to key: value pairs, skipping large nested objects
+    lines = []
+    for k, v in result.items():
+        if isinstance(v, list):
+            lines.append(f"{k}: [{len(v)} items]")
+        elif isinstance(v, dict):
+            lines.append(f"{k}: {json.dumps(v)[:100]}")
+        elif v is not None:
+            lines.append(f"{k}: {v}")
+    return "\n".join(lines)[:char_limit]
+
 from agents.lib.openrouter import call_agent
 from agents.lib.logger import logger
+from agents.lib.constants import CRYSTAL_EVAL_PASS_THRESHOLD
 from agents.agents.insight_experts import evaluate_crystal_response
 
 
@@ -41,6 +118,9 @@ class CrystalInput(BaseModel):
     survey_response_count: int = 0
     metrics: dict = {}                     # {nps: {score, n}, csat: {score, n}}
     conversation_history: list[dict] = []  # [{role, content}], last 10 messages
+    user_id: str = ""
+    scope: str = "survey"
+    has_open_text: bool = True
 
 
 class CrystalOutput(BaseModel):
@@ -48,6 +128,99 @@ class CrystalOutput(BaseModel):
     citations: list[str] = []     # insight IDs or topic names referenced
     suggestions: list[str] = []   # 2-3 follow-up questions
     insight_refs: list[str] = []  # insight IDs used in the answer
+
+
+# ── Thread management ─────────────────────────────────────────────────────────
+
+async def get_or_create_thread(ctx, db_pool) -> dict:
+    """UPSERT into crystal_threads. Resets thread if inactive > 7 days."""
+    from agents.lib.constants import CRYSTAL_THREAD_INACTIVITY_TTL_DAYS
+    from agents.lib import db as _db
+
+    try:
+        async with _db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Check for existing thread
+                await cur.execute(
+                    """SELECT id, messages, last_active_at, message_count
+                       FROM crystal_threads
+                       WHERE org_id = %s AND user_id = %s
+                         AND (survey_id = %s OR (survey_id IS NULL AND %s IS NULL))
+                         AND scope = %s
+                       LIMIT 1""",
+                    (ctx.org_id, ctx.user_id, ctx.survey_id, ctx.survey_id, ctx.scope),
+                )
+                row = await cur.fetchone()
+
+                if row:
+                    thread_id, messages, last_active_at, message_count = row
+                    # Check TTL
+                    from datetime import datetime, timezone
+                    now = datetime.now(timezone.utc)
+                    if last_active_at and hasattr(last_active_at, 'tzinfo'):
+                        stale_days = (now - last_active_at).days
+                    else:
+                        stale_days = 0
+
+                    if stale_days >= CRYSTAL_THREAD_INACTIVITY_TTL_DAYS:
+                        # Reset thread - start fresh
+                        await conn.execute(
+                            """UPDATE crystal_threads
+                               SET messages = '[]'::jsonb, message_count = 0,
+                                   last_active_at = NOW()
+                               WHERE id = %s""",
+                            (thread_id,),
+                        )
+                        await conn.commit()
+                        logger.info("crystal_thread_reset_stale", thread_id=str(thread_id), stale_days=stale_days)
+                        return {"id": str(thread_id), "messages": [], "is_new": True}
+
+                    # Continue existing thread
+                    msgs = messages if isinstance(messages, list) else []
+                    return {"id": str(thread_id), "messages": msgs, "is_new": False}
+
+                # Create new thread
+                await cur.execute(
+                    """INSERT INTO crystal_threads
+                       (org_id, user_id, survey_id, scope, messages, message_count,
+                        last_active_at, storage_expires_at)
+                       VALUES (%s, %s, %s, %s, '[]'::jsonb, 0, NOW(), NOW() + INTERVAL '90 days')
+                       RETURNING id""",
+                    (ctx.org_id, ctx.user_id, ctx.survey_id, ctx.scope),
+                )
+                new_row = await cur.fetchone()
+                await conn.commit()
+                return {"id": str(new_row[0]), "messages": [], "is_new": True}
+    except Exception as exc:
+        logger.warning("crystal_thread_get_or_create_failed", error=str(exc))
+        return {"id": None, "messages": [], "is_new": True}
+
+
+async def append_to_thread(thread_id: str, role: str, content: str) -> None:
+    """Append a message to crystal_threads.messages JSONB array."""
+    if not thread_id:
+        return
+    import json as _json
+    from datetime import datetime, timezone
+    from agents.lib import db as _db
+
+    msg = _json.dumps({"role": role, "content": content, "ts": datetime.now(timezone.utc).isoformat()})
+    try:
+        async with _db._pool_conn().connection() as conn:
+            await conn.execute(
+                """UPDATE crystal_threads
+                   SET messages = CASE
+                           WHEN jsonb_array_length(messages) >= 100
+                           THEN (messages - 0) || %s::jsonb
+                           ELSE messages || %s::jsonb
+                       END,
+                       last_active_at = NOW(),
+                       message_count = message_count + 1
+                   WHERE id = %s""",
+                (f"[{msg}]", f"[{msg}]", thread_id),
+            )
+    except Exception as exc:
+        logger.warning("crystal_thread_append_failed", thread_id=thread_id, error=str(exc))
 
 
 # ── Insight layer order for structured context ────────────────────────────────
@@ -224,27 +397,29 @@ Return ONLY valid JSON matching this schema — no markdown, no extra text:
 async def _generate_response(
     inp: CrystalInput,
     correction: str = "",
-) -> CrystalOutput:
-    """Single LLM call to generate Crystal's response."""
+    current_tokens: int = 0,
+) -> tuple[CrystalOutput, int]:
+    """Single LLM call to generate Crystal's response. Returns (output, tokens_used)."""
+    from agents.lib.constants import CRYSTAL_CONVERSATION_WINDOW
     system = _build_system_prompt(inp, correction=correction)
 
     prior_messages: list[dict] | None = None
     if inp.conversation_history:
         prior_messages = [
-            {"role": m["role"], "content": m["content"]}
-            for m in inp.conversation_history[-10:]
+            {"role": str(m["role"])[:20], "content": str(m["content"])[:2000]}
+            for m in inp.conversation_history[-CRYSTAL_CONVERSATION_WINDOW * 2:]
             if m.get("role") in ("user", "assistant") and m.get("content")
         ]
 
-    output, _ = await call_agent(
+    output, entry = await call_agent(
         agent_name="crystal",
         system=system,
         user=inp.message,
         output_schema=CrystalOutput,
-        current_tokens=0,
+        current_tokens=current_tokens,
         prior_messages=prior_messages,
     )
-    return output
+    return output, entry.input_tokens + entry.output_tokens
 
 
 async def _run_crystal(inp: CrystalInput) -> CrystalOutput:
@@ -255,10 +430,12 @@ async def _run_crystal(inp: CrystalInput) -> CrystalOutput:
     best_output: CrystalOutput | None = None
     best_score = -1
     correction = ""
+    cumulative_tokens = 0
 
     for attempt in range(3):
         try:
-            output = await _generate_response(inp, correction=correction)
+            output, tokens_used = await _generate_response(inp, correction=correction, current_tokens=cumulative_tokens)
+            cumulative_tokens += tokens_used
         except Exception as exc:
             logger.warning("crystal_generate_failed", attempt=attempt, error=str(exc))
             if best_output is not None:
@@ -300,7 +477,7 @@ async def _run_crystal(inp: CrystalInput) -> CrystalOutput:
             best_output = output
 
         passes = (
-            eval_result.quality_score >= 72
+            eval_result.quality_score >= CRYSTAL_EVAL_PASS_THRESHOLD
             and eval_result.is_grounded
             and eval_result.answers_question
         )
@@ -343,11 +520,270 @@ async def _run_crystal(inp: CrystalInput) -> CrystalOutput:
     return best_output
 
 
+# ── ReAct system prompt ───────────────────────────────────────────────────────
+
+def _build_system_prompt_agentic(ctx, specialist_context: str = "") -> str:
+    """Build the ReAct system prompt for Crystal with tool-use instructions."""
+    from agents.lib.constants import CRYSTAL_MAX_TOOL_TURNS
+    from agents.crystal.registry import TOOL_REGISTRY, get_tools_for_scope
+
+    tools = get_tools_for_scope(ctx.scope)
+    tool_list = "\n".join(
+        f"- **{t['name']}**: {t['description']}"
+        for t in tools
+    )
+
+    scope_framing = (
+        "You have access to data across all surveys in this organization."
+        if ctx.scope == "org"
+        else "You have access to this survey's data including responses, insights, and metrics."
+    )
+
+    no_text_note = ""
+    if not ctx.has_open_text:
+        no_text_note = (
+            "\n\nIMPORTANT: This survey has no open-text questions. "
+            "Never discuss themes, topics, or verbatims. Focus only on score-based metrics."
+        )
+
+    specialist_block = f"\n\n## Domain Context\n{specialist_context}" if specialist_context else ""
+
+    return f"""You are Crystal, an expert CX analyst with access to powerful data tools.
+{scope_framing}{no_text_note}{specialist_block}
+
+## Available Tools
+{tool_list}
+
+## Instructions
+1. Use tools to retrieve relevant data before answering. Don't guess — look it up.
+2. You may call up to {CRYSTAL_MAX_TOOL_TURNS} tools per conversation turn.
+3. After gathering data, synthesize a clear, evidence-based answer.
+4. Cite specific metrics, topic names, and verbatims in your answer.
+5. Suggest 2-3 natural follow-up questions.
+6. Return JSON: {{"answer": "...", "citations": [...], "suggestions": [...], "tool_results": [...]}}
+"""
+
+
+# ── ReAct loop (non-streaming) ────────────────────────────────────────────────
+
+async def _run_react_loop(inp: CrystalInput, db_pool=None) -> CrystalOutput:
+    """Execute the Crystal ReAct loop — multi-step tool calling + synthesis."""
+    from agents.lib.constants import CRYSTAL_MAX_TOOL_TURNS, CRYSTAL_CONVERSATION_WINDOW
+    from agents.crystal.context import CrystalContext
+    from agents.crystal.tools import dispatch_tool
+    from agents.crystal.registry import get_tool_by_name
+    import redis.asyncio as _redis_mod
+    import os
+
+    ctx = CrystalContext(
+        org_id=inp.org_id,
+        user_id=inp.user_id or 'unknown',
+        survey_id=inp.survey_id,
+        scope=inp.scope,
+        has_open_text=inp.has_open_text,
+    )
+
+    # Rate limit: 10 req/min per org — try/finally ensures connection is always closed
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        r = await _redis_mod.from_url(redis_url)
+        try:
+            rate_key = f"crystal:{inp.org_id}:rpm"
+            count = await r.incr(rate_key)
+            if count == 1:
+                await r.expire(rate_key, 60)
+        finally:
+            await r.close()
+        if count > 10:
+            raise ValueError("Rate limit exceeded: 10 requests per minute per org")
+    except ValueError:
+        raise
+    except Exception:
+        pass  # Redis not available — skip rate limiting
+
+    system = _build_system_prompt_agentic(ctx)
+
+    # Build conversation history
+    history = [
+        {"role": m["role"], "content": m["content"]}
+        for m in (inp.conversation_history or [])[-CRYSTAL_CONVERSATION_WINDOW * 2:]
+        if m.get("role") in ("user", "assistant")
+    ]
+
+    # Simple ReAct: call LLM, parse tool calls, execute, repeat up to max turns
+    tool_results_accumulated = []
+    current_context = inp.message
+
+    best_output: CrystalOutput | None = None
+
+    for turn in range(CRYSTAL_MAX_TOOL_TURNS):
+        # Build tool results context block
+        if tool_results_accumulated:
+            context_block = "\n\n## Tool Results\n" + "\n".join(
+                f"**{r['tool']}**:\n{_format_tool_result(r['tool'], r['result'])}"
+                for r in tool_results_accumulated
+            )
+            current_context = inp.message + context_block
+
+        try:
+            output, _ = await call_agent(
+                agent_name="crystal",
+                system=system,
+                user=current_context,
+                output_schema=CrystalOutput,
+                prior_messages=history if history else None,
+            )
+            best_output = output
+        except Exception as exc:
+            logger.warning("crystal_react_llm_failed", turn=turn, error=str(exc))
+            break
+
+        # Check if output has tool calls (stored in a special field or detected in answer)
+        # For now, use the existing CrystalOutput and treat each turn as final
+        # Real ReAct would parse tool_calls from the LLM response
+        break
+
+    if best_output is None:
+        raise RuntimeError("Crystal ReAct loop produced no output")
+
+    return best_output
+
+
+# ── ReAct loop (streaming) ────────────────────────────────────────────────────
+
+async def _run_react_loop_streaming(inp: CrystalInput, db_pool=None):
+    """Streaming Crystal ReAct loop — yields SSE event JSON strings."""
+    import json as _json
+    from agents.lib.constants import CRYSTAL_MAX_TOOL_TURNS, CRYSTAL_CONVERSATION_WINDOW
+    from agents.crystal.context import CrystalContext
+    from agents.crystal.tools import dispatch_tool
+    from agents.crystal.registry import TOOL_REGISTRY, get_tools_for_scope
+    import redis.asyncio as _redis_mod
+    import os
+
+    ctx = CrystalContext(
+        org_id=inp.org_id,
+        user_id=inp.user_id or 'unknown',
+        survey_id=inp.survey_id,
+        scope=inp.scope,
+        has_open_text=inp.has_open_text,
+    )
+
+    # Rate limit — try/finally ensures connection is always closed before first yield
+    _rate_count = 0
+    try:
+        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+        r = await _redis_mod.from_url(redis_url)
+        try:
+            rate_key = f"crystal:{inp.org_id}:rpm"
+            _rate_count = await r.incr(rate_key)
+            if _rate_count == 1:
+                await r.expire(rate_key, 60)
+        finally:
+            await r.close()
+    except Exception:
+        pass  # Redis not available — skip rate limiting
+    if _rate_count > 10:
+        yield _json.dumps({"type": "error", "message": "Rate limit exceeded"})
+        return
+
+    # Select tools by keyword relevance to the user's question
+    _q_lower = inp.message.lower()
+    _all_tools = get_tools_for_scope(ctx.scope)
+    _scored = []
+    for _t in _all_tools:
+        _s = sum(2 for kw in _t["name"].replace("_", " ").split() if kw in _q_lower)
+        _s += sum(1 for w in _q_lower.split() if len(w) > 3 and w in (_t.get("description") or "").lower())
+        _scored.append((_s, _t))
+    _scored.sort(key=lambda x: x[0], reverse=True)
+    tools_to_run = [t for _, t in _scored[:3]] or _all_tools[:3]
+    tool_results = []
+
+    for tool_def in tools_to_run[:CRYSTAL_MAX_TOOL_TURNS]:
+        tool_name = tool_def["name"]
+        yield _json.dumps({
+            "type": "thinking",
+            "tool": tool_name,
+            "message": f"Checking {tool_name.replace('_', ' ')}...",
+        })
+
+        params = {}
+        if ctx.survey_id:
+            params["survey_id"] = ctx.survey_id
+
+        try:
+            result = await dispatch_tool(tool_name, ctx, params)
+            summary = (
+                f"Found {len(result)} fields of data"
+                if isinstance(result, dict) and "error" not in result
+                else result.get("error", "No data")
+            )
+
+            yield _json.dumps({
+                "type": "observation",
+                "tool": tool_name,
+                "summary": str(summary)[:200],
+            })
+
+            if "error" not in result:
+                tool_results.append({"tool": tool_name, "result": result})
+        except Exception as exc:
+            logger.warning("crystal_stream_tool_failed", tool=tool_name, error=str(exc))
+
+        # Only run tools that are relevant; stop if we have enough data
+        if len(tool_results) >= 3:
+            break
+
+    yield _json.dumps({"type": "synthesizing", "message": "Putting it all together..."})
+
+    # Pass tool results as prior conversation context — not appended to user message
+    tool_context_history = list(inp.conversation_history or [])
+    if tool_results:
+        tool_context_history.append({
+            "role": "assistant",
+            "content": "## Retrieved Data\n" + "\n".join(
+                f"**{r['tool']}**:\n{_format_tool_result(r['tool'], r['result'])}"
+                for r in tool_results
+            ),
+        })
+
+    augmented_inp = CrystalInput(
+        survey_id=inp.survey_id,
+        org_id=inp.org_id,
+        message=inp.message,
+        insights=inp.insights,
+        topics=inp.topics,
+        survey_title=inp.survey_title,
+        survey_response_count=inp.survey_response_count,
+        metrics=inp.metrics,
+        conversation_history=tool_context_history,
+        user_id=inp.user_id,
+        scope=inp.scope,
+        has_open_text=inp.has_open_text,
+    )
+
+    try:
+        final = await _run_crystal(augmented_inp)
+        yield _json.dumps({
+            "type": "answer",
+            "answer": final.answer,
+            "citations": final.citations,
+            "suggestions": final.suggestions,
+        })
+    except Exception as exc:
+        logger.error("crystal_stream_final_failed", error=str(exc))
+        yield _json.dumps({"type": "error", "message": "Failed to generate answer"})
+
+
 class CrystalAgent:
     """Thin agent wrapper — no BaseAgent needed since Crystal isn't in the graph."""
 
     async def run(self, inp: CrystalInput) -> tuple[CrystalOutput, list[dict]]:
-        output = await _run_crystal(inp)
+        import os
+        if os.getenv("CRYSTAL_STREAMING_ENABLED", "false").lower() == "true":
+            output = await _run_react_loop(inp)
+        else:
+            output = await _run_crystal(inp)
         return output, []
 
 

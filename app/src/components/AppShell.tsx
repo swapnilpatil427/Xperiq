@@ -6,8 +6,10 @@ import { SideNav } from './SideNav';
 import { TopBar } from './TopBar';
 import { BottomNav } from './BottomNav';
 import { AppFooter } from './AppFooter';
+import { CrystalPanel } from './CrystalPanel';
 import { useSidebarState } from '../hooks/useSidebarState';
 import { useBreakpoint } from '../hooks/useBreakpoint';
+import { useSurveys } from '../hooks/useSurveys';
 import { CrystalPanelProvider, useCrystalPanel } from '../contexts/crystalPanel';
 
 const pageVariants: Variants = {
@@ -21,7 +23,8 @@ function AppShellInner() {
   const { isExpanded, toggle, setExpanded } = useSidebarState();
   const breakpoint = useBreakpoint();
   const location = useLocation();
-  const { toggleCrystal } = useCrystalPanel();
+  const { toggleCrystal, scope } = useCrystalPanel();
+  const { surveys } = useSurveys();
 
   const isMobile = breakpoint === 'mobile';
   const isTablet = breakpoint === 'tablet';
@@ -87,6 +90,12 @@ function AppShellInner() {
       </main>
 
       {isMobile && !isBuilder && <BottomNav />}
+
+      {/* Global Crystal panel — available on every authenticated route.
+          Pages inject their data via setCrystalData(); scope is set via setScope(). */}
+      {!isBuilder && (
+        <CrystalPanel scope={scope} surveys={surveys} insights={null} />
+      )}
     </div>
   );
 }

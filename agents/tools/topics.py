@@ -268,16 +268,21 @@ async def discover_topics(
 # ── DB upsert ────────────────────────────────────────────────────────────────
 
 def _compute_urgency(sentiment_score: float, volume: int, effort_score: float) -> float:
-    """Urgency = how much this topic demands immediate attention.
+    """Bootstrap urgency estimate for the DB INSERT in upsert_survey_topics.
 
-    Formula: abs(sentiment) × sqrt(volume) × (effort / 7)
-    Range roughly 0–20+. Topics above ~5 are worth flagging.
-    Negative sentiment amplifies urgency; positive sentiment reduces it to near-zero.
+    This value is a lightweight placeholder computed before all topics are known.
+    node_topics overwrites it with the normalized composite formula once the full
+    topic set and total_responses are available (which requires all clusters).
+
+    Formula: negativity × √volume × (effort/7), capped at 10.
+    Uses negativity (not abs) — positive topics should never be flagged as urgent.
+    Capped at 10 for consistency with the composite formula range [0, 10].
     """
     import math
-    negativity = max(0.0, -sentiment_score)           # only negative sentiment drives urgency
+    negativity    = max(0.0, -sentiment_score)
     effort_weight = max(0.0, effort_score) / 7.0
-    return round(negativity * math.sqrt(max(0, volume)) * effort_weight, 2)
+    raw = negativity * math.sqrt(max(0, volume)) * effort_weight
+    return round(min(10.0, raw), 2)
 
 
 async def upsert_survey_topics(
@@ -445,31 +450,37 @@ async def build_topic_hierarchy(
 
     for parent_name, child_names in parent_categories.items():
         try:
-            # Find or create the parent record
+            # Upsert the parent record — INSERT if new, skip if the topic already
+            # exists under any hierarchy_level (e.g. upsert_survey_topics already
+            # created it as a regular topic with the same name).
             async with conn.cursor() as cur:
                 await cur.execute(
-                    """SELECT id FROM survey_topics
-                       WHERE survey_id = %s AND name = %s AND time_window = %s
-                         AND hierarchy_level = 0
-                       LIMIT 1""",
-                    (survey_id, parent_name, time_window),
+                    """INSERT INTO survey_topics
+                         (survey_id, org_id, run_id, time_window, name,
+                          hierarchy_level, is_new, volume, sentiment_score,
+                          dominant_emotion, effort_score, trending)
+                       VALUES (%s,%s,%s,%s,%s, 0, false, 0, 0.0, 'neutral', 4.0, 'stable')
+                       ON CONFLICT (survey_id, name, time_window) DO NOTHING
+                       RETURNING id""",
+                    (survey_id, org_id, run_id, time_window, parent_name),
                 )
                 row = await cur.fetchone()
 
             if row:
                 parent_id = str(row[0])
             else:
+                # Row already existed — look it up without filtering by hierarchy_level
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        """INSERT INTO survey_topics
-                             (survey_id, org_id, run_id, time_window, name,
-                              hierarchy_level, is_new, volume, sentiment_score,
-                              dominant_emotion, effort_score, trending)
-                           VALUES (%s,%s,%s,%s,%s, 0, false, 0, 0.0, 'neutral', 4.0, 'stable')
-                           RETURNING id""",
-                        (survey_id, org_id, run_id, time_window, parent_name),
+                        """SELECT id FROM survey_topics
+                           WHERE survey_id = %s AND name = %s AND time_window = %s
+                           LIMIT 1""",
+                        (survey_id, parent_name, time_window),
                     )
-                    parent_id = str((await cur.fetchone())[0])
+                    existing = await cur.fetchone()
+                if not existing:
+                    continue
+                parent_id = str(existing[0])
 
             parent_db_ids[parent_name] = parent_id
 

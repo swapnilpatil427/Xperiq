@@ -62,7 +62,9 @@ async def _get_active_surveys() -> list[dict]:
         async with await psycopg.AsyncConnection.connect(dsn) as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    """SELECT s.id, s.org_id, s.title, s.response_count,
+                    """SELECT s.id, s.org_id, s.title,
+                              (SELECT COUNT(*)::int FROM responses r
+                               WHERE r.survey_id = s.id) AS response_count,
                               ar.status as last_run_status,
                               ar.created_at as last_run_at,
                               ar.completed_at
@@ -75,7 +77,7 @@ async def _get_active_surveys() -> list[dict]:
                        ) ar ON true
                        WHERE s.status IN ('active', 'paused')
                          AND s.deleted_at IS NULL
-                       ORDER BY s.response_count DESC NULLS LAST
+                       ORDER BY response_count DESC NULLS LAST
                        LIMIT 100"""
                 )
                 cols = [d[0] for d in cur.description]

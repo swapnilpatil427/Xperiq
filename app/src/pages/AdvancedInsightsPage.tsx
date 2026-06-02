@@ -1,19 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Icon } from '../components/Icon';
 import { useSetPageTitle } from '../contexts/pageTitle';
 import { useInsights } from '../hooks/useInsights';
 import { useSurveys } from '../hooks/useSurveys';
 import { useApi } from '../hooks/useApi';
-import { ROUTES } from '../constants/routes';
+import { Link } from 'react-router-dom';
+import { ROUTES, toPath } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
 import { PageHeader } from '../components/PageHeader';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { CrystalPanel } from '../components/CrystalPanel';
 import { useCrystalPanel } from '../contexts/crystalPanel';
-import type { SurveyTopic, TopicDriver } from '../types';
+import type { SurveyTopic, TopicDriver, TopicTheme } from '../types';
 import { GeneratingOverlay } from './insights/GeneratingOverlay';
 
 // ── Palette for topic cards ────────────────────────────────────────────────────
@@ -91,11 +92,17 @@ export function AdvancedInsightsPage() {
   const [activeTab, setActiveTab] = useState('analysis');
   const { t } = useTranslation();
   useSetPageTitle(t('advancedInsights.pageTitle'), t('advancedInsights.dateFilter'));
-  const { openCrystal } = useCrystalPanel();
+  const { openCrystal, setCrystalData, setScope: setCrystalScope } = useCrystalPanel();
 
   const api = useApi();
+  const [searchParams] = useSearchParams();
   const { surveys } = useSurveys();
-  const activeSurvey = surveys.find((s) => s.status === 'active') || surveys[0];
+  // Prefer ?survey=ID from URL (deep-link from SurveyIntelligencePage),
+  // then first active survey, then any survey.
+  const surveyParam  = searchParams.get('survey');
+  const activeSurvey = (surveyParam ? surveys.find((s) => s.id === surveyParam) : null)
+    ?? surveys.find((s) => s.status === 'active')
+    ?? surveys[0];
   const { insights, generating: legacyGenerating, regenerate } = useInsights(activeSurvey?.id);
 
   // ── Time window + sort ────────────────────────────────────────────────────
@@ -103,27 +110,55 @@ export function AdvancedInsightsPage() {
   const [sortMode, setSortMode] = useState<'volume' | 'urgency'>('volume');
 
   // ── Topics ────────────────────────────────────────────────────────────────
-  const [topics,        setTopics]        = useState<SurveyTopic[]>([]);
+  const [themes,        setThemes]        = useState<TopicTheme[]>([]);
   const [topicsLoading, setTopicsLoading] = useState(false);
   const [runStatus,     setRunStatus]     = useState<string | null>(null);
   const [selectedId,    setSelectedId]    = useState<string | null>(null);
 
+  // Flat sorted list derived from hierarchy — used by all non-rendering logic
+  const topics = useMemo<SurveyTopic[]>(() => {
+    const flat = themes.flatMap(th => [
+      ...th.topics,
+      ...th.topics.flatMap(tp => tp.subtopics ?? []),
+    ]);
+    return sortMode === 'urgency'
+      ? [...flat].sort((a, b) => (b.urgency_score ?? 0) - (a.urgency_score ?? 0))
+      : [...flat].sort((a, b) => b.volume - a.volume);
+  }, [themes, sortMode]);
+
   const loadTopics = useCallback(async () => {
-    if (!activeSurvey?.id) { setTopics([]); return; }
+    if (!activeSurvey?.id) { setThemes([]); return; }
     setTopicsLoading(true);
     try {
-      const { topics: list, run_status } = await api.listTopics(activeSurvey.id, window, sortMode);
-      setTopics(list ?? []);
-      setRunStatus(run_status);
-      if (list?.length && !selectedId) setSelectedId(list[0].id);
+      const data = await api.getTopicHierarchy(activeSurvey.id, window);
+      setThemes(data.themes ?? []);
+      setRunStatus(null);
+      if (data.themes?.length && !selectedId) {
+        const first = data.themes[0]?.topics[0];
+        if (first) setSelectedId(first.id);
+      }
     } catch {
-      setTopics([]);
+      setThemes([]);
     } finally {
       setTopicsLoading(false);
     }
-  }, [api, activeSurvey?.id, window, sortMode]);
+  }, [api, activeSurvey?.id, window]);
 
   useEffect(() => { loadTopics(); }, [loadTopics]);
+
+  // Scope Crystal to active survey; reset to 'all' when no survey is selected
+  useEffect(() => {
+    if (activeSurvey?.id) {
+      setCrystalScope(activeSurvey.id);
+    } else {
+      setCrystalScope('all');
+    }
+    return () => setCrystalScope('all');
+  }, [activeSurvey?.id, setCrystalScope]);
+
+  useEffect(() => {
+    setCrystalData([], topics);
+  }, [topics, setCrystalData]);
 
   // ── Driver analysis ───────────────────────────────────────────────────────
   const [drivers,        setDrivers]        = useState<TopicDriver[]>([]);
@@ -243,10 +278,18 @@ export function AdvancedInsightsPage() {
     <div className="space-y-8 max-w-7xl mx-auto w-full">
 
       <PageHeader
-        crumbs={[
-          { label: t('nav.insights'), icon: 'psychology', path: ROUTES.INSIGHTS },
-          { label: t('advancedInsights.pageTitle') }
-        ]}
+        crumbs={
+          surveyParam && activeSurvey
+            ? [
+                { label: t('nav.experience'), icon: 'star', path: ROUTES.EXPERIENCE },
+                { label: activeSurvey.title || 'Survey', path: toPath(ROUTES.EXPERIENCE_SURVEY, { surveyId: surveyParam }) },
+                { label: t('advancedInsights.pageTitle') },
+              ]
+            : [
+                { label: t('nav.insights'), icon: 'psychology', path: ROUTES.INSIGHTS },
+                { label: t('advancedInsights.pageTitle') },
+              ]
+        }
         title={t('advancedInsights.pageTitle')}
         subtitle={generating ? t('advancedInsights.generateRunning') : t('advancedInsights.topicsDescription', { count: responseCount.toLocaleString() })}
         actions={
@@ -389,7 +432,10 @@ export function AdvancedInsightsPage() {
                 <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-2">Avg Effort Score</p>
                 <div className="flex items-center gap-2">
                   {(() => {
-                    const avgEffort = topics.reduce((s, t) => s + (t.effort_score ?? 4), 0) / topics.length;
+                    const scored = topics.filter(t => t.effort_score != null);
+                    const avgEffort = scored.length > 0
+                      ? scored.reduce((s, t) => s + t.effort_score!, 0) / scored.length
+                      : 3.5; // neutral midpoint fallback when no effort data yet
                     return (
                       <>
                         <div className="flex-1 h-1.5 rounded-full bg-muted/30 overflow-hidden">
@@ -554,14 +600,39 @@ export function AdvancedInsightsPage() {
                 <Icon name="auto_awesome" size={18} />
                 {t('advancedInsights.generateCta')}
               </Button>
+            ) : surveys.length === 0 ? (
+              <div className="text-center space-y-2">
+                <p className="text-sm text-muted-foreground font-bold">No surveys yet</p>
+                <p className="text-xs text-muted-foreground">Create and publish a survey first, then come back to analyse it.</p>
+                <Link to={ROUTES.CREATE} className="inline-block mt-2">
+                  <Button size="sm" variant="outline" className="text-xs font-bold">
+                    <Icon name="add" size={13} /> Create a survey
+                  </Button>
+                </Link>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">{t('advancedInsights.noSurveySelected')}</p>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {topics.map((topic, idx) => {
-              const palette  = TOPIC_PALETTES[idx % TOPIC_PALETTES.length];
+          <div className="space-y-6">
+            {themes.map((theme, themeIdx) => {
+              const themeTopics = sortMode === 'urgency'
+                ? [...theme.topics].sort((a, b) => (b.urgency_score ?? 0) - (a.urgency_score ?? 0))
+                : [...theme.topics].sort((a, b) => b.volume - a.volume);
+              const themeOffset = themes.slice(0, themeIdx).reduce((s, th) => s + th.topics.length, 0);
+              return (
+                <div key={theme.name} className="space-y-3">
+                  {themes.length > 1 && (
+                    <div className="flex items-center gap-3 pb-1">
+                      <h5 className="text-xs font-black uppercase tracking-widest text-on-surface/50">{theme.name}</h5>
+                      <div className="flex-1 h-px bg-muted/20" />
+                      <span className="text-xs text-muted-foreground">{theme.volume.toLocaleString()} mentions</span>
+                    </div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    {themeTopics.map((topic, idx) => {
+              const palette  = TOPIC_PALETTES[(themeOffset + idx) % TOPIC_PALETTES.length];
               const signal   = topicSignal(topic.sentiment_score);
               const isActive = topic.id === selectedId;
               return (
@@ -664,6 +735,10 @@ export function AdvancedInsightsPage() {
                   <div className="absolute bottom-0 left-0 h-1 w-0 group-hover:w-full transition-all duration-500"
                     style={{ background: palette.barColor }} />
                 </button>
+              );
+            })}
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -1113,15 +1188,7 @@ export function AdvancedInsightsPage() {
         </section>
       )}
 
-      {/* Crystal Panel — context-aware: passes current window + selected topic */}
-      {activeSurvey && (
-        <CrystalPanel
-          scope={activeSurvey.id}
-          surveys={surveys}
-          insights={null}
-          topics={topics}
-        />
-      )}
+      {/* Crystal Panel is mounted globally in AppShell; scope + topics injected via context */}
 
       </>}
     </div>

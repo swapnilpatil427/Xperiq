@@ -289,21 +289,35 @@ class TestComputeFullTopicSignals:
         r = compute_full_topic_signals(cluster, [], {"total_responses": 100})
         assert r["confidence_level"] == "low"
 
-    def test_confidence_medium(self):
+    def test_confidence_low_for_n5(self):
+        # n=5 is below the low/medium boundary (n<10 → low)
         items = [_absa(response_id=str(i)) for i in range(5)]
         r = compute_full_topic_signals({"texts": items, "size": 5}, [], {"total_responses": 100})
+        assert r["confidence_level"] == "low"
+
+    def test_confidence_medium_n10(self):
+        # n=10 is the low/medium boundary (10≤n<30 → medium)
+        items = [_absa(response_id=str(i)) for i in range(10)]
+        r = compute_full_topic_signals({"texts": items, "size": 10}, [], {"total_responses": 100})
+        assert r["confidence_level"] == "medium"
+
+    def test_confidence_medium_n12(self):
+        # n=12 in a large survey — medium regardless of coverage % (10≤n<30 → medium)
+        items = [_absa(response_id=str(i)) for i in range(12)]
+        r = compute_full_topic_signals({"texts": items, "size": 12}, [], {"total_responses": 1000})
         assert r["confidence_level"] == "medium"
 
     def test_confidence_high(self):
+        # n=30 meets Bain/Satmetrix minimum for reliable NPS inference
         items = [_absa(response_id=str(i)) for i in range(30)]
         r = compute_full_topic_signals({"texts": items, "size": 30}, [], {"total_responses": 100})
         assert r["confidence_level"] == "high"
 
-    def test_confidence_medium_below_threshold(self):
-        # n=12, coverage=0.12 — below both n≥30 and coverage≥0.3 thresholds → medium
-        items = [_absa(response_id=str(i)) for i in range(12)]
-        r = compute_full_topic_signals({"texts": items, "size": 12}, [], {"total_responses": 100})
-        assert r["confidence_level"] == "medium"
+    def test_confidence_high_large_survey(self):
+        # n=50 in an enterprise survey with 5000 responses (1% coverage) → still high
+        items = [_absa(response_id=str(i)) for i in range(50)]
+        r = compute_full_topic_signals({"texts": items, "size": 50}, [], {"total_responses": 5000})
+        assert r["confidence_level"] == "high"
 
     def test_response_ids_are_strings(self):
         cluster = self._cluster()

@@ -54,8 +54,10 @@ app.use('/api/workflows',   apiLimiter, require(`${dir}/workflows`));
 app.use('/api/org-profile', apiLimiter, require(`${dir}/orgProfile`));
 app.use('/api/orgs',       apiLimiter, require(`${dir}/orgs`));
 app.use('/api/orgs/me',    apiLimiter, require(`${dir}/members`));
-app.use('/api/copilot',    apiLimiter, require(`${dir}/copilot`));
-app.use('/api/runs',       apiLimiter, require(`${dir}/runs`));
+app.use('/api/copilot',        apiLimiter, require(`${dir}/copilot`));
+app.use('/api/runs',           apiLimiter, require(`${dir}/runs`));
+app.use('/api/experience',     apiLimiter, require(`${dir}/experience`));
+app.use('/api/notifications',  apiLimiter, require(`${dir}/notifications`));
 
 // ── Observability endpoints ───────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {

@@ -36,6 +36,15 @@ from prometheus_client.exposition import generate_latest
 
 dotenv.load_dotenv()
 
+# ── Production startup validation ────────────────────────────────────────────
+_IS_PROD = os.getenv("AGENTS_ENV", "dev").lower() == "production"
+if _IS_PROD:
+    _missing = [v for v in ("DATABASE_URL", "REDIS_URL", "OPENROUTER_API_KEY", "AGENTS_INTERNAL_KEY") if not os.getenv(v)]
+    if _missing:
+        raise RuntimeError(f"Missing required env vars: {', '.join(_missing)}")
+    if os.getenv("AGENTS_INTERNAL_KEY") == "dev-internal-key-change-in-prod":
+        raise RuntimeError("AGENTS_INTERNAL_KEY must be changed from the default before deploying to production")
+
 from agents.agents import (
     ACTIVE_AGENTS, ALL_AGENTS,
     survey_creator_agent,
@@ -142,7 +151,7 @@ app = FastAPI(
     title="Experient Copilot Agents",
     version="2.0.0",
     description="Survey orchestration + editing microservice for Experient Copilot.",
-    docs_url="/docs",
+    docs_url=None if _IS_PROD else "/docs",
     redoc_url=None,
     lifespan=lifespan,
 )
@@ -260,7 +269,7 @@ async def _dispatch_recommendation(
         return output.questions, output.explanation
 
     if action_id in _ADDQ_ACTIONS:
-        topic = params.get("topic", "a follow-up question to gather more context")
+        topic = str(params.get("topic", "a follow-up question to gather more context"))[:200].strip()
         inp = CopilotInput(
             questions=questions,
             message=f"Add {topic}",
@@ -281,6 +290,7 @@ async def _dispatch_recommendation(
 
 async def _run_graph_background(run_id: str, thread_id: str, initial_state: dict) -> None:
     config = {"configurable": {"thread_id": thread_id}}
+    _success = False
     try:
         accumulated_events:  list[dict] = []
         accumulated_credits: list[dict] = []
@@ -308,6 +318,8 @@ async def _run_graph_background(run_id: str, thread_id: str, initial_state: dict
                 )
             logger.debug("graph_node_complete", run_id=run_id, node=node_name)
 
+        _success = True
+
     except asyncio.CancelledError:
         # Raised by run_registry.cancel() — DB already updated to 'cancelled' by the endpoint.
         logger.info("graph_task_cancelled", run_id=run_id)
@@ -321,6 +333,17 @@ async def _run_graph_background(run_id: str, thread_id: str, initial_state: dict
             await db.update_run(run_id, status="failed", error_log=[str(e)])
         except Exception:
             pass
+
+    if _success:
+        # Delete the LangGraph checkpoint for this thread to prevent unbounded Postgres growth.
+        # Failed/cancelled runs keep their checkpoint for debugging; successful runs don't need it.
+        try:
+            async with db._pool_conn().connection() as conn:
+                await conn.execute("DELETE FROM checkpoint_writes WHERE thread_id = %s", (thread_id,))
+                await conn.execute("DELETE FROM checkpoint_blobs WHERE thread_id = %s", (thread_id,))
+                await conn.execute("DELETE FROM checkpoints WHERE thread_id = %s", (thread_id,))
+        except Exception as exc:
+            logger.warning("checkpoint_cleanup_failed", thread_id=thread_id, error=str(exc))
 
 
 def _on_graph_task_done(task: asyncio.Task, run_id: str) -> None:
@@ -386,7 +409,7 @@ async def cancel_orchestration(
     task_cancelled = run_registry.cancel(run_id)
 
     # DB update is the authoritative record regardless of task state
-    await db.cancel_run(run_id)
+    await db.cancel_run(run_id, org_id)
 
     logger.info("orchestration_cancelled", run_id=run_id, org_id=org_id,
                 task_cancelled=task_cancelled)
@@ -434,8 +457,11 @@ async def list_runs(
     run_type  = request.query_params.get("run_type") or None
     status    = request.query_params.get("status") or None
     survey_id = request.query_params.get("survey_id") or None
-    limit     = int(request.query_params.get("limit", "20"))
-    offset    = int(request.query_params.get("offset", "0"))
+    try:
+        limit  = max(1, min(int(request.query_params.get("limit", "20")), 100))
+        offset = max(0, min(int(request.query_params.get("offset", "0")), 10_000))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="limit and offset must be integers")
 
     if not org_id:
         raise HTTPException(status_code=400, detail="org_id required")
@@ -484,7 +510,7 @@ async def refine_survey(
     if body.questions:
         questions = body.questions
         # Sync current state to agents DB so subsequent calls stay consistent
-        await db.save_run_questions(run_id, _questions_to_dicts(questions))
+        await db.save_run_questions(run_id, _questions_to_dicts(questions), body.org_id)
     else:
         questions = _load_questions(row)
 
@@ -519,7 +545,7 @@ async def refine_survey(
         )
 
     # MODE B — survey edit applied.
-    await db.save_run_questions(run_id, _questions_to_dicts(output.questions))
+    await db.save_run_questions(run_id, _questions_to_dicts(output.questions), body.org_id)
     logger.info("copilot_refine", run_id=run_id, org_id=body.org_id,
                 changes=len(output.changes))
 
@@ -556,7 +582,7 @@ async def add_skip_logic(
     inp    = SkipLogicInput(questions=questions, request=body.request, org_context=body.org_context)
     output, _ = await skip_logic_agent.run(inp)
 
-    await db.save_run_questions(run_id, _questions_to_dicts(output.questions))
+    await db.save_run_questions(run_id, _questions_to_dicts(output.questions), body.org_id)
     logger.info("skip_logic_added", run_id=run_id, changes=len(output.changes))
 
     return QuestionsResponse(
@@ -599,7 +625,7 @@ async def add_question(
     else:
         questions.append(new_q)
 
-    await db.save_run_questions(run_id, _questions_to_dicts(questions))
+    await db.save_run_questions(run_id, _questions_to_dicts(questions), body.org_id)
     logger.info("question_added", run_id=run_id, q_id=new_id, type=body.type)
 
     return QuestionsResponse(
@@ -636,7 +662,7 @@ async def remove_question(
     if len(updated) == before:
         raise HTTPException(status_code=404, detail=f"Question {q_id} not found")
 
-    await db.save_run_questions(run_id, _questions_to_dicts(updated))
+    await db.save_run_questions(run_id, _questions_to_dicts(updated), org_id)
     logger.info("question_removed", run_id=run_id, q_id=q_id)
 
     return QuestionsResponse(
@@ -675,7 +701,7 @@ async def patch_question(
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Invalid field values: {e}")
 
-    await db.save_run_questions(run_id, _questions_to_dicts(questions))
+    await db.save_run_questions(run_id, _questions_to_dicts(questions), body.org_id)
     logger.info("question_patched", run_id=run_id, q_id=q_id, fields=list(safe_fields.keys()))
 
     return QuestionsResponse(
@@ -705,7 +731,7 @@ async def reorder_questions(
     listed = set(body.order)
     reordered += [q for q in questions if q.id not in listed]
 
-    await db.save_run_questions(run_id, _questions_to_dicts(reordered))
+    await db.save_run_questions(run_id, _questions_to_dicts(reordered), body.org_id)
     logger.info("questions_reordered", run_id=run_id, order=body.order)
 
     return QuestionsResponse(
@@ -740,7 +766,7 @@ async def apply_recommendation(
     )
 
     if updated is not questions:
-        await db.save_run_questions(run_id, _questions_to_dicts(updated))
+        await db.save_run_questions(run_id, _questions_to_dicts(updated), body.org_id)
 
     logger.info("recommendation_applied", run_id=run_id, action=action_id, org_id=body.org_id)
 
@@ -818,12 +844,18 @@ async def generate_sample_responses(
 async def crystal_chat(request: Request, _: None = Depends(require_internal_key)) -> dict:
     """Stateful Crystal AI analyst for the insights page."""
     from agents.agents.crystal import crystal_agent, CrystalInput
+    from agents.lib.security import check_survey_access
 
     body = await request.json()
     try:
         inp = CrystalInput(**body)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=422, detail="Invalid request body")
+
+    if inp.survey_id:
+        survey = await check_survey_access(inp.survey_id, inp.org_id)
+        if survey is None:
+            raise HTTPException(status_code=404, detail="Survey not found")
 
     output, _ = await crystal_agent.run(inp)
     return {
@@ -832,6 +864,54 @@ async def crystal_chat(request: Request, _: None = Depends(require_internal_key)
         "insight_refs": output.insight_refs,
         "citations":    output.citations,
     }
+
+
+# ── Crystal: SSE streaming ReAct endpoint ────────────────────────────────────────
+
+@app.post("/insights/crystal/stream", summary="SSE streaming Crystal ReAct loop")
+async def crystal_stream_endpoint(req: Request, _: None = Depends(require_internal_key)):
+    """SSE streaming endpoint for Crystal ReAct loop."""
+    from agents.agents.crystal import CrystalInput, _run_react_loop_streaming
+    from agents.lib.security import check_survey_access
+    from fastapi.responses import StreamingResponse
+
+    body = await req.json()
+    survey_id = body.get("survey_id", "")
+    org_id    = body.get("org_id", "")
+
+    if survey_id:
+        survey = await check_survey_access(survey_id, org_id)
+        if survey is None:
+            raise HTTPException(status_code=404, detail="Survey not found")
+
+    inp = CrystalInput(
+        survey_id=survey_id,
+        org_id=org_id,
+        message=body.get("message", ""),
+        insights=body.get("insights", []),
+        topics=body.get("topics", []),
+        survey_title=body.get("survey_title", ""),
+        survey_response_count=body.get("survey_response_count", 0),
+        metrics=body.get("metrics", {}),
+        conversation_history=body.get("conversation_history", []),
+        user_id=body.get("user_id", ""),
+        scope=body.get("scope", "survey"),
+        has_open_text=body.get("has_open_text", True),
+    )
+
+    async def event_stream():
+        async for event_json in _run_react_loop_streaming(inp):
+            yield f"data: {event_json}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ── Agent registry ───────────────────────────────────────────────────────────────
@@ -868,7 +948,16 @@ async def get_checkpoint_blob_internal(
     ref is an absolute local path (dev) or OCI object key (staging/prod).
     Returns the parsed + migrated JSON blob.
     """
-    from agents.lib.checkpoint_store import read_checkpoint_blob
+    from agents.lib.checkpoint_store import read_checkpoint_blob, CHECKPOINT_LOCAL_PATH, is_local_ref
+    from pathlib import Path
+
+    # Validate local refs stay within the checkpoint directory (prevent path traversal)
+    if is_local_ref(ref):
+        base = Path(CHECKPOINT_LOCAL_PATH).resolve()
+        target = Path(ref).resolve()
+        if not str(target).startswith(str(base)):
+            raise HTTPException(status_code=400, detail="Invalid checkpoint ref")
+
     try:
         return await read_checkpoint_blob(ref)
     except FileNotFoundError:
@@ -906,7 +995,7 @@ async def health() -> dict:
 
 
 @app.get("/metrics", include_in_schema=False)
-async def metrics() -> PlainTextResponse:
+async def metrics(_key: None = Depends(require_internal_key)) -> PlainTextResponse:
     return PlainTextResponse(generate_latest(metrics_registry), media_type=CONTENT_TYPE_LATEST)
 
 

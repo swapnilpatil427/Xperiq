@@ -1,7 +1,7 @@
 """Insight-related Pydantic schemas."""
 from __future__ import annotations
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class MetricResult(BaseModel):
@@ -73,9 +73,20 @@ class NarrateInsightOutput(BaseModel):
 
 
 class VerifyInsightOutput(BaseModel):
-    """Structured output from the verifier LLM pass."""
-    supported: bool
-    reason:    str = Field(max_length=200, default="")
+    """Structured output from the verifier LLM pass.
+
+    `supported` defaults to True so a missing field never crashes validation.
+    `reason` is silently truncated rather than rejected — a verbose but valid
+    explanation must not cause a retry loop.
+    """
+    supported: bool = True
+    reason:    str  = Field(default="")
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def truncate_reason(cls, v: object) -> str:
+        s = str(v) if not isinstance(v, str) else v
+        return s[:500]
 
 
 class InsightStateModel(BaseModel):

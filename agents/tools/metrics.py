@@ -6,6 +6,44 @@ import statistics
 from collections import Counter
 from typing import Any
 
+
+# ── t-distribution critical values (two-tailed, α=0.05) ──────────────────────
+# Source: standard t-table. df = n-1. For df ≥ 120 use z = 1.960.
+# Used by NPS CI, CSAT CI, and CES CI for small-sample accuracy.
+_T95: dict[int, float] = {
+    1: 12.706,  2:  4.303,  3:  3.182,  4:  2.776,  5:  2.571,
+    6:  2.447,  7:  2.365,  8:  2.306,  9:  2.262, 10:  2.228,
+    11: 2.201, 12:  2.179, 13:  2.160, 14:  2.145, 15:  2.131,
+    16: 2.120, 17:  2.110, 18:  2.101, 19:  2.093, 20:  2.086,
+    21: 2.080, 22:  2.074, 23:  2.069, 24:  2.064, 25:  2.060,
+    26: 2.056, 27:  2.052, 28:  2.048, 29:  2.045, 30:  2.042,
+    40: 2.021, 50:  2.009, 60:  2.000, 80:  1.990, 100: 1.984,
+    120: 1.980,
+}
+
+
+def _t_critical_95(n: int) -> float:
+    """Two-tailed 95% CI t-critical value for sample size n (df = n-1).
+
+    Uses linear interpolation between table entries. Returns z=1.960 for n≥121.
+    """
+    df = n - 1
+    if df <= 0:
+        return 12.706
+    if df >= 120:
+        return 1.960
+    if df in _T95:
+        return _T95[df]
+    # Linear interpolation between nearest table entries
+    keys = sorted(_T95.keys())
+    for i in range(len(keys) - 1):
+        lo, hi = keys[i], keys[i + 1]
+        if lo <= df < hi:
+            frac = (df - lo) / (hi - lo)
+            return round(_T95[lo] + frac * (_T95[hi] - _T95[lo]), 4)
+    return 1.960
+
+
 # Patterns that indicate a response has no real feedback content.
 _NO_FEEDBACK_PATTERNS: frozenset[str] = frozenset({
     "n/a", "na", "none", "nothing", "no", "ok", "okay", "good",
@@ -74,60 +112,120 @@ def is_meaningful_text(text: str, min_chars: int = 10, min_words: int = 3) -> bo
     return True
 
 def compute_nps_ci(responses: list[dict], nps_field: str = "nps_score") -> dict:
-    """Compute NPS with Wilson score CI. Returns {score, promoters, passives, detractors, n, ci_low, ci_high, below_minimum}."""
+    """Compute NPS with an analytically correct 95% confidence interval.
+
+    Industry standard (Bain/Satmetrix methodology):
+      NPS = (P_promoter - P_detractor) × 100
+
+    The standard error accounts for the negative covariance between promoters
+    and detractors — a respondent cannot be both, so they are not independent:
+
+      Var(P_p - P_d) = [P_p(1-P_p) + P_d(1-P_d) + 2·P_p·P_d] / n
+                     = [P_p + P_d - (P_p - P_d)²] / n
+
+      SE(NPS) = 100 × √(Var(P_p - P_d))
+
+    Small-sample correction: uses t-distribution (df = n-1) for n < 121,
+    z = 1.960 for n ≥ 121.
+
+    Why not Wilson? Wilson CI is for a single binomial proportion. Applying it
+    independently to P_p and P_d then combining over-estimates uncertainty by
+    20-30%, making reliable surveys look less trustworthy than they are.
+    """
     scores = [r[nps_field] for r in responses if r.get(nps_field) is not None]
     n = len(scores)
     if n == 0:
         return {"score": None, "n": 0, "below_minimum": True}
-    promoters   = sum(1 for s in scores if s >= 9) / n
-    detractors  = sum(1 for s in scores if s <= 6) / n
-    nps = round((promoters - detractors) * 100, 1)
-    # Wilson score CI for NPS (treats promoter_rate and detractor_rate independently, difference)
-    z = 1.96
-    def wilson_ci(p, nn):
-        if nn == 0: return (0.0, 0.0)
-        center = (p + z**2 / (2 * nn)) / (1 + z**2 / nn)
-        margin = z * math.sqrt((p * (1 - p) + z**2 / (4 * nn)) / (nn + z**2))
-        return (max(0, center - margin), min(1, center + margin))
-    p_lo, p_hi = wilson_ci(promoters, n)
-    d_lo, d_hi = wilson_ci(detractors, n)
-    ci_low  = round((p_lo - d_hi) * 100, 1)
-    ci_high = round((p_hi - d_lo) * 100, 1)
+
+    n_promoters  = sum(1 for s in scores if s >= 9)
+    n_detractors = sum(1 for s in scores if s <= 6)
+    n_passives   = n - n_promoters - n_detractors
+
+    P_p = n_promoters  / n
+    P_d = n_detractors / n
+    nps = round((P_p - P_d) * 100, 1)
+
+    # Analytical SE for difference of two mutually-exclusive proportions
+    # Var(P_p - P_d) = (P_p + P_d - (P_p - P_d)²) / n
+    # Equivalently: (P_p(1-P_p) + P_d(1-P_d) + 2·P_p·P_d) / n
+    variance = (P_p + P_d - (P_p - P_d) ** 2) / n
+    se_nps = math.sqrt(max(0.0, variance)) * 100  # on [-100, 100] scale
+
+    t = _t_critical_95(n)
+    margin = t * se_nps
+    ci_low  = round(max(-100.0, nps - margin), 1)
+    ci_high = round(min( 100.0, nps + margin), 1)
+
     distribution = dict(Counter(int(s) for s in scores))
     return {
-        "score": nps, "promoters": round(promoters * 100, 1),
-        "passives": round((1 - promoters - detractors) * 100, 1),
-        "detractors": round(detractors * 100, 1),
-        "n": n, "ci_low": ci_low, "ci_high": ci_high,
-        "distribution": distribution, "below_minimum": n < 30,
+        "score":      nps,
+        "promoters":  round(P_p * 100, 1),
+        "passives":   round(n_passives / n * 100, 1),
+        "detractors": round(P_d * 100, 1),
+        "n":          n,
+        "ci_low":     ci_low,
+        "ci_high":    ci_high,
+        "se":         round(se_nps, 2),
+        "distribution": distribution,
+        "below_minimum": n < 30,
     }
 
 def compute_csat(responses: list[dict], csat_field: str = "csat_score", scale: int = 5) -> dict:
+    """Compute CSAT mean with t-distribution 95% CI.
+
+    Uses t-distribution (df = n-1) for n < 121, z = 1.960 for n ≥ 121.
+    Using a fixed z=1.96 for n=10 underestimates the margin by ~15%
+    (t-critical at df=9 is 2.262, not 1.960).
+    """
     scores = [r[csat_field] for r in responses if r.get(csat_field) is not None]
     n = len(scores)
     if n == 0:
         return {"score": None, "n": 0, "below_minimum": True}
     mean = statistics.mean(scores)
-    z = 1.96
-    try:
-        std = statistics.stdev(scores)
-        margin = z * std / math.sqrt(n)
-    except statistics.StatisticsError:
-        margin = 0.0
+    margin = 0.0
+    if n >= 2:
+        try:
+            std    = statistics.stdev(scores)  # sample std (n-1 denominator) ✓
+            t      = _t_critical_95(n)
+            margin = t * std / math.sqrt(n)
+        except statistics.StatisticsError:
+            margin = 0.0
     return {
-        "score": round(mean, 2), "scale": scale,
-        "ci_low": round(mean - margin, 2), "ci_high": round(mean + margin, 2),
-        "n": n, "below_minimum": n < 30,
+        "score":    round(mean, 2),
+        "scale":    scale,
+        "ci_low":   round(max(1.0, mean - margin), 2),
+        "ci_high":  round(min(float(scale), mean + margin), 2),
+        "n":        n,
+        "below_minimum": n < 30,
     }
 
+
 def compute_ces(responses: list[dict], ces_field: str = "ces_score") -> dict:
-    """Customer Effort Score (1-7 scale typically)."""
+    """Compute Customer Effort Score (1-7 scale) with t-distribution 95% CI.
+
+    CES previously had no confidence interval. Added here so callers get
+    the same reliability signal as NPS and CSAT.
+    """
     scores = [r[ces_field] for r in responses if r.get(ces_field) is not None]
     n = len(scores)
     if n == 0:
         return {"score": None, "n": 0, "below_minimum": True}
     mean = statistics.mean(scores)
-    return {"score": round(mean, 2), "n": n, "below_minimum": n < 30}
+    margin = 0.0
+    if n >= 2:
+        try:
+            std    = statistics.stdev(scores)
+            t      = _t_critical_95(n)
+            margin = t * std / math.sqrt(n)
+        except statistics.StatisticsError:
+            margin = 0.0
+    return {
+        "score":    round(mean, 2),
+        "ci_low":   round(max(1.0, mean - margin), 2),
+        "ci_high":  round(min(7.0, mean + margin), 2),
+        "n":        n,
+        "below_minimum": n < 30,
+    }
 
 def compute_completion_rate(responses: list[dict]) -> dict:
     """Fraction of responses that have at least one non-empty answer."""

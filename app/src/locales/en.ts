@@ -44,6 +44,7 @@ const en = {
     data: 'Data',
     createNewSurvey: 'Create New Survey',
     newSurvey: 'New Survey',
+    experience: 'Experience',
   },
 
   credits: {
@@ -690,6 +691,64 @@ const en = {
       critical: 'Critical Attention',
     },
     layerTagline: 'The AI-aware experience layer for modern enterprises',
+
+    state: {
+      collecting:           'Collecting first responses…',
+      generating:           'Generating insights…',
+      ready:                'Insights are up to date',
+      stale:                'Insights may be outdated',
+      error:                'Failed to generate insights',
+      generateInsight:      'Generate new insights',
+      refreshLimitReached:  'Daily limit reached (3/day)',
+      scoreOnlySurvey: {
+        message: 'This survey has no open-text questions. Insights are based on score metrics only.',
+      },
+      surveySuspended: {
+        paused:        'Survey is paused — new responses will not be collected',
+        closed:        'Survey is closed',
+        responseCount: '{n} total responses collected',
+        resume:        'Resume survey',
+      },
+    },
+    tier: {
+      collecting:      { label: 'Collecting first responses' },
+      first_voices:    { label: 'First voices heard' },
+      early_signals:   { label: 'Early signals emerging' },
+      growing_picture: { label: 'Growing picture' },
+      full_report:     { label: 'Full report' },
+    },
+    trust: {
+      low:    'Low confidence',
+      medium: 'Moderate confidence',
+      high:   'High confidence',
+    },
+    progressive: {
+      collecting:      "We're collecting your first responses. Check back soon!",
+      first_voices:    'Early insights from your first respondents.',
+      early_signals:   'Patterns are starting to emerge.',
+      growing_picture: 'A clearer picture is forming.',
+      full_report:     'Full intelligence report ready.',
+    },
+    crystal: {
+      opening: {
+        label:           "Crystal's opening observation",
+        collecting:      'Waiting for responses to begin analysis.',
+        first_voices:    'Early signals detected — ask me anything.',
+        early_signals:   'Patterns emerging — I\'m ready to help.',
+        growing_picture: 'Good data volume — deep analysis available.',
+        full_report:     'Full dataset — all Crystal capabilities unlocked.',
+      },
+    },
+    topics: {
+      title:    'Topic Analysis',
+      empty:    'No topics discovered yet',
+      notFound: 'Topic not found',
+    },
+    verbatims: {
+      title: 'Respondent Verbatims',
+      empty: 'No verbatims available for this topic',
+    },
+    sampleDataBanner: 'Viewing cross-survey sample data — insights may span multiple surveys',
   },
 
   surveyInsights: {
@@ -806,6 +865,24 @@ const en = {
     },
     confidence: {
       label: 'CONF {value}',
+    },
+    layers: {
+      descriptive:  {
+        label:   'What happened',
+        tooltip: 'Summarises what occurred — response counts, NPS, sentiment distribution.',
+      },
+      diagnostic:   {
+        label:   'Why it happened',
+        tooltip: 'Explains the drivers behind the patterns — which topics caused the score.',
+      },
+      predictive:   {
+        label:   'What will happen',
+        tooltip: 'Forward-looking signal — trends and patterns likely to continue or worsen.',
+      },
+      prescriptive: {
+        label:   'What to do',
+        tooltip: 'Actionable recommendation — specific steps to improve the experience or metric.',
+      },
     },
     sampleDataBanner: 'Sample data — select a survey above for real insights',
   },
@@ -1375,6 +1452,24 @@ const en = {
       general: 'General',
       users: 'Users',
       apiKeys: 'API Keys',
+      notifications: 'Notifications',
+    },
+    notifications: {
+      heading: 'Notification Preferences',
+      description: 'Choose how and when Experient alerts you about your surveys and AI insights.',
+      comingSoonBadge: 'Coming Soon',
+      channels: {
+        inApp: { label: 'In-App',  desc: 'Alerts appear inside the Experient dashboard.' },
+        email: { label: 'Email',   desc: 'Receive digest emails for key events.' },
+        push:  { label: 'Push',    desc: 'Browser or mobile push notifications.' },
+      },
+      events: {
+        new_insights_ready:       'New insights are ready',
+        response_threshold:       'Response count milestone reached',
+        anomaly_detected:         'Anomaly or trend spike detected',
+        survey_closed:            'Survey closed or response limit reached',
+        progressive_tier_upgrade: 'Data tier upgraded (more responses unlocked)',
+      },
     },
     general: {
       heading: 'Visual Identity',
@@ -1508,6 +1603,515 @@ const en = {
     prevPage: 'Previous',
     nextPage: 'Next',
     page: 'Page {n}',
+  },
+
+  experience: {
+    hub: {
+      subtitle:  'Your experience intelligence portfolio',
+      noSurveys: 'No active surveys yet',
+
+      hero: {
+        tagline:         'Crystal · Experience Intelligence',
+        headlineFull:    'Portfolio NPS {nps} — ask Crystal what to do next',
+        headlineEmpty:   'Your experience intelligence portfolio, understood',
+        trust:           'Every insight cites real customer quotes. Metrics come from analytics tools, not the LLM.',
+        askPlaceholder:  '"Which survey has the highest churn risk?" — ask Crystal anything',
+        askButton:       'Ask Crystal',
+        liveBadge:       '{count} {word} live · {total} total responses',
+        liveBadgeSurvey: 'survey',
+        liveBadgeSurveys:'surveys',
+        loading:         'Loading…',
+      },
+
+      prompts: {
+        churnLabel:   'Highest churn risk',
+        churnQuery:   'Which survey has the highest churn risk right now?',
+        themesLabel:  'Themes across surveys',
+        themesQuery:  'What themes appear across three or more surveys?',
+        actionLabel:  'Top portfolio action',
+        actionQuery:  'What single action would improve portfolio NPS the most?',
+        anomalyLabel: 'Any active anomalies?',
+        anomalyQuery: 'Are there any active anomalies across my surveys?',
+      },
+
+      kpi: {
+        nps:            'Portfolio NPS',
+        npsAvg:         'avg across surveys',
+        npsNoData:      'no data yet',
+        csat:           'Portfolio CSAT',
+        csatScale:      '/ 5 scale',
+        activeSurveys:  'Active Surveys',
+        ofTotal:        'of {n} total',
+        totalResponses: 'Total Responses',
+        acrossAll:      'across all surveys',
+        velocity:       '~{n}/day',
+      },
+
+      intelligence: {
+        title:      'Live Intelligence',
+        subtitle:   'Top priority insights across your portfolio',
+        monitoring: 'Crystal watches every new response · Insights refresh automatically',
+        emptyTitle: 'No insights generated yet',
+        emptyBody:  'Open a survey and click "Generate Insights" to let Crystal analyse your responses.',
+        generate:   'Generate insights',
+        confidence: {
+          reliable:   'Reliable',
+          indicative: 'Indicative',
+          low:        'Low signal',
+        },
+      },
+
+      surveys: {
+        title:          'Surveys',
+        countLabel:     '{n} total · {active} active',
+        newButton:      'New Survey',
+        untitled:       'Untitled Survey',
+        npsLabel:       'NPS',
+        responses:      '{n} responses',
+        respAbbrev:     '{n} resp',
+        goalPercent:    '{pct}% of goal',
+        askTooltip:     'Ask Crystal about this survey',
+        emptyTitle:     'No surveys yet',
+        emptyBody:      'Create your first survey to start gathering experience intelligence. Crystal will analyse every response the moment it arrives.',
+        createButton:   'Create Survey',
+      },
+
+      capabilities: {
+        sectionTitle:   'What Crystal computes on every survey',
+        descriptive: {
+          layer:  'Descriptive',
+          title:  'What happened',
+          b1: 'NPS, CSAT, CES scores',
+          b2: 'Sentiment distribution',
+          b3: 'Response volume & velocity',
+          b4: 'Completion rate trends',
+        },
+        diagnostic: {
+          layer:  'Diagnostic',
+          title:  'Why it happened',
+          b1: 'Topic & theme clusters',
+          b2: 'Driver importance ranking',
+          b3: 'Segment contrast analysis',
+          b4: 'Verbatim evidence links',
+        },
+        predictive: {
+          layer:  'Predictive',
+          title:  'What will happen',
+          b1: 'NPS trajectory forecast',
+          b2: 'Anomaly & spike detection',
+          b3: 'Response velocity model',
+          b4: 'Confidence intervals',
+        },
+        prescriptive: {
+          layer:  'Prescriptive',
+          title:  'What to do',
+          b1: 'Prioritised actions',
+          b2: 'Projected NPS / CSAT lift',
+          b3: 'Cited respondent evidence',
+          b4: 'Ticket creation flow',
+        },
+      },
+    },
+
+    // Shared navigation labels used across all experience sub-pages
+    nav: {
+      backToExperience: 'Experience',
+      intelligence:     'Intelligence',
+      topics:           'Topics',
+      advanced:         'Advanced',
+      trends:           'Trends',
+      report:           'Report',
+      backTopics:       '← Back to topics',
+      backHub:          '← Experience hub',
+    },
+
+    // Common labels reused across multiple experience pages
+    common: {
+      live:      'LIVE',
+      nps:       'NPS',
+      csat:      'CSAT',
+      responses: 'Responses',
+      mentions:  '{n} mentions',
+      citations: '{n} citations',
+      ask:       'Ask Crystal',
+      askShort:  'Ask',
+      deepDive:  'Deep dive',
+      sentiment: {
+        positive: 'Positive',
+        negative: 'Negative',
+        neutral:  'Neutral',
+        critical: 'Critical',
+        mixed:    'Mixed',
+        unknown:  'Unknown',
+      },
+    },
+
+    // Survey Intelligence Page
+    intelligence: {
+      notFound: {
+        title:    'Survey not found',
+        body:     'This survey may have been deleted or you may not have access to it.',
+        backCta:  'Back to Experience',
+      },
+      status: {
+        paused: 'Survey paused — responses paused, existing insights still accessible',
+        closed: 'Survey closed — final snapshot, no new responses',
+        draft:  'Draft — not yet published',
+      },
+      generate: {
+        button:     'Generate Insights',
+        generating: 'Generating…',
+        errorStart: 'Failed to start insight generation. Is the agents service running?',
+        errorFailed:'Insight generation failed. Check the agents service logs.',
+        errorTimeout:'Analysis is taking longer than expected. Results will appear automatically when ready.',
+        errorBannerTitle:'Generation failed',
+        dismiss:    'Dismiss',
+      },
+      hero: {
+        tagline:         'Crystal · Experience Intelligence',
+        editorialTagline:'Crystal · Generated insight brief',
+        refresh:         'Refresh',
+        responsesCount:  '{n} responses collected',
+      },
+      tier: {
+        collecting: {
+          headline: 'Collecting your first responses',
+          body:     'Share your survey to start gathering experience data. Crystal analyses responses as they arrive.',
+        },
+        first_voices: {
+          headline: 'First voices are in',
+          body:     'Crystal has detected early patterns. Generate a first-look analysis or collect more responses for stronger confidence.',
+        },
+        early_signals: {
+          headline: 'Early signals are emerging',
+          body:     'Themes are forming. Generate insights now — Crystal will surface topic clusters, sentiment, and initial drivers.',
+        },
+        growing_picture: {
+          headline: 'A clear picture is forming',
+          body:     'Good data depth. Driver analysis and predictive models are now reliable at this response count.',
+        },
+        full_report: {
+          headline: 'Ready for full intelligence',
+          body:     'All Crystal capabilities are unlocked at this volume.',
+        },
+      },
+      tierBanner: {
+        collecting: {
+          headline: 'Collecting first responses',
+          body:     'Crystal needs at least 10 responses to surface initial signals. Share your survey to start.',
+        },
+        first_voices: {
+          headline: 'First voices heard',
+          body:     'Early patterns are visible. Generate a first-look analysis, or collect more for stronger confidence.',
+        },
+        early_signals: {
+          headline: 'Early signals emerging',
+          body:     'Themes are forming. Generate insights now or continue collecting for a richer picture.',
+        },
+        growing_picture: {
+          headline: 'Growing picture',
+          body:     'Good data volume. Driver analysis and predictions are now reliable — generate the full intelligence report.',
+        },
+        goal:    'goal {n}',
+        share:   'Share survey',
+        generate:'Generate insights',
+      },
+      pipeline: {
+        ingest:   'Loading Responses',
+        embed:    'Building Embeddings',
+        metrics:  'Computing Metrics',
+        absa:     'Sentiment Analysis',
+        cluster:  'Clustering Topics',
+        topics:   'Discovering Topics',
+        narrate:  'Narrating Insights',
+        verify:   'Verifying Claims',
+        evaluate: 'Evaluating Quality',
+        publish:  'Publishing Results',
+      },
+      metrics: {
+        nps:             'NPS',
+        csat:            'CSAT',
+        csatScale:       '/ 5 scale',
+        csatSuffix:      '/ 5',
+        sparklineLabel:  '7d response activity',
+        csatNoQuestion:  'No CSAT question in this survey — add one and regenerate.',
+        csatNoInsights:  'Generate insights to see CSAT data.',
+        topAction:       'Top Action · Prescriptive',
+        projectedImpact: 'Projected impact: +{n} NPS pts',
+        createTicket:    'Create ticket',
+        cited:           '{n} cited',
+        prescriptiveEmpty:'Prescriptive actions will appear here after analysis',
+      },
+      feed: {
+        title:       'Priority Intelligence',
+        filters: {
+          all:          'All',
+          prescriptive: 'Actions',
+          predictive:   'Predictive',
+          diagnostic:   'Diagnostic',
+          descriptive:  'Descriptive',
+        },
+        monitoring:   'Crystal watches every new response · Insights refresh automatically',
+        askTooltip:   'Ask Crystal about this insight',
+        deeper:       'Deeper findings',
+      },
+      askBar: {
+        label:       '⌘K · Ask Crystal',
+        placeholder: '"Why did NPS drop?" · "What would raise CSAT most?" · "Which segment is at risk?"',
+        submit:      'Ask',
+        kbd:         '⌘K',
+        chipFix:     'What should we fix first?',
+        chipAnomalies:'Any anomalies right now?',
+        chipSegment: 'Which segment is at risk?',
+        chipDrop:    'Why did NPS drop recently?',
+        chipCsat:    'What would raise CSAT most?',
+        chipCompare: 'Compare to last quarter',
+        queryFix:    'What should we fix first to improve NPS most?',
+        queryAnomalies:'Are there any anomalies or concerning trends right now?',
+        querySegment:'Which respondent segment is at the highest risk of churn?',
+        queryDrop:   'Why did NPS drop recently?',
+        queryCsat:   'What single action would raise CSAT most?',
+        queryCompare:'How does this compare to last quarter?',
+      },
+      trust: {
+        live:      'Live',
+        lastScan:  'last scan {time}',
+        validity:  'Citation validity',
+        verified:  '{n}/{total} verified',
+        reliable:  '{n} reliable findings',
+        cited:     '{n} cited responses · n={total}',
+        avgTrust:  'Avg trust',
+      },
+    },
+
+    // Topic Analysis Hub Page
+    topics: {
+      noSurvey: 'Survey not specified.',
+      back:     '← Back to Experience',
+      askAll:   'Ask Crystal about all topics',
+      header: {
+        countOne:   '{n} topic discovered',
+        countMany:  '{n} topics discovered',
+        across:     'across {n} responses',
+      },
+      empty: {
+        body:   'Topics are discovered by Crystal when you generate insights. Run the intelligence pipeline first.',
+        button: 'Go to Intelligence',
+      },
+      topic: {
+        urgent:         'Urgent',
+        subtopicOne:    '{n} sub-topic',
+        subtopicMany:   '{n} sub-topics',
+        ask:            'Ask Crystal',
+        deepDive:       'Deep dive',
+      },
+      query: {
+        topic: 'Tell me about the "{name}" topic — what are respondents saying and what should we do?',
+        all:   'Which topics need the most attention in this survey? What should we prioritise?',
+      },
+      summary: {
+        topicsDiscovered:   'Topics discovered',
+        topicsSubtitle:     '{n} total including subtopics',
+        totalMentions:      'Total mentions',
+        mentionsSubtitle:   'across {n} responses',
+        avgSentiment:       'Avg sentiment',
+        generateToSee:      'Generate insights to see',
+        overallPositive:    'Overall positive',
+        overallNegative:    'Overall negative',
+        mixedSignals:       'Mixed signals',
+        topUrgentTopic:     'Top urgent topic',
+        urgencyDetail:      'Urgency {score} · {volume} mentions',
+        noUrgentTopics:     'No urgent topics',
+      },
+      chart: {
+        title:         'NPS Impact by Topic',
+        subtitle:      'Overall NPS: {nps} · each bar shows how much this topic raises or lowers it',
+        subtitleNoNps: 'How each topic affects your NPS score',
+        footer:        'Hover any bar → Ask Crystal · Sorted by absolute NPS impact',
+        positive:      'positive',
+        negative:      'negative',
+      },
+      signals: {
+        improving:   'Improving',
+        worsening:   'Worsening',
+        atRisk:      'At risk',
+        isNew:       'New',
+        chronic:     'Chronic',
+        effortLabel: 'Effort',
+        npsLabel:    'NPS',
+        confidence:  '{level} confidence',
+      },
+      urgency: {
+        critical: 'Critical',
+        high:     'High',
+        medium:   'Medium',
+      },
+      npsPts:      'pts',
+      vsOverall:   'vs overall',
+    },
+
+    // Topic Deep Dive Page
+    topicDetail: {
+      notFound: {
+        title:      'Topic not found',
+        body:       'This topic may have been removed when insights were last regenerated.',
+        backTopics: '← Back to topics',
+        backHub:    '← Experience hub',
+      },
+      ask:        'Ask Crystal about this topic',
+      askHint:    'Ask about sentiment, trends, and actions for this topic',
+      hero: {
+        mentions:   '{n} mentions',
+        sentiment:  '{n}% sentiment',
+        effort:     '{n}/7 effort',
+        npsImpact:       '{n} pts NPS impact',
+        npsImpactSuffix: 'pts NPS impact',
+      },
+      chronic: {
+        label:   'Chronic',
+        tooltip: "This issue has appeared in multiple consecutive insight runs — it hasn't been resolved.",
+      },
+      subtopics: {
+        title:    'Sub-topics ({n})',
+        mentions: '{n} mentions',
+        ask:      'Ask',
+        query:    'Tell me about "{name}" — what are respondents saying?',
+      },
+      coOccurring: {
+        title: 'Co-occurring topics',
+        more:  '+{n} more',
+      },
+      verbatims: {
+        totalLabel:    '{n} total',
+        noMatchTitle:  'No {sentiment} responses',
+        noMatchBody:   'No responses match the "{sentiment}" filter for this topic.',
+        clearFilter:   'Clear filter to see all responses',
+        loadMore:      'Load more responses',
+        filter: {
+          all:      'All',
+          positive: 'Positive',
+          negative: 'Negative',
+          neutral:  'Neutral',
+        },
+      },
+      nav: {
+        intelligence: 'Intelligence',
+        topics:       'Topics',
+        advanced:     'Advanced',
+        trends:       'Trends',
+      },
+      query: {
+        topic:    'Tell me about the "{name}" topic — what are respondents saying, what\'s the sentiment trend, and what action should we take?',
+        verbatim: 'A respondent said: "{quote}" — what does this tell us about the {topic} topic and what should we do?',
+      },
+    },
+
+    // ── Audit drawer (trust / verifier breakdown) ────────────────────────────
+    audit: {
+      title:          'Insight Audit Trail',
+      modelLabel:     'Model',
+      verifierLabel:  'Verifier Notes',
+      verifierPass:   '✓ Passed',
+      verifierFail:   '✗ Failed',
+      trustMetrics:   'Trust Metrics',
+      trustScore:     'Trust Score',
+      scoreMax:       '/100',
+      coverage:       'Coverage',
+      consistency:    'Consistency',
+      statistical:    'Statistical',
+      grounding:      'Grounding',
+      sampleSize:     'Sample Size',
+    },
+
+    // ── Insight grid (§8 featured insight + 2-col cards) ────────────────────
+    insightGrid: {
+      featuredLabel:     'Featured Insight',
+      npsScoreLabel:     'NPS Score',
+      generatedCount:    '{n} AI insights generated',
+      auditTooltip:      'View audit details',
+      reliable:          '● Reliable finding',
+      indicative:        '◑ Indicative finding',
+      lowSignal:         '○ Low-signal',
+      moreQuotes:        '+{n} more quotes',
+      helpful:           'Helpful',
+      pinned:            'Pinned',
+      pin:               'Pin',
+      askCrystal:        'Ask Crystal',
+      featuredAction:    'Recommended action',
+      featuredCited:     '{n} {word} cited',
+      featuredCitedSingular: 'respondent',
+      featuredCitedPlural:   'respondents',
+      featuredTrust:         'trust {score}/100 · {n} citations',
+      // Category display labels used in filter pills and card footers
+      category: {
+        topics:     'Topics',
+        nps:        'NPS',
+        csat:       'CSAT',
+        ces:        'CES',
+        bias:       'Bias',
+      },
+    },
+
+    // ── Hub hero ─────────────────────────────────────────────────────────────
+    hubHero: {
+      selectSurvey:    'Select a survey below to analyse with Crystal',
+      surveyFallback:  'Survey',
+    },
+  },
+
+  trends: {
+    title:      'Survey Trends',
+    npsHistory: 'NPS History',
+    noData:     'No trend data available yet',
+    org: {
+      title: 'Portfolio Trends',
+    },
+    anomaly: {
+      new_anomaly:   'New anomaly',
+      ongoing_issue: 'Ongoing issue',
+    },
+    persistence: {
+      confirmed:         'Confirmed',
+      second_occurrence: 'Emerging',
+      first_occurrence:  'First seen',
+      reversal:          'Reversing',
+      stable:            'Stable',
+    },
+    checkpoint: {
+      title:         'Checkpoint History',
+      select:        'Select checkpoint:',
+      latest:        'Latest',
+      markers:       'Checkpoint markers',
+      noCheckpoints: 'No checkpoints yet',
+    },
+  },
+
+  notifications: {
+    settings: {
+      title:      'Notification Settings',
+      inApp:      'In-app',
+      email:      'Email',
+      push:       'Push',
+      comingSoon: 'Coming soon',
+    },
+  },
+
+  crystal: {
+    tool: {
+      get_survey_overview:      'Loading survey overview',
+      get_topic_details:        'Loading topic details',
+      get_metric_history:       'Loading metric history',
+      get_insights_list:        'Loading insights',
+      get_verbatims:            'Loading verbatims',
+      get_benchmark_comparison: 'Loading benchmarks',
+      get_driver_analysis:      'Analyzing drivers',
+      get_segment_breakdown:    'Analyzing segments',
+      get_checkpoint_history:   'Loading checkpoint history',
+      compare_surveys:          'Comparing surveys',
+      get_org_portfolio:        'Loading portfolio',
+      get_cross_survey_themes:  'Finding cross-survey themes',
+      get_anomaly_events:       'Checking for anomalies',
+    },
   },
 
   topicsAnalysis: {

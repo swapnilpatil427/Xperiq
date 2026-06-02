@@ -1,6 +1,7 @@
 """Unit tests for the Crystal conversational AI analyst agent."""
+import json
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from agents.agents.crystal import (
     CrystalAgent,
@@ -306,11 +307,13 @@ async def test_crystal_agent_passes_conversation_history(agent):
 
 
 async def test_crystal_agent_truncates_long_history(agent):
-    """Conversation history is truncated to last 10 messages."""
-    # 12 messages total — only last 10 should be sent
+    """Conversation history is truncated to last CRYSTAL_CONVERSATION_WINDOW * 2 messages."""
+    from agents.lib.constants import CRYSTAL_CONVERSATION_WINDOW
+    window = CRYSTAL_CONVERSATION_WINDOW * 2
+    # Create more messages than the window to trigger truncation
     history = [
         {"role": "user" if i % 2 == 0 else "assistant", "content": f"message {i}"}
-        for i in range(12)
+        for i in range(window + 4)
     ]
     inp = CrystalInput(
         survey_id="s",
@@ -331,7 +334,7 @@ async def test_crystal_agent_truncates_long_history(agent):
     with patch("agents.agents.crystal.call_agent", new=capture):
         await agent.run(inp)
 
-    assert len(captured["prior_messages"]) <= 10
+    assert len(captured["prior_messages"]) <= window
 
 
 async def test_crystal_agent_no_history_passes_none(agent):
@@ -420,3 +423,353 @@ def test_crystal_output_full():
     assert len(out.citations) == 1
     assert len(out.suggestions) == 2
     assert len(out.insight_refs) == 2
+
+
+# ── TestGetOrCreateThread ─────────────────────────────────────────────────────────
+
+class TestGetOrCreateThread:
+    """Tests for get_or_create_thread() in agents/agents/crystal.py."""
+
+    def _make_ctx(self, org_id="org-1", user_id="user-1", survey_id="survey-1", scope="survey"):
+        from dataclasses import dataclass
+
+        @dataclass
+        class FakeCtx:
+            org_id: str
+            user_id: str
+            survey_id: str
+            scope: str
+
+        return FakeCtx(org_id=org_id, user_id=user_id, survey_id=survey_id, scope=scope)
+
+    def _make_mock_pool(self, fetchone_return=None):
+        """Return a MagicMock that mimics db._pool_conn().connection().__aenter__."""
+        mock_cur = AsyncMock()
+        mock_cur.execute = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value=fetchone_return)
+        mock_cur.description = []
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock()
+        mock_conn.commit = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool_ctx = MagicMock()
+        mock_pool_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_pool_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_pool_ctx)
+
+        return mock_pool, mock_cur, mock_conn
+
+    @pytest.mark.asyncio
+    async def test_thread_continues_when_recently_active(self):
+        """Thread is returned as-is when last_active_at is < 7 days ago."""
+        from datetime import datetime, timezone, timedelta
+        from agents.agents.crystal import get_or_create_thread
+
+        recent = datetime.now(timezone.utc) - timedelta(days=2)
+        thread_row = ("thread-uuid-1", [{"role": "user", "content": "hi"}], recent, 1)
+
+        mock_pool, mock_cur, mock_conn = self._make_mock_pool(fetchone_return=thread_row)
+
+        with patch("agents.lib.db._pool_conn", return_value=mock_pool):
+            result = await get_or_create_thread(self._make_ctx(), db_pool=None)
+
+        assert result["id"] == "thread-uuid-1"
+        assert result["is_new"] is False
+        assert isinstance(result["messages"], list)
+
+    @pytest.mark.asyncio
+    async def test_thread_resets_when_stale(self):
+        """Thread resets (is_new=True) when last_active_at is 8+ days ago."""
+        from datetime import datetime, timezone, timedelta
+        from agents.agents.crystal import get_or_create_thread
+
+        stale = datetime.now(timezone.utc) - timedelta(days=9)
+        thread_row = ("thread-uuid-2", [], stale, 5)
+
+        mock_pool, mock_cur, mock_conn = self._make_mock_pool(fetchone_return=thread_row)
+
+        with patch("agents.lib.db._pool_conn", return_value=mock_pool):
+            result = await get_or_create_thread(self._make_ctx(), db_pool=None)
+
+        assert result["is_new"] is True
+        assert result["messages"] == []
+
+    @pytest.mark.asyncio
+    async def test_new_thread_created_when_none_exists(self):
+        """Returns is_new=True when no thread exists for the user/survey."""
+        from agents.agents.crystal import get_or_create_thread
+
+        import uuid
+        new_id = uuid.uuid4()
+
+        mock_cur = AsyncMock()
+        mock_cur.execute = AsyncMock()
+        # First fetchone: no existing thread; second fetchone: new row id
+        mock_cur.fetchone = AsyncMock(side_effect=[None, (new_id,)])
+        mock_cur.description = []
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock()
+        mock_conn.commit = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool_ctx = MagicMock()
+        mock_pool_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_pool_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_pool_ctx)
+
+        with patch("agents.lib.db._pool_conn", return_value=mock_pool):
+            result = await get_or_create_thread(self._make_ctx(), db_pool=None)
+
+        assert result["is_new"] is True
+        assert result["messages"] == []
+
+    @pytest.mark.asyncio
+    async def test_db_failure_returns_safe_fallback(self):
+        """DB failure returns safe fallback dict without raising."""
+        from agents.agents.crystal import get_or_create_thread
+
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(side_effect=Exception("DB down"))
+
+        with patch("agents.lib.db._pool_conn", return_value=mock_pool):
+            result = await get_or_create_thread(self._make_ctx(), db_pool=None)
+
+        assert result["id"] is None
+        assert result["messages"] == []
+        assert result["is_new"] is True
+
+
+# ── TestReactLoop ─────────────────────────────────────────────────────────────────
+
+class TestReactLoop:
+    """Tests for _run_react_loop()."""
+
+    def _make_input(self, **kwargs):
+        defaults = dict(
+            survey_id="s-1",
+            org_id="org-1",
+            message="What is our NPS?",
+            insights=SAMPLE_INSIGHTS,
+            topics=SAMPLE_TOPICS,
+            metrics=SAMPLE_METRICS,
+        )
+        defaults.update(kwargs)
+        return CrystalInput(**defaults)
+
+    @pytest.mark.asyncio
+    async def test_returns_crystal_output_with_answer(self):
+        """_run_react_loop returns a CrystalOutput with a non-empty answer."""
+        from agents.agents.crystal import _run_react_loop
+
+        mock_output = _make_output()
+
+        with (
+            patch("agents.agents.crystal.call_agent", new=AsyncMock(return_value=(mock_output, []))),
+            patch("agents.agents.crystal._build_system_prompt_agentic", return_value="system prompt"),
+            patch("redis.asyncio.from_url", new=AsyncMock(side_effect=Exception("no redis"))),
+        ):
+            result = await _run_react_loop(self._make_input())
+
+        assert isinstance(result, CrystalOutput)
+        assert len(result.answer) > 0
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_exceeded_raises_value_error(self):
+        """When Redis rate limit count > 10, raises ValueError."""
+        from agents.agents.crystal import _run_react_loop
+
+        mock_redis = AsyncMock()
+        mock_redis.incr = AsyncMock(return_value=11)
+        mock_redis.expire = AsyncMock()
+        mock_redis.close = AsyncMock()
+
+        with patch("redis.asyncio.from_url", new=AsyncMock(return_value=mock_redis)):
+            with pytest.raises(ValueError, match="Rate limit"):
+                await _run_react_loop(self._make_input())
+
+    @pytest.mark.asyncio
+    async def test_history_limited_to_conversation_window(self):
+        """History passed to call_agent is limited to CRYSTAL_CONVERSATION_WINDOW * 2 messages."""
+        from agents.agents.crystal import _run_react_loop
+        from agents.lib.constants import CRYSTAL_CONVERSATION_WINDOW
+
+        # Build history with more than the window
+        long_history = [
+            {"role": "user" if i % 2 == 0 else "assistant", "content": f"msg {i}"}
+            for i in range(CRYSTAL_CONVERSATION_WINDOW * 2 + 6)
+        ]
+
+        captured = {}
+
+        async def capture_call(agent_name, system, user, output_schema, current_tokens=0, prior_messages=None):
+            captured["prior_messages"] = prior_messages
+            return (_make_output(), make_credit("crystal"))
+
+        with (
+            patch("agents.agents.crystal.call_agent", new=capture_call),
+            patch("agents.agents.crystal._build_system_prompt_agentic", return_value="sys"),
+            patch("redis.asyncio.from_url", new=AsyncMock(side_effect=Exception("no redis"))),
+        ):
+            await _run_react_loop(self._make_input(conversation_history=long_history))
+
+        prior = captured.get("prior_messages") or []
+        assert len(prior) <= CRYSTAL_CONVERSATION_WINDOW * 2
+
+
+# ── TestReactLoopStreaming ─────────────────────────────────────────────────────────
+
+class TestReactLoopStreaming:
+    """Tests for _run_react_loop_streaming()."""
+
+    def _make_input(self, **kwargs):
+        defaults = dict(
+            survey_id="s-1",
+            org_id="org-1",
+            message="What themes are emerging?",
+            insights=SAMPLE_INSIGHTS,
+        )
+        defaults.update(kwargs)
+        return CrystalInput(**defaults)
+
+    async def _collect_events(self, inp, extra_patches=None):
+        import json as _json
+        from agents.agents.crystal import _run_react_loop_streaming
+
+        events = []
+        # dispatch_tool is imported locally inside the function, patch at source
+        mock_dispatch = AsyncMock(return_value={"overview": "test data"})
+        mock_call_agent = AsyncMock(return_value=(_make_output(), make_credit("crystal")))
+
+        patches_ctx = [
+            patch("agents.crystal.tools.dispatch_tool", new=mock_dispatch),
+            patch("agents.agents.crystal.call_agent", new=mock_call_agent),
+            patch("redis.asyncio.from_url", new=AsyncMock(side_effect=Exception("no redis"))),
+        ]
+        if extra_patches:
+            for target, mock_val in extra_patches.items():
+                patches_ctx.append(patch(target, new=mock_val))
+
+        import contextlib
+        with contextlib.ExitStack() as stack:
+            for p in patches_ctx:
+                stack.enter_context(p)
+            async for event_str in _run_react_loop_streaming(inp):
+                events.append(_json.loads(event_str))
+
+        return events
+
+    @pytest.mark.asyncio
+    async def test_events_contain_type_field(self):
+        """All yielded events have a 'type' field."""
+        events = await self._collect_events(self._make_input())
+        assert all("type" in e for e in events)
+
+    @pytest.mark.asyncio
+    async def test_first_tool_event_is_thinking(self):
+        """The first event per tool has type == 'thinking'."""
+        events = await self._collect_events(self._make_input())
+        thinking_events = [e for e in events if e.get("type") == "thinking"]
+        assert len(thinking_events) >= 1
+
+    @pytest.mark.asyncio
+    async def test_observation_follows_thinking(self):
+        """An 'observation' event follows each 'thinking' event when tool succeeds."""
+        events = await self._collect_events(self._make_input())
+        types = [e["type"] for e in events]
+        # Find first thinking and verify observation comes after it
+        if "thinking" in types:
+            first_thinking_idx = types.index("thinking")
+            # An observation should appear somewhere after the first thinking
+            post_thinking_types = types[first_thinking_idx + 1:]
+            assert "observation" in post_thinking_types
+
+    @pytest.mark.asyncio
+    async def test_synthesizing_event_before_answer(self):
+        """A 'synthesizing' event is always emitted before the 'answer' event."""
+        events = await self._collect_events(self._make_input())
+        types = [e["type"] for e in events]
+        assert "synthesizing" in types
+        assert "answer" in types
+        assert types.index("synthesizing") < types.index("answer")
+
+    @pytest.mark.asyncio
+    async def test_last_event_is_answer(self):
+        """The last event has type == 'answer' with an 'answer' field."""
+        events = await self._collect_events(self._make_input())
+        assert len(events) > 0
+        last = events[-1]
+        assert last["type"] == "answer"
+        assert "answer" in last
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_first_event_is_error(self):
+        """When rate limit is exceeded, first event is type == 'error'."""
+        import json as _json
+        from agents.agents.crystal import _run_react_loop_streaming
+
+        mock_redis = AsyncMock()
+        mock_redis.incr = AsyncMock(return_value=11)
+        mock_redis.expire = AsyncMock()
+        mock_redis.close = AsyncMock()
+
+        events = []
+        with patch("redis.asyncio.from_url", new=AsyncMock(return_value=mock_redis)):
+            async for event_str in _run_react_loop_streaming(self._make_input()):
+                events.append(_json.loads(event_str))
+
+        assert len(events) >= 1
+        assert events[0]["type"] == "error"
+
+
+# ── TestBuildSystemPromptAgentic ──────────────────────────────────────────────────
+
+class TestBuildSystemPromptAgentic:
+    """Tests for _build_system_prompt_agentic()."""
+
+    def _make_ctx(self, scope="survey", has_open_text=True):
+        from agents.crystal.context import CrystalContext
+        return CrystalContext(
+            org_id="org-1",
+            user_id="user-1",
+            survey_id="survey-1",
+            scope=scope,
+            has_open_text=has_open_text,
+        )
+
+    def test_contains_available_tools(self):
+        """Prompt contains 'Available Tools' section."""
+        from agents.agents.crystal import _build_system_prompt_agentic
+
+        prompt = _build_system_prompt_agentic(self._make_ctx())
+        assert "Available Tools" in prompt
+
+    def test_no_open_text_mentions_score_only(self):
+        """When has_open_text=False, prompt says 'no open-text questions'."""
+        from agents.agents.crystal import _build_system_prompt_agentic
+
+        prompt = _build_system_prompt_agentic(self._make_ctx(has_open_text=False))
+        assert "no open-text questions" in prompt.lower() or "no open-text" in prompt
+
+    def test_org_scope_contains_portfolio_framing(self):
+        """When scope is 'org', prompt includes portfolio-level framing."""
+        from agents.agents.crystal import _build_system_prompt_agentic
+
+        prompt = _build_system_prompt_agentic(self._make_ctx(scope="org"))
+        # Should mention cross-survey or portfolio or "all surveys"
+        lower = prompt.lower()
+        assert "all surveys" in lower or "portfolio" in lower or "organization" in lower

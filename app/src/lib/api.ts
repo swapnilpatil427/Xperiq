@@ -510,12 +510,19 @@ export function createApiClient(getToken: GetToken) {
 
     // ── Survey Insights (v2 — agentic) ────────────────────────────────────────
 
-    listInsights: async (surveyId: string, opts: { timeWindow?: string } = {}): Promise<{ insights: AgenticInsight[]; run_status?: string }> => {
+    listInsights: async (surveyId: string, opts: { timeWindow?: string } = {}): Promise<{
+      insights:        AgenticInsight[];
+      run_status?:     string | null;
+      survey?:         { id: string; title: string; response_count: number };
+      crystal_opening?: string | null;
+      pipeline_active?: boolean;
+      survey_status?:  string;
+    }> => {
       const params = new URLSearchParams();
       if (opts.timeWindow && opts.timeWindow !== 'all_time') params.set('time_window', opts.timeWindow);
       const qs = params.toString();
       const url = `/api/insights/${surveyId}/list${qs ? '?' + qs : ''}`;
-      const res = await http.get<{ insights: AgenticInsight[]; run_status?: string }>(url);
+      const res = await http.get(url);
       return res.data;
     },
 
@@ -570,6 +577,10 @@ export function createApiClient(getToken: GetToken) {
         avg_effort_score:   coerce(t.avg_effort_score),
         driver_score:       coerce(t.driver_score),
         velocity_pct:       coerce(t.velocity_pct),
+        // Hierarchy fields — pass parent_topic_id as-is (UUID string or null)
+        parent_topic_id:    t.parent_topic_id ?? null,
+        hierarchy_level:    t.hierarchy_level != null ? Number(t.hierarchy_level) : undefined,
+        sub_topic_count:    t.sub_topic_count != null ? Number(t.sub_topic_count) : 0,
       }));
       return { ...res.data, topics };
     },
@@ -581,7 +592,24 @@ export function createApiClient(getToken: GetToken) {
       window: string;
     }> => {
       const res = await http.get(`/api/insights/${surveyId}/drivers?window=${window}`);
-      return res.data as { drivers: TopicDriver[]; overall_nps: number | null; total_topics: number; window: string };
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const drivers = ((res.data as any).drivers ?? []).map((d: TopicDriver) => ({
+        ...d,
+        volume:          d.volume != null ? Number(d.volume) : 0,
+        nps_delta:       coerce(d.nps_delta),
+        impact_score:    coerce(d.impact_score) ?? 0,
+        sentiment_score: coerce(d.sentiment_score),
+        effort_score:    coerce(d.effort_score),
+        positive_pct:    coerce(d.positive_pct),
+        negative_pct:    coerce(d.negative_pct),
+        topic_avg_nps:   coerce(d.topic_avg_nps),
+      }));
+      const overall = (res.data as any).overall_nps;
+      return {
+        ...(res.data as any),
+        drivers,
+        overall_nps: overall != null ? Number(overall) : null,
+      };
     },
 
     getTopicQuotes: async (surveyId: string, topicId: string): Promise<{
@@ -645,7 +673,35 @@ export function createApiClient(getToken: GetToken) {
       const res = await http.get<{ themes: TopicTheme[]; total_topics: number; window: string }>(
         `/api/insights/${surveyId}/topics/hierarchy?window=${window}`,
       );
-      return res.data;
+      // Postgres NUMERIC columns arrive as strings — coerce topic fields in every theme.
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      type TopicWithSubtopics = SurveyTopic & { subtopics?: SurveyTopic[] };
+      const coerceTopic = (t: TopicWithSubtopics): TopicWithSubtopics => ({
+        ...t,
+        sentiment_score:   coerce(t.sentiment_score),
+        effort_score:      coerce(t.effort_score),
+        urgency_score:     coerce(t.urgency_score),
+        nps_avg:           coerce(t.nps_avg),
+        positive_pct:      coerce(t.positive_pct),
+        negative_pct:      coerce(t.negative_pct),
+        volume_delta_pct:  coerce(t.volume_delta_pct),
+        nps_impact:        coerce(t.nps_impact),
+        net_sentiment:     coerce(t.net_sentiment),
+        driver_score:      coerce(t.driver_score),
+        avg_csat:          coerce(t.avg_csat),
+        csat_impact:       coerce(t.csat_impact),
+        avg_effort_score:  coerce(t.avg_effort_score),
+        velocity_pct:      coerce(t.velocity_pct),
+        promoter_pct:      coerce(t.promoter_pct),
+        detractor_pct:     coerce(t.detractor_pct),
+        passive_pct:       coerce(t.passive_pct),
+        subtopics:         t.subtopics?.map(coerceTopic),
+      });
+      const themes = (res.data.themes ?? []).map((theme) => ({
+        ...theme,
+        topics: (theme.topics ?? []).map(coerceTopic),
+      }));
+      return { ...res.data, themes };
     },
 
     getTopicDetail: async (
@@ -656,7 +712,36 @@ export function createApiClient(getToken: GetToken) {
       const res = await http.get<{ topic: SurveyTopic; detail: TopicDetail; window: string }>(
         `/api/insights/${surveyId}/topics/${topicId}/detail?window=${window}`,
       );
-      return res.data;
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const coerceTopic = (t: SurveyTopic): SurveyTopic => ({
+        ...t,
+        sentiment_score:  coerce(t.sentiment_score),
+        effort_score:     coerce(t.effort_score),
+        urgency_score:    coerce(t.urgency_score),
+        nps_avg:          coerce(t.nps_avg),
+        positive_pct:     coerce(t.positive_pct),
+        negative_pct:     coerce(t.negative_pct),
+        volume_delta_pct: coerce(t.volume_delta_pct),
+        nps_impact:       coerce(t.nps_impact),
+        net_sentiment:    coerce(t.net_sentiment),
+        driver_score:     coerce(t.driver_score),
+        avg_csat:         coerce(t.avg_csat),
+        csat_impact:      coerce(t.csat_impact),
+        avg_effort_score: coerce(t.avg_effort_score),
+        velocity_pct:     coerce(t.velocity_pct),
+        promoter_pct:     coerce(t.promoter_pct),
+        detractor_pct:    coerce(t.detractor_pct),
+        passive_pct:      coerce(t.passive_pct),
+      } as SurveyTopic);
+      const raw = res.data;
+      return {
+        ...raw,
+        topic:  raw.topic  ? coerceTopic(raw.topic)  : raw.topic,
+        detail: raw.detail ? {
+          ...raw.detail,
+          subtopics: (raw.detail.subtopics ?? []).map(coerceTopic),
+        } : raw.detail,
+      };
     },
 
     getTopicVerbatims: async (
@@ -707,6 +792,22 @@ export function createApiClient(getToken: GetToken) {
       top_surveys:      Array<{ id: string; title: string; response_count: number }>;
     }> => {
       const res = await http.get('/api/orgs/me/analytics');
+      return res.data;
+    },
+
+    getExperienceOverview: async (): Promise<{
+      surveys: Array<{
+        id: string; title: string; status: string;
+        response_count: number; nps_score: number | null;
+        csat_score: number | null; metrics_at: string | null;
+      }>;
+      portfolio_metrics: {
+        nps_score: number | null; csat_score: number | null;
+        response_count: number; survey_count: number; captured_at: string;
+      } | null;
+      active_survey_count: number;
+    }> => {
+      const res = await http.get('/api/experience/org/overview');
       return res.data;
     },
 

@@ -14,7 +14,7 @@ const { requireAuth } = require('../middleware/auth');
 const db         = require('../lib/db');
 const logger     = require('../lib/logger');
 const fetch      = require('node-fetch');
-const { serverError } = require('../lib/httpError');
+const { serverError, clientError } = require('../lib/httpError');
 
 const AGENTS_URL          = process.env.AGENTS_URL || 'http://localhost:8001';
 const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY
@@ -22,9 +22,14 @@ const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY
     ? 'dev-internal-key-change-in-prod'
     : (() => { throw new Error('AGENTS_INTERNAL_KEY must be set in production'); })());
 
-async function _agentsFetch(path, opts = {}) {
+// Crystal (ReAct loop + eval agent) regularly takes 10–20s on dev free-tier models.
+// All other agents operations (status polls, feedback writes) complete in <5s.
+const CRYSTAL_TIMEOUT_MS = 90_000;  // 90s — covers ReAct + eval + network
+const DEFAULT_AGENTS_TIMEOUT_MS = 15_000;
+
+async function _agentsFetch(path, opts = {}, timeoutMs = DEFAULT_AGENTS_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(`${AGENTS_URL}${path}`, {
       ...opts,
@@ -168,7 +173,9 @@ router.use(requireAuth);
 // ── Helper: verify survey belongs to org ──────────────────────────────────────
 async function getSurvey(surveyId, orgId) {
   const { rows } = await db.query(
-    'SELECT id, title, questions, org_id FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL',
+    `SELECT id, title, questions, org_id, status,
+            (SELECT COUNT(*)::int FROM responses WHERE survey_id = surveys.id) AS response_count
+     FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
     [surveyId, orgId],
   );
   if (rows[0]) return rows[0];
@@ -177,7 +184,7 @@ async function getSurvey(surveyId, orgId) {
   // This handles surveys created under real Clerk auth before switching to SKIP_AUTH.
   if (process.env.SKIP_AUTH === 'true') {
     const { rows: bare } = await db.query(
-      'SELECT id, title, questions, org_id FROM surveys WHERE id = $1 AND deleted_at IS NULL',
+      'SELECT id, title, questions, org_id, status FROM surveys WHERE id = $1 AND deleted_at IS NULL',
       [surveyId],
     ).catch(() => ({ rows: [] }));
     if (bare[0]) {
@@ -282,10 +289,31 @@ router.get('/:surveyId/list', async (req, res) => {
       [surveyId, req.orgId],
     );
 
+    // crystal_opening: top descriptive insight narrative
+    const { rows: openingRows } = await db.query(
+      `SELECT narrative FROM insights
+       WHERE survey_id = $1 AND org_id = $2 AND layer = 'descriptive'
+         AND superseded_at IS NULL
+       ORDER BY trust_score DESC NULLS LAST LIMIT 1`,
+      [surveyId, req.orgId]
+    ).catch(() => ({ rows: [] }));
+    const crystalOpening = openingRows[0]?.narrative || null;
+
+    // pipeline_active: check for running run
+    const { rows: runningRows } = await db.query(
+      `SELECT id FROM agent_runs
+       WHERE survey_id = $1 AND status = 'running' LIMIT 1`,
+      [surveyId]
+    ).catch(() => ({ rows: [] }));
+    const pipelineActive = runningRows.length > 0;
+
     res.json({
-      insights:   rows,
-      run_status: runRows[0]?.status ?? null,
-      survey:     { id: survey.id, title: survey.title },
+      insights:        rows,
+      run_status:      runRows[0]?.status ?? null,
+      survey:          { id: survey.id, title: survey.title, response_count: survey.response_count ?? 0 },
+      crystal_opening: crystalOpening,
+      pipeline_active: pipelineActive,
+      survey_status:   survey.status,
     });
   } catch (err) {
     logger.error({ err: err.message, surveyId }, 'insights:list:error');
@@ -528,10 +556,11 @@ router.get('/:surveyId/topics', async (req, res) => {
               first_seen_at, last_seen_at, nps_avg, positive_pct, negative_pct,
               net_sentiment, nps_impact, promoter_pct, detractor_pct, passive_pct,
               driver_score, avg_csat, csat_impact, avg_effort_score,
-              confidence_level, top_verbatims, emotion_distribution
+              confidence_level, top_verbatims, emotion_distribution,
+              parent_topic_id, hierarchy_level, sub_topic_count
        FROM survey_topics
        WHERE survey_id = $1 AND org_id = $2 AND time_window = $3
-       ORDER BY ${sortBy} LIMIT 30`,
+       ORDER BY ${sortBy} LIMIT 50`,
       [surveyId, req.orgId, window],
     ).catch(() => ({ rows: [] }));
 
@@ -873,7 +902,7 @@ router.post('/:surveyId/crystal', async (req, res) => {
     const response = await _agentsFetch('/insights/crystal', {
       method: 'POST',
       body:   JSON.stringify(agentPayload),
-    });
+    }, CRYSTAL_TIMEOUT_MS);
 
     // Persist thread — keep last 20 exchanges (40 messages)
     const userMsg      = { role: 'user',      content: message.trim(),  created_at: new Date().toISOString() };
@@ -1492,6 +1521,118 @@ router.get('/:surveyId/topic-trends', async (req, res) => {
   } catch (err) {
     logger.error({ err: err.message, surveyId }, 'insights:topic-trends:error');
     serverError(res, err);
+  }
+});
+
+// ── GET /:surveyId/checkpoints ────────────────────────────────────────────────
+
+router.get('/:surveyId/checkpoints', requireAuth, async (req, res) => {
+  const { surveyId } = req.params;
+  const { orgId } = req;
+  try {
+    const { rows } = await db.query(
+      `SELECT id, checkpoint_number, response_count_at_checkpoint,
+              nps_at_checkpoint, csat_at_checkpoint, topic_fingerprint,
+              created_at, (report_url IS NOT NULL) as has_report
+       FROM survey_insight_checkpoints
+       WHERE survey_id = $1 AND org_id = $2
+       ORDER BY checkpoint_number DESC
+       LIMIT 20`,
+      [surveyId, orgId]
+    );
+    res.json({ checkpoints: rows });
+  } catch (err) {
+    serverError(res, err, { endpoint: 'checkpoints_list', surveyId });
+  }
+});
+
+// ── GET /:surveyId/checkpoints/:checkpointId/report ───────────────────────────
+
+router.get('/:surveyId/checkpoints/:checkpointId/report', requireAuth, async (req, res) => {
+  const { surveyId, checkpointId } = req.params;
+  const { orgId } = req;
+  const agentsClient = require('../lib/agentsClient');
+  try {
+    const { rows } = await db.query(
+      `SELECT report_url FROM survey_insight_checkpoints
+       WHERE id = $1 AND survey_id = $2 AND org_id = $3`,
+      [checkpointId, surveyId, orgId]
+    );
+    if (!rows.length) return clientError(res, 404, 'checkpoint_not_found');
+    const { report_url } = rows[0];
+    if (!report_url) return clientError(res, 404, 'report_not_ready');
+
+    const isProduction = process.env.NODE_ENV === 'production' || process.env.AGENTS_ENV === 'staging';
+    if (isProduction) {
+      const url = await agentsClient.getCheckpointReadUrl(report_url);
+      res.json({ url, expires_in_seconds: 900 });
+    } else {
+      const blob = await agentsClient.getCheckpointBlob(report_url);
+      res.json(blob);
+    }
+  } catch (err) {
+    serverError(res, err, { endpoint: 'checkpoint_report', surveyId, checkpointId });
+  }
+});
+
+// ── POST /:surveyId/trigger ───────────────────────────────────────────────────
+
+router.post('/:surveyId/trigger', requireAuth, async (req, res) => {
+  const { surveyId } = req.params;
+  const { orgId } = req;
+  const agentsClient = require('../lib/agentsClient');
+  const { getRedisClient } = require('../lib/redis');
+  const redis = getRedisClient();
+
+  try {
+    // Validate survey belongs to org and is active
+    const { rows: surveyRows } = await db.query(
+      `SELECT status, response_count FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      [surveyId, orgId]
+    );
+    if (!surveyRows.length) return clientError(res, 404, 'survey_not_found');
+    if (surveyRows[0].status !== 'active') {
+      return clientError(res, 409, 'insights_pipeline_suspended');
+    }
+
+    // Rate limiting
+    const today = new Date().toISOString().split('T')[0];
+    const rateKey = `manual_refresh:${orgId}:${surveyId}:${today}`;
+    if (redis) {
+      const count = await redis.incr(rateKey);
+      if (count === 1) await redis.expire(rateKey, 86400);
+      if (count > 3) {
+        return res.status(429).json({ error: 'daily_limit_reached', limit: 3 });
+      }
+    }
+
+    // Check min new responses
+    const { rows: lastRun } = await db.query(
+      `SELECT response_count_at_run FROM agent_runs
+       WHERE survey_id = $1 AND org_id = $2 AND run_type = 'insight_generation'
+         AND status = 'completed'
+       ORDER BY completed_at DESC LIMIT 1`,
+      [surveyId, orgId]
+    );
+    const lastCount = lastRun[0]?.response_count_at_run || 0;
+    const currentCount = surveyRows[0].response_count || 0;
+    if (currentCount - lastCount < 10) {
+      return res.status(400).json({ error: 'min_responses_not_met', required: 10, new_responses: currentCount - lastCount });
+    }
+
+    // Create run and trigger
+    const { rows: runRows } = await db.query(
+      `INSERT INTO agent_runs (org_id, user_id, thread_id, run_type, status, intent, survey_id, response_count_at_run)
+       VALUES ($1, $2, $3, 'insight_generation', 'running', 'manual_refresh', $4, $5)
+       RETURNING id`,
+      [orgId, req.userId, `manual:${orgId}:${surveyId}:${Date.now()}`, surveyId, currentCount]
+    );
+    const runId = runRows[0].id;
+
+    await agentsClient.triggerInsightGeneration({ surveyId, orgId, runId, trigger: 'manual', force_regenerate: true });
+    res.json({ run_id: runId, status: 'triggered' });
+  } catch (err) {
+    serverError(res, err, { endpoint: 'trigger_insights', surveyId });
   }
 });
 

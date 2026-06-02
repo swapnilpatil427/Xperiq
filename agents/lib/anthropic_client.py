@@ -172,4 +172,20 @@ async def call_agent_anthropic(
         cost_usd=entry.cost_usd,
         stop_reason=response.stop_reason,
     )
+    # Fire-and-forget audit log — never raises
+    import asyncio as _asyncio
+    from agents.lib.openrouter import _log_ai_operation
+    from agents.lib.trace_context import get_trace_context
+    _log_ctx = get_trace_context()
+    _asyncio.ensure_future(_log_ai_operation(
+        org_id=_log_ctx.get("org_id", ""),
+        run_id=_log_ctx.get("run_id"),
+        operation=agent_name,
+        model=config.model,
+        provider="anthropic",
+        input_tokens=usage["input_tokens"],
+        output_tokens=usage["output_tokens"],
+        cost_usd=entry.cost_usd,
+        latency_ms=round(duration * 1000),
+    ))
     return parsed, entry

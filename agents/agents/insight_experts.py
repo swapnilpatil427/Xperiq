@@ -162,11 +162,48 @@ async def narrate_nps_insight(
     promoters: float | None,
     passives: float | None,
     detractors: float | None,
+    prior_snapshots: list[dict] | None = None,
 ) -> NpsExpertOutput:
+    # Build longitudinal context when we have prior runs
+    longitudinal = ""
+    if prior_snapshots:
+        history_lines = []
+        for snap in reversed(prior_snapshots):  # oldest first for narrative flow
+            snap_nps = snap.get("nps")
+            snap_count = snap.get("response_count")
+            snap_date = snap.get("captured_at")
+            if snap_nps is None:
+                continue
+            date_str = ""
+            if snap_date:
+                try:
+                    from datetime import datetime, timezone
+                    if hasattr(snap_date, "strftime"):
+                        date_str = snap_date.strftime("%b %d")
+                    else:
+                        dt = datetime.fromisoformat(str(snap_date).replace("Z", "+00:00"))
+                        date_str = dt.strftime("%b %d")
+                except Exception:
+                    pass
+            history_lines.append(
+                f"  {date_str}: NPS={snap_nps}" + (f" (n={snap_count})" if snap_count else "")
+            )
+        if history_lines:
+            longitudinal = "\nHistorical NPS (oldest → newest):\n" + "\n".join(history_lines)
+            # Compute the delta vs the most recent prior snapshot
+            most_recent_nps = next(
+                (s["nps"] for s in prior_snapshots if s.get("nps") is not None), None
+            )
+            if most_recent_nps is not None:
+                delta = round(score - most_recent_nps, 1)
+                direction = "up" if delta > 0 else "down" if delta < 0 else "unchanged"
+                longitudinal += f"\nDelta vs prior run: {delta:+.1f} pts ({direction})"
+
     prompt = (
         f"NPS={score}, n={n}, 95% CI=[{ci_low:.1f}, {ci_high:.1f}]. "
-        f"Promoters={promoters}%, Passives={passives}%, Detractors={detractors}%.\n"
+        f"Promoters={promoters}%, Passives={passives}%, Detractors={detractors}%.{longitudinal}\n\n"
         "Write a headline (≤120 chars) and 2-3 sentence narrative grounded in these numbers. "
+        "If historical data is provided, include a delta statement (e.g. 'up X pts since last run'). "
         "Include benchmark_context (compare to industry), risk_flag (bool), and key_driver_hypothesis."
     )
     output, _ = await call_agent(
@@ -357,17 +394,41 @@ async def narrate_prescriptive_insight(
     csat_score: float | None,
     effort_score: float,
     overlay: str = "",
+    top_drivers: list[dict] | None = None,
 ) -> PrescriptiveExpertOutput:
     metric_context = ""
     if nps_score is not None:
-        metric_context += f" | NPS={nps_score}"
+        metric_context += f" | Survey NPS={nps_score}"
     if csat_score is not None:
         metric_context += f" | CSAT={csat_score}/5"
+
+    # Build NPS-impact driver context so the LLM grounds its action in real data
+    driver_context = ""
+    if top_drivers:
+        lines = []
+        for d in top_drivers[:5]:
+            name = d.get("name", "")
+            nps_impact = d.get("nps_impact")
+            volume = d.get("response_count") or d.get("volume", 0)
+            sent = d.get("avg_sentiment_score", 0.0)
+            effort = d.get("avg_effort_score") or d.get("effort_score", 4.0)
+            if nps_impact is not None:
+                direction = "pain driver" if nps_impact < 0 else "strength driver"
+                lines.append(
+                    f"  - {name}: NPS impact={nps_impact:+.1f} ({direction}), "
+                    f"vol={volume}, sentiment={sent:.2f}, effort={effort:.1f}/7"
+                )
+        if lines:
+            driver_context = "\n\nNPS driver analysis (most impactful topics):\n" + "\n".join(lines)
+            driver_context += (
+                "\n\nFocus your action on the highest-magnitude pain driver above. "
+                "If fixing the top pain driver could address multiple negative topics, say so."
+            )
 
     prompt = (
         f"Top friction point: '{aspect}'\n"
         f"Volume: {size} mentions | Sentiment: {sentiment} | Friction type: {friction_type}\n"
-        f"Effort score: {effort_score:.1f}/7{metric_context}\n\n"
+        f"Effort score: {effort_score:.1f}/7{metric_context}{driver_context}\n\n"
         "Generate a specific, actionable prescriptive insight. "
         "Set headline, narrative, priority, time_horizon, estimated_impact, "
         "ice_impact, ice_confidence, ice_ease (each 1-10)."

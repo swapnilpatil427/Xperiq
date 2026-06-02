@@ -13,7 +13,7 @@ const AUTH_PATH    = _require.resolve(resolve(__dirname, '../middleware/auth'));
 const DB_PATH      = _require.resolve(resolve(__dirname, '../lib/db'));
 const AGENTS_PATH  = _require.resolve(resolve(__dirname, '../lib/agentsClient'));
 const LOGGER_PATH  = _require.resolve(resolve(__dirname, '../lib/logger'));
-const ROUTER_PATH  = _require.resolve(resolve(__dirname, '../routes/local/copilot'));
+const ROUTER_PATH  = _require.resolve(resolve(__dirname, '../routes/copilot'));
 
 function fakeMod(id, exports) {
   return { id, filename: id, loaded: true, exports, children: [] };

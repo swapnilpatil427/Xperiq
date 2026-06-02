@@ -1,0 +1,132 @@
+"""Centralized constants for the Crystal Intelligence Platform.
+
+All hardcoded thresholds, limits, and tuning values live here.
+Import from this module — never hardcode these values in pipeline files.
+
+Environment-aware constants (AGENTS_ENV):
+  dev        — local development; small limits for fast iteration
+  dev-paid   — development with paid LLM API; medium limits
+  staging    — pre-production; near-production limits
+  prod       — production; enterprise-grade limits
+
+All per-env defaults can be overridden via environment variables.
+"""
+from __future__ import annotations
+import os
+
+_ENV = os.getenv("AGENTS_ENV", "dev").lower()
+
+# ── Streaming consumer ────────────────────────────────────────────────────────
+METRIC_SNAPSHOT_RESPONSE_THRESHOLD = 50    # write metric snapshot every N responses
+CHECKPOINT_FULL_RESPONSE_THRESHOLD = 200   # write full checkpoint blob every N responses
+CHECKPOINT_FULL_MAX_DAYS = 7               # also write full checkpoint if N days have passed
+
+# ── Response loading (environment-aware) ──────────────────────────────────────
+#
+# Why per-env limits matter:
+#   Statistical quality:  NPS margin of error at 95% CI ≈ 1.96 × SE(NPS)
+#     n=100  → MOE ≈ ±14 pts   (acceptable for quick pulse)
+#     n=300  → MOE ≈ ±8 pts    (good for dev-paid)
+#     n=500  → MOE ≈ ±6 pts    (good for staging)
+#     n=1000 → MOE ≈ ±4 pts    (enterprise quality; Bain/Satmetrix standard)
+#     n=1500 → MOE ≈ ±3 pts    (high confidence bootstrap)
+#
+#   Sampling note: these caps apply after stratified sampling selects
+#   a representative cross-section of ALL responses, not just the most recent.
+#
+# Bootstrap = first run (seeds topic centroids; needs more data)
+# Cap       = incremental runs (only new responses need ABSA/clustering)
+
+if _ENV == "prod":
+    _BOOTSTRAP_DEFAULT = "1500"
+    _CAP_DEFAULT       = "1000"
+    _ABSA_CAP_DEFAULT  = "150"
+    _ANCHOR_DEFAULT    = "75"
+elif _ENV == "staging":
+    _BOOTSTRAP_DEFAULT = "750"
+    _CAP_DEFAULT       = "500"
+    _ABSA_CAP_DEFAULT  = "100"
+    _ANCHOR_DEFAULT    = "50"
+elif _ENV == "dev-paid":
+    _BOOTSTRAP_DEFAULT = "500"
+    _CAP_DEFAULT       = "300"
+    _ABSA_CAP_DEFAULT  = "75"
+    _ANCHOR_DEFAULT    = "30"
+else:                                       # dev / local / test
+    _BOOTSTRAP_DEFAULT = "100"
+    _CAP_DEFAULT       = "100"
+    _ABSA_CAP_DEFAULT  = "50"
+    _ANCHOR_DEFAULT    = "10"
+
+INGEST_MAX_RESPONSES_BOOTSTRAP: int = int(os.getenv("INGEST_MAX_RESPONSES_BOOTSTRAP", _BOOTSTRAP_DEFAULT))
+INGEST_MAX_RESPONSES_CAP:       int = int(os.getenv("INGEST_MAX_RESPONSES_CAP",       _CAP_DEFAULT))
+INGEST_NEW_RESPONSE_ABSA_CAP:   int = int(os.getenv("INGEST_NEW_RESPONSE_ABSA_CAP",   _ABSA_CAP_DEFAULT))
+INGEST_ANCHOR_RESPONSES:        int = int(os.getenv("INGEST_ANCHOR_RESPONSES",        _ANCHOR_DEFAULT))
+
+# Surveys with more total responses than this use SQL-level NTILE sampling
+# (never loading all IDs into Python). Below this threshold, Python-side
+# sampling is fine (< 1000 rows × ~30 bytes ≈ 30 KB).
+INGEST_LARGE_SURVEY_THRESHOLD: int = int(os.getenv("INGEST_LARGE_SURVEY_THRESHOLD", "1000"))
+
+INGEST_STRATIFIED_BUCKETS = 6  # time buckets for proportional response sampling
+
+# ── Manual refresh ────────────────────────────────────────────────────────────
+MANUAL_REFRESH_MIN_NEW_RESPONSES = 10      # min new responses required to allow manual refresh
+MANUAL_REFRESH_MAX_DAILY = 3               # max manual refreshes per survey per day
+
+# ── Topic clustering ──────────────────────────────────────────────────────────
+TOPIC_ASSIGNMENT_THRESHOLD = 0.72          # cosine similarity threshold for topic assignment
+WINDOW_MIN_RESPONSES = {                   # min responses needed per window
+    "all_time": 1,
+    "last_30d": 10,
+    "last_7d": 5,
+}
+TOPIC_CONFIDENCE_LOW = 0.5                 # below this: low confidence
+TOPIC_CONFIDENCE_MEDIUM = 0.65             # below this: medium confidence
+TOPIC_CONFIDENCE_HIGH = 0.80               # above this: high confidence
+
+# ── Trust score ───────────────────────────────────────────────────────────────
+TRUST_STATISTICAL_MODERATE_MIN = 30        # min responses for moderate statistical trust
+TRUST_STATISTICAL_HIGH_MIN = 100           # min responses for high statistical trust (was 50)
+TRUST_LOW_MAX = 40                         # trust score ≤ this → low
+TRUST_MEDIUM_MAX = 70                      # trust score ≤ this → medium
+TRUST_HIGH_MAX = 100                       # trust score ≤ this → high
+
+# ── Report quality ────────────────────────────────────────────────────────────
+REPORT_QUALITY_RENARRATE_THRESHOLD = 60    # eval score below this triggers re-narration
+CRYSTAL_EVAL_PASS_THRESHOLD = 72           # minimum quality score for Crystal response to pass
+
+# ── Crystal ReAct ─────────────────────────────────────────────────────────────
+CRYSTAL_MAX_TOOL_TURNS = 10                # max tool call iterations per Crystal turn
+CRYSTAL_CONTEXT_COMPRESSION_THRESHOLD = 40_000  # token count triggering context compression
+CRYSTAL_CONVERSATION_WINDOW = 6            # number of prior turns included in context
+
+# ── Progressive data tiers ────────────────────────────────────────────────────
+PROGRESSIVE_TIER_FIRST_VOICES = 10         # response count threshold: first_voices tier
+PROGRESSIVE_TIER_EARLY_SIGNALS = 40        # response count threshold: early_signals tier
+PROGRESSIVE_TIER_GROWING_PICTURE = 70      # response count threshold: growing_picture tier
+PROGRESSIVE_TIER_FULL_REPORT = 100         # response count threshold: full_report tier
+
+# ── Object store / checkpoint blobs ──────────────────────────────────────────
+CHECKPOINT_BUCKET = ""                     # OCI bucket name (empty → local filesystem)
+CHECKPOINT_LOCAL_PATH = "/tmp/checkpoints" # local dev checkpoint directory
+CHECKPOINT_BLOB_SCHEMA_VERSION = 1         # current blob schema version
+
+# ── Zombie run detection ──────────────────────────────────────────────────────
+MAX_RUN_HEARTBEAT_STALE_MINUTES = 5        # heartbeat older than this → zombie candidate
+MAX_RUN_DURATION_MINUTES = 30              # run older than this → zombie regardless of heartbeat
+
+# ── Crystal thread lifecycle ──────────────────────────────────────────────────
+CRYSTAL_THREAD_INACTIVITY_TTL_DAYS = 7     # inactive thread TTL before reset
+CRYSTAL_THREAD_CONTEXT_WINDOW_TURNS = 6    # turns included in Crystal context
+CRYSTAL_THREAD_STORAGE_TTL_DAYS = 90       # thread storage retention period
+
+# ── Tiered report agent ───────────────────────────────────────────────────────
+REPORT_MAX_RESPONSES_WINDOW = 200          # max responses sent to LLM for any tiered report
+REPORT_REGEN_MIN_NEW_RESPONSES = 25        # min new responses since last report to trigger re-run
+
+# ── Narration quality loop ────────────────────────────────────────────────────
+NARRATE_MAX_ATTEMPTS = 2                   # max re-narration retries after low evaluate score
+
+# ── Response velocity ─────────────────────────────────────────────────────────
+RESPONSE_VELOCITY_UNIT = "per_day"         # velocity = response_count / days_since_first_response

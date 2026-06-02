@@ -104,6 +104,21 @@ class SpecialistRegistry:
         return result
 
 
+def get_specialist_for_survey(org_industry: str, survey_type: str | None = None) -> str:
+    """Map org industry + survey type to a specialist ID."""
+    industry_map = {
+        "healthcare":            "healthcare_cx",
+        "retail":                "retail_cx",
+        "financial_services":    "finserv_cx",
+        "education":             "education_cx",
+        "technology":            "saas_cx",
+    }
+    if survey_type in ("employee_engagement", "employee_satisfaction", "eNPS"):
+        return "employee_ex"
+    specialist = industry_map.get((org_industry or "").lower())
+    return specialist or "research_generic"
+
+
 # Singleton — loaded once at module import
 _registry: SpecialistRegistry | None = None
 

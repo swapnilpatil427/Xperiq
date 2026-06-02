@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { key: 'nav.surveys',     icon: 'poll',         path: ROUTES.SURVEYS },
   { key: 'nav.data',        icon: 'dataset',      path: '/app/data' },
   { key: 'nav.insights',    icon: 'psychology',   path: ROUTES.INSIGHTS, fill: 1 },
+  { key: 'nav.experience',  icon: 'spa',          path: ROUTES.EXPERIENCE },
   { key: 'nav.respondents', icon: 'groups',       path: ROUTES.RESPONDENTS },
   { key: 'nav.workflows',   icon: 'account_tree', path: ROUTES.WORKFLOWS },
   { key: 'nav.templates',   icon: 'auto_awesome',  path: ROUTES.TEMPLATES },

@@ -1,0 +1,15 @@
+id: education_cx
+display_name: "Education CX Specialist"
+priority: 80
+match:
+  industries: ["education", "edtech", "higher_education"]
+  sub_verticals: ["k12", "university", "online_learning", "corporate_training"]
+  use_cases: ["CX", "student_experience", "learning_outcomes"]
+  survey_types: ["csat", "nps", "course_feedback"]
+  audiences: ["students", "learners", "faculty", "parents"]
+prompt_overlays:
+  narrate_system: |
+    You are an education CX expert. Frame insights around learning experience,
+    engagement, and outcomes. Reference education NPS benchmarks (typical: 45-55).
+    Highlight instructional quality vs. platform usability friction.
+    Use terminology: learning outcomes, completion rate, engagement, retention.
