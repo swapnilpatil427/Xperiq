@@ -178,6 +178,31 @@ def _trust_statistical(n: int) -> int:
     return max(10, round(10 + (n / 30.0) * 60))
 
 
+def _build_metric_trust(n: int, below_minimum: bool = False) -> tuple[int, dict]:
+    """Trust score for metric.* insights (NPS, CSAT, CES).
+
+    Metric insights are computed facts derived from survey maths, not text-derived
+    qualitative claims. Citation coverage and LLM grounding are irrelevant — their
+    reliability comes entirely from sample size and CI width.
+
+    Formula: purely statistical, with a small CI-width deduction for very small n.
+    """
+    stat = _trust_statistical(n)
+    # Penalty for genuinely tiny samples: ≥30 → no penalty; <10 → –20
+    ci_penalty = 0 if n >= 30 else (20 if n < 10 else round((30 - n) / 20 * 20))
+    score = max(10, stat - ci_penalty)
+    if below_minimum:
+        score = min(score, 55)
+    return score, {
+        "statistical":          stat,
+        "coverage":             100,   # metric facts don't require citations
+        "consistency":          100,   # calculated from raw data, not text clusters
+        "grounding":            100,   # sourced from survey responses directly
+        "sample_size":          n,
+        "below_minimum_sample": below_minimum,
+    }
+
+
 def _trust_coverage(mentions: int, total: int) -> int:
     """Fraction of responses contributing to this insight (0–100)."""
     if total == 0:
@@ -2111,9 +2136,8 @@ async def node_narrate(state: dict) -> dict:
         ci_low    = m.get("ci_low",  nps_score - 5)
         ci_high   = m.get("ci_high", nps_score + 5)
         nps_result = _next_result()
-        trust_score, trust_json = _build_trust(
-            n=n, mentions=n, total=total_responses,
-            below_minimum=m.get("below_minimum", False),
+        trust_score, trust_json = _build_metric_trust(
+            n=n, below_minimum=m.get("below_minimum", False),
         )
         if isinstance(nps_result, NpsExpertOutput):
             headline  = nps_result.headline
@@ -2149,9 +2173,8 @@ async def node_narrate(state: dict) -> dict:
         ci_low_c  = m.get("ci_low",  score - 0.2)
         ci_high_c = m.get("ci_high", score + 0.2)
         csat_result = _next_result()
-        trust_score, trust_json = _build_trust(
-            n=n, mentions=n, total=total_responses,
-            below_minimum=m.get("below_minimum", False),
+        trust_score, trust_json = _build_metric_trust(
+            n=n, below_minimum=m.get("below_minimum", False),
         )
         if isinstance(csat_result, CsatExpertOutput):
             headline  = csat_result.headline
@@ -2616,7 +2639,7 @@ async def node_publish(state: dict) -> dict:
                         n = m["n"]
                         ci_low = m.get("ci_low", score - 5)
                         ci_high = m.get("ci_high", score + 5)
-                        trust_score, trust_json = _build_trust(n=n, mentions=n, total=w_total)
+                        trust_score, trust_json = _build_metric_trust(n=n)
                         w_ins = {
                             "layer": "descriptive", "category": "metric.nps",
                             "headline": f"NPS is {score} ({window.replace('_', ' ')})",
@@ -2636,7 +2659,7 @@ async def node_publish(state: dict) -> dict:
                         n = m["n"]
                         ci_low_c = m.get("ci_low", score - 0.2)
                         ci_high_c = m.get("ci_high", score + 0.2)
-                        trust_score, trust_json = _build_trust(n=n, mentions=n, total=w_total)
+                        trust_score, trust_json = _build_metric_trust(n=n)
                         w_ins = {
                             "layer": "descriptive", "category": "metric.csat",
                             "headline": f"CSAT is {score}/5 ({window.replace('_', ' ')})",

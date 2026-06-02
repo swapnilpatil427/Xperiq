@@ -959,8 +959,37 @@ function InsightGrid({
     return true;
   }), [insights, filterLayer, filterCategory]);
 
-  // Hero: first NPS descriptive insight
-  const heroInsight = insights.find((i) => i.layer === 'descriptive' && i.category === 'metric.nps');
+  // Hero: pick the single most actionable, evidence-backed insight.
+  // Priority order: prescriptive with action → diagnostic with narrative+citations
+  // → any with real narrative+citations → skip featured entirely.
+  // Metric-only restatements (no narrative, no citations) are never featured.
+  const heroInsight = (() => {
+    const hasEvidence = (i: AgenticInsight) =>
+      i.citations_json.length > 0 &&
+      i.narrative?.trim().length > 0 &&
+      !/^[^:]{1,60}:\s/.test(i.narrative);
+
+    // 1. Best prescriptive: has a recommended action + evidence
+    const bestPrescriptive = insights
+      .filter((i) => i.layer === 'prescriptive' && i.recommended_action && hasEvidence(i))
+      .sort((a, b) => b.priority - a.priority || b.trust_score - a.trust_score)[0];
+    if (bestPrescriptive) return bestPrescriptive;
+
+    // 2. Best diagnostic: has narrative + citations + trust ≥ 65
+    const bestDiagnostic = insights
+      .filter((i) => i.layer === 'diagnostic' && i.trust_score >= 65 && hasEvidence(i))
+      .sort((a, b) => b.priority - a.priority || b.trust_score - a.trust_score)[0];
+    if (bestDiagnostic) return bestDiagnostic;
+
+    // 3. Any insight with real evidence, sorted by priority × trust
+    const anyWithEvidence = insights
+      .filter(hasEvidence)
+      .sort((a, b) => (b.priority * b.trust_score) - (a.priority * a.trust_score))[0];
+    if (anyWithEvidence) return anyWithEvidence;
+
+    // 4. Nothing worth featuring — return null to hide the section
+    return null;
+  })();
 
   function prettifyCategory(cat: string) {
     const MAP: Record<string, string> = {
@@ -986,34 +1015,91 @@ function InsightGrid({
           transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}>
           <GlassCard className="p-6 overflow-hidden relative"
             style={{ background: 'linear-gradient(135deg, rgba(42,75,217,0.06) 0%, rgba(131,41,200,0.04) 100%)', borderColor: 'rgba(42,75,217,0.2)' }}>
-            <div className="flex items-center gap-2 mb-3">
+
+            {/* Header row: featured label + layer badge + reliability */}
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
               <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
                 {t('experience.insightGrid.featuredLabel')}
               </span>
+              {/* Layer badge — uses real layer, not hardcoded "NPS" */}
               <span className="px-2 py-0.5 rounded-md text-[10px] font-bold"
-                style={{ background: '#e0f2fe', color: '#0369a1' }}>NPS</span>
-              {heroInsight.trust_score >= 80 && (
-                <span className="text-[10px] font-bold text-emerald-700">● Reliable</span>
+                style={{ background: LAYER_CONFIG[heroInsight.layer]?.bg ?? '#e0f2fe', color: LAYER_CONFIG[heroInsight.layer]?.color ?? '#0369a1' }}>
+                {t(`surveyInsights.layers.${heroInsight.layer}.label`)}
+              </span>
+              {prettifyCategory(heroInsight.category) && (
+                <span className="text-[10px] text-on-surface-variant/60 font-medium">
+                  {prettifyCategory(heroInsight.category)}
+                </span>
               )}
+              <div className="flex-1" />
+              <span className={`text-[10px] font-bold ${heroInsight.trust_score >= 80 ? 'text-emerald-700' : heroInsight.trust_score >= 60 ? 'text-amber-700' : 'text-on-surface-variant'}`}>
+                {heroInsight.trust_score >= 80 ? t('experience.insightGrid.reliable') : heroInsight.trust_score >= 60 ? t('experience.insightGrid.indicative') : t('experience.insightGrid.lowSignal')}
+              </span>
             </div>
-            <h2 className="text-lg font-black font-headline leading-snug mb-2 text-on-surface">
+
+            {/* Headline */}
+            <h2 className="text-xl font-black font-headline leading-snug mb-3 text-on-surface">
               {heroInsight.headline}
             </h2>
+
+            {/* Narrative — the business explanation */}
             {heroInsight.narrative && !/^[^:]{1,60}:\s/.test(heroInsight.narrative) && (
               <p className="text-sm text-on-surface-variant leading-relaxed mb-4 max-w-2xl">
-                {heroInsight.narrative.length > 280 ? heroInsight.narrative.slice(0, 280) + '…' : heroInsight.narrative}
+                {heroInsight.narrative.length > 320 ? heroInsight.narrative.slice(0, 320) + '…' : heroInsight.narrative}
               </p>
             )}
-            {heroInsight.metric_json?.value != null && (
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant">{t('experience.insightGrid.npsScoreLabel')}</p>
-                <p className="text-4xl font-black font-headline" style={{
-                  color: heroInsight.metric_json.value >= 50 ? '#059669' : heroInsight.metric_json.value >= 0 ? '#d97706' : '#b41340',
-                }}>
-                  {Math.round(heroInsight.metric_json.value)}
-                </p>
+
+            {/* Top citation quote — real customer voice */}
+            {heroInsight.citations_json[0]?.quote && (
+              <div className="px-3 py-2.5 rounded-xl mb-4 text-sm italic leading-relaxed"
+                style={{ background: 'var(--color-surface-container)', borderLeft: `3px solid ${LAYER_CONFIG[heroInsight.layer]?.color ?? '#2a4bd9'}` }}>
+                "{heroInsight.citations_json[0].quote.slice(0, 160)}{heroInsight.citations_json[0].quote.length > 160 ? '…' : ''}"
+                <span className="block text-[10px] not-italic text-on-surface-variant/60 mt-1">
+                  {t('experience.insightGrid.featuredCited', {
+                    n: String(heroInsight.citations_json.length),
+                    word: heroInsight.citations_json.length === 1
+                      ? t('experience.insightGrid.featuredCitedSingular')
+                      : t('experience.insightGrid.featuredCitedPlural'),
+                  })}
+                </span>
               </div>
             )}
+
+            {/* Recommended action — the punchline for prescriptive insights */}
+            {heroInsight.recommended_action && (
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-primary/5 border border-primary/15 mb-4">
+                <Icon name="bolt" size={15} style={{ color: 'var(--color-primary)', flexShrink: 0, marginTop: 1 }} />
+                <div>
+                  <p className="text-xs font-black text-primary mb-0.5">{t('experience.insightGrid.featuredAction')}</p>
+                  <p className="text-sm font-semibold text-on-surface leading-snug">
+                    {heroInsight.recommended_action.label}
+                  </p>
+                  {heroInsight.recommended_action.target && (
+                    <p className="text-[11px] text-on-surface-variant mt-0.5 font-mono">
+                      {heroInsight.recommended_action.target}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Footer: trust + ask */}
+            <div className="flex items-center gap-3 pt-3 border-t border-outline-variant/20">
+              <span className="text-[10px] text-on-surface-variant/60">
+                {t('experience.insightGrid.featuredTrust', {
+                  score: String(heroInsight.trust_score),
+                  n: String(heroInsight.citations_json.length),
+                })}
+              </span>
+              <div className="flex-1" />
+              <button
+                onClick={() => onAskCrystal(heroInsight.headline)}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-primary/10 transition-colors"
+                style={{ color: 'var(--color-primary)' }}>
+                <Icon name="psychology" size={13} /> {t('experience.insightGrid.askCrystal')}
+              </button>
+            </div>
+
             <div
               className="absolute -right-8 -top-8 w-32 h-32 rounded-full pointer-events-none"
               style={{ background: 'radial-gradient(circle, rgba(42,75,217,0.12), transparent 70%)' }}
