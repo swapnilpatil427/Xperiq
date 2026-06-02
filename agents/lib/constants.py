@@ -68,7 +68,36 @@ INGEST_ANCHOR_RESPONSES:        int = int(os.getenv("INGEST_ANCHOR_RESPONSES",  
 # sampling is fine (< 1000 rows × ~30 bytes ≈ 30 KB).
 INGEST_LARGE_SURVEY_THRESHOLD: int = int(os.getenv("INGEST_LARGE_SURVEY_THRESHOLD", "1000"))
 
-INGEST_STRATIFIED_BUCKETS = 6  # time buckets for proportional response sampling
+# Dynamic bucket count: each bucket should cover a consistent calendar window
+# (≈ 2 weeks) so temporal patterns are preserved at any survey length.
+# Overridable via env var for testing or forced fixed-bucket deployments.
+_STRATIFIED_BUCKETS_ENV: str | None = os.getenv("INGEST_STRATIFIED_BUCKETS")
+_STRATIFIED_BUCKETS_OVERRIDE: int | None = (
+    int(_STRATIFIED_BUCKETS_ENV) if _STRATIFIED_BUCKETS_ENV else None
+)
+
+
+def compute_stratified_buckets(survey_age_days: float) -> int:
+    """Return the number of time buckets for proportional response sampling.
+
+    Scales with survey duration so each bucket spans a consistent window:
+      <  14 days  →  3 buckets  (~2–5 days each  — very new survey)
+      <  90 days  →  6 buckets  (~2 weeks each   — typical short cycle)
+      < 365 days  → 12 buckets  (~1 month each   — annual cycle)
+      ≥ 365 days  → 26 buckets  (~2 weeks each   — biweekly; preserves seasonality)
+
+    The INGEST_STRATIFIED_BUCKETS env var pins a fixed count for testing.
+    Minimum of 3 is enforced regardless of age to avoid degenerate 1- or 2-bucket splits.
+    """
+    if _STRATIFIED_BUCKETS_OVERRIDE is not None:
+        return _STRATIFIED_BUCKETS_OVERRIDE
+    if survey_age_days < 14:
+        return 3
+    if survey_age_days < 90:
+        return 6
+    if survey_age_days < 365:
+        return 12
+    return 26
 
 # ── Manual refresh ────────────────────────────────────────────────────────────
 MANUAL_REFRESH_MIN_NEW_RESPONSES = 10      # min new responses required to allow manual refresh

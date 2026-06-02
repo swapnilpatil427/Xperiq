@@ -32,7 +32,7 @@ from agents.lib.constants import (
     WINDOW_MIN_RESPONSES, TOPIC_ASSIGNMENT_THRESHOLD,
     INGEST_MAX_RESPONSES_BOOTSTRAP, INGEST_MAX_RESPONSES_CAP,
     INGEST_NEW_RESPONSE_ABSA_CAP, INGEST_ANCHOR_RESPONSES,
-    INGEST_STRATIFIED_BUCKETS, INGEST_LARGE_SURVEY_THRESHOLD,
+    INGEST_LARGE_SURVEY_THRESHOLD, compute_stratified_buckets,
     NARRATE_MAX_ATTEMPTS, REPORT_QUALITY_RENARRATE_THRESHOLD,
 )
 from agents.lib.logger import logger
@@ -443,7 +443,15 @@ async def node_ingest(state: dict) -> dict:
     except Exception:
         pass  # table may not exist yet — treat as bootstrap
 
-    response_limit   = INGEST_MAX_RESPONSES_BOOTSTRAP if is_bootstrap else INGEST_MAX_RESPONSES_CAP
+    force_regenerate = state.get("force_regenerate", False)
+
+    # Manual runs (force_regenerate=True) get the same wide sample as bootstrap
+    # so the user always receives the highest-quality picture, not an incremental window.
+    response_limit = (
+        INGEST_MAX_RESPONSES_BOOTSTRAP
+        if (is_bootstrap or force_regenerate)
+        else INGEST_MAX_RESPONSES_CAP
+    )
     new_response_cap = INGEST_NEW_RESPONSE_ABSA_CAP
 
     # ── Stratified response sampling ─────────────────────────────────────────
@@ -470,19 +478,30 @@ async def node_ingest(state: dict) -> dict:
     # for topic discovery (clear pain/delight) and are always included.
 
     response_rows: list[dict] = []
-    _total_available = 0
-    _used_sql_ntile  = False
+    _total_available  = 0
+    _survey_age_days  = 0.0
+    _used_sql_ntile   = False
 
     try:
-        # ── Step 1: Count total available responses (O(1) index scan) ────────
+        # ── Step 1: Count responses and measure survey lifespan ───────────────
+        # MIN/MAX submitted_at adds negligible cost — same index scan as COUNT(*).
+        # The age drives dynamic bucket count so each bucket ≈ a consistent
+        # calendar window regardless of how long the survey has been running.
         async with db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
-                    "SELECT COUNT(*) FROM responses WHERE survey_id = %s",
+                    """SELECT COUNT(*), MIN(submitted_at), MAX(submitted_at)
+                       FROM responses WHERE survey_id = %s""",
                     (survey_id,),
                 )
                 row = await cur.fetchone()
-                _total_available = int(row[0]) if row else 0
+                if row:
+                    _total_available = int(row[0]) if row[0] else 0
+                    _min_ts, _max_ts = row[1], row[2]
+                    if _min_ts and _max_ts and _max_ts > _min_ts:
+                        _survey_age_days = (_max_ts - _min_ts).total_seconds() / 86400.0
+
+        n_buckets = compute_stratified_buckets(_survey_age_days)
 
         if _total_available <= response_limit:
             # ── Tier 1: load everything ───────────────────────────────────────
@@ -529,12 +548,12 @@ async def node_ingest(state: dict) -> dict:
 
             # Stratified time-bucket sampling
             slots = max(1, response_limit - len(selected_ids_set))
-            per_bucket  = max(1, slots // INGEST_STRATIFIED_BUCKETS)
-            bucket_size = max(1, _total_available // INGEST_STRATIFIED_BUCKETS)
+            per_bucket  = max(1, slots // n_buckets)
+            bucket_size = max(1, _total_available // n_buckets)
 
-            for b in range(INGEST_STRATIFIED_BUCKETS):
+            for b in range(n_buckets):
                 start  = b * bucket_size
-                end    = start + bucket_size if b < INGEST_STRATIFIED_BUCKETS - 1 else _total_available
+                end    = start + bucket_size if b < n_buckets - 1 else _total_available
                 bucket = [str(r[0]) for r in meta_rows[start:end] if str(r[0]) not in selected_ids_set]
                 if len(bucket) <= per_bucket:
                     selected_ids_set.update(bucket)
@@ -563,13 +582,13 @@ async def node_ingest(state: dict) -> dict:
 
         else:
             # ── Tier 3: SQL NTILE sampling for large surveys ──────────────────
-            # Divides the survey's response timeline into INGEST_STRATIFIED_BUCKETS
-            # equal-size buckets and samples per_bucket rows from each using
-            # ORDER BY id (UUID — deterministic, effectively random).
+            # Divides the survey's response timeline into n_buckets equal-size
+            # time windows and samples per_bucket rows from each using ORDER BY id
+            # (UUID — deterministic, effectively random within each window).
             # Never loads more than `response_limit` rows into Python regardless
             # of total survey size.
             _used_sql_ntile = True
-            per_bucket = max(1, (response_limit - INGEST_ANCHOR_RESPONSES) // INGEST_STRATIFIED_BUCKETS)
+            per_bucket = max(1, (response_limit - INGEST_ANCHOR_RESPONSES) // n_buckets)
 
             async with db._pool_conn().connection() as conn:
                 # Anchor query (extreme NPS) — runs separately, fast with index
@@ -603,7 +622,7 @@ async def node_ingest(state: dict) -> dict:
                            WHERE rn <= %s
                            ORDER BY id
                            LIMIT %s""",
-                        (INGEST_STRATIFIED_BUCKETS, survey_id, per_bucket, response_limit),
+                        (n_buckets, survey_id, per_bucket, response_limit),
                     )
                     ntile_ids = [str(r[0]) for r in await cur.fetchall()]
 
@@ -631,6 +650,10 @@ async def node_ingest(state: dict) -> dict:
             total_available=_total_available,
             selected=len(response_rows),
             cap=response_limit,
+            n_buckets=n_buckets,
+            survey_age_days=round(_survey_age_days, 1),
+            is_bootstrap=is_bootstrap,
+            force_regenerate=force_regenerate,
             sql_ntile=_used_sql_ntile,
         )
 
@@ -1301,6 +1324,22 @@ async def node_cluster(state: dict) -> dict:
         })
         return {**state, "clusters": clusters, "bootstrap_centroids": bootstrap_centroids}
 
+    # ── Force-regenerate path ─────────────────────────────────────────────────
+    # When the user clicks "Generate Insights" on a survey that already has topic
+    # centroids, skip clustering entirely. node_topics will load existing signals
+    # directly from survey_topics and pass them straight to narration.
+    #
+    # Why: new_response_ids=∅ on a fully-processed survey → ANN processes nothing
+    # → 0 clusters → all previous topics superseded → 1 insight only.
+    # The topics and their signal scores are already in survey_topics from the
+    # last run — there is no need to recompute them.
+    if state.get("force_regenerate") and not is_bootstrap:
+        logger.info("node_cluster_force_regenerate_skip", survey_id=survey_id)
+        await _emit_event(run_id, "node_complete", "cluster", {
+            "cluster_count": 0, "mode": "force_regenerate_skip",
+        })
+        return {**state, "clusters": [], "bootstrap_centroids": []}
+
     # ── Incremental path ──────────────────────────────────────────────────────
     # Only process responses that haven't been ABSA-enriched yet.
     new_absa = [a for a in state["absa_results"] if str(a["response_id"]) in new_response_ids]
@@ -1513,6 +1552,128 @@ async def node_topics(state: dict) -> dict:
     if not state.get("has_open_text", True):
         logger.info("node_topics_skipped_no_text_survey", survey_id=state.get("survey_id"))
         return {**state, "topics": [], "drivers": []}
+    # ── Force-regenerate: load existing signals from DB, skip all computation ───
+    # Topics and their XM signals are already persisted in survey_topics from the
+    # previous run. Load them directly so narration can re-write headlines and the
+    # full report without re-clustering, re-naming, or recomputing any scores.
+    # Condition: force_regenerate=True on an already-bootstrapped survey (centroids exist).
+    # Derived entirely from InsightState fields — no extra flag needed.
+    # node_cluster returned clusters=[] in this case; we load signals from survey_topics instead.
+    if state.get("force_regenerate") and not state.get("is_bootstrap") and not clusters:
+        topic_signals: dict[str, dict] = {}
+        try:
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT name, volume, sentiment_score, dominant_emotion,
+                                  avg_effort_score, trending, urgency_score, nps_avg,
+                                  positive_pct, negative_pct, neutral_pct,
+                                  emotion_distribution, top_verbatims,
+                                  net_sentiment, nps_impact, promoter_pct,
+                                  detractor_pct, passive_pct, driver_score,
+                                  avg_csat, csat_impact, confidence_level
+                           FROM survey_topics
+                           WHERE survey_id = %s AND org_id = %s
+                             AND time_window = 'all_time'
+                           ORDER BY volume DESC NULLS LAST""",
+                        (survey_id, org_id),
+                    )
+                    rows = await cur.fetchall()
+                    cols = [d[0] for d in cur.description]
+                    for row in rows:
+                        r        = dict(zip(cols, row))
+                        tname    = r.get("name")
+                        if not tname:
+                            continue
+                        vol  = int(r.get("volume") or 0)
+                        sent = float(r.get("sentiment_score") or 0.0)
+                        topic_signals[tname] = {
+                            "response_count":        vol,
+                            "response_pct":          0.0,
+                            "confidence_level":      r.get("confidence_level") or (
+                                "high" if vol >= 10 else "medium" if vol >= 3 else "low"
+                            ),
+                            "avg_sentiment_score":   sent,
+                            "sentiment_score":       sent,   # backward compat
+                            "net_sentiment":         float(r.get("net_sentiment") or 0.0),
+                            "sentiment_positive_pct": float(r.get("positive_pct") or 0.0),
+                            "sentiment_negative_pct": float(r.get("negative_pct") or 0.0),
+                            "sentiment_neutral_pct":  float(r.get("neutral_pct") or 0.0),
+                            "dominant_emotion":       r.get("dominant_emotion") or "neutral",
+                            "emotion_distribution":   r.get("emotion_distribution") or {},
+                            "urgency_score":          float(r.get("urgency_score") or 0.0),
+                            "avg_effort_score":       float(r.get("avg_effort_score") or 4.0),
+                            "effort_score":           float(r.get("avg_effort_score") or 4.0),
+                            "volume":                 vol,   # backward compat
+                            "avg_nps_response":       float(r.get("nps_avg") or 0.0),
+                            "nps_impact":             r.get("nps_impact"),
+                            "promoter_pct":           float(r.get("promoter_pct") or 0.0),
+                            "detractor_pct":          float(r.get("detractor_pct") or 0.0),
+                            "passive_pct":            float(r.get("passive_pct") or 0.0),
+                            "driver_score":           r.get("driver_score"),
+                            "avg_csat":               r.get("avg_csat"),
+                            "csat_impact":            r.get("csat_impact"),
+                            "top_verbatims":          r.get("top_verbatims") or [],
+                            "trending":               r.get("trending") or "stable",
+                        }
+        except Exception as exc:
+            logger.warning("node_topics_force_regen_load_failed", error=str(exc))
+
+        n = len(topic_signals)
+        # Build synthetic cluster stubs so node_narrate can generate per-topic
+        # headline insights exactly as it always does — it reads `clusters`, not
+        # `topic_signals`. Each stub carries just enough fields:
+        #   canonical_name, size, dominant_sentiment, dominant_emotion, texts
+        # `texts` is populated from top_verbatims so sample_quotes + citation_ids work.
+        synthetic_clusters: list[dict] = []
+        for idx, (tname, sig) in enumerate(
+            sorted(topic_signals.items(), key=lambda kv: kv[1].get("response_count", 0), reverse=True)
+        ):
+            score    = float(sig.get("avg_sentiment_score") or 0.0)
+            dom_sent = "negative" if score < -0.05 else ("positive" if score > 0.05 else "neutral")
+            verbatims = sig.get("top_verbatims") or []
+            texts = [
+                {
+                    "response_id":  str(v.get("response_id", "")),
+                    "text":         str(v.get("text", ""))[:300],
+                    "sentiment":    v.get("sentiment", dom_sent),
+                    "score":        float(v.get("score", score)),
+                    "emotion":      v.get("emotion") or sig.get("dominant_emotion") or "neutral",
+                    "effort_score": float(sig.get("avg_effort_score") or 4.0),
+                    "aspect":       tname,
+                }
+                for v in verbatims[:3]
+                if isinstance(v, dict)
+            ]
+            synthetic_clusters.append({
+                "id":                f"cluster_{idx + 1}",
+                "aspect":            tname,
+                "canonical_name":    tname,
+                "size":              int(sig.get("response_count") or 0),
+                "dominant_sentiment": dom_sent,
+                "dominant_emotion":  sig.get("dominant_emotion") or "neutral",
+                "avg_sentiment_score": score,
+                "texts":             texts,
+                "_new_topic":        False,
+                "_force_regen":      True,
+            })
+
+        n = len(synthetic_clusters)
+        logger.info(
+            "node_topics_force_regen_from_db",
+            survey_id=survey_id,
+            topic_count=n,
+        )
+        await _emit_event(run_id, "node_complete", "topics", {
+            "topic_count": n, "mode": "force_regenerate_from_db",
+        })
+        return {
+            **state,
+            "topics":          [],
+            "topic_signals":   topic_signals,
+            "clusters":        synthetic_clusters,   # consumed by node_narrate for topic headlines
+        }
+
     if not clusters:
         return {**state, "topics": []}
 

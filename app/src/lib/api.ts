@@ -526,8 +526,16 @@ export function createApiClient(getToken: GetToken) {
       return res.data;
     },
 
-    triggerInsightGeneration: async (surveyId: string): Promise<{ run_id: string; status: string }> => {
-      const res = await http.post<{ run_id: string; status: string }>(`/api/insights/${surveyId}/generate`, {});
+    triggerInsightGeneration: async (
+      surveyId: string,
+      opts: { trigger?: 'manual' | 'regenerate' | 'schedule' | 'stream'; force?: boolean } = {},
+    ): Promise<{ run_id: string; status: string }> => {
+      const res = await http.post<{ run_id: string; status: string }>(
+        `/api/insights/${surveyId}/generate`,
+        // Default to 'manual' so user-initiated generation always bypasses the cache
+        // and produces a fresh report. The scheduler uses 'schedule'; stream consumer uses 'stream'.
+        { trigger: opts.trigger ?? 'manual', force: opts.force ?? false },
+      );
       return res.data;
     },
 
