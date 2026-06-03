@@ -343,11 +343,12 @@ export function CrystalPanel({
                 conversationHistory: history,
               });
               // Merge REST citation_map into state before building citations
-              if (data.citation_map && Object.keys(data.citation_map).length > 0) {
-                setCitationMap((prev) => ({ ...prev, ...data.citation_map }));
-                citationMapRef.current = { ...citationMapRef.current, ...data.citation_map };
+              const restCitationMap = (data.citation_map ?? {}) as CitationMap;
+              if (Object.keys(restCitationMap).length > 0) {
+                setCitationMap((prev) => ({ ...prev, ...restCitationMap }));
+                citationMapRef.current = { ...citationMapRef.current, ...restCitationMap };
               }
-              const mergedMap = { ...citationMapRef.current, ...(data.citation_map ?? {}) };
+              const mergedMap = { ...citationMapRef.current, ...restCitationMap };
               const { text: cleanedAnswer, extraIds } = parseInlineCitations(data.answer ?? '');
 
               // Collect IDs from ALL possible sources:
