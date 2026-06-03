@@ -174,6 +174,19 @@ async def ensure_schema() -> None:
             top_driver_topic     TEXT
         )""",
         "CREATE INDEX IF NOT EXISTS org_metric_snapshots_org_time_idx ON org_metric_snapshots (org_id, captured_at DESC)",
+        # Audit trail: which response IDs were sampled for each insight run.
+        # One write per run in node_publish — links insights→run→responses.
+        # Use: SELECT sampled_response_ids FROM agent_runs WHERE id = '<run_id>'
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS sampled_response_ids JSONB DEFAULT '[]'",
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS sampled_response_count INT DEFAULT 0",
+        # new_response_count: how many responses were genuinely NEW in this run (not cached from prior).
+        # Used to distinguish real data runs (new_response_count > 0) from manual regenerations
+        # (new_response_count = 0) when selecting the prior-context anchor.
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS new_response_count INT DEFAULT 0",
+        # prior_context_run_id: which run's insights were used as the "established findings" prior.
+        # Advances only when real new data arrives — manual regens reuse the same anchor.
+        # Audit chain: current_run → prior_context_run_id → prior_context_run_id → ... → first_run
+        "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS prior_context_run_id UUID REFERENCES agent_runs(id) ON DELETE SET NULL",
     ]
     try:
         async with _pool_conn().connection() as conn:

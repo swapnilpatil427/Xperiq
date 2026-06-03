@@ -70,7 +70,7 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
         "insight_topics":  ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=6000, temperature=0.0,  context_window=128_000),
         "insight_expert":  ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=1000, temperature=0.1,  context_window=128_000),
         "report_summary":  ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=6000, temperature=0.1,  context_window=128_000),
-        "report_full":     ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=20000, temperature=0.0, context_window=128_000),
+        "report_full":     ModelConfig("openai/gpt-oss-120b:free",                     max_tokens=30000, temperature=0.0, context_window=128_000),
 
         # OSS-20B — Fast OpenAI reasoning pool (separate rate-limit bucket from 120B)
         "qc_validator":    ModelConfig("openai/gpt-oss-20b:free",                      max_tokens=400,  temperature=0.1,  context_window=128_000),
@@ -102,46 +102,50 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
     },
 
     # ── dev-paid ─────────────────────────────────────────────────────────────────
-    # OpenAI + Anthropic via OpenRouter. One step above budget tier — still well below staging.
+    # o3-mini for deep reasoning (report_full, creator, insight_topics).
+    # o4-mini for mid-reasoning + writing (expert, copilot, summary).
+    # Gemini 2.5 Flash for fast synthesis/writing + cross-vendor QC.
+    # Gemini 2.0 Flash for structured validators + ABSA.
     #
-    # Tier | Model                      $/1M in  $/1M out  Used for
-    # ─────┼──────────────────────────────────────────────────────────────────────────
-    #  A   | openai/o3                  $2.00    $8.00     creator, insight_topics, report_full
-    #  B   | openai/o4-mini             $1.10    $4.40     insight_expert, report_summary, copilot
-    #  C   | openai/gpt-4.1-mini        $0.40    $1.60     narrate, verify, crystal, survey QA, ABSA
-    #  D   | anthropic/claude-haiku-4.5 $1.00    $5.00     qc (cross-vendor; structured output)
+    # Tier | Model                   $/1M in  $/1M out  Used for
+    # ─────┼────────────────────────────────────────────────────────────────────
+    #  A   | openai/o3-mini          $1.10    $4.40     creator, topics, report_full
+    #  B   | openai/o4-mini          $1.10    $4.40     expert, copilot, report_summary
+    #  C   | google/gemini-2.5-flash $0.15    $0.60     narrate, crystal, writing, QC
+    #  D   | google/gemini-2.0-flash $0.10    $0.40     verify, evaluate, QA, ABSA
     #
     # ~$0.015–0.035 per full orchestration run.
     "dev-paid": {
-        # Tier A — Deep reasoning (survey design, topic discovery, long reports)
-        "creator":         ModelConfig("openai/o3",                      max_tokens=4000, temperature=0.3,  context_window=200_000),
-        "insight_topics":  ModelConfig("openai/o3",                      max_tokens=6000, temperature=0.0,  context_window=200_000),
-        "report_full":     ModelConfig("openai/o3",                      max_tokens=20000, temperature=0.0, context_window=200_000),
+        # Tier A — o3-mini: deep reasoning, long-context report generation
+        "creator":         ModelConfig("openai/o3-mini",          max_tokens=6000,  temperature=0.3,  context_window=200_000),
+        "insight_topics":  ModelConfig("openai/o3-mini",          max_tokens=8000,  temperature=0.0,  context_window=200_000),
+        "report_full":     ModelConfig("openai/o3-mini",          max_tokens=60000, temperature=0.0,  context_window=200_000),
 
-        # Tier B — Mid reasoning (expert narrators, interactive copilot, report summary)
-        "insight_expert":  ModelConfig("openai/o4-mini",                 max_tokens=1500, temperature=0.1,  context_window=200_000),
-        "report_summary":  ModelConfig("openai/o4-mini",                 max_tokens=8000, temperature=0.1,  context_window=200_000),
-        "copilot":         ModelConfig("openai/o4-mini",                 max_tokens=2000, temperature=0.3,  context_window=200_000),
+        # Tier B — o4-mini: mid-reasoning, expert narration, interactive copilot
+        "insight_expert":  ModelConfig("openai/o4-mini",          max_tokens=2000,  temperature=0.1,  context_window=200_000),
+        "report_summary":  ModelConfig("openai/o4-mini",          max_tokens=12000, temperature=0.1,  context_window=200_000),
+        "copilot":         ModelConfig("openai/o4-mini",          max_tokens=3000,  temperature=0.3,  context_window=200_000),
 
-        # Tier D — Cross-vendor QC (Anthropic vs OpenAI creator; Haiku 4.5 has JSON mode)
-        "qc":              ModelConfig("anthropic/claude-haiku-4.5",     max_tokens=1000, temperature=0.1,  context_window=200_000),
+        # Cross-vendor QC (Google vs OpenAI creator)
+        "qc":              ModelConfig("google/gemini-2.5-flash",  max_tokens=1000, temperature=0.1,  context_window=1_000_000),
 
-        # Tier C — Fast structured + quality writing (gpt-4.1-mini: better JSON fidelity than 4o-mini)
-        "qc_validator":    ModelConfig("openai/gpt-4.1-mini",            max_tokens=400,  temperature=0.1,  context_window=1_047_576),
-        "compliance":      ModelConfig("openai/gpt-4.1-mini",            max_tokens=600,  temperature=0.1,  context_window=1_047_576),
-        "recommender":     ModelConfig("openai/gpt-4.1-mini",            max_tokens=600,  temperature=0.4,  context_window=1_047_576),
-        "skip-logic":      ModelConfig("openai/gpt-4.1-mini",            max_tokens=1200, temperature=0.1,  context_window=1_047_576),
+        # Tier B — Gemini 2.5 Flash: fast structured + quality writing
+        "qc_validator":    ModelConfig("google/gemini-2.5-flash",  max_tokens=400,  temperature=0.1,  context_window=1_000_000),
+        "compliance":      ModelConfig("google/gemini-2.5-flash",  max_tokens=600,  temperature=0.1,  context_window=1_000_000),
+        "recommender":     ModelConfig("google/gemini-2.5-flash",  max_tokens=600,  temperature=0.4,  context_window=1_000_000),
+        "skip-logic":      ModelConfig("google/gemini-2.5-flash",  max_tokens=1200, temperature=0.1,  context_window=1_000_000),
+        "report_headline": ModelConfig("google/gemini-2.5-flash",  max_tokens=5000, temperature=0.1,  context_window=1_000_000),
+        "crystal":         ModelConfig("google/gemini-2.5-flash",  max_tokens=1500, temperature=0.3,  context_window=1_000_000),
+        "response_gen":    ModelConfig("google/gemini-2.5-flash",  max_tokens=8000, temperature=0.8,  context_window=1_000_000),
 
-        # ABSA uses insight_narrate — dev-paid tuning: concurrency=5, batch=25, cap=250
-        "insight_narrate": ModelConfig("openai/gpt-4.1-mini",            max_tokens=1200, temperature=0.1,  context_window=1_047_576, absa_concurrency=5, absa_batch_size=25, absa_cap=250),
-        "insight_verify":  ModelConfig("openai/gpt-4.1-mini",            max_tokens=400,  temperature=0.0,  context_window=1_047_576),
-        "crystal":         ModelConfig("openai/gpt-4.1-mini",            max_tokens=1000, temperature=0.3,  context_window=1_047_576),
-        "response_gen":    ModelConfig("openai/gpt-4.1-mini",            max_tokens=8000, temperature=0.8,  context_window=1_047_576),
-        "insight_evaluate":ModelConfig("openai/gpt-4.1-mini",            max_tokens=2500, temperature=0.0,  context_window=1_047_576),
-        "crystal_eval":    ModelConfig("openai/gpt-4.1-mini",            max_tokens=600,  temperature=0.0,  context_window=1_047_576),
-        "survey_bias":     ModelConfig("openai/gpt-4.1-mini",            max_tokens=1000, temperature=0.0,  context_window=1_047_576),
-        "survey_evaluate": ModelConfig("openai/gpt-4.1-mini",            max_tokens=800,  temperature=0.0,  context_window=1_047_576),
-        "report_headline": ModelConfig("openai/gpt-4.1-mini",            max_tokens=4000, temperature=0.1,  context_window=1_047_576),
+        # Tier C — Gemini 2.0 Flash: fast structured validators + ABSA
+        # absa_concurrency=5, batch=25, cap=250 for dev-paid throughput
+        "insight_narrate": ModelConfig("google/gemini-2.0-flash", max_tokens=1200, temperature=0.1, context_window=1_000_000, absa_concurrency=5, absa_batch_size=25, absa_cap=250),
+        "insight_verify":  ModelConfig("google/gemini-2.0-flash", max_tokens=400,  temperature=0.0, context_window=1_000_000),
+        "insight_evaluate":ModelConfig("google/gemini-2.0-flash", max_tokens=2500, temperature=0.0, context_window=1_000_000),
+        "crystal_eval":    ModelConfig("google/gemini-2.0-flash", max_tokens=600,  temperature=0.0, context_window=1_000_000),
+        "survey_bias":     ModelConfig("google/gemini-2.0-flash", max_tokens=1000, temperature=0.0, context_window=1_000_000),
+        "survey_evaluate": ModelConfig("google/gemini-2.0-flash", max_tokens=800,  temperature=0.0, context_window=1_000_000),
     },
 
     # ── staging ──────────────────────────────────────────────────────────────────
@@ -205,7 +209,7 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
             absa_cap=500,
         ),
         "insight_verify":  ModelConfig(
-            "google/gemini-2.0-flash-001", # Fast fact-check — $0.10/1M
+            "google/gemini-2.0-flash", # Fast fact-check — $0.10/1M
             max_tokens=400,
             temperature=0.0,
             context_window=1_000_000,
@@ -229,15 +233,16 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
             context_window=1_000_000,
         ),
         "insight_expert":  ModelConfig("deepseek/deepseek-r1",        max_tokens=2000, temperature=0.1, context_window=128_000),   # NPS/CSAT/CX expert reasoning
-        "insight_evaluate":ModelConfig("google/gemini-2.0-flash-001", max_tokens=2500, temperature=0.0, context_window=1_000_000),  # Larger set audit for 50-response surveys
-        "crystal_eval":    ModelConfig("google/gemini-2.0-flash-001", max_tokens=600,  temperature=0.0, context_window=1_000_000),  # Fast hallucination check
+        "insight_evaluate":ModelConfig("google/gemini-2.0-flash", max_tokens=2500, temperature=0.0, context_window=1_000_000),  # Larger set audit for 50-response surveys
+        "crystal_eval":    ModelConfig("google/gemini-2.0-flash", max_tokens=600,  temperature=0.0, context_window=1_000_000),  # Fast hallucination check
         "survey_bias":     ModelConfig("deepseek/deepseek-chat",       max_tokens=1000, temperature=0.0, context_window=64_000),    # Cross-vendor QA
         "survey_evaluate": ModelConfig("deepseek/deepseek-chat",       max_tokens=800,  temperature=0.0, context_window=64_000),    # Cross-vendor QA
 
         # Tiered report agents (staging: DeepSeek R1 for full report reasoning)
-        "report_headline": ModelConfig("google/gemini-2.5-flash",      max_tokens=4000,  temperature=0.1, context_window=1_000_000),
-        "report_summary":  ModelConfig("deepseek/deepseek-r1",         max_tokens=8000,  temperature=0.1, context_window=128_000),
-        "report_full":     ModelConfig("deepseek/deepseek-r1",         max_tokens=25000, temperature=0.0, context_window=128_000),
+        # report_full token budget increased — larger context now: prior insights + all new responses
+        "report_headline": ModelConfig("google/gemini-2.5-flash",      max_tokens=5000,  temperature=0.1, context_window=1_000_000),
+        "report_summary":  ModelConfig("deepseek/deepseek-r1",         max_tokens=12000, temperature=0.1, context_window=128_000),
+        "report_full":     ModelConfig("deepseek/deepseek-r1",         max_tokens=60000, temperature=0.0, context_window=128_000),
     },
 
     # ── prod ─────────────────────────────────────────────────────────────────────
@@ -302,7 +307,7 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
             absa_cap=1000,
         ),
         "insight_verify":  ModelConfig(
-            "google/gemini-2.0-flash-001", # Fastest structured verifier — $0.10/1M
+            "google/gemini-2.0-flash", # Fastest structured verifier — $0.10/1M
             max_tokens=400,
             temperature=0.0,
             context_window=1_000_000,
@@ -326,21 +331,22 @@ _ROUTING: dict[EnvName, dict[AgentName, ModelConfig]] = {
             context_window=1_000_000,
         ),
         "insight_expert":  ModelConfig("deepseek/deepseek-r1",        max_tokens=2000, temperature=0.1, context_window=128_000),   # Domain NPS/CSAT/CX reasoning
-        "insight_evaluate":ModelConfig("google/gemini-2.0-flash-001", max_tokens=2500, temperature=0.0, context_window=1_000_000),  # Larger set audit for 50-response surveys
-        "crystal_eval":    ModelConfig("google/gemini-2.0-flash-001", max_tokens=600,  temperature=0.0, context_window=1_000_000),  # Fast hallucination check
+        "insight_evaluate":ModelConfig("google/gemini-2.0-flash", max_tokens=2500, temperature=0.0, context_window=1_000_000),  # Larger set audit for 50-response surveys
+        "crystal_eval":    ModelConfig("google/gemini-2.0-flash", max_tokens=600,  temperature=0.0, context_window=1_000_000),  # Fast hallucination check
         "survey_bias":     ModelConfig("deepseek/deepseek-chat",       max_tokens=1000, temperature=0.0, context_window=64_000),    # Cross-vendor QA
         "survey_evaluate": ModelConfig("deepseek/deepseek-chat",       max_tokens=800,  temperature=0.0, context_window=64_000),    # Cross-vendor QA
 
         # Tiered report agents (prod: DeepSeek R1 full report, Gemini 2.5 Flash for headline/summary)
-        "report_headline": ModelConfig("google/gemini-2.5-flash",      max_tokens=4000,  temperature=0.1, context_window=1_000_000),
-        "report_summary":  ModelConfig("deepseek/deepseek-r1",         max_tokens=8000,  temperature=0.1, context_window=128_000),
-        "report_full":     ModelConfig("deepseek/deepseek-r1",         max_tokens=30000, temperature=0.0, context_window=128_000),
+        # report_full token budget increased — larger context: prior insights + all new response texts
+        "report_headline": ModelConfig("google/gemini-2.5-flash",      max_tokens=5000,  temperature=0.1, context_window=1_000_000),
+        "report_summary":  ModelConfig("deepseek/deepseek-r1",         max_tokens=12000, temperature=0.1, context_window=128_000),
+        "report_full":     ModelConfig("deepseek/deepseek-r1",         max_tokens=60000, temperature=0.0, context_window=128_000),
     },
 }
 
 # Per-run hard token cap: protects against runaway LLM loops.
-# Set high enough for 50-response surveys: topics (8K) + narrate (5×800) + evaluate (2.5K) + ABSA batches.
-MAX_TOKENS_PER_RUN: int = int(os.getenv("MAX_TOKENS_PER_RUN", "120000"))
+# Increased for larger report context: report_full (60K) + topics (8K) + narrate (5×800) + ABSA batches.
+MAX_TOKENS_PER_RUN: int = int(os.getenv("MAX_TOKENS_PER_RUN", "200000"))
 
 # Per-org daily spend cap in USD (0 = disabled)
 MAX_DAILY_SPEND_USD: float = float(os.getenv("MAX_DAILY_SPEND_USD", "0"))

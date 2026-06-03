@@ -230,9 +230,12 @@ export interface InsightTrust {
 }
 
 export interface InsightRecommendedAction {
-  type:   string;
-  label:  string;
-  target?: string;
+  type:              string;
+  label:             string;
+  target?:           string;
+  estimated_impact?: string;
+  time_horizon?:     string;
+  priority?:         'high' | 'medium' | 'low' | string;
 }
 
 export interface InsightAudit {

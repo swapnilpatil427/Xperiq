@@ -900,8 +900,23 @@ async def crystal_stream_endpoint(req: Request, _: None = Depends(require_intern
     )
 
     async def event_stream():
-        async for event_json in _run_react_loop_streaming(inp):
-            yield f"data: {event_json}\n\n"
+        import json as _json
+        answered = False
+        try:
+            async for event_json in _run_react_loop_streaming(inp):
+                answered = True
+                yield f"data: {event_json}\n\n"
+        except Exception as exc:
+            # ReAct loop failed before yielding any events — fall back to direct LLM call
+            # so Crystal always provides an answer regardless of tool-call issues.
+            if not answered:
+                from agents.agents.crystal import _run_crystal
+                try:
+                    yield f"data: {_json.dumps({'type': 'synthesizing'})}\n\n"
+                    final = await _run_crystal(inp)
+                    yield f"data: {_json.dumps({'type': 'answer', 'answer': final.answer, 'citations': final.citations, 'suggestions': final.suggestions})}\n\n"
+                except Exception as fallback_exc:
+                    yield f"data: {_json.dumps({'type': 'error', 'message': 'Crystal is unavailable right now. Please try again.'})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(

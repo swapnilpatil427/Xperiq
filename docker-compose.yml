@@ -1,10 +1,10 @@
 # Images bake config/migrations at build time so bind mounts from the host are not
 # required (avoids Docker Desktop "operation not permitted" on some paths).
 #
-# Platform: follows DOCKER_DEFAULT_PLATFORM when set (e.g. linux/amd64 in CI or
-# Rosetta setups). Otherwise defaults to linux/arm64 on Apple Silicon. After
-# changing platform, rebuild all custom images (npm run infra:reset). Builds need
-# DOCKER_BUILDKIT=1 when DOCKER_DEFAULT_PLATFORM differs from the host CPU arch.
+# Platform: npm scripts use scripts/docker-compose.mjs to set DOCKER_DEFAULT_PLATFORM
+# to the host CPU (linux/arm64 on Apple Silicon, linux/amd64 on Intel). This avoids
+# mismatches when ~/.zshrc sets DOCKER_DEFAULT_PLATFORM=linux/amd64 globally.
+# Override for amd64 local builds: EXPERIENT_DOCKER_PLATFORM=linux/amd64 npm run infra:reset
 
 x-built-platform: &built-platform
   platform: ${DOCKER_DEFAULT_PLATFORM:-linux/arm64}

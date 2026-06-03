@@ -235,7 +235,11 @@ _LAYER_LABELS = {
 
 
 def _build_insights_context(insights: list[dict]) -> tuple[str, set[str]]:
-    """Group insights by layer, format as structured context, return valid IDs."""
+    """Group insights by layer, format as structured context, return valid IDs.
+
+    When insights include _survey_title (org scope), each entry is prefixed with
+    the survey name so Crystal can cite which survey an insight comes from.
+    """
     by_layer: dict[str, list[dict]] = {layer: [] for layer in _LAYER_ORDER}
     other: list[dict] = []
     valid_ids: set[str] = set()
@@ -257,20 +261,24 @@ def _build_insights_context(insights: list[dict]) -> tuple[str, set[str]]:
             continue
         lines.append(f"\n## {_LAYER_LABELS[layer]}")
         for ins in layer_insights:
-            ins_id = ins.get("id", "")
+            ins_id  = ins.get("id", "")
             headline = ins.get("headline", "")
             narrative = ins.get("narrative", "")
-            trust = ins.get("trust_score")
-            metric = ins.get("metric_json")
+            trust    = ins.get("trust_score")
+            metric   = ins.get("metric_json")
+            # Survey attribution — present when scope is org (cross-survey insights)
+            survey_title = ins.get("_survey_title", "")
+            survey_id    = ins.get("survey_id", "") or ins.get("_survey_id", "")
 
-            line = f"- [{ins_id}] {headline}"
+            survey_tag = f" [Survey: {survey_title}]" if survey_title else ""
+            line = f"- [{ins_id}]{survey_tag} {headline}"
             if narrative:
-                line += f"\n  {narrative}"
+                line += f"\n  {narrative[:200]}"
             if metric is not None:
                 line += f"\n  Metric: {json.dumps(metric)}"
             if trust is not None:
                 try:
-                    line += f"  (trust: {float(trust):.2f})"
+                    line += f"  (trust: {float(trust):.0f})"
                 except (TypeError, ValueError):
                     pass
             lines.append(line)
@@ -278,7 +286,9 @@ def _build_insights_context(insights: list[dict]) -> tuple[str, set[str]]:
     if other:
         lines.append("\n## OTHER")
         for ins in other:
-            lines.append(f"- [{ins.get('id', '')}] {ins.get('headline', '')}")
+            survey_title = ins.get("_survey_title", "")
+            survey_tag = f" [Survey: {survey_title}]" if survey_title else ""
+            lines.append(f"- [{ins.get('id', '')}]{survey_tag} {ins.get('headline', '')}")
 
     return "\n".join(lines) if lines else "No insights available yet.", valid_ids
 
@@ -351,10 +361,38 @@ CORRECTION REQUIRED (previous attempt had issues)
 
 """
 
+    # Build scope-aware sections
+    scope = inp.scope if hasattr(inp, "scope") else "survey"
+    is_org = scope == "org"
+
+    scope_header = ""
+    if is_org:
+        scope_header = f"""
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PORTFOLIO SCOPE — {inp.survey_response_count:,} responses across active surveys
+You are analysing the full portfolio, not a single survey.
+Each insight below is tagged [Survey: <name>] so you know its source.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+    nav_section = """
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+APP NAVIGATION — help users explore further
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+You know the app's structure. Use these in your suggestions when relevant:
+• "Explore [Survey Name] Intelligence"   — survey dashboard with insights
+• "View topics in [Survey Name]"         — topic hierarchy and drill-down
+• "See trend analysis for [Survey Name]" — NPS/CSAT over time
+• "Compare surveys side-by-side"         — use when patterns differ across surveys
+• "Dig deeper into [Topic Name]"         — topic drill-down with verbatims
+
+Include 1 navigation suggestion in your suggestions list when it would help.
+"""
+
     return f"""\
-You are Crystal, an expert CX (customer experience) analyst for "{title}".
-Your role is to help the survey owner understand what their data means and what to do about it.
-{correction_block}
+You are Crystal, an expert CX (customer experience) analyst.
+{"Your role is to synthesise intelligence across the organisation's surveys and help identify portfolio-level patterns." if is_org else f'Your role is to help the survey owner of "{title}" understand what their data means and what to do about it.'}
+{correction_block}{scope_header}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 KEY METRICS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -363,7 +401,8 @@ KEY METRICS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 INSIGHTS (grouped by analysis layer)
 Each insight is prefixed with its ID in brackets, e.g. [abc123].
-ONLY cite these IDs — never invent IDs not listed here.
+{"Insights from different surveys are tagged [Survey: <name>]." if is_org else ""}
+ONLY cite IDs listed here — never invent IDs.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {insights_ctx}
 
@@ -371,25 +410,28 @@ ONLY cite these IDs — never invent IDs not listed here.
 TOPICS (respondent themes, ordered by volume)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {topics_ctx}
-
+{nav_section}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-INSTRUCTIONS
+HOW TO RESPOND
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Answer the user's question in 2-5 concise sentences. Be direct — no preamble, no filler.
-2. Ground every claim in the insight data above. Cite insight IDs (e.g. "[abc123]") inline.
-3. For topics, reference them by name (e.g. "the Shipping topic").
-4. If the data does not support an answer, say so honestly rather than speculating.
-5. Suggest 2-3 natural follow-up questions the user might want to ask next.
-6. NEVER cite an insight ID that is not listed above. NEVER invent data.
-7. NEVER recommend changes to survey questions — refer them to the survey builder (Copilot).
-8. Keep your answer analytical and evidence-based. Think like a management consultant.
+Write like a sharp colleague who knows this data cold — not like a chatbot.
+Specific numbers, named themes, real quotes. Skip the preamble.
 
-Return ONLY valid JSON matching this schema — no markdown, no extra text:
+1. Lead with the finding, not the setup. "Onboarding friction is your top driver of churn [id]."
+2. Ground claims in insight data. Cite IDs inline: "[abc123]". {"Name the source survey too." if is_org else "Reference topics by name."}
+3. One concrete number per sentence wherever the data supports it.
+4. If data doesn't support the question, say so directly: "The data here doesn't show that yet."
+5. End with 2-3 follow-up questions that would actually help — vary between diagnosis, action, and navigation.
+6. NEVER cite an ID not listed above. NEVER invent data. To change survey questions → direct them to the survey builder (Copilot).
+
+Return ONLY valid JSON — no markdown, no extra text.
+IMPORTANT: cite using the FULL insight ID exactly as shown above (e.g. [ba58f64c-1234-5678-abcd-ef0123456789]).
+Never shorten or truncate IDs — the frontend needs the exact UUID to look up the source.
 {{
-  "answer": "Your 2-5 sentence answer with inline citations like [insight-id].",
-  "citations": ["insight-id-1", "insight-id-2"],
-  "suggestions": ["Follow-up question 1?", "Follow-up question 2?", "Follow-up question 3?"],
-  "insight_refs": ["insight-id-1", "insight-id-2"]
+  "answer": "2-5 sentence answer. Cite full IDs inline: [ba58f64c-1234-5678-abcd-ef0123456789].",
+  "citations": ["ba58f64c-1234-5678-abcd-ef0123456789"],
+  "suggestions": ["Follow-up question?", "Navigation suggestion like: Explore [Survey Name] Intelligence"],
+  "insight_refs": ["ba58f64c-1234-5678-abcd-ef0123456789"]
 }}
 """
 
@@ -652,22 +694,40 @@ async def _run_react_loop(inp: CrystalInput, db_pool=None) -> CrystalOutput:
 # ── ReAct loop (streaming) ────────────────────────────────────────────────────
 
 async def _run_react_loop_streaming(inp: CrystalInput, db_pool=None):
-    """Streaming Crystal ReAct loop — yields SSE event JSON strings."""
-    import json as _json
-    from agents.lib.constants import CRYSTAL_MAX_TOOL_TURNS, CRYSTAL_CONVERSATION_WINDOW
-    from agents.crystal.context import CrystalContext
-    from agents.crystal.tools import dispatch_tool
-    from agents.crystal.registry import TOOL_REGISTRY, get_tools_for_scope
-    import redis.asyncio as _redis_mod
-    import os
+    """Streaming Crystal ReAct loop — yields SSE event JSON strings.
 
-    ctx = CrystalContext(
-        org_id=inp.org_id,
-        user_id=inp.user_id or 'unknown',
-        survey_id=inp.survey_id,
-        scope=inp.scope,
-        has_open_text=inp.has_open_text,
-    )
+    Always yields at least one event so the HTTP stream never closes silently.
+    Any startup exception (import failure, context error, etc.) is caught and
+    emitted as an 'error' event rather than killing the generator silently.
+    """
+    import json as _json
+
+    # Wrap entire body so any exception — including lazy import failures or
+    # unexpected runtime errors before the first yield — surfaces as an SSE event.
+    try:
+        from agents.lib.constants import CRYSTAL_MAX_TOOL_TURNS, CRYSTAL_CONVERSATION_WINDOW
+        from agents.crystal.context import CrystalContext
+        from agents.crystal.tools import dispatch_tool
+        from agents.crystal.registry import TOOL_REGISTRY, get_tools_for_scope
+        import redis.asyncio as _redis_mod
+        import os
+    except Exception as _import_exc:
+        logger.error("crystal_streaming_import_failed", error=str(_import_exc))
+        yield _json.dumps({"type": "error", "message": "Crystal initialisation failed — agents service may need a restart."})
+        return
+
+    try:
+        ctx = CrystalContext(
+            org_id=inp.org_id,
+            user_id=inp.user_id or 'unknown',
+            survey_id=inp.survey_id,
+            scope=inp.scope,
+            has_open_text=inp.has_open_text,
+        )
+    except Exception as _ctx_exc:
+        logger.error("crystal_streaming_context_failed", error=str(_ctx_exc))
+        yield _json.dumps({"type": "error", "message": "Crystal context error — please try again."})
+        return
 
     # Rate limit — try/finally ensures connection is always closed before first yield
     _rate_count = 0

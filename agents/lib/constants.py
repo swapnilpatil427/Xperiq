@@ -121,6 +121,35 @@ TRUST_LOW_MAX = 40                         # trust score ≤ this → low
 TRUST_MEDIUM_MAX = 70                      # trust score ≤ this → medium
 TRUST_HIGH_MAX = 100                       # trust score ≤ this → high
 
+# ── Prior insight context (incremental narration) ────────────────────────────
+# When generating a new report, carry forward high-confidence findings from the
+# last run as "established context" so new narration builds on prior knowledge.
+#
+# Selection strategy: prefer high-confidence (trust ≥ PRIOR_MIN_TRUST), then
+# fill remaining slots with the best available if not enough high-confidence ones exist.
+# This ensures the LLM always gets N items of prior context regardless of run history.
+PRIOR_INSIGHT_MIN_TRUST: int    = int(os.getenv("PRIOR_INSIGHT_MIN_TRUST",    "65"))
+PRIOR_INSIGHT_MAX_COUNT: int    = int(os.getenv("PRIOR_INSIGHT_MAX_COUNT",     "8"))
+PRIOR_INSIGHT_LAYERS: tuple     = ("prescriptive", "diagnostic")   # most actionable layers
+
+# ── Full report generation ─────────────────────────────────────────────────────
+# Controls what goes into the full report context window.
+# The report LLM receives: established insights + new response texts + computed metrics.
+# All parameters are tunable — increase for higher accuracy at higher cost.
+#
+# REPORT_PRIOR_MIN_TRUST:      minimum trust score to include a prior insight as "established"
+# REPORT_PRIOR_MAX_INSIGHTS:   max prior insights in context — keep low (4) so the report
+#                               is driven by fresh evidence, not dominated by prior knowledge
+# REPORT_NEW_RESPONSES_MAX:    max new response texts sent to LLM. Set to 0 to send ALL new
+#                               responses (bounded only by the ABSA cap). Default 0 = no cap.
+# REPORT_RESPONSE_TEXT_MAX_LEN: max chars per response verbatim in context
+# REPORT_FULL_MAX_TOPICS:      max topics from topic_signals included as structure
+REPORT_PRIOR_MIN_TRUST:        int = int(os.getenv("REPORT_PRIOR_MIN_TRUST",       "65"))
+REPORT_PRIOR_MAX_INSIGHTS:     int = int(os.getenv("REPORT_PRIOR_MAX_INSIGHTS",     "4"))
+REPORT_NEW_RESPONSES_MAX:      int = int(os.getenv("REPORT_NEW_RESPONSES_MAX",      "0"))   # 0 = all new responses
+REPORT_RESPONSE_TEXT_MAX_LEN:  int = int(os.getenv("REPORT_RESPONSE_TEXT_MAX_LEN", "350"))
+REPORT_FULL_MAX_TOPICS:        int = int(os.getenv("REPORT_FULL_MAX_TOPICS",         "8"))
+
 # ── Report quality ────────────────────────────────────────────────────────────
 REPORT_QUALITY_RENARRATE_THRESHOLD = 60    # eval score below this triggers re-narration
 CRYSTAL_EVAL_PASS_THRESHOLD = 72           # minimum quality score for Crystal response to pass

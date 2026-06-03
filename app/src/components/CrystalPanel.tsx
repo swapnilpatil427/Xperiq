@@ -14,8 +14,9 @@ import { useAppAuth } from '../lib/auth';
 import type { SurveyScope } from './SurveyScopePicker';
 import type { Insight, Survey, AgenticInsight, SurveyTopic } from '../types';
 
-// Feature flag: set VITE_CRYSTAL_STREAMING=true to enable SSE streaming
-const CRYSTAL_STREAMING = import.meta.env.VITE_CRYSTAL_STREAMING === 'true';
+// Streaming is always enabled — no env flag needed.
+// Falls back to REST only when the streaming endpoint is unreachable.
+const CRYSTAL_STREAMING = true;
 
 interface Message {
   id: string;
@@ -30,11 +31,30 @@ interface Message {
 }
 
 // Citation object returned from the streaming crystal endpoint
-interface CrystalCitation {
-  id: string;
-  quote?: string;
-  sentiment?: 'positive' | 'negative' | 'neutral';
+interface CrystalVerbatim {
+  response_id: string;
+  quote:       string;
+  sentiment?:  'positive' | 'negative' | 'neutral';
+  topic?:      string | null;  // which topic this verbatim belongs to
 }
+
+interface CrystalCitation {
+  id:            string;
+  quote?:        string;
+  sentiment?:    'positive' | 'negative' | 'neutral';
+  // Source attribution — enriched from citation_context event or REST response
+  headline?:     string;
+  survey_title?: string;
+  survey_id?:    string;
+  layer?:        string;
+  category?:     string;
+  verbatims?:    CrystalVerbatim[];  // actual customer responses from the insight
+  topic_name?:   string;             // for voice.topic insights — enables deep dive nav
+}
+
+// Lookup map returned by the backend alongside every Crystal response.
+// Maps insight_id → source metadata including verbatim responses.
+type CitationMap = Record<string, Omit<CrystalCitation, 'id' | 'quote' | 'sentiment'>>;
 
 // Streaming state during a live SSE response
 type StreamingPhase =
@@ -74,6 +94,7 @@ export function CrystalPanel({
 }: CrystalPanelProps) {
   const {
     isOpen, initialQuery, crystalCtx, setCrystalCtx, closeCrystal,
+    setScope,
     // Context-injected data from the active page (falls back to prop values)
     agenticInsights: ctxAgentic,
     topics: ctxTopics,
@@ -89,6 +110,12 @@ export function CrystalPanel({
   const [streamingState, setStreamingState] = useState<StreamingPhase>(null);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
+  // citationMap: insight_id → source metadata (survey, headline, layer).
+  // Populated from citation_context SSE event or REST response citation_map field.
+  const [citationMap, setCitationMap] = useState<CitationMap>({});
+  const citationMapRef = useRef<CitationMap>({});
+  // Keep ref in sync so submitQuery can read latest without closure issues.
+  useEffect(() => { citationMapRef.current = citationMap; }, [citationMap]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   // Tracks the last initialQuery that was auto-submitted by the effect below.
@@ -97,6 +124,11 @@ export function CrystalPanel({
   // re-fire every time the user clicks a suggestion chip.
   const autoSubmittedQuery = useRef('');
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  // Always track latest scope in a ref so submitQuery never uses a stale closure.
+  // Critical when setScope() and openCrystal() are called together — the ref
+  // guarantees the correct scope is used even if React hasn't re-rendered yet.
+  const scopeRef = useRef(scope);
+  useEffect(() => { scopeRef.current = scope; }, [scope]);
   const api = useApi();
   const { getToken } = useAppAuth();
 
@@ -143,32 +175,29 @@ export function CrystalPanel({
       setStreamingState(null);
       setStreamError(null);
 
-      // All-surveys scope: no surveyId to call against
-      if (isAll) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: 'crystal',
-            content: 'Select a specific survey from the scope picker to get real AI-powered answers. Crystal works best when focused on a single survey\'s responses.',
-            timestamp: new Date(),
-            suggestions: ['Switch to a specific survey →'],
-          },
-        ]);
-        setIsThinking(false);
-        return;
-      }
-
       const activeCtx = overrideCtx ?? crystalCtx;
 
       // ── Streaming path (VITE_CRYSTAL_STREAMING=true) ──────────────────────
+      // Handles both survey scope and org ('all') scope. Org scope uses
+      // streamScope='org' and calls /api/experience/org/crystal/stream which
+      // runs Crystal against the full portfolio (all active surveys + cross-survey tools).
       if (CRYSTAL_STREAMING) {
         try {
           const token = await getToken();
           const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-          // Backend validates `:scope` must be 'survey' or 'org' — NOT the survey UUID.
-          // The actual survey ID goes in the request body as `survey_id`.
-          const streamScope = isAll ? 'org' : 'survey';
+          // Read from ref to get the latest scope even if React batching hasn't
+          // propagated the prop update yet (e.g. when setScope + openCrystal are
+          // called together from the hub page survey chip handler).
+          const currentScope = scopeRef.current;
+          const currentIsAll = currentScope === 'all';
+          const streamScope = currentIsAll ? 'org' : 'survey';
+          // IMPORTANT: never send 'all' as survey_id — the agents service treats
+          // any non-empty survey_id as a UUID and runs check_survey_access on it.
+          // Org scope passes '' so the access check is skipped entirely.
+          const surveyIdForBody = currentIsAll ? '' : currentScope;
+          const currentFocusSurvey = !currentIsAll
+            ? surveys.find((s) => s.id === currentScope)
+            : null;
           const response = await fetch(
             `${BASE}/api/experience/${streamScope}/crystal/stream`,
             {
@@ -178,15 +207,15 @@ export function CrystalPanel({
                 ...(token ? { Authorization: `Bearer ${token}` } : {}),
               },
               body: JSON.stringify({
-                survey_id: scope,
+                survey_id: surveyIdForBody,
                 message: query.trim(),
                 insights: agenticInsights ?? [],
                 topics: topics ?? [],
-                survey_title: focusSurvey?.title ?? '',
+                survey_title: currentFocusSurvey?.title ?? '',
                 survey_response_count: responseCount ?? 0,
                 metrics: {},
                 conversation_history: messages
-                  .filter((m) => m.role !== 'user' || true) // include all
+                  .filter((m) => m.role !== 'user' || true)
                   .map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content })),
                 scope: streamScope,
                 window: activeCtx.window,
@@ -204,7 +233,9 @@ export function CrystalPanel({
           if (!reader) throw new Error('No response stream');
 
           let buffer = '';
-          while (true) {
+          let answerReceived = false;
+          let streamDone = false;
+          while (!streamDone) {
             const { done, value } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
@@ -214,7 +245,7 @@ export function CrystalPanel({
             for (const line of lines) {
               if (!line.startsWith('data: ')) continue;
               const data = line.slice(6).trim();
-              if (data === '[DONE]') break;
+              if (data === '[DONE]') { streamDone = true; break; }
               try {
                 const event = JSON.parse(data) as {
                   type: string;
@@ -224,32 +255,62 @@ export function CrystalPanel({
                   answer?: string;
                   citations?: Array<{ id: string; quote?: string; sentiment?: 'positive' | 'negative' | 'neutral' }>;
                   suggestions?: string[];
+                  map?: CitationMap;
                 };
-                if (event.type === 'thinking') {
+                if (event.type === 'citation_context' && event.map) {
+                  // Merge into citationMap — arrives before [DONE], before answer in most cases
+                  setCitationMap((prev) => ({ ...prev, ...event.map }));
+                  citationMapRef.current = { ...citationMapRef.current, ...event.map };
+                } else if (event.type === 'thinking') {
                   setStreamingState({ phase: 'thinking', tool: event.tool, message: event.message });
                 } else if (event.type === 'observation') {
                   setStreamingState({ phase: 'observation', tool: event.tool, summary: event.summary });
                 } else if (event.type === 'synthesizing') {
                   setStreamingState({ phase: 'synthesizing' });
                 } else if (event.type === 'answer') {
+                  answerReceived = true;
                   setStreamingState(null);
-                  // Agents return citations as string[] (insight IDs); normalise to CrystalCitation[]
+                  // Normalise citations and enrich from citationMapRef.
+                  // Crystal sometimes returns short 8-char IDs; resolveId maps them to full UUIDs.
                   const rawCitations: unknown[] = event.citations ?? [];
-                  const normCitations: CrystalCitation[] = rawCitations.map((c) =>
-                    typeof c === 'string' ? { id: c } : (c as CrystalCitation),
-                  );
+                  const normCitations: CrystalCitation[] = rawCitations.map((c) => {
+                    const base = typeof c === 'string' ? { id: c } : (c as CrystalCitation);
+                    const resolvedId = resolveId(base.id, citationMapRef.current);
+                    const meta = citationMapRef.current[resolvedId];
+                    return meta ? { ...base, id: resolvedId, ...meta } : { ...base, id: resolvedId };
+                  });
+
+                  // Also scan the answer text for inline [uuid] or [8chars] refs.
+                  // Multi-ID blocks are stripped; single refs are left for CitedText to render.
+                  const { text: cleanedAnswer, extraIds } = parseInlineCitations(event.answer ?? '');
+
+                  // Additionally find ALL citation IDs still in the cleaned text
+                  // (single refs) so they appear in SourcesFooter even if not in citations[].
+                  const inlineRefs = (cleanedAnswer.match(/\[[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\]/gi) ?? [])
+                    .map((m) => m.slice(1, -1).toLowerCase());
+
+                  const existingIds = new Set(normCitations.map((c) => c.id.toLowerCase()));
+                  [...extraIds, ...inlineRefs].forEach((rawId) => {
+                    const id = resolveId(rawId, citationMapRef.current);
+                    if (!existingIds.has(id)) {
+                      const meta = citationMapRef.current[id];
+                      normCitations.push(meta ? { id, ...meta } : { id });
+                      existingIds.add(id);
+                    }
+                  });
                   setMessages((prev) => [
                     ...prev,
                     {
                       id: crypto.randomUUID(),
                       role: 'crystal',
-                      content: event.answer ?? '',
+                      content: cleanedAnswer,
                       timestamp: new Date(),
                       citations: normCitations,
                       suggestions: event.suggestions ?? [],
                     },
                   ]);
                 } else if (event.type === 'error') {
+                  answerReceived = true;  // error counts as a response — don't show generic fallback
                   setStreamingState(null);
                   setStreamError(event.message ?? 'An error occurred');
                   setMessages((prev) => [
@@ -265,6 +326,80 @@ export function CrystalPanel({
               } catch {
                 // ignore malformed SSE lines
               }
+            }
+          }
+          // Guard: if stream closed without any answer or error event, fall back to
+          // Unified fallback — one endpoint handles any scope automatically.
+          // survey_id present → survey context; absent → org/portfolio context.
+          if (!answerReceived) {
+            try {
+              const history = messages.map((m) => ({
+                role: m.role === 'user' ? 'user' : 'assistant',
+                content: m.content,
+              }));
+              const data = await api.crystalChat2(query, {
+                surveyId:           currentIsAll ? undefined : currentScope,
+                focusedTopic:       activeCtx.focused_topic,
+                conversationHistory: history,
+              });
+              // Merge REST citation_map into state before building citations
+              const restCitationMap = (data.citation_map ?? {}) as CitationMap;
+              if (Object.keys(restCitationMap).length > 0) {
+                setCitationMap((prev) => ({ ...prev, ...restCitationMap }));
+                citationMapRef.current = { ...citationMapRef.current, ...restCitationMap };
+              }
+              const mergedMap = { ...citationMapRef.current, ...restCitationMap };
+              const { text: cleanedAnswer, extraIds } = parseInlineCitations(data.answer ?? '');
+
+              // Collect IDs from ALL possible sources:
+              // - insight_refs (backend preferred field)
+              // - citations (Crystal's raw output field — same IDs, different key)
+              // - extraIds from multi-UUID blocks stripped by parseInlineCitations
+              // - inlineRefs from single [uuid] refs still present in the answer text
+              const seenIds = new Set<string>();
+              const citations: CrystalCitation[] = [];
+
+              const addId = (rawId: string) => {
+                const id = resolveId(rawId.toLowerCase(), mergedMap);
+                if (seenIds.has(id)) return;
+                seenIds.add(id);
+                const meta = mergedMap[id];
+                citations.push(meta ? { id, ...meta } : { id });
+              };
+
+              // 1. Explicit IDs from agent response
+              [...(data.insight_refs ?? []), ...(data.citations ?? [])
+                .filter((c: unknown) => typeof c === 'string')]
+                .forEach(addId);
+
+              // 2. Multi-UUID blocks stripped from text
+              extraIds.forEach(addId);
+
+              // 3. Single [uuid] refs still in the cleaned answer text
+              (cleanedAnswer.match(/\[[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\]/gi) ?? [])
+                .map((m) => m.slice(1, -1))
+                .forEach(addId);
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: crypto.randomUUID(),
+                  role: 'crystal',
+                  content: cleanedAnswer,
+                  timestamp: new Date(),
+                  citations,
+                  suggestions: data.suggestions ?? [],
+                },
+              ]);
+            } catch {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: crypto.randomUUID(),
+                  role: 'crystal',
+                  content: 'Crystal is unavailable right now. Make sure the agents service is running.',
+                  timestamp: new Date(),
+                },
+              ]);
             }
           }
         } catch (err) {
@@ -291,6 +426,22 @@ export function CrystalPanel({
       }
 
       // ── Legacy path ────────────────────────────────────────────────────────
+      // Org-level portfolio queries have no non-streaming REST endpoint.
+      // Surface a clean user-facing message with no technical details.
+      if (isAll) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            role: 'crystal',
+            content: 'Portfolio analysis isn\'t available right now. Try opening a specific survey from the hub to get insights.',
+            timestamp: new Date(),
+            suggestions: ['Open a survey instead →'],
+          },
+        ]);
+        setIsThinking(false);
+        return;
+      }
       try {
         const { answer, suggestions, insight_refs } = await api.crystalChat(scope, query, {
           window: activeCtx.window,
@@ -514,9 +665,9 @@ export function CrystalPanel({
                 </div>
                 <div className="text-[10px] text-on-surface-variant truncate">
                   {isAll
-                    ? `Ask across ${activeSurveys.length} active surveys${nps != null ? ` · Portfolio NPS ${nps}` : ''}`
+                    ? `Ask across ${activeSurveys.length} active survey${activeSurveys.length !== 1 ? 's' : ''}${nps != null ? ` · Portfolio NPS ${nps}` : ''}`
                     : focusSurvey
-                      ? `${focusSurvey.title} · ${responseCount.toLocaleString()} responses${nps != null ? ` · NPS ${nps}` : ''}${topics.length > 0 ? ` · ${topics.length} topics` : ''}`
+                      ? `${focusSurvey.title} · ${responseCount.toLocaleString()} responses${nps != null ? ` · NPS ${nps}` : ''}${crystalCtx.focused_topic ? ` · ${crystalCtx.focused_topic}` : ''}`
                       : 'Ask anything about this survey'}
                 </div>
               </div>
@@ -552,33 +703,63 @@ export function CrystalPanel({
               </button>
             </div>
 
-            {/* ── Context strip — shows what Crystal is scoped to ──────── */}
-            {!isAll && (crystalCtx.window || crystalCtx.focused_topic) && (
-              <div className="flex-shrink-0 flex items-center gap-2 px-5 py-2 flex-wrap"
-                style={{ background: 'rgba(42,75,217,0.04)', borderBottom: '1px solid rgba(42,75,217,0.08)' }}>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-on-surface-variant mr-1">
-                  Scoped to:
+            {/* ── Agent mode + context strip ────────────────────────────── */}
+            <div className="flex-shrink-0 flex items-center gap-2 px-5 py-2 flex-wrap"
+              style={{ background: 'rgba(42,75,217,0.04)', borderBottom: '1px solid rgba(42,75,217,0.08)' }}>
+              {/* What Crystal is looking at — derived from scope, not hardcoded */}
+              <Icon name="diamond" size={11} style={{ color: '#2a4bd9', flexShrink: 0 }} />
+              {isAll ? (
+                <span className="text-[10px] text-on-surface-variant">
+                  {activeSurveys.length > 0
+                    ? `${activeSurveys.length} active survey${activeSurveys.length !== 1 ? 's' : ''} · latest reports`
+                    : 'Portfolio — no surveys yet'}
                 </span>
-                {crystalCtx.window && crystalCtx.window !== 'all_time' && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
-                    style={{ background: '#eef2ff', color: '#4f46e5' }}>
-                    <Icon name="schedule" size={11} />
-                    {WINDOW_LABELS[crystalCtx.window] ?? crystalCtx.window}
-                  </span>
+              ) : (
+                <>
+                  {focusSurvey && (
+                    <span className="text-[10px] font-semibold text-on-surface-variant truncate max-w-[150px]">
+                      {focusSurvey.title}
+                    </span>
+                  )}
+                  {crystalCtx.focused_topic && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1"
+                      style={{ background: '#ecfdf5', color: '#059669' }}>
+                      <Icon name="topic" size={10} />
+                      {crystalCtx.focused_topic}
+                    </span>
+                  )}
+                  {crystalCtx.window && crystalCtx.window !== 'all_time' && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-1"
+                      style={{ background: '#eef2ff', color: '#4f46e5' }}>
+                      <Icon name="schedule" size={10} />
+                      {WINDOW_LABELS[crystalCtx.window] ?? crystalCtx.window}
+                    </span>
+                  )}
+                </>
+              )}
+
+              <div className="ml-auto flex items-center gap-1.5">
+                {/* Return to portfolio — shown when scoped to a survey */}
+                {!isAll && (
+                  <button
+                    className="text-[10px] font-bold flex items-center gap-0.5 px-2 py-0.5 rounded-full transition-colors hover:bg-primary/10"
+                    style={{ color: 'var(--color-primary)' }}
+                    onClick={() => { setScope('all'); setCrystalCtx({}); }}
+                    title="Switch Crystal to portfolio view across all surveys"
+                  >
+                    <Icon name="corporate_fare" size={10} />
+                    Portfolio
+                  </button>
                 )}
-                {crystalCtx.focused_topic && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1"
-                    style={{ background: '#ecfdf5', color: '#059669' }}>
-                    <Icon name="topic" size={11} />
-                    {crystalCtx.focused_topic}
-                  </span>
+                {/* Clear filters */}
+                {!isAll && (crystalCtx.window || crystalCtx.focused_topic) && (
+                  <button className="text-[10px] text-on-surface-variant hover:text-on-surface"
+                    onClick={() => setCrystalCtx({})}>
+                    clear
+                  </button>
                 )}
-                <button className="ml-auto text-[10px] text-on-surface-variant hover:text-on-surface"
-                  onClick={() => setCrystalCtx({})}>
-                  clear
-                </button>
               </div>
-            )}
+            </div>
 
             {/* ── Time window quick-filter ──────────────────────────────── */}
             {!isAll && messages.length === 0 && (
@@ -619,6 +800,7 @@ export function CrystalPanel({
                       <CrystalBubble
                         key={msg.id}
                         message={msg}
+                        isAll={isAll}
                         onFollowUp={submitQuery}
                         onPin={handlePin}
                         onThumbsUp={handleThumbsUp}
@@ -627,9 +809,7 @@ export function CrystalPanel({
                     ),
                   )}
                   {isThinking && (
-                    streamingState
-                      ? <StreamingBubble state={streamingState} />
-                      : <ThinkingBubble />
+                    <CrystalThinkingBubble state={streamingState} isThinking={isThinking} />
                   )}
                   {streamError && !isThinking && (
                     <div className="text-xs text-red-500 px-2">{streamError}</div>
@@ -817,15 +997,386 @@ function UserBubble({ message }: { message: Message }) {
   );
 }
 
+// ── Citation helpers ──────────────────────────────────────────────────────────
+
+// Matches full UUIDs AND the 8-char short form Crystal sometimes emits (first UUID segment).
+// Crystal is instructed to use full UUIDs but occasionally abbreviates — handle both.
+const UUID_RE = /\b[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\b/gi;
+const FULL_UUID_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+/** Resolve a short (8-char) ID to a full UUID from the citationMap. */
+function resolveId(id: string, map: CitationMap): string {
+  if (map[id]) return id;                              // exact match
+  const lower = id.toLowerCase();
+  const match = Object.keys(map).find((k) => k.toLowerCase().startsWith(lower));
+  return match ?? id;                                  // prefix match or original
+}
+
+/**
+ * Extracts citation IDs from Crystal's answer text.
+ * - Multi-ID blocks "[uuid, uuid, ...]" → strip from text, collect IDs
+ * - Single [uuid] or [8chars] refs → left in text for CitedText to render inline
+ * Handles both full UUIDs and the 8-char abbreviated form Crystal sometimes emits.
+ */
+function parseInlineCitations(text: string): { text: string; extraIds: string[] } {
+  const extraIds: string[] = [];
+  // Strip multi-ID blocks (comma-separated IDs) and collect their IDs
+  const cleaned = text.replace(/\[([^\]]*[0-9a-f]{8}[^\]]*,[^\]]*)\]/gi, (_match, inner) => {
+    const ids = inner.match(/[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?/gi) ?? [];
+    ids.forEach((id: string) => extraIds.push(id.toLowerCase()));
+    return '';
+  }).replace(/\s{2,}/g, ' ').trim();
+  return { text: cleaned, extraIds: [...new Set(extraIds)] };
+}
+
+// ── Citation helpers ─────────────────────────────────────────────────────────
+import { Link } from 'react-router-dom';
+import { ROUTES, toPath } from '../constants/routes';
+
+const LAYER_COLORS: Record<string, string> = {
+  prescriptive: '#059669',
+  diagnostic:   '#7c3aed',
+  predictive:   '#d97706',
+  descriptive:  '#2a4bd9',
+};
+
+/**
+ * Inline citation chip: "[1]" superscript with a hover tooltip showing
+ * the source survey name, insight headline, and a navigation link.
+ * Keeps answer text clean while still showing provenance on demand.
+ */
+function InlineCitation({ citation, index }: { citation: CrystalCitation; index: number }) {
+  const [open, setOpen] = useState(false);
+  const navPath = citation.survey_id
+    ? toPath(ROUTES.EXPERIENCE_SURVEY, { surveyId: citation.survey_id })
+    : null;
+  const displayText = citation.headline || citation.quote;
+  const layerColor  = LAYER_COLORS[citation.layer ?? ''] ?? '#64748b';
+
+  return (
+    <span className="relative inline-block align-super" style={{ fontSize: '0.65em' }}>
+      <button
+        className="font-bold px-1 py-0 rounded transition-colors leading-none"
+        style={{
+          background: open ? 'var(--color-primary)' : 'rgba(42,75,217,0.10)',
+          color: open ? 'white' : 'var(--color-primary)',
+        }}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        aria-label={`Source ${index + 1}${citation.survey_title ? ': ' + citation.survey_title : ''}`}
+      >
+        {index + 1}
+      </button>
+      {open && (
+        <div
+          className="absolute z-50 bottom-full left-1/2 mb-2 w-56 rounded-xl shadow-xl overflow-hidden"
+          style={{
+            transform: 'translateX(-50%)',
+            background: 'var(--color-surface)',
+            border: '1px solid rgba(42,75,217,0.15)',
+          }}
+          onMouseEnter={() => setOpen(true)}
+          onMouseLeave={() => setOpen(false)}
+        >
+          {/* Source header */}
+          <div className="px-3 py-2" style={{ background: `${layerColor}12`, borderBottom: `1px solid ${layerColor}20` }}>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold truncate" style={{ color: 'var(--color-on-surface)' }}>
+                {citation.survey_title || `Source ${index + 1}`}
+              </span>
+              {citation.layer && (
+                <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded flex-shrink-0"
+                  style={{ background: `${layerColor}18`, color: layerColor }}>
+                  {citation.layer}
+                </span>
+              )}
+            </div>
+          </div>
+          {/* Quote / headline */}
+          {displayText && (
+            <div className="px-3 py-2">
+              <p className="text-[11px] text-on-surface leading-snug line-clamp-3">
+                &ldquo;{displayText}&rdquo;
+              </p>
+            </div>
+          )}
+          {/* First verbatim quote */}
+          {citation.verbatims && citation.verbatims[0]?.quote && (
+            <div className="px-3 py-1.5 border-t border-outline-variant/15">
+              <p className="text-[10px] text-on-surface-variant leading-snug italic line-clamp-2">
+                &ldquo;{citation.verbatims[0].quote}&rdquo;
+              </p>
+            </div>
+          )}
+          {/* Navigation */}
+          {navPath && (
+            <div className="px-3 pb-2 flex items-center gap-2">
+              <Link to={navPath}
+                className="text-[10px] font-bold flex items-center gap-1 hover:underline"
+                style={{ color: 'var(--color-primary)' }}>
+                View survey <Icon name="arrow_forward" size={9} />
+              </Link>
+            </div>
+          )}
+          {!displayText && !navPath && (
+            <div className="px-3 py-2">
+              <p className="text-[10px] text-on-surface-variant font-mono">{citation.id.slice(-8)}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/**
+ * Renders Crystal's answer text with inline citations replaced by
+ * numbered superscripts. Non-UUID text is rendered as-is.
+ * Usage: <CitedText content="..." citations={[...]} />
+ */
+function CitedText({ content, citations }: { content: string; citations: CrystalCitation[] }) {
+  if (!citations.length) return <>{content}</>;
+
+  // Build lookup: full UUID → index AND short 8-char prefix → index
+  const idToIdx = new Map<string, number>();
+  citations.forEach((c, i) => {
+    idToIdx.set(c.id.toLowerCase(), i);
+    // Also index by first 8 chars for short-form citations like [ba58f64c]
+    idToIdx.set(c.id.toLowerCase().slice(0, 8), i);
+  });
+
+  // Split on bracketed full UUIDs OR short 8-char hex IDs
+  const splitRe = /(\[[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\])/gi;
+  const parts = content.split(splitRe);
+
+  return (
+    <>
+      {parts.map((part, i) => {
+        // Match either full UUID or short ID inside brackets
+        const m = part.match(/^\[([0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?)\]$/i);
+        if (m) {
+          const raw = m[1].toLowerCase();
+          // Try exact match first, then prefix match
+          const idx = idToIdx.get(raw) ?? idToIdx.get(raw.slice(0, 8));
+          if (idx !== undefined) {
+            return <InlineCitation key={i} citation={citations[idx]} index={idx} />;
+          }
+          // Unknown ID — show as plain text rather than breaking layout
+          return <span key={i} className="text-on-surface-variant text-xs">[{raw.slice(0, 8)}]</span>;
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </>
+  );
+}
+
+const SENTIMENT_DOT: Record<string, string> = {
+  positive: '#16a34a',
+  negative: '#dc2626',
+  neutral:  '#94a3b8',
+};
+
+/** Smart navigation path based on insight category and available data. */
+function insightNavPath(c: CrystalCitation): { label: string; path: string } | null {
+  if (!c.survey_id) return null;
+  if (c.category === 'voice.topic' && c.topic_name) {
+    // Topic insights → topic analysis hub (filters by topic)
+    return {
+      label: `Explore "${c.topic_name}" in ${c.survey_title || 'survey'}`,
+      path: `${toPath(ROUTES.EXPERIENCE_SURVEY_TOPICS, { surveyId: c.survey_id })}?topic=${encodeURIComponent(c.topic_name)}`,
+    };
+  }
+  // All other insights → survey Intelligence page
+  return {
+    label: `View ${c.survey_title || 'survey'} Intelligence`,
+    path: toPath(ROUTES.EXPERIENCE_SURVEY, { surveyId: c.survey_id }),
+  };
+}
+
+// ── Citation display strategy ─────────────────────────────────────────────────
+// Determines what to show in the sources footer based on available context.
+// Add new strategies here as Crystal expands to new data domains.
+type CitationStrategy =
+  | 'responses-only'   // single survey — source is implicit, show verbatims directly
+  | 'attributed';      // org/multi-survey — must show which survey each finding is from
+
+function getCitationStrategy(isAll: boolean): CitationStrategy {
+  return isAll ? 'attributed' : 'responses-only';
+}
+
+// ── Shared verbatim list ──────────────────────────────────────────────────────
+function VerbatimList({ verbatims }: { verbatims: CrystalVerbatim[] }) {
+  return (
+    <div className="space-y-1.5">
+      {verbatims.map((v, i) => (
+        <div key={i}
+          className="px-2.5 py-2 rounded-lg text-[11px] leading-snug"
+          style={{
+            background: 'var(--color-surface)',
+            borderLeft: `3px solid ${SENTIMENT_DOT[v.sentiment ?? 'neutral']}`,
+          }}>
+          {v.topic && (
+            <span className="inline-block text-[9px] font-bold px-1.5 py-0.5 rounded mb-1 mr-1"
+              style={{ background: 'rgba(42,75,217,0.08)', color: '#2a4bd9' }}>
+              {v.topic}
+            </span>
+          )}
+          <span className="italic text-on-surface">&ldquo;{v.quote}&rdquo;</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ── Sources footer ────────────────────────────────────────────────────────────
+// Strategy 'responses-only': survey is implied — show responses directly.
+// Strategy 'attributed':     show which survey each finding comes from.
+// New strategies can be added above and wired here without touching callers.
+function SourcesFooter({ citations, isAll }: { citations: CrystalCitation[]; isAll: boolean }) {
+  const [expanded,           setExpanded]           = useState(false);
+  const [showResponsesFor,   setShowResponsesFor]   = useState<string | null>(null);
+  const strategy = getCitationStrategy(isAll);
+
+  const withData = citations.filter((c) => c.headline || (c.verbatims && c.verbatims.length > 0));
+  const bare     = citations.filter((c) => !c.headline && (!c.verbatims || !c.verbatims.length));
+
+  if (withData.length === 0 && bare.length === 0) return null;
+
+  // ── responses-only ────────────────────────────────────────────────────────
+  if (strategy === 'responses-only') {
+    const allVerbatims = withData.flatMap((c) => c.verbatims ?? []);
+    if (allVerbatims.length === 0) return null;
+
+    return (
+      <div className="mt-2 pt-2 border-t border-outline-variant/15">
+        <button
+          className="flex items-center gap-1.5 text-[10px] text-on-surface-variant hover:text-on-surface transition-colors w-full text-left mb-1"
+          onClick={() => setExpanded((e) => !e)}
+        >
+          <Icon name="format_quote" size={11} />
+          <span className="font-semibold">
+            {allVerbatims.length} response{allVerbatims.length !== 1 ? 's' : ''}
+          </span>
+          <Icon name={expanded ? 'expand_less' : 'expand_more'} size={12} className="ml-auto" />
+        </button>
+        {expanded && <VerbatimList verbatims={allVerbatims} />}
+      </div>
+    );
+  }
+
+  // ── attributed (org scope) ────────────────────────────────────────────────
+  const surveyNames = [...new Set(withData.map((c) => c.survey_title).filter(Boolean))];
+
+  return (
+    <div className="mt-2 pt-2 border-t border-outline-variant/15">
+      <button
+        className="flex items-center gap-1.5 text-[10px] text-on-surface-variant hover:text-on-surface transition-colors w-full text-left"
+        onClick={() => setExpanded((e) => !e)}
+      >
+        <Icon name="library_books" size={11} />
+        <span className="font-semibold">
+          {withData.length} source{withData.length !== 1 ? 's' : ''}
+          {!expanded && surveyNames.length > 0 && (
+            <span className="font-normal text-on-surface-variant/70 ml-1">
+              — {surveyNames.slice(0, 2).join(', ')}{surveyNames.length > 2 ? '…' : ''}
+            </span>
+          )}
+        </span>
+        <Icon name={expanded ? 'expand_less' : 'expand_more'} size={12} className="ml-auto" />
+      </button>
+
+      {expanded && (
+        <div className="mt-2 space-y-3">
+          {withData.map((c, i) => {
+            const layerColor   = LAYER_COLORS[c.layer ?? ''] ?? '#64748b';
+            const nav          = insightNavPath(c);
+            const hasResponses = c.verbatims && c.verbatims.length > 0;
+            const showing      = showResponsesFor === c.id;
+
+            return (
+              <div key={c.id} className="rounded-xl overflow-hidden border"
+                style={{ borderColor: 'rgba(42,75,217,0.10)', background: 'var(--color-surface-container, rgba(0,0,0,0.02))' }}>
+
+                {/* Survey + layer header */}
+                <div className="flex items-center gap-2 px-3 py-2"
+                  style={{ background: `${layerColor}0c`, borderBottom: `1px solid ${layerColor}18` }}>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                    style={{ background: 'rgba(42,75,217,0.10)', color: '#2a4bd9', minWidth: 18, textAlign: 'center' }}>
+                    {i + 1}
+                  </span>
+                  <span className="text-[10px] font-semibold truncate text-on-surface">
+                    {c.survey_title || `Source ${i + 1}`}
+                  </span>
+                  {c.layer && (
+                    <span className="ml-auto text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded flex-shrink-0"
+                      style={{ background: `${layerColor}15`, color: layerColor }}>
+                      {c.layer}
+                    </span>
+                  )}
+                </div>
+
+                {c.headline && (
+                  <p className="px-3 pt-2 pb-1 text-[11px] text-on-surface font-medium leading-snug">
+                    {c.headline}
+                  </p>
+                )}
+
+                {showing && hasResponses && (
+                  <div className="px-3 pb-2 mt-1">
+                    <VerbatimList verbatims={c.verbatims!} />
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 px-3 pb-2 pt-1 flex-wrap">
+                  {hasResponses && (
+                    <button
+                      className="text-[10px] font-bold flex items-center gap-1 px-2.5 py-1 rounded-full transition-colors"
+                      style={{
+                        background: showing ? 'var(--color-primary)' : 'rgba(42,75,217,0.08)',
+                        color: showing ? 'white' : 'var(--color-primary)',
+                      }}
+                      onClick={() => setShowResponsesFor(showing ? null : c.id)}
+                    >
+                      <Icon name="format_quote" size={11} />
+                      {showing ? 'Hide' : `${c.verbatims!.length} response${c.verbatims!.length !== 1 ? 's' : ''}`}
+                    </button>
+                  )}
+                  {nav && (
+                    <Link to={nav.path}
+                      className="text-[10px] font-bold flex items-center gap-1 hover:underline ml-auto"
+                      style={{ color: 'var(--color-primary)' }}>
+                      {nav.label.length > 38 ? nav.label.slice(0, 36) + '…' : nav.label}
+                      <Icon name="arrow_forward" size={9} />
+                    </Link>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+          {bare.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {bare.map((c) => <CitationChip key={c.id} id={c.id} />)}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Crystal answer bubble ─────────────────────────────────────────────────────
 function CrystalBubble({
   message,
+  isAll,
   onFollowUp,
   onPin,
   onThumbsUp,
   onThumbsDown,
 }: {
   message: Message;
+  isAll: boolean;
   onFollowUp: (q: string) => void;
   onPin: (id: string) => void;
   onThumbsUp: (id: string) => void;
@@ -850,35 +1401,14 @@ function CrystalBubble({
           )}
           {message.confidence !== undefined && <ConfidenceChip value={message.confidence} />}
         </div>
-        <p className="text-sm leading-relaxed mb-3">{message.content}</p>
+        {/* Answer text — inline citations rendered as numbered superscripts */}
+        <div className="text-sm leading-relaxed mb-3">
+          <CitedText content={message.content} citations={message.citations ?? []} />
+        </div>
+
+        {/* Sources footer — behaviour adapts to scope */}
         {message.citations && message.citations.length > 0 && (
-          <div className="flex flex-col gap-1.5 mt-3 pt-3 border-t border-outline-variant/20">
-            <span className="text-[10px] text-on-surface-variant font-bold">Sources</span>
-            {/* Verbatim quote citations with sentiment border */}
-            {message.citations.filter(c => c.quote).map((c) => (
-              <div
-                key={c.id}
-                className="px-3 py-2 rounded-lg bg-muted/50 text-xs leading-relaxed"
-                style={{
-                  borderLeft: `3px solid ${
-                    c.sentiment === 'positive' ? SENTIMENT_BORDER.positive
-                    : c.sentiment === 'negative' ? SENTIMENT_BORDER.negative
-                    : SENTIMENT_BORDER.neutral
-                  }`,
-                }}
-              >
-                &ldquo;{c.quote}&rdquo;
-              </div>
-            ))}
-            {/* ID-only citations as chips */}
-            {message.citations.filter(c => !c.quote).length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {message.citations.filter(c => !c.quote).map((c) => (
-                  <CitationChip key={c.id} id={c.id} />
-                ))}
-              </div>
-            )}
-          </div>
+          <SourcesFooter citations={message.citations} isAll={isAll} />
         )}
         {message.suggestions && message.suggestions.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t border-outline-variant/20">
@@ -950,94 +1480,358 @@ function CrystalBubble({
   );
 }
 
-// ── Streaming status bubble — shown during SSE streaming phases ───────────────
-function StreamingBubble({ state }: { state: NonNullable<StreamingPhase> }) {
-  return (
-    <div className="flex gap-3">
-      <div
-        className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
-        style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
-      >
-        <Icon name="diamond" size={14} style={{ color: 'white' }} />
-      </div>
-      <GlassCard className="rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-3 flex-1">
-        {state.phase === 'thinking' && (
-          <>
-            <Icon name="psychology" size={16} className="text-primary animate-spin" style={{ animation: 'spin 2s linear infinite' }} />
-            <div className="min-w-0">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-tertiary block mb-0.5">Crystal · Thinking</span>
-              <p className="text-xs text-on-surface-variant truncate">
-                {state.tool ? `Using ${state.tool}…` : state.message ?? 'Reasoning…'}
-              </p>
-            </div>
-          </>
-        )}
-        {state.phase === 'observation' && (
-          <>
-            <Icon name="search" size={16} className="text-amber-600" />
-            <div className="min-w-0">
-              <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700 block mb-0.5">
-                {state.tool ? `Observed · ${state.tool}` : 'Observation'}
-              </span>
-              <p className="text-xs text-on-surface-variant truncate">{state.summary ?? 'Processing results…'}</p>
-            </div>
-          </>
-        )}
-        {state.phase === 'synthesizing' && (
-          <>
-            <div
-              className="w-4 h-4 rounded-full border-2 flex-shrink-0"
-              style={{
-                borderColor: 'rgba(42,75,217,0.2)',
-                borderTopColor: 'var(--color-primary, #2a4bd9)',
-                animation: 'spin 1s linear infinite',
-              }}
-            />
-            <div>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-tertiary block mb-0.5">Crystal</span>
-              <p className="text-xs text-on-surface-variant">Putting it together…</p>
-            </div>
-          </>
-        )}
-      </GlassCard>
-    </div>
-  );
-}
+// ── Tool metadata — human labels, icons, accent colours per Crystal tool ──────
+const TOOL_META: Record<string, { label: string; icon: string; color: string }> = {
+  get_survey_overview:      { label: 'Reading survey overview',        icon: 'analytics',       color: '#2a4bd9' },
+  get_topic_details:        { label: 'Exploring topic details',        icon: 'account_tree',    color: '#8329c8' },
+  get_metric_history:       { label: 'Pulling metric history',         icon: 'trending_up',     color: '#059669' },
+  get_insights_list:        { label: 'Loading AI insights',            icon: 'auto_awesome',    color: '#d97706' },
+  get_verbatims:            { label: 'Reading customer voices',        icon: 'format_quote',    color: '#0284c7' },
+  get_benchmark_comparison: { label: 'Comparing to benchmarks',        icon: 'leaderboard',     color: '#7c3aed' },
+  get_driver_analysis:      { label: 'Analysing experience drivers',   icon: 'hub',             color: '#dc2626' },
+  get_segment_breakdown:    { label: 'Breaking down segments',         icon: 'donut_small',     color: '#ea580c' },
+  get_checkpoint_history:   { label: 'Reviewing historical trend',     icon: 'history',         color: '#0891b2' },
+  compare_surveys:          { label: 'Comparing surveys side-by-side', icon: 'compare',         color: '#9333ea' },
+  get_org_portfolio:        { label: 'Scanning your portfolio',        icon: 'corporate_fare',  color: '#2a4bd9' },
+  get_cross_survey_themes:  { label: 'Finding shared themes',          icon: 'bubble_chart',    color: '#8329c8' },
+  get_anomaly_events:       { label: 'Checking for anomalies',         icon: 'warning',         color: '#dc2626' },
+};
 
-// ── Thinking animation ────────────────────────────────────────────────────────
-function ThinkingBubble() {
+type AccumulatedStep = {
+  id:          string;
+  phase:       'thinking' | 'observation' | 'synthesizing';
+  tool?:       string;
+  message?:    string;
+  summary?:    string;
+  startedAt:   number;   // ms since thinking began
+  completedAt?: number;  // ms since thinking began
+};
+
+// ── Crystal Thinking Bubble — unified loader shown for all thinking phases ────
+function CrystalThinkingBubble({
+  state,
+  isThinking,
+}: {
+  state: NonNullable<StreamingPhase> | null;
+  isThinking: boolean;
+}) {
+  const [steps, setSteps]         = useState<AccumulatedStep[]>([]);
+  const [elapsed, setElapsed]     = useState(0);
+  const startRef                  = useRef<number>(Date.now());
+  const prevStateRef              = useRef<NonNullable<StreamingPhase> | null>(null);
+
+  // Reset accumulated steps when a new query starts
+  useEffect(() => {
+    if (isThinking) {
+      setSteps([]);
+      setElapsed(0);
+      startRef.current = Date.now();
+      prevStateRef.current = null;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);   // intentionally fires only on mount of this instance
+
+  // Live elapsed counter (100ms tick while thinking)
+  useEffect(() => {
+    if (!isThinking) return;
+    const iv = setInterval(() => setElapsed(Date.now() - startRef.current), 100);
+    return () => clearInterval(iv);
+  }, [isThinking]);
+
+  // Accumulate steps as streaming events arrive
+  useEffect(() => {
+    if (!state) return;
+    const now = Date.now() - startRef.current;
+    const prev = prevStateRef.current;
+
+    // Same tool still thinking — just update message, don't add new step
+    if (
+      prev &&
+      prev.phase === state.phase &&
+      (prev as { tool?: string }).tool === (state as { tool?: string }).tool &&
+      state.phase === 'thinking'
+    ) {
+      setSteps((s) =>
+        s.map((step, i) =>
+          i === s.length - 1 ? { ...step, message: (state as { message?: string }).message } : step,
+        ),
+      );
+      prevStateRef.current = state;
+      return;
+    }
+
+    setSteps((prev_steps) => {
+      // Mark last step complete
+      const updated = prev_steps.map((s, i) =>
+        i === prev_steps.length - 1 && s.completedAt == null
+          ? { ...s, completedAt: now }
+          : s,
+      );
+      // Don't add duplicate synthesizing step
+      if (state.phase === 'synthesizing' && updated.some((s) => s.phase === 'synthesizing')) {
+        return updated;
+      }
+      return [
+        ...updated,
+        {
+          id:        crypto.randomUUID(),
+          phase:     state.phase,
+          tool:      (state as { tool?: string }).tool,
+          message:   (state as { message?: string }).message,
+          summary:   (state as { summary?: string }).summary,
+          startedAt: now,
+        },
+      ];
+    });
+    prevStateRef.current = state;
+  }, [state]);
+
+  const isSynthesizing = state?.phase === 'synthesizing';
+  const totalSteps     = steps.length;
+  const doneSteps      = steps.filter((s) => s.completedAt != null).length;
+
   return (
     <>
       <style>{`
-        @keyframes thinking-dot {
-          0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
-          40% { transform: scale(1); opacity: 1; }
+        @keyframes crystal-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
+        @keyframes crystal-pulse {
+          0%, 100% { opacity: 0.85; transform: scale(1); }
+          50%       { opacity: 1;    transform: scale(1.08); }
+        }
+        @keyframes aurora-flow {
+          0%   { background-position: 0%   50%; }
+          50%  { background-position: 100% 50%; }
+          100% { background-position: 0%   50%; }
+        }
+        @keyframes step-in {
+          from { opacity: 0; transform: translateY(6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes check-pop {
+          0%   { transform: scale(0); opacity: 0; }
+          60%  { transform: scale(1.3); }
+          100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes dot-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 0.6; }
+          50%       { box-shadow: 0 0 0 4px transparent; opacity: 1; }
+        }
+        @keyframes shimmer-text {
+          0%   { background-position: -200% center; }
+          100% { background-position:  200% center; }
         }
       `}</style>
+
       <div className="flex gap-3">
-        <div
-          className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
-          style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}
-        >
-          <Icon name="diamond" size={14} style={{ color: 'white' }} />
-        </div>
-        <GlassCard className="rounded-2xl rounded-bl-sm px-4 py-4 flex items-center gap-3">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-tertiary">Crystal</span>
-          <div className="flex items-center gap-1.5">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="w-2 h-2 rounded-full bg-primary"
-                style={{ animation: `thinking-dot 1.2s ease-in-out ${i * 0.2}s infinite` }}
-              />
-            ))}
+        {/* Crystal orb — rotates while thinking, pulses while synthesizing */}
+        <div className="flex-shrink-0 mt-0.5">
+          <div
+            style={{
+              width: 32, height: 32, position: 'relative',
+              filter: `drop-shadow(0 0 8px rgba(42,75,217,${isSynthesizing ? 0.7 : 0.4}))`,
+              animation: isSynthesizing
+                ? 'crystal-pulse 1.5s ease-in-out infinite'
+                : 'crystal-spin 4s linear infinite',
+              transition: 'filter 0.6s ease',
+            }}
+          >
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'conic-gradient(from 0deg, #879aff 0%, #d299ff 30%, #82deff 55%, #d299ff 78%, #879aff 100%)',
+              clipPath: 'polygon(50% 0%, 100% 30%, 100% 70%, 50% 100%, 0% 70%, 0% 30%)',
+            }} />
+            <div style={{
+              position: 'absolute', inset: '32%',
+              background: 'radial-gradient(circle, #fff, #82deff)',
+              borderRadius: '50%', filter: 'blur(2px)',
+            }} />
           </div>
-        </GlassCard>
+        </div>
+
+        {/* Step card */}
+        <div
+          className="flex-1 min-w-0 rounded-2xl rounded-tl-sm overflow-hidden"
+          style={{
+            background: 'var(--color-surface-container, rgba(255,255,255,0.05))',
+            border: '1px solid rgba(42,75,217,0.15)',
+          }}
+        >
+          {/* Header bar — aurora gradient while synthesizing */}
+          <div
+            className="px-4 py-2.5 flex items-center justify-between"
+            style={isSynthesizing ? {
+              background: 'linear-gradient(270deg, #2a4bd9, #8329c8, #0284c7, #2a4bd9)',
+              backgroundSize: '300% 300%',
+              animation: 'aurora-flow 3s ease infinite',
+            } : {
+              background: 'rgba(42,75,217,0.07)',
+              borderBottom: '1px solid rgba(42,75,217,0.09)',
+            }}
+          >
+            <span
+              className="text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: isSynthesizing ? 'rgba(255,255,255,0.9)' : 'var(--color-primary, #2a4bd9)' }}
+            >
+              {isSynthesizing
+                ? 'Crystal · Writing your answer'
+                : steps.length === 0
+                  ? 'Crystal · Interpreting'
+                  : `Crystal · Reasoning`}
+            </span>
+            <span
+              className="text-[10px] tabular-nums"
+              style={{ color: isSynthesizing ? 'rgba(255,255,255,0.6)' : 'var(--color-on-surface-variant, #888)' }}
+            >
+              {(elapsed / 1000).toFixed(1)}s
+            </span>
+          </div>
+
+          {/* Steps list */}
+          <div className="px-4 py-3 space-y-2.5">
+            {steps.length === 0 ? (
+              /* Initial state — waiting for first streaming event */
+              <div className="flex items-center gap-2.5">
+                <div className="flex gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <div
+                      key={i}
+                      style={{
+                        width: 5, height: 5, borderRadius: '50%',
+                        background: 'var(--color-primary, #2a4bd9)',
+                        animation: `dot-pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+                      }}
+                    />
+                  ))}
+                </div>
+                <span className="text-xs" style={{ color: 'var(--color-on-surface-variant, #888)' }}>
+                  Thinking…
+                </span>
+              </div>
+            ) : (
+              steps.map((step, idx) => {
+                const meta      = step.tool ? TOOL_META[step.tool] : null;
+                const isDone    = step.completedAt != null;
+                const isActive  = !isDone && idx === steps.length - 1;
+                const stepColor = meta?.color ?? (
+                  step.phase === 'synthesizing' ? '#2a4bd9' :
+                  step.phase === 'observation'  ? '#059669' : '#8329c8'
+                );
+                const stepDuration = isDone
+                  ? ((step.completedAt! - step.startedAt) / 1000).toFixed(1) + 's'
+                  : null;
+                const label = meta?.label
+                  ?? (step.phase === 'synthesizing' ? 'Synthesising answer'
+                    : step.phase === 'observation'  ? 'Processing results'
+                    : step.message ?? 'Reasoning');
+
+                return (
+                  <div
+                    key={step.id}
+                    className="flex items-start gap-2.5"
+                    style={{ animation: 'step-in 0.25s ease both' }}
+                  >
+                    {/* Step indicator */}
+                    <div className="flex-shrink-0 mt-0.5 relative" style={{ width: 14, height: 14 }}>
+                      {isDone ? (
+                        <div
+                          style={{
+                            width: 14, height: 14, borderRadius: '50%',
+                            background: stepColor,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            animation: 'check-pop 0.3s cubic-bezier(0.34,1.56,0.64,1) both',
+                          }}
+                        >
+                          <svg width="8" height="6" viewBox="0 0 8 6" fill="none">
+                            <path d="M1 3l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </div>
+                      ) : isActive ? (
+                        <div style={{
+                          width: 14, height: 14, borderRadius: '50%',
+                          border: `2px solid ${stepColor}`,
+                          borderTopColor: 'transparent',
+                          animation: 'crystal-spin 0.8s linear infinite',
+                        }} />
+                      ) : (
+                        <div style={{
+                          width: 14, height: 14, borderRadius: '50%',
+                          border: '2px solid rgba(128,128,128,0.25)',
+                        }} />
+                      )}
+                    </div>
+
+                    {/* Step content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className="text-[11px] font-medium leading-tight truncate"
+                          style={{
+                            color: isDone
+                              ? 'var(--color-on-surface-variant, #888)'
+                              : isActive
+                                ? 'var(--color-on-surface, #111)'
+                                : 'var(--color-on-surface-variant, #888)',
+                            ...(isActive && !isDone ? {
+                              background: `linear-gradient(90deg, ${stepColor}, #8329c8, ${stepColor})`,
+                              backgroundSize: '200% auto',
+                              WebkitBackgroundClip: 'text',
+                              WebkitTextFillColor: 'transparent',
+                              animation: 'shimmer-text 2s linear infinite',
+                            } : {}),
+                          }}
+                        >
+                          {label}
+                        </span>
+                        {stepDuration && (
+                          <span className="text-[10px] tabular-nums flex-shrink-0"
+                            style={{ color: 'var(--color-on-surface-variant, #888)', opacity: 0.65 }}>
+                            {stepDuration}
+                          </span>
+                        )}
+                      </div>
+                      {/* Observation summary — shows what was found */}
+                      {step.summary && (
+                        <p className="text-[10px] mt-0.5 line-clamp-1"
+                          style={{ color: 'var(--color-on-surface-variant, #888)', opacity: 0.75 }}>
+                          {step.summary}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Bottom progress bar — fills as steps complete */}
+          {totalSteps > 0 && (
+            <div style={{ height: 2, background: 'rgba(42,75,217,0.08)' }}>
+              <div
+                style={{
+                  height: '100%',
+                  background: isSynthesizing
+                    ? 'linear-gradient(90deg, #2a4bd9, #8329c8, #82deff)'
+                    : `linear-gradient(90deg, #2a4bd9, #8329c8)`,
+                  backgroundSize: isSynthesizing ? '200% 100%' : '100% 100%',
+                  animation: isSynthesizing ? 'aurora-flow 1.5s ease infinite' : undefined,
+                  width: isSynthesizing
+                    ? '100%'
+                    : `${Math.min(100, (doneSteps / Math.max(totalSteps, 1)) * 100)}%`,
+                  transition: 'width 0.4s ease',
+                }}
+              />
+            </div>
+          )}
+        </div>
       </div>
     </>
   );
 }
 
+// Removed: StreamingBubble, ThinkingBubble — replaced by CrystalThinkingBubble
 // Removed: MiniNPSChart (was hardcoded fake data tied to buildDemoResponse)
 // Removed: buildDemoResponse (was returning identical hardcoded text for any unrecognized query)
 // Crystal now calls the real /api/insights/:surveyId/crystal endpoint.

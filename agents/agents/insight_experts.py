@@ -111,6 +111,30 @@ class CrystalEvalOutput(BaseModel):
     issues: list[str] = Field(default_factory=list, description="Specific quality issues found")
     correction: str = Field(default="", description="Concise instruction to fix issues on retry")
 
+    @field_validator("issues", "hallucinated_ids", mode="before")
+    @classmethod
+    def coerce_to_list(cls, v: object) -> list:
+        """LLMs sometimes return a string, null, or object for list fields.
+        Coerce to list so Pydantic never rejects a valid-but-mistyped response."""
+        if v is None:
+            return []
+        if isinstance(v, list):
+            return [str(x) for x in v]
+        if isinstance(v, str):
+            # single string → single-item list (avoids explosion on "No issues found")
+            stripped = v.strip()
+            return [stripped] if stripped else []
+        return []
+
+    @field_validator("correction", mode="before")
+    @classmethod
+    def coerce_correction(cls, v: object) -> str:
+        if v is None:
+            return ""
+        if isinstance(v, list):
+            return "; ".join(str(x) for x in v)
+        return str(v)
+
 
 class SurveyBiasOutput(BaseModel):
     biased_questions: list[dict] = Field(

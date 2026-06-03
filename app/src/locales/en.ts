@@ -989,6 +989,12 @@ const en = {
     noResponsesYet: 'No responses yet — share your survey to start collecting feedback.',
   },
 
+  report: {
+    subtitle:      'Full intelligence report — synthesised from all evidence',
+    noReport:      'No report generated yet',
+    generateHint:  'Generate insights from the Intelligence page to produce a full report',
+  },
+
   topics: {
     pageTitle:        'Topic Analysis',
     pageSubtitle:     'Explore every theme, topic, and subtopic discovered from your survey responses — with cited evidence and NPS impact.',
@@ -2110,8 +2116,12 @@ const en = {
 
     // ── Hub hero ─────────────────────────────────────────────────────────────
     hubHero: {
-      selectSurvey:    'Select a survey below to analyse with Crystal',
-      surveyFallback:  'Survey',
+      selectSurvey:      'Open a survey with Crystal',
+      surveyFallback:    'Survey',
+      loadingSurveys:    'Loading surveys…',
+      noSurveys:         'No surveys with responses yet',
+      surveyChipQuery:   'Give me a quick intelligence summary for {title} — key themes, NPS, and top actions.',
+      orAskPortfolio:    'Or ask:',
     },
   },
 

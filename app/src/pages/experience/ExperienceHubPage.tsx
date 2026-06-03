@@ -150,7 +150,21 @@ export function ExperienceHubPage() {
     if (q.trim()) { openCrystal(q.trim()); setAskQuery(''); }
   };
 
-  // Prompt chips — labels and queries from locale
+  // Top 4 most recently updated surveys with response data
+  const recentSurveys = useMemo(() =>
+    [...surveys]
+      .filter((s) => !s.deleted_at && s.status !== 'draft' && (s.response_count ?? 0) > 0)
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      .slice(0, 4),
+    [surveys],
+  );
+
+  const handleSurveyChipClick = useCallback((survey: Survey) => {
+    setScope(survey.id);
+    openCrystal(t('experience.hubHero.surveyChipQuery', { title: survey.title }));
+  }, [setScope, openCrystal, t]);
+
+  // Portfolio-level Crystal prompt chips
   const PROMPTS = [
     { icon: 'compare',     label: t('experience.hub.prompts.churnLabel'),   q: t('experience.hub.prompts.churnQuery') },
     { icon: 'trending_up', label: t('experience.hub.prompts.themesLabel'),  q: t('experience.hub.prompts.themesQuery') },
@@ -264,29 +278,83 @@ export function ExperienceHubPage() {
                 {t('experience.hub.hero.trust')}
               </p>
 
-              {/* Survey cards are the entry point to Crystal — the hub ask bar
-                  is removed because Crystal can't answer usefully without a survey.
-                  Open Crystal from any survey card's ⚡ button instead. */}
-              <div className="flex flex-wrap gap-2 items-center">
-                <span className="text-[11px] text-white/50 font-bold uppercase tracking-widest">
-                  {t('experience.hubHero.selectSurvey')}
-                </span>
-                <Icon name="arrow_downward" size={13} style={{ color: 'rgba(255,255,255,0.45)' }} />
-              </div>
+              {/* ── Survey selector chips ─────────────────────────────────────
+                  Each chip scopes Crystal to that survey and opens with context.
+                  Shows up to 4, sorted by most recently updated.
+              ──────────────────────────────────────────────────────────── */}
+              <div className="space-y-3">
+                {/* Label */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-white/50 font-bold uppercase tracking-widest">
+                    {surveysLoading
+                      ? t('experience.hubHero.loadingSurveys')
+                      : recentSurveys.length > 0
+                        ? t('experience.hubHero.selectSurvey')
+                        : t('experience.hubHero.noSurveys')}
+                  </span>
+                </div>
 
-              {/* Quick-nav prompt chips that open specific surveys */}
-              <div className="flex flex-wrap gap-2 mt-3">
-                {PROMPTS.map((p) => (
-                  <button
-                    key={p.label}
-                    onClick={() => handleAsk(p.q)}
-                    className="px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition-all hover:bg-white/14"
-                    style={{ background:'rgba(255,255,255,0.07)', border:'1px solid rgba(255,255,255,0.11)', color:'rgba(255,255,255,0.75)' }}
-                  >
-                    <Icon name={p.icon} size={12} style={{ color:'rgba(255,255,255,0.60)' }} />
-                    {p.label}
-                  </button>
-                ))}
+                {/* Survey chips */}
+                {!surveysLoading && recentSurveys.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {recentSurveys.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => handleSurveyChipClick(s)}
+                        className="group flex items-center gap-2 px-3 py-2 rounded-xl text-left transition-all duration-200 hover:scale-[1.02] hover:shadow-lg"
+                        style={{
+                          background: 'rgba(255,255,255,0.07)',
+                          border: '1px solid rgba(255,255,255,0.13)',
+                          color: 'rgba(255,255,255,0.85)',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(135,154,255,0.16)'; e.currentTarget.style.borderColor = 'rgba(135,154,255,0.35)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.07)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.13)'; }}
+                      >
+                        {/* Live indicator */}
+                        {s.status === 'active' && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0"
+                            style={{ animation: 'pulse-glow 2.5s ease-in-out infinite' }} />
+                        )}
+                        <div className="min-w-0">
+                          <div className="text-[12px] font-semibold truncate max-w-[160px] leading-tight">
+                            {s.title || t('experience.hubHero.surveyFallback')}
+                          </div>
+                          {(s.response_count ?? 0) > 0 && (
+                            <div className="text-[10px] text-white/40 mt-0.5 leading-none">
+                              {(s.response_count ?? 0).toLocaleString()} {t('common.responses')}
+                              {s.nps_score != null && (
+                                <span className="ml-1.5" style={{ color: npsColor(s.nps_score) }}>
+                                  NPS {npsLabel(s.nps_score)}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <Icon name="arrow_forward" size={12}
+                          className="flex-shrink-0 opacity-0 group-hover:opacity-60 transition-opacity"
+                          style={{ color: 'rgba(135,154,255,0.9)' }} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Portfolio prompt chips — separate label, clearly distinguished */}
+                <div className="flex flex-wrap gap-2 items-center pt-1">
+                  <span className="text-[10px] text-white/30 font-medium uppercase tracking-widest mr-1">
+                    {t('experience.hubHero.orAskPortfolio')}
+                  </span>
+                  {PROMPTS.map((p) => (
+                    <button
+                      key={p.label}
+                      onClick={() => handleAsk(p.q)}
+                      className="px-3 py-1.5 rounded-full text-[11px] font-bold flex items-center gap-1.5 transition-all hover:bg-white/14"
+                      style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.09)', color: 'rgba(255,255,255,0.55)' }}
+                    >
+                      <Icon name={p.icon} size={12} style={{ color: 'rgba(255,255,255,0.40)' }} />
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </motion.div>
           </div>
@@ -796,11 +864,14 @@ function SurveyCard({
 
 // ── Sparkline ─────────────────────────────────────────────────────────────────
 function SparklineChart({ surveyId, points }: { surveyId: string; points: number[] }) {
-  if (!points.length) return null;
+  // Filter to finite numbers only — DB can return null/undefined in JSON arrays.
+  const valid = points.filter((v) => typeof v === 'number' && isFinite(v));
+  // Need at least 2 points to draw a line; 1 point gives xs[0] = 0/0 = NaN.
+  if (valid.length < 2) return null;
   const W=68, H=30;
-  const min=Math.min(...points)-1, max=Math.max(...points)+1, range=max-min||1;
-  const xs=points.map((_,i)=>(i/(points.length-1))*W);
-  const ys=points.map((v)=>H-((v-min)/range)*H*0.82-H*0.09);
+  const min=Math.min(...valid)-1, max=Math.max(...valid)+1, range=max-min||1;
+  const xs=valid.map((_,i)=>(i/(valid.length-1))*W);
+  const ys=valid.map((v)=>H-((v-min)/range)*H*0.82-H*0.09);
   const path=xs.map((x,i)=>`${i===0?'M':'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
   const fill=`${path} L${W},${H} L0,${H} Z`;
   const gid=`sp-${surveyId.replace(/\W/g,'')}`;
