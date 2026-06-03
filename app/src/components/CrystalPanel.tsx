@@ -114,6 +114,9 @@ export function CrystalPanel({
   // Populated from citation_context SSE event or REST response citation_map field.
   const [citationMap, setCitationMap] = useState<CitationMap>({});
   const citationMapRef = useRef<CitationMap>({});
+  // Action proposals from Crystal action tools — rendered as confirmation cards
+  const [actionProposals, setActionProposals] = useState<import('../types').ActionProposal[]>([]);
+  const [executingAction, setExecutingAction] = useState<string | null>(null); // action ID being executed
   // Keep ref in sync so submitQuery can read latest without closure issues.
   useEffect(() => { citationMapRef.current = citationMap; }, [citationMap]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -261,6 +264,9 @@ export function CrystalPanel({
                   // Merge into citationMap — arrives before [DONE], before answer in most cases
                   setCitationMap((prev) => ({ ...prev, ...event.map }));
                   citationMapRef.current = { ...citationMapRef.current, ...event.map };
+                } else if (event.type === 'action_proposals' && Array.isArray((event as unknown as { proposals: unknown[] }).proposals)) {
+                  // Crystal action tool returned proposals — show as confirmation cards
+                  setActionProposals((event as unknown as { proposals: import('../types').ActionProposal[] }).proposals);
                 } else if (event.type === 'thinking') {
                   setStreamingState({ phase: 'thinking', tool: event.tool, message: event.message });
                 } else if (event.type === 'observation') {
@@ -482,6 +488,106 @@ export function CrystalPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [isAll, isThinking, api, scope, crystalCtx, getToken, agenticInsights, topics, focusSurvey, responseCount, messages],
   );
+
+  // ── Action execution ─────────────────────────────────────────────────────────
+  // When user clicks "Apply" on an action card, executeAction dispatches to
+  // the appropriate frontend flow. All write operations require user confirmation
+  // (the card IS the confirmation — clicking Apply is the confirm gesture).
+  const executeAction = useCallback(async (proposal: import('../types').ActionProposal) => {
+    if (executingAction) return;
+    setExecutingAction(proposal.id);
+    try {
+      const surveyId = focusSurvey?.id;
+      switch (proposal.type) {
+        case 'create_followup_survey':
+        case 'create_survey': {
+          // Navigate to survey creation with pre-filled intent
+          const intent  = (proposal.params.intent as string) || proposal.description;
+          const typeId  = (proposal.params.survey_type as string) || undefined;
+          const result  = await api.startRun({ intent, surveyTypeId: typeId });
+          // Navigate to the new survey builder
+          window.location.href = `/surveys?run=${result.run_id}`;
+          break;
+        }
+        case 'edit_survey_questions':
+        case 'edit_survey': {
+          if (!surveyId) break;
+          const msg = (proposal.params.message as string)
+            || (proposal.params.questions_to_add ? `Add these questions: ${(proposal.params.questions_to_add as string[]).join('; ')}` : proposal.description);
+          // Open Copilot with the edit request pre-filled
+          const currentRun = (await api.getInsightRunStatus(surveyId)).run_id;
+          if (currentRun) {
+            await api.copilotRefine(currentRun, { message: msg, questions: [] });
+            window.location.href = `/surveys/${surveyId}/build`;
+          }
+          break;
+        }
+        case 'distribute_to_segment':
+        case 'distribute': {
+          if (!surveyId) break;
+          // Navigate to survey distribution settings
+          window.location.href = `/surveys/${surveyId}/build?tab=distribute`;
+          break;
+        }
+        case 'create_workflow': {
+          if (!surveyId) break;
+          const wf = {
+            name:          (proposal.params.name as string) || proposal.title,
+            trigger:       (proposal.params.trigger as string) || proposal.params.trigger_event as string,
+            action_type:   (proposal.params.action_type as string) || 'notify',
+            action_config: (proposal.params.action_config as Record<string, unknown>) || {},
+            survey_id:     surveyId,
+            enabled:       true,
+          };
+          await api.createWorkflow(wf);
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            role: 'crystal' as const,
+            content: `✓ Workflow created: "${proposal.title}". You can manage it in the Workflows section.`,
+            timestamp: new Date(),
+          }]);
+          break;
+        }
+        case 'schedule_rerun': {
+          if (!surveyId) break;
+          await api.triggerInsightGeneration(surveyId, { trigger: 'manual' });
+          setMessages(prev => [...prev, {
+            id: crypto.randomUUID(),
+            role: 'crystal' as const,
+            content: '✓ Insight regeneration triggered. Refreshing in the background...',
+            timestamp: new Date(),
+          }]);
+          break;
+        }
+        case 'view_template': {
+          window.location.href = `/templates`;
+          break;
+        }
+        default:
+          // Unknown type — open a Crystal follow-up
+          submitQuery(`Help me with: ${proposal.title}`);
+      }
+      // Remove the executed action from proposals
+      setActionProposals(prev => prev.filter(p => p.id !== proposal.id));
+    } catch (err) {
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: 'crystal' as const,
+        content: `Couldn't complete that action. Try again or do it manually.`,
+        timestamp: new Date(),
+      }]);
+    } finally {
+      setExecutingAction(null);
+    }
+  }, [api, executingAction, focusSurvey, submitQuery]);
+
+  const dismissAction = useCallback((actionId: string) => {
+    setActionProposals(prev => prev.filter(p => p.id !== actionId));
+    // Also persist dismissal if we have a survey ID
+    if (focusSurvey?.id) {
+      api.dismissAction(focusSurvey.id, actionId).catch(() => {});
+    }
+  }, [api, focusSurvey]);
 
   // Auto-submit when panel opens with a pre-loaded query.
   // Uses autoSubmittedQuery (not lastSubmittedQuery) so that suggestion chip
@@ -813,6 +919,23 @@ export function CrystalPanel({
                   )}
                   {streamError && !isThinking && (
                     <div className="text-xs text-red-500 px-2">{streamError}</div>
+                  )}
+                  {/* Action proposal cards — rendered after the last Crystal message */}
+                  {actionProposals.length > 0 && !isThinking && (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-xs font-medium px-1" style={{ color: 'rgba(42,75,217,0.7)' }}>
+                        Recommended actions
+                      </p>
+                      {actionProposals.map((proposal) => (
+                        <ActionProposalCard
+                          key={proposal.id}
+                          proposal={proposal}
+                          isExecuting={executingAction === proposal.id}
+                          onApply={() => executeAction(proposal)}
+                          onDismiss={() => dismissAction(proposal.id)}
+                        />
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
@@ -1828,6 +1951,184 @@ function CrystalThinkingBubble({
         </div>
       </div>
     </>
+  );
+}
+
+// ── ActionProposalCard ─────────────────────────────────────────────────────────
+// Renders a single action proposal from Crystal as a confirmation card.
+// User must click "Apply" to execute — Crystal never acts autonomously.
+
+const ACTION_TYPE_ICONS: Record<string, string> = {
+  create_survey:          'add_circle',
+  create_followup_survey: 'add_circle',
+  edit_survey:            'edit',
+  edit_survey_questions:  'edit',
+  distribute:             'send',
+  distribute_to_segment:  'send',
+  workflow:               'settings_automation',
+  create_workflow:        'settings_automation',
+  schedule_rerun:         'refresh',
+  export_insights:        'download',
+  view_template:          'library_books',
+  template:               'library_books',
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  critical: '#dc2626',
+  high:     '#d97706',
+  medium:   '#2a4bd9',
+  low:      '#6b7280',
+};
+
+function ActionProposalCard({
+  proposal,
+  isExecuting,
+  onApply,
+  onDismiss,
+}: {
+  proposal: import('../types').ActionProposal;
+  isExecuting: boolean;
+  onApply: () => void;
+  onDismiss: () => void;
+}) {
+  const iconName    = ACTION_TYPE_ICONS[proposal.type] ?? 'auto_fix_high';
+  const priorityClr = PRIORITY_COLORS[proposal.priority] ?? '#2a4bd9';
+  const ctaLabel    = proposal.cta_label ?? 'Apply';
+
+  return (
+    <div
+      style={{
+        background:   'rgba(42,75,217,0.04)',
+        border:       `1px solid ${priorityClr}30`,
+        borderRadius: '0.75rem',
+        padding:      '0.75rem',
+        position:     'relative',
+      }}
+    >
+      {/* Priority badge */}
+      {proposal.priority !== 'medium' && (
+        <span
+          style={{
+            position:     'absolute',
+            top:          '0.5rem',
+            right:        '0.5rem',
+            fontSize:     '0.6rem',
+            fontWeight:   700,
+            color:        priorityClr,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}
+        >
+          {proposal.priority}
+        </span>
+      )}
+
+      <div className="flex items-start gap-3">
+        {/* Icon */}
+        <div
+          style={{
+            width:        32,
+            height:       32,
+            borderRadius: '0.5rem',
+            background:   `${priorityClr}15`,
+            display:      'flex',
+            alignItems:   'center',
+            justifyContent: 'center',
+            flexShrink:   0,
+          }}
+        >
+          <span
+            className="material-symbols-outlined"
+            style={{ fontSize: 16, color: priorityClr }}
+          >
+            {iconName}
+          </span>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <p
+            style={{
+              fontSize:   '0.8125rem',
+              fontWeight: 600,
+              color:      'var(--color-on-surface, #1a1a2e)',
+              marginBottom: '0.2rem',
+            }}
+          >
+            {proposal.title}
+          </p>
+          <p
+            style={{
+              fontSize: '0.75rem',
+              color:    'var(--color-on-surface-variant, #666)',
+              lineHeight: 1.4,
+            }}
+          >
+            {proposal.description}
+          </p>
+          {proposal.business_rationale && (
+            <p
+              style={{
+                fontSize:    '0.7rem',
+                color:       '#059669',
+                marginTop:   '0.25rem',
+                fontStyle:   'italic',
+              }}
+            >
+              {proposal.business_rationale}
+            </p>
+          )}
+          {proposal.estimated_time && (
+            <p
+              style={{
+                fontSize:  '0.7rem',
+                color:     'var(--color-on-surface-variant, #888)',
+                marginTop: '0.2rem',
+              }}
+            >
+              ⏱ {proposal.estimated_time}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex items-center gap-2 mt-3">
+        <button
+          onClick={onApply}
+          disabled={isExecuting}
+          style={{
+            flex:         1,
+            padding:      '0.4rem 0.75rem',
+            borderRadius: '0.5rem',
+            fontSize:     '0.75rem',
+            fontWeight:   600,
+            color:        '#fff',
+            background:   isExecuting ? '#94a3b8' : priorityClr,
+            border:       'none',
+            cursor:       isExecuting ? 'not-allowed' : 'pointer',
+            transition:   'opacity 0.15s',
+          }}
+        >
+          {isExecuting ? 'Applying…' : ctaLabel}
+        </button>
+        <button
+          onClick={onDismiss}
+          disabled={isExecuting}
+          style={{
+            padding:      '0.4rem 0.6rem',
+            borderRadius: '0.5rem',
+            fontSize:     '0.75rem',
+            color:        'var(--color-on-surface-variant, #888)',
+            background:   'transparent',
+            border:       '1px solid rgba(0,0,0,0.1)',
+            cursor:       'pointer',
+          }}
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
   );
 }
 

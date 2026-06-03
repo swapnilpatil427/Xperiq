@@ -6,9 +6,10 @@ Experient is an AI-powered experience intelligence platform. It lets organizatio
 ## Monorepo layout
 - `app/` — React frontend (Vite + Tailwind v4)
 - `backend/` — Node.js backend (Express API + Cloud Functions); also holds Firebase config
+- `crystalos/` — **CrystalOS** — Python agents service (FastAPI + LangGraph + skill runtime). Powers Crystal AI, insight pipeline, all LLM capabilities. See `crystalos/CLAUDE.md`.
 - `supabase/` — SQL migrations for local Postgres
 - `docker/` — Local Postgres, Redis, Prometheus, Grafana, Loki containers
-- `docs/` — Product docs: `TRACKER.md` (task tracker), `PRODUCT_PLAN.md` (roadmap), `SURVEY_DATA_MODEL.md` (schema reference), `README_SETUP.md` (setup guide)
+- `docs/` — Product docs: `TRACKER.md` (task tracker), `PRODUCT_PLAN.md` (roadmap), `SURVEY_DATA_MODEL.md` (schema reference), `README_SETUP.md` (setup guide); `docs/agent-framework/` — CrystalOS design docs
 
 ## Tech stack
 - **Frontend**: React 18, React Router v6, Tailwind v4, Framer Motion, shadcn/UI, Clerk auth
@@ -29,6 +30,7 @@ Experient is an AI-powered experience intelligence platform. It lets organizatio
 docker-compose up -d          # Start Postgres + Redis + monitoring
 cd backend && npm start        # Start API on :3001
 cd app && npm run dev          # Start Vite dev server on :5173
+cd crystalos && make run-dev  # Start CrystalOS agents service on :8001
 ```
 
 ## Firebase deploy

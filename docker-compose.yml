@@ -99,11 +99,11 @@ services:
     profiles: ["agents", "prod"]
     build:
       context: .
-      dockerfile: agents/Dockerfile
+      dockerfile: crystalos/Dockerfile
     image: experient-agents:local
     container_name: experient-agents
     env_file:
-      - path: agents/.env
+      - path: crystalos/.env
         required: false          # allows startup without an .env file
     environment:
       AGENTS_ENV: ${AGENTS_ENV:-dev}

@@ -54,12 +54,12 @@ async function _fetch(path, opts = {}, timeoutMs = DEFAULT_TIMEOUT_MS) {
   }
 }
 
-// Response generation: ceil(count/5) LLM batches × ~45s each + 60s buffer, capped at 10 min.
-// Free-tier OpenRouter models (dev env) take 20–60s per batch under load and may hit
-// rate-limit Retry-After headers that add up to another 8s per attempt.
-// Previous value of 15s/batch caused premature AbortController fires → 502 errors.
+// Response generation: batches now run in PARALLEL (asyncio.gather in response_generator.py).
+// Wall-clock time ≈ ONE batch time (not N_batches × batch_time).
+// Free-tier models: ~60s per batch. Paid models (Gemini 2.5 Flash): ~15-30s.
+// Timeout = 90s base + 30s per 25-response group to handle rate-limit retries.
 function _responseGenTimeout(count) {
-  return Math.min(Math.ceil(count / 5) * 45_000 + 60_000, 600_000);
+  return Math.min(Math.ceil(count / 25) * 30_000 + 90_000, 300_000);
 }
 
 

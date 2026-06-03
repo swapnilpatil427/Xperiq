@@ -1946,7 +1946,12 @@ export function SurveyBuilderPage() {
       isDirtyRef.current = true;
       setQuestions(result.questions.map(mapAiToBuilderQuestion) as Question[]);
     }
-    return { recommendations: result.recommendations };
+    // Return message + compliance_risk so ExperientCopilot can show rich result
+    return {
+      recommendations:  result.recommendations,
+      message:          result.message || undefined,
+      compliance_risk:  result.compliance_risk || undefined,
+    };
   }, [api, copilotRunId, surveyTypeId, surveySettings, surveyTitle]);
 
   const buildPayload = () => ({

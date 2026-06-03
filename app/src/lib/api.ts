@@ -3,7 +3,7 @@ import type {
   ListSurveysParams, ListSurveysResult, Survey, SurveyResponse,
   Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
   CopilotChange, AgenticInsight, InsightRunStatus, SurveyTopic, TopicDriver,
-  TopicTheme, TopicDetail, TopicVerbatim,
+  TopicTheme, TopicDetail, TopicVerbatim, ActionRecommendations,
 } from '../types';
 
 // ── Copilot types ──────────────────────────────────────────────────────────────
@@ -58,10 +58,11 @@ export interface CopilotRefineResult {
 }
 
 export interface QuestionsResult {
-  questions:       Question[];
-  message:         string;
-  changes:         Record<string, unknown>[];
+  questions:        Question[];
+  message:          string;
+  changes:          Record<string, unknown>[];
   recommendations?: Recommendation[];
+  compliance_risk?: string;  // "low" | "medium" | "high" — set by check_compliance action
 }
 
 export interface Notification {
@@ -410,7 +411,13 @@ export function createApiClient(getToken: GetToken) {
     },
 
     getAgentRegistry: async () => {
-      const res = await http.get<unknown[]>('/api/copilot/agents/registry');
+      // Returns { agents: LegacyAgent[], skills: XosSkill[], total: number }
+      // agents = legacy BaseAgent subclasses; skills = XOS SKILL.md-based capabilities
+      const res = await http.get<{
+        agents: unknown[];
+        skills: Array<{ name: string; version: string; description: string; shared: boolean; allowed_tools: string[]; timeout_seconds: number; max_output_tokens: number }>;
+        total: number;
+      }>('/api/copilot/agents/registry');
       return res.data;
     },
 
@@ -546,6 +553,19 @@ export function createApiClient(getToken: GetToken) {
 
     updateInsightFeedback: async (insightId: string, feedback: { thumbs?: 'up' | 'down' | null; pinned?: boolean; dismissed?: boolean }): Promise<void> => {
       await http.post(`/api/insights/${insightId}/feedback`, feedback);
+    },
+
+    // ── Action Recommendations ─────────────────────────────────────────────────
+
+    /** Fetch AI-generated recommended next actions for a survey. */
+    getActionRecommendations: async (surveyId: string): Promise<ActionRecommendations> => {
+      const res = await http.get<ActionRecommendations>(`/api/insights/${surveyId}/actions`);
+      return res.data;
+    },
+
+    /** Dismiss an action so it no longer appears. */
+    dismissAction: async (surveyId: string, actionId: string): Promise<void> => {
+      await http.post(`/api/insights/${surveyId}/actions/${actionId}/dismiss`, {});
     },
 
     askInsights: async (surveyId: string, question: string): Promise<{ answer: string; citations: AgenticInsight[] }> => {
