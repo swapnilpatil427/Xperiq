@@ -24,7 +24,7 @@ import math
 import re
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agents.lib.openrouter import call_agent
 from agents.lib.logger import logger
@@ -45,6 +45,52 @@ class _RecommendedAction(BaseModel):
     time_horizon: Literal["immediate", "short_term", "long_term"] = "short_term"
     estimated_impact: str = Field(default="", max_length=250)
 
+    @field_validator("priority", mode="before")
+    @classmethod
+    def coerce_priority(cls, v: object) -> str:
+        if not isinstance(v, str):
+            return "high"
+        s = v.lower().strip()
+        if s in ("critical", "high", "medium", "low"):
+            return s
+        if any(x in s for x in ("critical", "urgent", "immediate", "p0", "p1")):
+            return "critical"
+        if any(x in s for x in ("low", "minor", "nice")):
+            return "low"
+        if any(x in s for x in ("med", "moderate")):
+            return "medium"
+        return "high"
+
+    @field_validator("time_horizon", mode="before")
+    @classmethod
+    def coerce_time_horizon(cls, v: object) -> str:
+        if not isinstance(v, str):
+            return "short_term"
+        s = v.lower().strip().replace(" ", "_").replace("-", "_")
+        if s in ("immediate", "short_term", "long_term"):
+            return s
+        if any(x in s for x in ("immed", "now", "today", "asap", "urgent")):
+            return "immediate"
+        if any(x in s for x in ("long", "quarter", "year", "strategic")):
+            return "long_term"
+        return "short_term"
+
+
+def _coerce_sentiment(v: object) -> str:
+    """Shared sentiment coercion — LLMs return 'mostly negative', 'slightly positive', etc."""
+    if not isinstance(v, str):
+        return "neutral"
+    s = v.lower().strip()
+    if s in ("positive", "negative", "mixed", "neutral"):
+        return s
+    if any(x in s for x in ("pos", "good", "satisf", "happy", "delight", "great")):
+        return "positive"
+    if any(x in s for x in ("neg", "bad", "frust", "anger", "dissatisf", "unhappy", "poor")):
+        return "negative"
+    if any(x in s for x in ("mixed", "both", "varied", "split")):
+        return "mixed"
+    return "neutral"
+
 
 class HeadlineTheme(BaseModel):
     theme: str = Field(max_length=80, description="Short theme name (max 80 chars)")
@@ -54,6 +100,11 @@ class HeadlineTheme(BaseModel):
     )
     sentiment: Literal["positive", "negative", "mixed", "neutral"]
     frequency_estimate: int = Field(ge=1, description="Estimated number of responses mentioning this theme")
+
+    @field_validator("sentiment", mode="before")
+    @classmethod
+    def coerce_sentiment(cls, v: object) -> str:
+        return _coerce_sentiment(v)
 
 
 class HeadlineReport(BaseModel):
@@ -74,6 +125,11 @@ class SummaryTheme(BaseModel):
         max_length=250,
         description="1-sentence specific action to address this theme (leave empty if unclear from data)",
     )
+
+    @field_validator("sentiment", mode="before")
+    @classmethod
+    def coerce_sentiment(cls, v: object) -> str:
+        return _coerce_sentiment(v)
 
 
 class SummaryReport(BaseModel):
@@ -131,6 +187,27 @@ class FullTheme(BaseModel):
     )
     trend_direction: Literal["improving", "declining", "stable", "unknown"] = "unknown"
     recommended_action: _RecommendedAction | None = None
+
+    @field_validator("trend_direction", mode="before")
+    @classmethod
+    def coerce_trend_direction(cls, v: object) -> str:
+        """LLMs return variants like 'declining slightly', 'worsening', 'stable/improving'.
+        Map to the nearest valid Literal value instead of raising a validation error."""
+        if not isinstance(v, str):
+            return "unknown"
+        s = v.lower().strip()
+        if any(x in s for x in ("improv", "better", "recover", "upward", "increas")):
+            return "improving"
+        if any(x in s for x in ("declin", "worsen", "worse", "downward", "deteriorat", "drop")):
+            return "declining"
+        if any(x in s for x in ("stable", "steady", "flat", "unchanged", "consistent")):
+            return "stable"
+        return "unknown"
+
+    @field_validator("sentiment", mode="before")
+    @classmethod
+    def coerce_sentiment(cls, v: object) -> str:
+        return _coerce_sentiment(v)
 
 
 class _PriorityAction(BaseModel):
