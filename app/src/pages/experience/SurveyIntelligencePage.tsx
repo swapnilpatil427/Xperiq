@@ -36,6 +36,7 @@ import {
 import { GeneratingOverlay } from '../insights/GeneratingOverlay';
 import { ProgressArc } from '../../components/insights/ProgressArc';
 import type { AgenticInsight, SurveyTopic } from '../../types';
+import { stripCitationRefs } from '../../lib/utils';
 
 // Pipeline node IDs — labels resolved via t() inside the component
 const PIPELINE_NODE_IDS = ['ingest','embed','metrics','absa','cluster','topics','narrate','verify','evaluate','publish'] as const;
@@ -700,8 +701,8 @@ function EditorialHero({
                 const truncated = text.length > 300 ? text.slice(0, 300) + '…' : text;
                 return truncated;
               })()}
-              {topInsight?.citations_json.slice(0, 3).map((c) => (
-                <CitationChip key={c.response_id} id={c.response_id.slice(-4)} title={c.quote} />
+              {topInsight?.citations_json.slice(0, 3).map((c, ci) => (
+                <CitationChip key={c.response_id ?? ci} id={(c.response_id ?? '').slice(-4) || String(ci + 1)} title={c.quote} />
               ))}
             </p>
             <div className="flex items-center gap-3 mt-4 pt-4 border-t border-outline-variant/25">
@@ -1228,12 +1229,12 @@ function InsightGrid({
 
                   {/* Headline */}
                   <h3 className="text-sm font-black font-headline leading-snug mb-2">
-                    {insight.headline}
+                    {stripCitationRefs(insight.headline)}
                   </h3>
 
-                  {/* Narrative */}
+                  {/* Narrative — strip LLM citation markers before display */}
                   {(() => {
-                    const raw = insight.narrative ?? '';
+                    const raw = stripCitationRefs(insight.narrative ?? '');
                     const isRawDump = /^[^:]{1,60}:\s/.test(raw) && raw.split(' ').length < 14;
                     return !isRawDump && raw.length > 0 ? (
                       <p className="text-xs text-on-surface-variant leading-relaxed flex-1 mb-3">
@@ -1245,14 +1246,14 @@ function InsightGrid({
                   {/* Inline citation quotes — real verbatims from respondents */}
                   {insight.citations_json.length > 0 && (
                     <div className="space-y-1.5 mb-3">
-                      {insight.citations_json.slice(0, 2).map((c) => (
-                        <div key={c.response_id}
+                      {insight.citations_json.slice(0, 2).map((c, ci) => (
+                        <div key={c.response_id ?? `${insight.id}-c${ci}`}
                           className="px-3 py-2 rounded-lg text-xs leading-relaxed text-on-surface italic"
                           style={{
                             background: 'var(--color-surface-container)',
                             borderLeft: `2px solid ${SENTIMENT_BORDER[c.sentiment] ?? 'var(--color-outline-variant)'}`,
                           }}>
-                          "{c.quote.length > 120 ? c.quote.slice(0, 120) + '…' : c.quote}"
+                          {(() => { const q = stripCitationRefs(c.quote ?? ''); return `"${q.length > 120 ? q.slice(0, 120) + '…' : q}"`; })()}
                         </div>
                       ))}
                       {insight.citations_json.length > 2 && (
@@ -1453,11 +1454,12 @@ function TrustFooter({
 
 // ── Mini sparkline ─────────────────────────────────────────────────────────────
 function MiniSparkline({ points }: { points: number[] }) {
-  if (!points.length) return null;
+  const valid = points.filter((v) => typeof v === 'number' && isFinite(v));
+  if (valid.length < 2) return null;
   const W = 200, H = 40;
-  const min = Math.min(...points) - 1, max = Math.max(...points) + 1, range = max - min || 1;
-  const xs = points.map((_, i) => (i / (points.length - 1)) * W);
-  const ys = points.map((v) => H - ((v - min) / range) * H * 0.85 - H * 0.08);
+  const min = Math.min(...valid) - 1, max = Math.max(...valid) + 1, range = max - min || 1;
+  const xs = valid.map((_, i) => (i / (valid.length - 1)) * W);
+  const ys = valid.map((v) => H - ((v - min) / range) * H * 0.85 - H * 0.08);
   const d  = xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${ys[i].toFixed(1)}`).join(' ');
   return (
     <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-10 mt-3">

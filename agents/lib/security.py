@@ -97,8 +97,9 @@ async def check_survey_access(survey_id: str, org_id: str, db_pool=None) -> dict
     Raises PermissionError if org mismatch detected (not just missing).
     Raises HTTPException 503 on DB failure — callers must not treat DB errors as 404.
     """
-    # Dev bypass — only active when AGENTS_ENV is explicitly "dev" (same default as main.py)
-    if os.getenv("AGENTS_ENV", "dev") == "dev" and org_id == "dev_org":
+    # Dev bypass — active when AGENTS_ENV is "dev". Accepts both "dev-org" and
+    # "dev_org" since local setups use either convention.
+    if os.getenv("AGENTS_ENV", "dev") == "dev" and org_id in ("dev-org", "dev_org"):
         return {"id": survey_id, "org_id": org_id, "status": "active"}
 
     try:

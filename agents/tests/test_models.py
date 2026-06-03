@@ -109,11 +109,11 @@ class TestDevPaidEnv:
             assert not cfg.use_anthropic_sdk, f"dev-paid/{agent} should not use Anthropic SDK"
 
     def test_cross_vendor_qc(self):
-        """QC uses Claude Haiku 4.5 — different vendor from OpenAI reasoning creator."""
+        """QC uses Gemini — different vendor from OpenAI o3-mini reasoning creator."""
         creator_provider = _ROUTING["dev-paid"]["creator"].model.split("/")[0]
         qc_provider      = _ROUTING["dev-paid"]["qc"].model.split("/")[0]
         assert creator_provider == "openai", f"dev-paid creator should be OpenAI, got '{creator_provider}'"
-        assert qc_provider == "anthropic", f"dev-paid QC should be Anthropic, got '{qc_provider}'"
+        assert qc_provider == "google", f"dev-paid QC should be Google/Gemini, got '{qc_provider}'"
         assert creator_provider != qc_provider
 
     def test_all_models_support_tools(self):

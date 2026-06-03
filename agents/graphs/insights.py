@@ -34,6 +34,7 @@ from agents.lib.constants import (
     INGEST_NEW_RESPONSE_ABSA_CAP, INGEST_ANCHOR_RESPONSES,
     INGEST_LARGE_SURVEY_THRESHOLD, compute_stratified_buckets,
     NARRATE_MAX_ATTEMPTS, REPORT_QUALITY_RENARRATE_THRESHOLD,
+    PRIOR_INSIGHT_MIN_TRUST, PRIOR_INSIGHT_MAX_COUNT, PRIOR_INSIGHT_LAYERS,
 )
 from agents.lib.logger import logger
 from agents.lib.openrouter import call_agent
@@ -153,6 +154,8 @@ class InsightState(TypedDict, total=False):
     survey_questions:     list[dict[str, Any]]
     prior_snapshots:      list[dict[str, Any]]    # recent survey_metric_snapshots for longitudinal context
     last_report_response_count: int               # response count when last report.* insights were generated
+    prior_insights:       list[dict[str, Any]]    # high-confidence insights from last run — used for incremental narration and delta report
+    prior_context_run_id: str                     # run_id of the anchor run whose insights were used as prior context
 
 
 # ── Model config ──────────────────────────────────────────────────────────────
@@ -2116,36 +2119,164 @@ async def node_narrate(state: dict) -> dict:
     total_responses = metrics.get("total_responses", 0)
     nps_score  = metrics.get("nps", {}).get("score")
 
-    # ── Dedup: if no new responses and not force-regenerating, reuse cached insights ──
-    # This prevents re-running all LLM expert calls when the scheduler triggers on
-    # unchanged data (e.g., every 5-60 minutes with zero new responses submitted).
-    if not force_regenerate and len(new_response_ids) == 0:
-        try:
-            async with db._pool_conn().connection() as conn:
-                async with conn.cursor() as cur:
+    # ── Load insights: TWO separate queries for TWO different purposes ───────────
+    #
+    # QUERY 1 — Cache check (superseded_at IS NULL):
+    #   If nothing changed, return the existing active insights without re-running LLM.
+    #
+    # QUERY 2 — Prior context from the ANCHOR RUN:
+    #   The anchor is the last completed run that processed genuinely new responses
+    #   (new_response_count > 0 OR trigger IN ('schedule','stream')).
+    #   Manual regenerations with no new data do NOT advance the anchor — they reuse
+    #   the same prior context as the run before them.
+    #
+    #   WHY: if the user clicks "Generate" 5 times with no new responses, using
+    #   the most-recently-generated insights as prior would compound synthesis on
+    #   synthesis. By anchoring to the last real-data run, every manual regen
+    #   draws from the same authentic historical baseline regardless of how many
+    #   times the button is clicked.
+    survey_id = state["survey_id"]
+    org_id    = state["org_id"]
+
+    # ── Query 1: active insights for cache check ──────────────────────────────
+    current_insight_rows: list[dict] = []
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT category, layer, headline, narrative, trust_score, trust_json,
+                              citations_json, metric_json, recommended_action, priority, audit_json
+                       FROM insights
+                       WHERE survey_id = %s AND org_id = %s AND superseded_at IS NULL
+                       ORDER BY trust_score DESC NULLS LAST, priority DESC NULLS LAST""",
+                    (survey_id, org_id),
+                )
+                rows = await cur.fetchall()
+                if rows:
+                    cols = [desc[0] for desc in cur.description]
+                    current_insight_rows = [dict(zip(cols, r)) for r in rows]
+    except Exception as exc:
+        logger.warning("node_narrate_load_insights_failed", error=str(exc))
+
+    # Cache hit: return active insights untouched when nothing has changed
+    if not force_regenerate and len(new_response_ids) == 0 and current_insight_rows:
+        cached_insights = [_reuse_existing_insight(r) for r in current_insight_rows]
+        logger.info("node_narrate_cache_hit", insight_count=len(cached_insights), survey_id=survey_id)
+        await _emit_event(run_id, "node_complete", "narrate", {
+            "insight_count": len(cached_insights), "cache_hit": True,
+        })
+        return {**state, "insights": cached_insights, "insights_from_cache": True}
+
+    # ── Query 2: find the anchor run for prior context ────────────────────────
+    # The anchor = last completed insight_generation run that had real new data:
+    #   • trigger IN ('schedule', 'stream') — scheduled runs always have new data
+    #   • OR new_response_count > 0 — manual run that actually processed new responses
+    # Excludes the CURRENT run (id != run_id) and manual regens with 0 new responses.
+    anchor_run_id: str = ""
+    prior_insight_rows: list[dict] = []
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Find anchor run
+                await cur.execute(
+                    """SELECT id FROM agent_runs
+                       WHERE survey_id = %s
+                         AND org_id    = %s
+                         AND status    = 'completed'
+                         AND run_type  = 'insight_generation'
+                         AND id        != %s
+                         AND (
+                               trigger IN ('schedule', 'stream')
+                            OR new_response_count > 0
+                         )
+                       ORDER BY completed_at DESC
+                       LIMIT 1""",
+                    (survey_id, org_id, run_id),
+                )
+                anchor_row = await cur.fetchone()
+                if anchor_row:
+                    anchor_run_id = str(anchor_row[0])
+                    # Load insights published by that anchor run
                     await cur.execute(
-                        """SELECT category, layer, headline, narrative, trust_score, trust_json,
-                                  citations_json, metric_json, recommended_action, priority, audit_json
+                        """SELECT id, category, layer, headline, narrative, trust_score,
+                                  trust_json, citations_json, metric_json,
+                                  recommended_action, priority, audit_json
                            FROM insights
-                           WHERE survey_id = %s AND org_id = %s AND superseded_at IS NULL""",
-                        (state["survey_id"], state["org_id"]),
+                           WHERE survey_id = %s
+                             AND org_id    = %s
+                             AND run_id    = %s
+                           ORDER BY trust_score DESC NULLS LAST, priority DESC NULLS LAST""",
+                        (survey_id, org_id, anchor_run_id),
                     )
-                    cached_rows = await cur.fetchall()
-                    if cached_rows:
-                        cols = [desc[0] for desc in cur.description]
-                        cached_insights = [_reuse_existing_insight(dict(zip(cols, r))) for r in cached_rows]
-                        logger.info(
-                            "node_narrate_cache_hit",
-                            insight_count=len(cached_insights),
-                            survey_id=state["survey_id"],
-                        )
-                        await _emit_event(run_id, "node_complete", "narrate", {
-                            "insight_count": len(cached_insights),
-                            "cache_hit": True,
-                        })
-                        return {**state, "insights": cached_insights, "insights_from_cache": True}
-        except Exception as exc:
-            logger.warning("node_narrate_cache_load_failed", error=str(exc))
+                    arows = await cur.fetchall()
+                    if arows:
+                        acols = [d[0] for d in cur.description]
+                        prior_insight_rows = [dict(zip(acols, r)) for r in arows]
+    except Exception as exc:
+        logger.warning("node_narrate_anchor_load_failed", error=str(exc))
+
+    # Fallback: if no anchor found (first run or DB miss), use active insights as prior
+    # so the first real report still gets some context from what's been published.
+    if not prior_insight_rows and current_insight_rows:
+        prior_insight_rows = current_insight_rows
+
+    logger.info(
+        "node_narrate_prior_anchor",
+        survey_id=survey_id,
+        anchor_run_id=anchor_run_id or "none",
+        prior_row_count=len(prior_insight_rows),
+        current_new_responses=len(new_response_ids),
+        force_regenerate=force_regenerate,
+    )
+
+    # ── Select prior context from anchor run insights ─────────────────────────
+    # Strategy: prefer actionable layers above trust threshold; fill remaining
+    # slots with best-available so LLM always gets meaningful historical context.
+    preferred = [
+        r for r in prior_insight_rows
+        if r.get("layer") in PRIOR_INSIGHT_LAYERS
+        and float(r.get("trust_score") or 0) >= PRIOR_INSIGHT_MIN_TRUST
+    ][:PRIOR_INSIGHT_MAX_COUNT]
+
+    prior_insights: list[dict] = list(preferred)
+    if len(prior_insights) < PRIOR_INSIGHT_MAX_COUNT and prior_insight_rows:
+        existing_headlines = {p.get("headline") for p in prior_insights}
+        for r in prior_insight_rows:
+            if len(prior_insights) >= PRIOR_INSIGHT_MAX_COUNT:
+                break
+            if r.get("headline") not in existing_headlines:
+                prior_insights.append(r)
+                existing_headlines.add(r.get("headline"))
+
+    # Build the prior-context block injected into the specialist overlay.
+    # Format: layer + trust score + headline + brief narrative snippet.
+    # The LLM is told to acknowledge continuity or flag divergence.
+    prior_context_block = ""
+    if prior_insights:
+        lines = []
+        for pi in prior_insights:
+            trust    = int(float(pi.get("trust_score") or 0))
+            layer    = (pi.get("layer") or "").upper()
+            headline = pi.get("headline") or ""
+            snippet  = (pi.get("narrative") or "")[:160].rstrip()
+            lines.append(f"[{layer}·{trust}] {headline}\n  {snippet}{'…' if len(pi.get('narrative') or '') > 160 else ''}")
+
+        prior_context_block = (
+            f"\n\n━━━ ESTABLISHED FINDINGS (last run · {len(prior_insights)} items) ━━━\n"
+            "These were validated in the previous analysis.\n"
+            "• If current data aligns → say 'this continues' or 'still the leading driver'.\n"
+            "• If current data diverges → note the shift: 'previously X, now showing Y'.\n"
+            "• Do NOT invent continuity — only reference if the topic/metric appears in current analysis.\n\n"
+            + "\n\n".join(lines)
+            + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        logger.info(
+            "node_narrate_prior_context",
+            prior_count=len(prior_insights),
+            preferred_count=len(preferred),
+            survey_id=survey_id,
+        )
+
     csat_score = metrics.get("csat", {}).get("score")
     trend_data = metrics.get("trend", {})
 
@@ -2160,6 +2291,12 @@ async def node_narrate(state: dict) -> dict:
                 "msg":        "node_narrate: applying specialist overlay",
                 "specialist": _primary.id,
             })
+
+    # Append prior context to specialist overlay so ALL narration calls
+    # get established-findings context. The overlay is passed through to
+    # narrate_topic_insight, narrate_prescriptive_insight, etc.
+    if prior_context_block:
+        specialist_overlay = specialist_overlay + prior_context_block
 
     # ── L1: Descriptive metric insights (NPS + CSAT in parallel) ─────────────
 
@@ -2609,7 +2746,10 @@ async def node_narrate(state: dict) -> dict:
             insights = adjusted_insights
 
     await _emit_event(run_id, "node_complete", "narrate", {"insight_count": len(insights)})
-    return {**state, "insights": insights}
+    # Pass prior_insights and anchor run_id forward so node_report_agent and
+    # node_publish can use them for delta sections and audit trail respectively.
+    return {**state, "insights": insights, "prior_insights": prior_insights,
+            "prior_context_run_id": anchor_run_id}
 
 
 # ── Node: evaluate ────────────────────────────────────────────────────────────
@@ -2855,10 +2995,23 @@ async def node_publish(state: dict) -> dict:
     # Only runs after Phase 1 committed successfully.
     # Failures here don't roll back the published insights.
     try:
+        # Collect sampled response IDs for the audit trail.
+        # This is the ONLY place response IDs are persisted — keyed by run_id.
+        # Audit chain: insight.run_id → agent_runs.sampled_response_ids → response rows.
+        sampled_ids          = [str(r["id"]) for r in state.get("responses", []) if r.get("id")]
+        new_response_count   = len(state.get("new_response_ids") or set())
+        prior_ctx_run_id     = state.get("prior_context_run_id") or None
         async with db._pool_conn().connection() as conn:
             await conn.execute(
-                "UPDATE agent_runs SET status='completed', completed_at=NOW() WHERE id=%s",
-                (run_id,),
+                """UPDATE agent_runs
+                   SET status='completed', completed_at=NOW(),
+                       sampled_response_ids=%s,
+                       sampled_response_count=%s,
+                       new_response_count=%s,
+                       prior_context_run_id=%s
+                   WHERE id=%s""",
+                (json.dumps(sampled_ids), len(sampled_ids),
+                 new_response_count, prior_ctx_run_id, run_id),
             )
     except Exception as exc:
         logger.warning("node_publish_run_status_failed", error=str(exc), traceback=_tb.format_exc())
@@ -3052,8 +3205,12 @@ async def _publish_one(
     canonical    = json.dumps({"survey_id": survey_id, "key": stable_key, "time_window": time_window}, sort_keys=True)
     insight_hash = hashlib.sha256(canonical.encode()).hexdigest()[:32]
 
+    # Merge incoming audit_json (set by tiered_report with prior_insight_refs /
+    # new_response_refs) with system metadata. Incoming fields take precedence
+    # so lineage data from report generation is preserved.
+    _incoming_audit = _parse_json_field(ins.get("audit_json")) or {}
     audit_json = {
-        "model":           "insight_narrate",
+        "model":           _incoming_audit.get("model", "insight_narrate"),
         "embedding_model": "text-embedding-3-small",
         "temperature":     INSIGHT_TEMPERATURE,
         "seed":            DEFAULT_SEED,
@@ -3061,6 +3218,11 @@ async def _publish_one(
         "run_id":          run_id,
         "prompt_hash":     hashlib.sha256(ins["headline"].encode()).hexdigest()[:16],
         "time_window":     time_window,
+        # Lineage fields from tiered_report — preserved verbatim
+        **{k: v for k, v in _incoming_audit.items()
+           if k in ("prior_insight_refs", "new_response_refs",
+                    "prior_insight_count", "new_response_count",
+                    "report_tier", "theme")},
     }
 
     # Carry over user feedback from the previous run for the same insight category.
@@ -3384,6 +3546,8 @@ async def run_insight_generation(
         "insights_from_cache": False,
         "narrate_attempt":      0,
         "prior_snapshots":      [],
+        "prior_insights":       [],   # populated by node_narrate, consumed by node_report_agent
+        "prior_context_run_id": "",   # run_id of the anchor; written to agent_runs in node_publish
         "last_report_response_count": 0,
         "org_context":          {},
         "survey_context":       {},

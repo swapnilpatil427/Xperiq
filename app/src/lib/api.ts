@@ -657,6 +657,34 @@ export function createApiClient(getToken: GetToken) {
       return res.data;
     },
 
+    // Unified Crystal REST fallback — works for any scope.
+    // scope is auto-detected from survey_id: present → survey, absent → org.
+    crystalChat2: async (
+      message: string,
+      opts: { surveyId?: string; focusedTopic?: string; conversationHistory?: Array<{ role: string; content: string }> } = {},
+    ): Promise<{ answer: string; suggestions: string[]; insight_refs: string[]; citations: string[]; citation_map?: Record<string, unknown> }> => {
+      const res = await http.post<{
+        answer: string; suggestions: string[]; insight_refs: string[]; citations: string[]; citation_map?: Record<string, unknown>;
+      }>('/api/experience/crystal', {
+        message,
+        survey_id:            opts.surveyId ?? '',
+        focused_topic:        opts.focusedTopic,
+        conversation_history: opts.conversationHistory ?? [],
+      });
+      return res.data;
+    },
+
+    // Kept for backward compat — delegates to crystalChat2 with no survey_id
+    crystalChatOrg: async (
+      message: string,
+      conversationHistory: Array<{ role: string; content: string }> = [],
+    ): Promise<{ answer: string; suggestions: string[]; insight_refs: string[]; citations: string[] }> => {
+      const res = await http.post<{
+        answer: string; suggestions: string[]; insight_refs: string[]; citations: string[];
+      }>('/api/experience/crystal', { message, survey_id: '', conversation_history: conversationHistory });
+      return res.data;
+    },
+
     getCrystalHistory: async (surveyId: string): Promise<{
       messages: Array<{ role: string; content: string; created_at: string }>;
       updated_at: string | null;
