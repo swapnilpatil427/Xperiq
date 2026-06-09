@@ -303,6 +303,36 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
             "required": ["search_query"],
         },
     },
+    # ── User-directory tools (org segmentation) ──────────────────────────────────
+    {
+        "name": "get_user_directory_context",
+        "description": (
+            "Get the org's department hierarchy, user groups, and active-user count. "
+            "Use this to discover how the organization is structured before segmenting "
+            "responses (e.g. 'How does Engineering compare to Sales?')."
+        ),
+        "scope": "org",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "segment_users_by_attribute",
+        "description": (
+            "Resolve a segment (a department and its sub-departments, a user group, or a "
+            "role) to the list of user_ids in it. Use the returned user_ids to cross-reference "
+            "responses by respondent for comparative analysis across org segments."
+        ),
+        "scope": "org",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "department_id": {"type": "string", "description": "Department UUID (includes sub-departments)"},
+                "department_name": {"type": "string", "description": "Department name (resolved to id)"},
+                "group_id": {"type": "string", "description": "User group UUID"},
+                "group_name": {"type": "string", "description": "User group name (resolved to id)"},
+                "role_key": {"type": "string", "description": "Built-in role key, e.g. org:analyst"},
+            },
+        },
+    },
 ]
 
 
@@ -326,6 +356,7 @@ DATA_TOOL_NAMES = {
     "get_driver_analysis", "get_segment_breakdown", "get_checkpoint_history",
     "compare_surveys", "get_org_portfolio", "get_cross_survey_themes",
     "get_anomaly_events",
+    "get_user_directory_context", "segment_users_by_attribute",
 }
 
 ACTION_TOOL_NAMES = {

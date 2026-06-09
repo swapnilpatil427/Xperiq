@@ -8,9 +8,36 @@ const { serverError } = require('../lib/httpError');
 const { maybeAutoAnalyze } = require('../triggers/autoAnalyze');
 const { responsesSubmitted } = require('../lib/metrics');
 const { publishResponseEvent } = require('../lib/redisStream');
+const { publishNotificationEvent } = require('../lib/notificationEvents');
 const { triggerInsightGeneration } = require('../lib/agentsClient');
 const logger = require('../lib/logger');
 const router = express.Router();
+
+// Response-count milestones that emit a notification to the survey owner.
+const RESPONSE_MILESTONES = [25, 50, 100, 500, 1000];
+
+async function maybeEmitResponseMilestone(surveyId, orgId) {
+  try {
+    const { rows: [{ count }] } = await db.query(
+      'SELECT COUNT(*)::int AS count FROM responses WHERE survey_id = $1', [surveyId]
+    );
+    if (!RESPONSE_MILESTONES.includes(count)) return;
+    const { rows: [s] } = await db.query(
+      'SELECT title, created_by FROM surveys WHERE id = $1 AND org_id = $2', [surveyId, orgId]
+    );
+    if (!s) return;
+    await publishNotificationEvent({
+      type: 'survey.milestone', orgId,
+      priority: count >= 500 ? 'success' : 'info',
+      targetUserIds: s.created_by ? [s.created_by] : [],
+      entityType: 'survey', entityId: surveyId,
+      title: `"${s.title}" reached ${count} responses`,
+      actionUrl: `/app/surveys/${surveyId}/responses`,
+      payload: { milestone: count },
+      dedupWindowMs: 24 * 60 * 60 * 1000,
+    });
+  } catch { /* never affect response submission */ }
+}
 
 // Pagination defaults — adjust here if org-level settings are added later.
 const DEFAULT_PAGE_SIZE = 50;
@@ -133,6 +160,7 @@ router.post('/:surveyId/responses', responseSubmitLimiter, validate(submitRespon
     if (process.env.REDIS_URL) {
       publishResponseEvent({ surveyId: survey.id, orgId: survey.org_id, responseId: response.id })
         .catch(() => {});
+      maybeEmitResponseMilestone(survey.id, survey.org_id); // fire-and-forget
     } else {
       maybeAutoAnalyze(survey.id, survey.org_id).catch(() => {});
     }

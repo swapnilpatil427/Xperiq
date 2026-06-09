@@ -13,6 +13,7 @@ import traceback
 from typing import Any
 
 from crystalos.crystal.context import CrystalContext
+from crystalos.crystal.user_directory_tools import USER_DIRECTORY_EXECUTORS
 from crystalos.lib import db
 from crystalos.lib.logger import logger
 from crystalos.lib.metrics import crystal_tool_calls_total, crystal_tool_duration_seconds
@@ -948,6 +949,8 @@ TOOL_EXECUTORS: dict[str, Any] = {
     "propose_distribution":     execute_propose_distribution,
     "propose_workflow":         execute_propose_workflow,
     "list_relevant_templates":  execute_list_relevant_templates,
+    # User-directory segmentation tools
+    **USER_DIRECTORY_EXECUTORS,
 }
 
 

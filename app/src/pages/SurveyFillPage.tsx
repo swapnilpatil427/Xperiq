@@ -118,6 +118,113 @@ function CsatQuestion({ q, value, onChange }: CsatQuestionProps) {
   );
 }
 
+// ── Visual AI question types ────────────────────────────────────────────────
+interface EmojiRatingQ { question: string; emojiSet?: string[] }
+function EmojiRatingQuestion({ q, value, onChange }: { q: EmojiRatingQ; value: AnswerValue; onChange: (v: number) => void }) {
+  const emojis = (q.emojiSet && q.emojiSet.length ? q.emojiSet : ['😡', '🙁', '😐', '🙂', '😍']);
+  return (
+    <div className="flex gap-3 mt-4 justify-center flex-wrap">
+      {emojis.map((emoji, i) => (
+        <button key={i} onClick={() => onChange(i + 1)}
+          className="p-3 rounded-2xl transition-all active:scale-95"
+          style={{
+            background: value === i + 1 ? '#fce7f3' : '#f5f7f9',
+            border: value === i + 1 ? '2px solid #db2777' : '2px solid transparent',
+            transform: value === i + 1 ? 'scale(1.15)' : 'scale(1)',
+          } as React.CSSProperties}>
+          <span className="text-3xl">{emoji}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface ImageChoiceOption { label: string; imageUrl?: string }
+interface ImageChoiceQ { question: string; options?: ImageChoiceOption[] }
+function ImageChoiceQuestion({ q, value, onChange }: { q: ImageChoiceQ; value: AnswerValue; onChange: (v: string) => void }) {
+  const options = q.options || [];
+  return (
+    <div className="grid grid-cols-2 gap-3 mt-4">
+      {options.map((opt, i) => {
+        const selected = value === opt.label;
+        return (
+          <button key={i} onClick={() => onChange(opt.label)}
+            className="rounded-2xl overflow-hidden transition-all active:scale-95 text-left"
+            style={{ border: selected ? '3px solid #7c3aed' : '3px solid transparent', background: '#f5f7f9' }}>
+            {opt.imageUrl
+              ? <img src={opt.imageUrl} alt={opt.label} className="w-full h-28 object-cover" />
+              : <div className="w-full h-28 flex items-center justify-center text-muted-foreground"><span className="material-symbols-outlined">image</span></div>}
+            <div className="px-3 py-2 text-sm font-semibold text-on-surface">{opt.label}</div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+interface ImageUploadQ { question: string; blurFaces?: boolean; requireConsent?: boolean }
+function ImageUploadQuestion({ q, value, onChange }: { q: ImageUploadQ; value: AnswerValue; onChange: (v: string) => void }) {
+  function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => onChange(String(reader.result)); // data URL (dev); cloud upload + face-blur on the server in prod
+    reader.readAsDataURL(file);
+  }
+  return (
+    <div className="mt-4">
+      {value ? (
+        <img src={value as string} alt="upload preview" className="w-full max-h-64 object-contain rounded-xl border border-border" />
+      ) : (
+        <label className="flex flex-col items-center justify-center gap-2 h-40 rounded-xl border-2 border-dashed border-border cursor-pointer hover:bg-muted/40 transition-colors">
+          <span className="material-symbols-outlined text-3xl text-muted-foreground">add_a_photo</span>
+          <span className="text-sm text-muted-foreground">Tap to upload a photo</span>
+          <input type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </label>
+      )}
+      {q.blurFaces && <p className="text-[11px] text-muted-foreground mt-2">Faces are automatically blurred for privacy.</p>}
+    </div>
+  );
+}
+
+interface AnnotationMark { x: number; y: number }
+interface AnnotationQ { question: string; imageUrl?: string; maxMarks?: number }
+function AnnotationQuestion({ q, value, onChange }: { q: AnnotationQ; value: AnswerValue; onChange: (v: AnnotationMark[]) => void }) {
+  const marks = Array.isArray(value) ? (value as unknown as AnnotationMark[]) : [];
+  const maxMarks = q.maxMarks || 5;
+  function place(e: React.MouseEvent<HTMLDivElement>) {
+    if (marks.length >= maxMarks) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1000) / 10;  // % to 0.1
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 1000) / 10;
+    onChange([...marks, { x, y }]);
+  }
+  return (
+    <div className="mt-4">
+      <div
+        onClick={place}
+        className="relative w-full rounded-xl overflow-hidden border border-border cursor-crosshair select-none"
+        style={{ minHeight: 200, background: q.imageUrl ? undefined : '#f5f7f9' }}
+        role="button"
+        aria-label="Click to mark the image"
+      >
+        {q.imageUrl
+          ? <img src={q.imageUrl} alt="annotate" className="w-full block pointer-events-none" />
+          : <div className="h-48 flex items-center justify-center text-muted-foreground">Image area — tap to mark</div>}
+        {marks.map((m, i) => (
+          <span key={i}
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-[#ea580c] text-white text-xs font-bold flex items-center justify-center shadow"
+            style={{ left: `${m.x}%`, top: `${m.y}%` }}>{i + 1}</span>
+        ))}
+      </div>
+      <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+        <span>{marks.length} / {maxMarks} marks</span>
+        {marks.length > 0 && <button onClick={() => onChange([])} className="underline">Clear</button>}
+      </div>
+    </div>
+  );
+}
+
 interface RatingQuestionProps {
   q: RatingQuestion;
   value: AnswerValue;
@@ -860,6 +967,10 @@ export function SurveyFillPage() {
               {q.type === 'matrix' && <MatrixQuestion question={q as MatrixQuestion} value={(answers[q.id] as Record<string, string | string[]>) || {}} onChange={(v) => setAnswer(q.id, v)} />}
               {q.type === 'date' && <DateQuestion q={q as DateQuestion} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
               {q.type === 'statement' && <StatementBlock q={q as StatementQuestion} />}
+              {q.type === 'emoji_rating' && <EmojiRatingQuestion q={q as unknown as EmojiRatingQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
+              {q.type === 'image_choice' && <ImageChoiceQuestion q={q as unknown as ImageChoiceQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
+              {q.type === 'image_upload' && <ImageUploadQuestion q={q as unknown as ImageUploadQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
+              {q.type === 'annotation' && <AnnotationQuestion q={q as unknown as AnnotationQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
 
               {/* Navigation */}
               <div className="flex gap-3 mt-8">

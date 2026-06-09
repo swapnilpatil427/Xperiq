@@ -4,7 +4,8 @@ export type QuestionType =
   | 'nps' | 'csat' | 'rating' | 'slider'
   | 'multiple_choice' | 'checkbox' | 'dropdown' | 'ranking'
   | 'open_text' | 'short_text'
-  | 'matrix' | 'date' | 'statement';
+  | 'matrix' | 'date' | 'statement'
+  | 'emoji_rating' | 'image_choice' | 'image_upload' | 'annotation';
 
 export interface SkipLogicCondition {
   operator: 'eq' | 'neq' | 'lt' | 'gt' | 'lte' | 'gte' | 'contains' | 'answered' | 'not_answered';
@@ -41,11 +42,16 @@ export interface TextQuestion extends BaseQuestion { type: 'open_text' | 'short_
 export interface MatrixQuestion extends BaseQuestion { type: 'matrix'; rows?: string[]; columns?: string[]; matrixType?: 'radio' | 'checkbox'; }
 export interface DateQuestion extends BaseQuestion { type: 'date'; dateType?: 'date' | 'time' | 'datetime'; }
 export interface StatementQuestion extends BaseQuestion { type: 'statement'; isStatement?: boolean; }
+export interface EmojiRatingQuestion extends BaseQuestion { type: 'emoji_rating'; emojiSet?: string[]; }
+export interface ImageChoiceQuestion extends BaseQuestion { type: 'image_choice'; options?: Array<{ label: string; imageUrl?: string }>; multiple?: boolean; }
+export interface ImageUploadQuestion extends BaseQuestion { type: 'image_upload'; maxFiles?: number; blurFaces?: boolean; requireConsent?: boolean; }
+export interface AnnotationQuestion extends BaseQuestion { type: 'annotation'; imageUrl?: string; maxMarks?: number; }
 
 export type Question =
   | NpsQuestion | CsatQuestion | RatingQuestion | SliderQuestion
   | ChoiceQuestion | TextQuestion | MatrixQuestion | DateQuestion
-  | StatementQuestion;
+  | StatementQuestion | EmojiRatingQuestion | ImageChoiceQuestion
+  | ImageUploadQuestion | AnnotationQuestion;
 
 // ── Survey ────────────────────────────────────────────────────────────────────
 

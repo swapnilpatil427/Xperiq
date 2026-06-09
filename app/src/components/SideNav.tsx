@@ -4,20 +4,26 @@ import { Icon } from './Icon';
 import { LogoFull, LogoMark } from './Logo';
 import { ROUTES } from '../constants/routes';
 import { useTranslation } from '../lib/i18n';
+import { usePermissions } from '../lib/permissions';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCrystalPanel } from '../contexts/crystalPanel';
 
 const NAV_ITEMS = [
+  { key: 'nav.dashboard',   icon: 'dashboard',    path: ROUTES.DASHBOARD },
   { key: 'nav.surveys',     icon: 'poll',         path: ROUTES.SURVEYS },
   { key: 'nav.data',        icon: 'dataset',      path: '/app/data' },
   { key: 'nav.insights',    icon: 'psychology',   path: ROUTES.INSIGHTS, fill: 1 },
+  { key: 'nav.visualStudio', icon: 'bubble_chart', path: ROUTES.VISUAL_STUDIO },
   { key: 'nav.experience',  icon: 'spa',          path: ROUTES.EXPERIENCE },
   { key: 'nav.respondents', icon: 'groups',       path: ROUTES.RESPONDENTS },
   { key: 'nav.workflows',   icon: 'account_tree', path: ROUTES.WORKFLOWS },
+  { key: 'nav.alerts',      icon: 'notification_important', path: ROUTES.ALERTS },
   { key: 'nav.templates',   icon: 'auto_awesome',  path: ROUTES.TEMPLATES },
 ];
 const SETTINGS_ITEM = { key: 'nav.settings', icon: 'settings', path: ROUTES.SETTINGS };
+const ADMIN_ITEM = { key: 'nav.users', icon: 'manage_accounts', path: ROUTES.SETTINGS_USERS };
+const NOTIF_ITEM = { key: 'nav.notifications', icon: 'notifications', path: ROUTES.NOTIFICATION_PREFS };
 
 interface SideNavProps {
   isExpanded: boolean;
@@ -30,6 +36,7 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
   const location = useLocation();
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
   const { openCrystal, isOpen: crystalOpen } = useCrystalPanel();
+  const { isAdmin } = usePermissions();
 
   function isActive(path: string) {
     return location.pathname === path || location.pathname.startsWith(path + '/');
@@ -157,6 +164,80 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
 
           {/* Divider before Settings */}
           <div className={`my-2 ${isExpanded ? 'mx-2' : 'mx-1'} divider-gradient`} />
+
+          {/* Notification preferences (all users) */}
+          {(() => {
+            const item = NOTIF_ITEM;
+            const active = isActive(item.path);
+            if (!isExpanded) {
+              return (
+                <Tooltip key={item.path}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => navigate(item.path)}
+                      className={`sidenav-item-collapsed${active ? ' active' : ''}`}
+                      aria-label={t(item.key)}
+                    >
+                      <Icon name={item.icon} fill={active ? 1 : 0} size={20} />
+                      {active && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-3/5 rounded-r-full bg-gradient-to-b from-primary to-tertiary" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="font-semibold text-xs">
+                    {t(item.key)}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+            return (
+              <button
+                onClick={() => navigate(item.path)}
+                className={`sidenav-item${active ? ' active active-bar' : ''}`}
+              >
+                <Icon name={item.icon} fill={active ? 1 : 0} size={20} />
+                <span className="truncate">{t(item.key)}</span>
+                {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
+              </button>
+            );
+          })()}
+
+          {/* Users & Roles (admins only) */}
+          {isAdmin && (() => {
+            const item = ADMIN_ITEM;
+            const active = isActive(item.path);
+            if (!isExpanded) {
+              return (
+                <Tooltip key={item.path}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => navigate(item.path)}
+                      className={`sidenav-item-collapsed${active ? ' active' : ''}`}
+                      aria-label={t(item.key)}
+                    >
+                      <Icon name={item.icon} fill={active ? 1 : 0} size={20} />
+                      {active && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-3/5 rounded-r-full bg-gradient-to-b from-primary to-tertiary" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="font-semibold text-xs">
+                    {t(item.key)}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+            return (
+              <button
+                onClick={() => navigate(item.path)}
+                className={`sidenav-item${active ? ' active active-bar' : ''}`}
+              >
+                <Icon name={item.icon} fill={active ? 1 : 0} size={20} />
+                <span className="truncate">{t(item.key)}</span>
+                {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
+              </button>
+            );
+          })()}
 
           {/* Settings */}
           {(() => {

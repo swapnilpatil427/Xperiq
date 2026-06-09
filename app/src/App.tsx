@@ -19,9 +19,20 @@ import { InsightsFindingsPage } from './pages/insights/InsightsFindingsPage';
 import { InsightsSurfacedPage } from './pages/insights/InsightsSurfacedPage';
 import { ResponseCollectionPage } from './pages/ResponseCollectionPage';
 import { BrandSettingsPage } from './pages/BrandSettingsPage';
+import { UserDirectoryPage } from './pages/settings/UserDirectoryPage';
+import { RolesPage } from './pages/settings/RolesPage';
+import { DepartmentsPage } from './pages/settings/DepartmentsPage';
+import { GroupsPage } from './pages/settings/GroupsPage';
+import { ProvisioningPage } from './pages/settings/ProvisioningPage';
+import { SeatsPage } from './pages/settings/SeatsPage';
+import { AuditLogPage } from './pages/settings/AuditLogPage';
+import { NotificationPreferencesPage } from './pages/settings/NotificationPreferencesPage';
 import { TemplateLibraryPage } from './pages/TemplateLibraryPage';
 import { TemplateEditorPage } from './pages/TemplateEditorPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
+import { AlertsPage } from './pages/AlertsPage';
+import { DashboardPage } from './pages/DashboardPage';
+import { ChartStudioPage } from './pages/ChartStudioPage';
 import { DataPage } from './pages/DataPage';
 import { ExperienceHubPage } from './pages/experience/ExperienceHubPage';
 import { SurveyIntelligencePage } from './pages/experience/SurveyIntelligencePage';
@@ -88,7 +99,18 @@ export default function App() {
             <Route path={ROUTES.TEMPLATES}          element={<ErrorBoundary inline><TemplateLibraryPage /></ErrorBoundary>} />
             <Route path={ROUTES.TEMPLATE_EDITOR}    element={<ErrorBoundary inline><TemplateEditorPage /></ErrorBoundary>} />
             <Route path={ROUTES.WORKFLOWS}          element={<ErrorBoundary inline><WorkflowsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ALERTS}             element={<ErrorBoundary inline><AlertsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.DASHBOARD}          element={<ErrorBoundary inline><DashboardPage /></ErrorBoundary>} />
+            <Route path={ROUTES.VISUAL_STUDIO}      element={<ErrorBoundary inline><ChartStudioPage /></ErrorBoundary>} />
             <Route path={ROUTES.SETTINGS}           element={<ErrorBoundary inline><BrandSettingsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.NOTIFICATION_PREFS} element={<ErrorBoundary inline><NotificationPreferencesPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_USERS}     element={<ErrorBoundary inline><UserDirectoryPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_ROLES}     element={<ErrorBoundary inline><RolesPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_DEPARTMENTS} element={<ErrorBoundary inline><DepartmentsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_GROUPS}    element={<ErrorBoundary inline><GroupsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_PROVISIONING} element={<ErrorBoundary inline><ProvisioningPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_SEATS}     element={<ErrorBoundary inline><SeatsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_AUDIT}     element={<ErrorBoundary inline><AuditLogPage /></ErrorBoundary>} />
             <Route path={ROUTES.DATA}               element={<ErrorBoundary inline><DataPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE}              element={<ErrorBoundary inline><ExperienceHubPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE_ORG_TRENDS}   element={<ErrorBoundary inline><OrgTrendsPage /></ErrorBoundary>} />

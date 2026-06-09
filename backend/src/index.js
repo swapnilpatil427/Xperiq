@@ -38,6 +38,11 @@ const corsOrigin = process.env.NODE_ENV === 'production'
   ? (process.env.ALLOWED_ORIGIN || false)
   : true;
 app.use(cors({ origin: corsOrigin, credentials: true }));
+
+// Clerk webhook needs the RAW body for Svix signature verification — mount it
+// BEFORE express.json() so the JSON parser doesn't consume the stream.
+app.use('/webhooks/clerk', express.raw({ type: '*/*' }), require(`${dir}/webhooks/clerk`));
+
 app.use(express.json());
 app.use(requestId);  // attach req.id before logging
 app.use(httpLogger); // structured request logging + Prometheus HTTP metrics
@@ -54,6 +59,20 @@ app.use('/api/workflows',   apiLimiter, require(`${dir}/workflows`));
 app.use('/api/org-profile', apiLimiter, require(`${dir}/orgProfile`));
 app.use('/api/orgs',       apiLimiter, require(`${dir}/orgs`));
 app.use('/api/orgs/me',    apiLimiter, require(`${dir}/members`));
+app.use('/api/users',      apiLimiter, require(`${dir}/users`));
+app.use('/api/roles',      apiLimiter, require(`${dir}/roles`));
+app.use('/api/departments', apiLimiter, require(`${dir}/departments`));
+app.use('/api/groups',     apiLimiter, require(`${dir}/groups`));
+app.use('/api/scim-tokens', apiLimiter, require(`${dir}/scimTokens`));
+app.use('/api/sso-mappings', apiLimiter, require(`${dir}/ssoMappings`));
+app.use('/api/seats',      apiLimiter, require(`${dir}/seats`));
+app.use('/api/audit-logs', apiLimiter, require(`${dir}/auditLogs`));
+app.use('/api/alerts',     apiLimiter, require(`${dir}/alerts`));
+app.use('/api/dashboard',  apiLimiter, require(`${dir}/dashboard`));
+app.use('/api/visual',     apiLimiter, require(`${dir}/visual`));
+app.use('/api/notification-channels', apiLimiter, require(`${dir}/notificationChannels`));
+// SCIM 2.0 — separate namespace, bearer-token auth (NOT Clerk JWT), no apiLimiter.
+app.use('/scim/v2',        require(`${dir}/scim`));
 app.use('/api/copilot',        apiLimiter, require(`${dir}/copilot`));
 app.use('/api/runs',           apiLimiter, require(`${dir}/runs`));
 app.use('/api/experience',     apiLimiter, require(`${dir}/experience`));
@@ -101,6 +120,14 @@ const server = app.listen(PORT, () => {
   logger.info(`CORS → ${corsOrigin === true ? 'all origins (dev)' : (corsOrigin || 'BLOCKED — set ALLOWED_ORIGIN')}`);
   logger.info(`Agents env → AGENTS_ENV=${process.env.AGENTS_ENV || 'dev (default)'}`);
   logger.info(`Metrics → http://localhost:${PORT}/api/metrics`);
+
+  // Dev convenience: run the notification Event Engine in-process. In production
+  // it runs as the separate `event-engine` service (npm run start:event-engine).
+  if (process.env.ENABLE_EVENT_ENGINE === 'true') {
+    require('./eventEngine/processor').start({ consumer: `inproc-${process.pid}` })
+      .then(() => logger.info('Event Engine → running in-process (ENABLE_EVENT_ENGINE=true)'))
+      .catch((err) => logger.error({ err: err.message }, 'Event Engine failed to start'));
+  }
 });
 
 // Graceful shutdown — PM2 sends SIGTERM on `pm2 reload`, SIGINT on Ctrl+C
