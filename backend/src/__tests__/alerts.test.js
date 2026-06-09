@@ -96,7 +96,7 @@ describe('GET /api/alerts/types', () => {
   it('returns the full 36-type catalog grouped by category', async () => {
     const { status, body } = await api(buildApp(), 'GET', '/api/alerts/types');
     expect(status).toBe(200);
-    expect(body.types.length).toBe(36);
+    expect(body.types.length).toBe(37); // 36 taxonomy + S-08 predictive
     expect(body.types.find((t) => t.code === 'S-01')).toMatchObject({ category: 'S', evaluator: true });
   });
 });

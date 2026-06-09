@@ -51,5 +51,5 @@ export function useWorkflows() {
     try { await api.deleteWorkflow(id); } catch { /* optimistic */ }
   }, [api]);
 
-  return { workflows, loading, createWorkflow, toggleWorkflow, deleteWorkflow };
+  return { workflows, loading, createWorkflow, toggleWorkflow, deleteWorkflow, reload: load };
 }

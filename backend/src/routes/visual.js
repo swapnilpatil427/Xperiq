@@ -7,6 +7,7 @@ const { validate } = require('../lib/validate');
 const { serverError, clientError } = require('../lib/httpError');
 const { generateChartSpec } = require('../lib/chartSpec');
 const { buildReportHtml } = require('../lib/visualReport');
+const { renderPdf, renderPptx } = require('../lib/exporters');
 const { z } = require('zod');
 
 const router = express.Router();
@@ -43,7 +44,9 @@ router.post('/chart-spec', requireAuth, validate(chartSpecSchema), async (req, r
   }
 });
 
-// GET /api/visual/report/:surveyId — self-contained HTML insight report (printable to PDF).
+// GET /api/visual/report/:surveyId — insight report. ?format=pdf|pptx returns a
+// native download (puppeteer/pptxgenjs); default (or when those libs aren't
+// installed) returns the self-contained printable HTML report.
 router.get('/report/:surveyId', requireAuth, async (req, res) => {
   try {
     const { rows: [survey] } = await db.query(
@@ -72,7 +75,22 @@ router.get('/report/:surveyId', requireAuth, async (req, res) => {
       ? `This survey is at NPS ${num(m.nps)} across ${m.response_count ?? 0} responses.`
       : '';
 
-    const html = buildReportHtml({ survey, metrics, topics, summary });
+    const reportData = { survey, metrics, topics, summary };
+    const format = String(req.query.format || 'html').toLowerCase();
+    const safeName = (survey.title || 'report').replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 60);
+
+    if (format === 'pdf' || format === 'pptx') {
+      const result = format === 'pdf' ? await renderPdf(reportData) : await renderPptx(reportData);
+      if (result.available) {
+        res.setHeader('Content-Type', result.contentType);
+        res.setHeader('Content-Disposition', `attachment; filename="${safeName}.${result.ext}"`);
+        return res.send(result.buffer);
+      }
+      // Native exporter unavailable (lib not installed) — fall back to HTML + signal it.
+      res.setHeader('X-Export-Fallback', result.reason || 'unavailable');
+    }
+
+    const html = buildReportHtml(reportData);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (err) {

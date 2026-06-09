@@ -5,6 +5,7 @@
 // per-user live channel (consumed by the WebSocket gateway in a later increment).
 const db = require('./db');
 const { getRedisClient } = require('./redis');
+const { shouldSuppress } = require('./notificationRelevance');
 
 const PRIORITIES = ['critical', 'warning', 'info', 'success', 'digest'];
 
@@ -55,6 +56,28 @@ async function createNotification({
     [orgId, userId, type]
   );
   if (prefs[0] && prefs[0].in_app_enabled === false) return null;
+
+  // (2b) Smart suppression — drop low-relevance noise (never critical). Routes
+  // would go to the digest; here we simply suppress the in-app row.
+  if (prio !== 'critical') {
+    let unreadSameEntityInfo = 0;
+    if (prio === 'info' && entityId) {
+      const { rows: cnt } = await db.query(
+        `SELECT COUNT(*)::int AS n FROM notifications
+          WHERE org_id = $1 AND user_id = $2 AND entity_id = $3
+            AND priority = 'info' AND read = FALSE AND dismissed_at IS NULL`,
+        [orgId, userId, entityId]
+      );
+      unreadSameEntityInfo = cnt[0]?.n || 0;
+    }
+    const { suppress } = shouldSuppress({
+      priority: prio,
+      magnitude: typeof payload.magnitude === 'number' ? payload.magnitude : 0.5,
+      recencyHours: 0,
+      unreadSameEntityInfo,
+    });
+    if (suppress) return null;
+  }
 
   // (3) Persist.
   const { rows: [row] } = await db.query(

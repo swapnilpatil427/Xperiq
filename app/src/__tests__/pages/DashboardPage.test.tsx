@@ -19,6 +19,7 @@ const summary: DashboardSummary = {
     sentiment: 'positive',
   },
   forecast: { slope: 5, intercept: 30, points: [50, 55, 60], direction: 'up', r2: 0.98 },
+  anomalies: [],
 };
 
 beforeEach(() => {

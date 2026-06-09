@@ -138,6 +138,47 @@ describe('evalNpsRise', () => {
   });
 });
 
+describe('evalPredictiveNps (S-08)', () => {
+  const rule = { id: 'rp', alert_type: 'S-08', severity: 'warning', threshold_config: { below: 30, horizon: 7 } };
+
+  it('fires when NPS is above the floor but projected to fall below it', async () => {
+    let inserted = false;
+    dbQuery = vi.fn(async (text) => {
+      if (text.includes('FROM survey_metric_snapshots')) {
+        return { rows: [{ nps: 50 }, { nps: 45 }, { nps: 40 }, { nps: 38 }, { nps: 35 }, { nps: 32 }] }; // falling, now 32 (>30)
+      }
+      if (text.startsWith('INSERT INTO alert_events')) { inserted = true; return { rows: [{ id: 'evp' }] }; }
+      return { rows: [] };
+    });
+    const { evalPredictiveNps } = load();
+    const ev = await evalPredictiveNps(rule, 'o1', 's1');
+    expect(ev).toBeTruthy();
+    expect(inserted).toBe(true);
+  });
+
+  it('does not fire when the trend is flat/rising', async () => {
+    dbQuery = vi.fn(async (text) => {
+      if (text.includes('FROM survey_metric_snapshots')) {
+        return { rows: [{ nps: 40 }, { nps: 42 }, { nps: 44 }, { nps: 46 }] }; // rising
+      }
+      return { rows: [] };
+    });
+    const { evalPredictiveNps } = load();
+    expect(await evalPredictiveNps(rule, 'o1', 's1')).toBeNull();
+  });
+
+  it('does not fire when NPS is already below the floor (S-03 territory)', async () => {
+    dbQuery = vi.fn(async (text) => {
+      if (text.includes('FROM survey_metric_snapshots')) {
+        return { rows: [{ nps: 28 }, { nps: 26 }, { nps: 24 }] }; // already below 30
+      }
+      return { rows: [] };
+    });
+    const { evalPredictiveNps } = load();
+    expect(await evalPredictiveNps(rule, 'o1', 's1')).toBeNull();
+  });
+});
+
 describe('transitionAlert', () => {
   it('acknowledges an active alert and writes history', async () => {
     const calls = [];

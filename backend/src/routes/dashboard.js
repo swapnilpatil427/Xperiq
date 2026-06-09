@@ -7,6 +7,7 @@ const { requireAuth } = require('../middleware/auth');
 const { serverError } = require('../lib/httpError');
 const { buildNarrative } = require('../lib/dashboardNarrative');
 const { linearForecast } = require('../lib/forecast');
+const { anomalyPoints } = require('../lib/chartAnnotations');
 
 const router = express.Router();
 
@@ -84,10 +85,12 @@ router.get('/summary', requireAuth, async (req, res) => {
         ORDER BY captured_at ASC LIMIT 90`,
       [orgId]
     );
-    const forecast = linearForecast(hist.map((h) => Number(h.avg_nps)), 7);
+    const npsSeries = hist.map((h) => Number(h.avg_nps));
+    const forecast = linearForecast(npsSeries, 7);
+    const anomalies = anomalyPoints(npsSeries);
 
     const narrative = buildNarrative(kpis, { topMover, period: `the last ${days} days` });
-    res.json({ kpis, topMover, narrative, forecast, days });
+    res.json({ kpis, topMover, narrative, forecast, anomalies, days });
   } catch (err) {
     serverError(res, err, { endpoint: 'dashboard_summary' });
   }

@@ -166,6 +166,15 @@ export interface UpdateUserPayload {
   isActive?: boolean;
 }
 
+export interface WorkflowTemplate {
+  slug: string; name: string; description: string; category: string | null;
+  trigger_type: string | null; nodes: unknown[]; edges: unknown[]; is_featured: boolean;
+}
+export interface WorkflowExecution {
+  id: string; trigger_type: string; status: string; triggered_at: string;
+  completed_at: string | null; duration_ms: number | null; error_message: string | null; step_count: number;
+}
+
 export interface ChartSpec {
   chartType: 'bar' | 'line' | 'area' | 'pie' | 'scatter';
   x: string;
@@ -185,11 +194,13 @@ export interface DashboardKpis {
 export interface DashboardForecast {
   slope: number; intercept: number; points: number[]; direction: 'up' | 'down' | 'flat'; r2: number;
 }
+export interface ChartAnomaly { index: number; value: number; z: number; direction: 'up' | 'down' }
 export interface DashboardSummary {
   kpis: DashboardKpis;
   topMover: { title: string; npsDelta: number } | null;
   narrative: { headline: string; paragraphs: string[]; sentiment: 'positive' | 'negative' | 'neutral' };
   forecast: DashboardForecast | null;
+  anomalies: ChartAnomaly[];
 }
 export interface DashboardInsights {
   actionItems: Array<{ id: string; alertType: string; severity: string; title: string; description: string; triggeredAt: string }>;
@@ -889,6 +900,47 @@ export function createApiClient(getToken: GetToken) {
       const res = await http.post<{ status: string }>(`/api/workflows/${id}/toggle`, {});
       return res.data;
     },
+    getWorkflowRegistry: async () => {
+      const res = await http.get<{ triggers: unknown[]; conditionFields: unknown[]; conditionOperators: string[]; actions: unknown[] }>('/api/workflows/registry');
+      return res.data;
+    },
+    listWorkflowTemplates: async (): Promise<{ templates: WorkflowTemplate[] }> => {
+      const res = await http.get('/api/workflows/templates');
+      return res.data;
+    },
+    createGraphWorkflow: async (data: {
+      name: string; description?: string; triggerType: string; nodes: unknown[]; edges: unknown[]; status?: string;
+    }) => {
+      const res = await http.post('/api/workflows', data);
+      return res.data;
+    },
+    createWorkflowFromTemplate: async (tpl: WorkflowTemplate) => {
+      const res = await http.post('/api/workflows', {
+        name: tpl.name, description: tpl.description, triggerType: tpl.trigger_type,
+        nodes: tpl.nodes, edges: tpl.edges, status: 'draft',
+      });
+      return res.data;
+    },
+    testWorkflow: async (id: string, event?: Record<string, unknown>) => {
+      const res = await http.post(`/api/workflows/${id}/test`, event ? { event } : {});
+      return res.data;
+    },
+    getWorkflowExecutions: async (id: string): Promise<{ executions: WorkflowExecution[] }> => {
+      const res = await http.get(`/api/workflows/${id}/executions`);
+      return res.data;
+    },
+    listWorkflowApprovals: async (): Promise<{ approvals: Array<{ id: string; execution_id: string; workflow_id: string; node_id: string; requested_at: string; workflow_name: string }> }> => {
+      const res = await http.get('/api/workflows/approvals');
+      return res.data;
+    },
+    decideApproval: async (executionId: string, decision: 'approve' | 'reject') => {
+      const res = await http.post(`/api/workflows/approvals/${executionId}`, { decision });
+      return res.data;
+    },
+    retryWorkflowExecution: async (executionId: string) => {
+      const res = await http.post(`/api/workflows/executions/${executionId}/retry`, {});
+      return res.data;
+    },
 
     // ── Survey Insights (v2 — agentic) ────────────────────────────────────────
 
@@ -1434,6 +1486,15 @@ export function createApiClient(getToken: GetToken) {
     exportAuditLogsCsv: async (): Promise<string> => {
       const res = await http.get('/api/audit-logs', { params: { format: 'csv' }, responseType: 'text' });
       return res.data as string;
+    },
+    // Download a survey insight report. 'pdf'/'pptx' return native files (when the
+    // server has puppeteer/pptxgenjs); otherwise the server falls back to HTML.
+    // Returns the actual format delivered so the caller can name the file correctly.
+    downloadReport: async (surveyId: string, format: 'pdf' | 'pptx' | 'html'): Promise<{ blob: Blob; format: string }> => {
+      const res = await http.get(`/api/visual/report/${surveyId}`, { params: { format }, responseType: 'blob' });
+      // If the server fell back to HTML it signals it via this header.
+      const fellBack = res.headers['x-export-fallback'];
+      return { blob: res.data as Blob, format: fellBack ? 'html' : format };
     },
   };
 }

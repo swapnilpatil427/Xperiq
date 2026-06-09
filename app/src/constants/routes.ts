@@ -23,6 +23,8 @@ export const ROUTES = {
   TEMPLATES:          '/app/templates',
   TEMPLATE_EDITOR:    '/app/templates/new',
   WORKFLOWS:          '/app/workflows',
+  WORKFLOW_BUILD:     '/app/workflows/build',
+  WORKFLOW_CANVAS:    '/app/workflows/canvas',
   ALERTS:             '/app/alerts',
   SETTINGS:           '/app/settings',
   NOTIFICATION_PREFS: '/app/settings/notifications',

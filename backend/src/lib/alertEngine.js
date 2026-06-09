@@ -8,6 +8,7 @@
 const db = require('./db');
 const { getRedisClient } = require('./redis');
 const { publishNotificationEvent } = require('./notificationEvents');
+const { linearForecast } = require('./forecast');
 
 // Dedup window per severity (ms) — prevents the same condition re-firing.
 const DEDUP_TTL_MS = { critical: 24 * 3600e3, warning: 6 * 3600e3, info: 1 * 3600e3, success: 1 * 3600e3 };
@@ -166,6 +167,7 @@ async function evaluateSurveyAlerts(orgId, surveyId) {
     let event = null;
     if (rule.alert_type === 'S-01') event = await evalNpsDrop(rule, orgId, surveyId);
     else if (rule.alert_type === 'S-02') event = await evalNpsRise(rule, orgId, surveyId);
+    else if (rule.alert_type === 'S-08') event = await evalPredictiveNps(rule, orgId, surveyId);
     else if (rule.alert_type === 'V-03') event = await evalVolumeAnomaly(rule, orgId, surveyId);
     if (event) fired.push(event);
   }
@@ -259,6 +261,42 @@ async function evalVolumeAnomaly(rule, orgId, surveyId) {
   });
 }
 
+// Predictive alert (S-08): fire BEFORE the threshold is crossed. Uses the trend
+// forecast — if NPS is currently above the floor but projected to fall below it
+// within the horizon, raise a warning with the projected value + ETA.
+async function evalPredictiveNps(rule, orgId, surveyId) {
+  const cfg = rule.threshold_config || {};
+  const floor = cfg.below ?? 30;
+  const horizon = cfg.horizon ?? 7;
+
+  const { rows } = await db.query(
+    `SELECT nps FROM survey_metric_snapshots
+      WHERE survey_id = $1 AND org_id = $2 AND nps IS NOT NULL
+      ORDER BY captured_at ASC LIMIT 60`,
+    [surveyId, orgId]
+  );
+  const series = rows.map((r) => Number(r.nps));
+  if (series.length < 3) return null;
+
+  const current = series[series.length - 1];
+  if (current < floor) return null; // already below — that's S-03's job, not predictive
+
+  const fc = linearForecast(series, horizon);
+  if (!fc || fc.direction !== 'down') return null;
+
+  // First projected period that dips below the floor.
+  const crossIdx = fc.points.findIndex((p) => p < floor);
+  if (crossIdx === -1) return null;
+
+  return fireAlert(rule, {
+    orgId, surveyId, severity: rule.severity || 'warning',
+    title: `NPS projected to fall below ${floor}`,
+    description: `Crystal predicts NPS will dip below ${floor} in ~${crossIdx + 1} period(s) (now ${Math.round(current)}, trend falling).`,
+    metricValue: current, metricBaseline: floor, metricChange: fc.points[crossIdx] - current,
+    evidence: { forecast: fc.points, r2: fc.r2 },
+  });
+}
+
 // Sweep all surveys that have active rules (called on the Event Engine schedule).
 async function runScheduledEvaluation() {
   const { rows } = await db.query(
@@ -276,5 +314,5 @@ async function runScheduledEvaluation() {
 module.exports = {
   stats, zScore, detectAnomaly, computeNps,
   fireAlert, transitionAlert, resolveSubscribers,
-  evaluateSurveyAlerts, evalNpsDrop, evalNpsRise, evalVolumeAnomaly, runScheduledEvaluation, DEDUP_TTL_MS,
+  evaluateSurveyAlerts, evalNpsDrop, evalNpsRise, evalVolumeAnomaly, evalPredictiveNps, runScheduledEvaluation, DEDUP_TTL_MS,
 };

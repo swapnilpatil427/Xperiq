@@ -53,6 +53,14 @@ async function handleEvent(event) {
     // Persisted (not suppressed) → fan out to the user's external channels.
     if (row) await dispatchExternalChannels(event.orgId, userId, serialize(row));
   }
+
+  // The same event can drive workflows subscribed to this trigger type
+  // (e.g. alert.fired → "NPS Recovery"). Best-effort; never blocks delivery.
+  try {
+    await require('../lib/workflowEngine').runWorkflowsForEvent(event.orgId, event.type, event);
+  } catch (err) {
+    log('warn', { event: 'workflow_trigger_failed', type: event.type, err: err.message }, 'workflow trigger failed');
+  }
 }
 
 function defaultTitle(event) {
@@ -120,6 +128,13 @@ async function start({ consumer = `c-${process.pid}` } = {}) {
       .catch((err) => log('warn', { err: err.message }, 'alert sweep failed'));
   }, 15 * 60 * 1000);
 
+  // Cron tick (every minute) — runs due time.schedule workflows.
+  const cronTick = setInterval(() => {
+    require('../lib/workflowEngine').runScheduledWorkflows()
+      .then((ran) => { if (ran.length) log('info', { ran: ran.length }, 'scheduled workflows ran'); })
+      .catch((err) => log('warn', { err: err.message }, 'cron tick failed'));
+  }, 60 * 1000);
+
   let ticks = 0;
   while (!_stop) {
     try {
@@ -131,6 +146,7 @@ async function start({ consumer = `c-${process.pid}` } = {}) {
     }
   }
   clearInterval(alertSweep);
+  clearInterval(cronTick);
   _running = false;
 }
 

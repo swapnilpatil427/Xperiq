@@ -22,6 +22,7 @@ const ALERT_TYPES = [
   { code: 'S-05', name: 'CES Score Spike', severity: 'warning', evaluator: false, thresholds: { above: 5 } },
   { code: 'S-06', name: 'Segment Score Divergence', severity: 'warning', evaluator: false, thresholds: { minGap: 15 } },
   { code: 'S-07', name: 'Industry Percentile Alert', severity: 'info', evaluator: false, thresholds: {} },
+  { code: 'S-08', name: 'Predictive NPS Drop', severity: 'warning', evaluator: true, thresholds: { below: 30, horizon: 7 } },
   { code: 'V-01', name: 'Response Rate Drop', severity: 'warning', evaluator: false, thresholds: { minRate: 20 } },
   { code: 'V-02', name: 'Completion Rate Drop', severity: 'warning', evaluator: false, thresholds: { minRate: 50 } },
   { code: 'V-03', name: 'Response Volume Spike', severity: 'warning', evaluator: true,  thresholds: { z: 3 } },

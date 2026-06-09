@@ -19,6 +19,9 @@ export default defineConfig({
           if (id.includes('@clerk/react')) return 'vendor-clerk';
           if (id.includes('recharts')) return 'vendor-charts';
           if (id.includes('framer-motion')) return 'vendor-motion';
+          // Match these before the generic node_modules/react rule (substring would otherwise capture them).
+          if (id.includes('reactflow') || id.includes('@reactflow')) return 'vendor-flow';
+          if (id.includes('react-grid-layout') || id.includes('react-resizable')) return 'vendor-grid';
           if (id.includes('node_modules/react') || id.includes('node_modules/react-dom') || id.includes('react-router-dom')) return 'vendor-react';
         },
       },

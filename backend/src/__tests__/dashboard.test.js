@@ -86,6 +86,7 @@ describe('GET /api/dashboard/summary', () => {
     expect(body.topMover).toMatchObject({ title: 'Q4 NPS' });
     expect(body.narrative.paragraphs.length).toBeGreaterThan(0);
     expect(body.forecast.direction).toBe('up');
+    expect(Array.isArray(body.anomalies)).toBe(true);
   });
 });
 

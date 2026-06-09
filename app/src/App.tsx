@@ -30,6 +30,8 @@ import { NotificationPreferencesPage } from './pages/settings/NotificationPrefer
 import { TemplateLibraryPage } from './pages/TemplateLibraryPage';
 import { TemplateEditorPage } from './pages/TemplateEditorPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
+import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage';
+import { WorkflowCanvasPage } from './pages/WorkflowCanvasPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { ChartStudioPage } from './pages/ChartStudioPage';
@@ -99,6 +101,8 @@ export default function App() {
             <Route path={ROUTES.TEMPLATES}          element={<ErrorBoundary inline><TemplateLibraryPage /></ErrorBoundary>} />
             <Route path={ROUTES.TEMPLATE_EDITOR}    element={<ErrorBoundary inline><TemplateEditorPage /></ErrorBoundary>} />
             <Route path={ROUTES.WORKFLOWS}          element={<ErrorBoundary inline><WorkflowsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.WORKFLOW_BUILD}     element={<ErrorBoundary inline><WorkflowBuilderPage /></ErrorBoundary>} />
+            <Route path={ROUTES.WORKFLOW_CANVAS}    element={<ErrorBoundary inline><WorkflowCanvasPage /></ErrorBoundary>} />
             <Route path={ROUTES.ALERTS}             element={<ErrorBoundary inline><AlertsPage /></ErrorBoundary>} />
             <Route path={ROUTES.DASHBOARD}          element={<ErrorBoundary inline><DashboardPage /></ErrorBoundary>} />
             <Route path={ROUTES.VISUAL_STUDIO}      element={<ErrorBoundary inline><ChartStudioPage /></ErrorBoundary>} />

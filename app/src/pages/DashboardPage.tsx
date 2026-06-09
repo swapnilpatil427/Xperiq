@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from 'recharts';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceDot } from 'recharts';
 import { useTranslation } from '../lib/i18n';
 import { useSetPageTitle } from '../contexts/pageTitle';
 import { useApi } from '../hooks/useApi';
@@ -14,6 +14,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from '@/components/ui/select';
 import { Link } from 'react-router-dom';
 import { ROUTES } from '../constants/routes';
+import { CustomLayout } from '../components/dashboard/CustomLayout';
 import type { DashboardSummary, OrgMetricSnapshot } from '../lib/api';
 
 const SENTIMENT_ACCENT = {
@@ -64,6 +65,7 @@ export function DashboardPage() {
           <TabsTrigger value="analyst">{t('dashboard.layouts.analyst')}</TabsTrigger>
           <TabsTrigger value="operations">{t('dashboard.layouts.operations')}</TabsTrigger>
           <TabsTrigger value="insights">{t('dashboard.layouts.insights')}</TabsTrigger>
+          <TabsTrigger value="custom">{t('dashboard.layouts.custom')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="executive">
@@ -137,6 +139,14 @@ export function DashboardPage() {
                             <Area type="monotone" dataKey="forecast" stroke="var(--color-tertiary)" fill="none"
                               strokeWidth={2} strokeDasharray="5 4" connectNulls />
                           )}
+                          {/* Crystal anomaly markers */}
+                          {(summary.anomalies || []).map((a) => {
+                            const pt = history[a.index];
+                            if (!pt) return null;
+                            return <ReferenceDot key={a.index} x={(pt.captured_at || '').slice(0, 10)} y={a.value} r={5}
+                              fill={a.direction === 'down' ? 'var(--color-destructive, #ef4444)' : 'var(--color-warning, #f59e0b)'}
+                              stroke="#fff" strokeWidth={1.5} />;
+                          })}
                         </AreaChart>
                       </ResponsiveContainer>
                     </div>
@@ -144,6 +154,12 @@ export function DashboardPage() {
                       <p className="text-xs text-on-surface-variant mt-2 flex items-center gap-1.5">
                         <span className="inline-block w-4 border-t-2 border-dashed" style={{ borderColor: 'var(--color-tertiary)' }} />
                         {t('dashboard.forecastNote', { direction: t(`dashboard.dir.${summary.forecast.direction}`) })}
+                      </p>
+                    )}
+                    {summary.anomalies && summary.anomalies.length > 0 && (
+                      <p className="text-xs text-warning mt-1 flex items-center gap-1.5">
+                        <Icon name="warning" size={13} />
+                        {t('dashboard.anomalyNote', { count: summary.anomalies.length })}
                       </p>
                     )}
                   </>
@@ -156,6 +172,7 @@ export function DashboardPage() {
         <TabsContent value="analyst"><AnalystLayout summary={summary} /></TabsContent>
         <TabsContent value="operations"><OperationsLayout /></TabsContent>
         <TabsContent value="insights"><InsightsLayout /></TabsContent>
+        <TabsContent value="custom"><CustomLayout summary={summary} /></TabsContent>
       </Tabs>
     </div>
   );
