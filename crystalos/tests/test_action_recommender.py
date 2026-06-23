@@ -256,7 +256,7 @@ def test_system_prompt_org_scope():
     from crystalos.agents.crystal import _build_system_prompt_agentic
     ctx = CrystalContext(org_id="o1", user_id="u1", survey_id=None, scope="org")
     prompt = _build_system_prompt_agentic(ctx)
-    assert "Data Analysis Tools" in prompt
+    assert "Data Tools" in prompt
     assert "propose_survey_creation" in prompt  # available at org scope
 
 

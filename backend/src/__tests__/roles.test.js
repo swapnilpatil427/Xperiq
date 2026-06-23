@@ -35,7 +35,7 @@ function buildApp() {
   const router = _require(ROUTER_PATH);
   const app = express();
   app.use(express.json());
-  app.use('/api/roles', router);
+  app.use('/api/roles', router.default || router);
   return app;
 }
 

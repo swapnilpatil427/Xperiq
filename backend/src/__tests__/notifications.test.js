@@ -32,7 +32,7 @@ function buildApp() {
   delete _require.cache[LIB_PATH];
   delete _require.cache[ROUTER_PATH];
   const router = _require(ROUTER_PATH);
-  const app = express(); app.use(express.json()); app.use('/api/notifications', router);
+  const app = express(); app.use(express.json()); app.use('/api/notifications', router.default || router);
   return app;
 }
 async function api(app, method, url, body = null) {

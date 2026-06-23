@@ -400,6 +400,44 @@ export interface TopicTrend {
   windows:    TopicWindow[];
 }
 
+// ── Survey Tag types ──────────────────────────────────────────────────────────
+
+export interface SurveyTag {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  description?: string;
+  program_config?: Record<string, unknown>;
+  survey_count?: number;
+  created_at: string;
+}
+
+export interface GroupInsightRun {
+  id: string;
+  org_id: string;
+  tag_ids: string[];
+  survey_ids: string[];
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  stream_events: Array<{ event: string; data: Record<string, unknown> }>;
+  result_json?: Record<string, unknown>;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface GroupInsight {
+  id: string;
+  layer: 'descriptive' | 'diagnostic' | 'predictive' | 'prescriptive';
+  category: string;
+  headline: string;
+  narrative: string;
+  trust_score?: number;
+  priority?: number;
+  data_gap_signals?: unknown[];
+  suggested_survey_types?: string[];
+  suggested_survey_json?: Record<string, unknown>;
+}
+
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 export type GetToken = () => Promise<string | null>;
@@ -1487,6 +1525,75 @@ export function createApiClient(getToken: GetToken) {
       const res = await http.get('/api/audit-logs', { params: { format: 'csv' }, responseType: 'text' });
       return res.data as string;
     },
+    // ── Survey Tags ────────────────────────────────────────────────────────────
+
+    // ── Survey Tags ────────────────────────────────────────────────────────────
+
+    listTags: async (params: { q?: string } = {}): Promise<{ tags: SurveyTag[] }> => {
+      const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get<{ tags: SurveyTag[] }>(`/api/survey-tags${query}`);
+      return res.data;
+    },
+
+    createTag: async (data: { name: string; color?: string; description?: string }): Promise<{ tag: SurveyTag }> => {
+      const res = await http.post<{ tag: SurveyTag }>('/api/survey-tags', data);
+      return res.data;
+    },
+
+    updateTag: async (id: string, data: Partial<SurveyTag>): Promise<{ tag: SurveyTag }> => {
+      const res = await http.patch<{ tag: SurveyTag }>(`/api/survey-tags/${id}`, data);
+      return res.data;
+    },
+
+    deleteTag: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete<{ success: boolean }>(`/api/survey-tags/${id}`);
+      return res.data;
+    },
+
+    getTagSurveys: async (tagId: string): Promise<{ surveys: Survey[]; tag: SurveyTag }> => {
+      const res = await http.get<{ surveys: Survey[]; tag: SurveyTag }>(`/api/survey-tags/${tagId}/surveys`);
+      return res.data;
+    },
+
+    // Survey-tag mappings live under /api/surveys/:id/tags in surveys.js
+    addTagsToSurvey: async (surveyId: string, tagIds: string[]): Promise<{ success: boolean }> => {
+      const res = await http.post<{ success: boolean }>(`/api/surveys/${surveyId}/tags`, { tag_ids: tagIds });
+      return res.data;
+    },
+
+    removeTagFromSurvey: async (surveyId: string, tagId: string): Promise<{ success: boolean }> => {
+      const res = await http.delete<{ success: boolean }>(`/api/surveys/${surveyId}/tags/${tagId}`);
+      return res.data;
+    },
+
+    // ── Group Insights ─────────────────────────────────────────────────────────
+
+    generateGroupInsights: async (data: { tag_ids: string[]; survey_ids?: string[] }): Promise<{ run_id: string }> => {
+      const res = await http.post<{ run_id: string }>('/api/group-insights/generate', data);
+      return res.data;
+    },
+
+    getGroupInsightRunStatus: async (runId: string): Promise<GroupInsightRun> => {
+      const res = await http.get<GroupInsightRun>(`/api/group-insights/${runId}/status`);
+      return res.data;
+    },
+
+    getGroupInsightRun: async (runId: string): Promise<{ run: GroupInsightRun; insights: GroupInsight[] }> => {
+      const res = await http.get<{ run: GroupInsightRun; insights: GroupInsight[] }>(`/api/group-insights/${runId}`);
+      return res.data;
+    },
+
+    getLatestGroupReport: async (tagId: string): Promise<{ run: GroupInsightRun } | null> => {
+      try {
+        const res = await http.get<{ run: GroupInsightRun }>(`/api/survey-tags/${tagId}/latest-report`);
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+
     // Download a survey insight report. 'pdf'/'pptx' return native files (when the
     // server has puppeteer/pptxgenjs); otherwise the server falls back to HTML.
     // Returns the actual format delivered so the caller can name the file correctly.

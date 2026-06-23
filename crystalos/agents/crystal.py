@@ -121,6 +121,7 @@ class CrystalInput(BaseModel):
     user_id: str = ""
     scope: str = "survey"
     has_open_text: bool = True
+    tag_ids: list[str] | None = None       # group scope: tag UUIDs
 
 
 class ActionProposal(BaseModel):
@@ -148,6 +149,26 @@ class CrystalOutput(BaseModel):
     suggestions: list[str] = []          # 2-3 follow-up questions
     insight_refs: list[str] = []         # insight IDs used in the answer
     action_proposals: list[ActionProposal] = []  # proposed actions (from action tools)
+
+
+# ── ReAct step protocol ───────────────────────────────────────────────────────
+# OpenRouter has no native function-calling (JSON mode only), so the ReAct loop
+# uses a JSON tool-call protocol: each LLM turn returns either tool calls to run
+# or a signal that it has enough data to answer.
+
+class ReActToolCall(BaseModel):
+    tool: str
+    args: dict = {}
+
+
+class ReActStep(BaseModel):
+    thought: str = ""                    # brief reasoning about what to do next
+    action: str = "final"                # "tool_call" | "final"
+    tool_calls: list[ReActToolCall] = [] # tools to run this turn (when action == tool_call)
+    answer: str = ""                     # draft answer (when action == final; re-synthesized + evaluated downstream)
+    citations: list[str] = []
+    suggestions: list[str] = []
+    insight_refs: list[str] = []
 
 
 # ── Thread management ─────────────────────────────────────────────────────────
@@ -630,12 +651,23 @@ def _build_system_prompt_agentic(ctx, specialist_context: str = "") -> str:
 
     specialist_block = f"\n\n## Domain Context\n{specialist_context}" if specialist_context else ""
 
-    from crystalos.crystal.registry import ACTION_TOOL_NAMES, DATA_TOOL_NAMES
-    data_tools    = [t for t in tools if t["name"] in DATA_TOOL_NAMES]
-    action_tools  = [t for t in tools if t["name"] in ACTION_TOOL_NAMES]
+    from crystalos.crystal.registry import ACTION_TOOL_NAMES, DATA_TOOL_NAMES, ANALYSIS_TOOL_NAMES
+    data_tools     = [t for t in tools if t["name"] in DATA_TOOL_NAMES]
+    analysis_tools = [t for t in tools if t["name"] in ANALYSIS_TOOL_NAMES]
+    action_tools   = [t for t in tools if t["name"] in ACTION_TOOL_NAMES]
 
-    data_tool_list = "\n".join(f"- **{t['name']}**: {t['description']}" for t in data_tools)
-    action_tool_list = "\n".join(f"- **{t['name']}**: {t['description']}" for t in action_tools) if action_tools else ""
+    data_tool_list     = "\n".join(f"- **{t['name']}**: {t['description']}" for t in data_tools)
+    analysis_tool_list = "\n".join(f"- **{t['name']}**: {t['description']}" for t in analysis_tools)
+    action_tool_list   = "\n".join(f"- **{t['name']}**: {t['description']}" for t in action_tools) if action_tools else ""
+
+    analysis_section = f"""
+## Analytical Tools (Deep Analysis — prefer these for analytical questions)
+These run specialist analysis and return structured findings. Reach for them instead of
+raw data tools when the user asks an analytical question:
+
+{analysis_tool_list}
+""" if analysis_tools else ""
+
     action_section = f"""
 ## Action Tools (Propose-Only — User Confirms Before Execution)
 You can propose the following actions. These NEVER execute automatically — they generate
@@ -643,11 +675,6 @@ a proposal card the user reviews and confirms. Use them when the user asks what 
 not just what the data says.
 
 {action_tool_list}
-
-When you call an action tool, always:
-1. Mention in your answer that you're proposing an action
-2. Briefly explain why you're recommending it (data-based rationale)
-3. Tell the user they'll see a confirmation card to review before anything happens
 """ if action_tools else ""
 
     return f"""You are Crystal — the Experient Intelligence Platform. You are simultaneously:
@@ -657,120 +684,229 @@ When you call an action tool, always:
 
 {scope_framing}{no_text_note}{specialist_block}
 
-## Understanding User Intent
+## How You Work (ReAct loop)
 
-Detect what the user wants:
-- **Analyze** ("What does this mean?", "Why is NPS low?") → Use data tools, explain findings
-- **Act** ("What should I do?", "How do I fix this?", "Create a survey about X") → Use action tools to propose solutions
-- **Create/Edit** ("Create a follow-up survey", "Add a question about pricing", "Help me edit this") → propose_survey_creation or propose_survey_edit
-- **Distribute** ("Send to detractors", "Re-survey churned customers") → propose_distribution
-- **Automate** ("Alert my team when NPS drops", "Create a workflow for low ratings") → propose_workflow
-- **Explore templates** ("What template should I use?", "Do you have a template for X?") → list_relevant_templates
+You answer by calling tools to gather evidence, then synthesizing. Each turn you respond with
+ONE JSON object that is EITHER a set of tool calls OR a signal that you have enough to answer:
 
-## Data Analysis Tools
+To call tools:
+{{"thought": "what I need and why", "action": "tool_call",
+  "tool_calls": [{{"tool": "<tool_name>", "args": {{"survey_id": "...", ...}}}}]}}
+
+When you have enough data:
+{{"thought": "I can answer now", "action": "final",
+  "answer": "draft", "citations": [], "suggestions": [], "insight_refs": []}}
+
+Rules:
+- Always pass the correct args. If a tool says it requires an argument you don't have
+  (e.g. segment_question_id), call the discovery tool first (list_segmentable_questions),
+  read the result, THEN call the analysis with a real value.
+- If a tool returns an error, read it and either fix the args and retry or pick another tool.
+- You may run up to {CRYSTAL_MAX_TOOL_TURNS} tool turns. Stop as soon as you have what you need.
+- Do not call the same tool with the same args twice.
+
+## Route the question to the right tool
+
+- "What are people saying / themes / takeaways / what's emerging" → **summarize_themes**
+- "Is X improving/declining / what changed over time / trend" → **analyze_trends_over_time**
+- "How does it differ by segment / which group is worse" → **analyze_segments** (discover the segment first)
+- "What's driving the score / what should we fix to move the needle" → **analyze_key_drivers**
+- "Anything I should know / what's important right now" → **proactive_insights**
+- "Generate a report / full writeup / readout" → **generate_report**
+- "What should I do / next steps" → **recommend_next_actions** (or the propose_* action tools)
+- Specific lookups (one metric, one topic's verbatims, benchmark) → the matching get_* data tool
+
+## Data Tools
 {data_tool_list}
-{action_section}
-## Response Instructions
-
-1. Use tools to retrieve relevant data before answering. Don't guess — look it up.
-2. You may call up to {CRYSTAL_MAX_TOOL_TURNS} tools per conversation turn.
-3. After gathering data, synthesize a clear, evidence-based answer.
-4. Cite specific metrics, topic names, and verbatims. Reference real numbers.
-5. For ACTION requests: call the appropriate action tool AND explain the proposal in your answer.
-6. Suggest 2-3 natural follow-up questions or next steps.
-7. Return JSON: {{"answer": "...", "citations": [...], "suggestions": [...], "tool_results": [...]}}
-
-## Tone & Style
+{analysis_section}{action_section}
+## Tone & Style (applies to your final answer)
 - Direct and specific. "NPS is 42 — above the SaaS median of 35" not "your score is decent"
-- Action-oriented: always close with "here's what I recommend you do next"
-- Never fabricate data. If you don't have it, say so and suggest the right tool
+- Ground every claim in tool results. Never fabricate data; if you don't have it, say so.
 - For edits/surveys/workflows: always frame as proposals, never commands
-"""
+
+Respond with ONLY the JSON object described above — no markdown, no extra text."""
 
 
 # ── ReAct loop (non-streaming) ────────────────────────────────────────────────
 
-async def _run_react_loop(inp: CrystalInput, db_pool=None) -> CrystalOutput:
-    """Execute the Crystal ReAct loop — multi-step tool calling + synthesis."""
-    from crystalos.lib.constants import CRYSTAL_MAX_TOOL_TURNS, CRYSTAL_CONVERSATION_WINDOW
-    from crystalos.crystal.context import CrystalContext
-    from crystalos.crystal.tools import dispatch_tool
-    from crystalos.crystal.registry import get_tool_by_name
-    import redis.asyncio as _redis_mod
+async def _crystal_rate_count(org_id: str) -> int:
+    """Increment + return the per-org per-minute Crystal request count. 0 if Redis is down."""
     import os
+    import redis.asyncio as _redis_mod
+    try:
+        r = await _redis_mod.from_url(os.getenv("REDIS_URL", "redis://localhost:6379"))
+        try:
+            rate_key = f"crystal:{org_id}:rpm"
+            count = await r.incr(rate_key)
+            if count == 1:
+                await r.expire(rate_key, 60)
+            return count
+        finally:
+            await r.aclose()
+    except Exception:
+        return 0  # Redis not available — skip rate limiting
 
-    ctx = CrystalContext(
+
+def _build_ctx(inp: CrystalInput):
+    from crystalos.crystal.context import CrystalContext
+    return CrystalContext(
         org_id=inp.org_id,
         user_id=inp.user_id or 'unknown',
         survey_id=inp.survey_id,
         scope=inp.scope,
         has_open_text=inp.has_open_text,
+        tag_ids=tuple(inp.tag_ids) if inp.tag_ids else None,
     )
 
-    # Rate limit: 10 req/min per org — try/finally ensures connection is always closed
-    try:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        r = await _redis_mod.from_url(redis_url)
-        try:
-            rate_key = f"crystal:{inp.org_id}:rpm"
-            count = await r.incr(rate_key)
-            if count == 1:
-                await r.expire(rate_key, 60)
-        finally:
-            await r.close()
-        if count > 10:
-            raise ValueError("Rate limit exceeded: 10 requests per minute per org")
-    except ValueError:
-        raise
-    except Exception:
-        pass  # Redis not available — skip rate limiting
 
-    system = _build_system_prompt_agentic(ctx)
-
-    # Build conversation history
-    history = [
-        {"role": m["role"], "content": m["content"]}
+def _build_history(inp: CrystalInput) -> list[dict]:
+    from crystalos.lib.constants import CRYSTAL_CONVERSATION_WINDOW
+    return [
+        {"role": m["role"], "content": str(m["content"])[:2000]}
         for m in (inp.conversation_history or [])[-CRYSTAL_CONVERSATION_WINDOW * 2:]
-        if m.get("role") in ("user", "assistant")
+        if m.get("role") in ("user", "assistant") and m.get("content")
     ]
 
-    # Simple ReAct: call LLM, parse tool calls, execute, repeat up to max turns
-    tool_results_accumulated = []
-    current_context = inp.message
 
-    best_output: CrystalOutput | None = None
+def _build_tool_observations(tool_results: list[dict]) -> str:
+    """Format accumulated tool results (including errors) for the next ReAct turn."""
+    if not tool_results:
+        return ""
+    lines = ["\n\n## Tool Results So Far"]
+    for r in tool_results:
+        args = r.get("args") or {}
+        arg_str = ", ".join(f"{k}={v}" for k, v in args.items() if k != "survey_id")
+        header = f"**{r['tool']}**" + (f" ({arg_str})" if arg_str else "")
+        lines.append(f"{header}:\n{_format_tool_result(r['tool'], r['result'])}")
+    return "\n".join(lines)
+
+
+def _extract_action_proposals(tool_results: list[dict]) -> list[dict]:
+    """Pull action proposals out of action-tool results (for the frontend to render)."""
+    from crystalos.crystal.registry import ACTION_TOOL_NAMES
+    proposals: list[dict] = []
+    for tr in tool_results:
+        if tr["tool"] in ACTION_TOOL_NAMES:
+            result = tr.get("result") or {}
+            if isinstance(result, dict):
+                if "actions" in result:
+                    proposals.extend(result["actions"][:5])
+                elif "proposal_type" in result:
+                    proposals.append(result)
+    return proposals
+
+
+def _augment_inp_with_tools(inp: CrystalInput, tool_results: list[dict]) -> CrystalInput:
+    """Return a copy of inp with successful tool results injected as assistant context,
+    so the final grounded + evaluated synthesis (via _run_crystal) can use them."""
+    good = [r for r in tool_results if isinstance(r.get("result"), dict) and "error" not in r["result"]]
+    history = list(inp.conversation_history or [])
+    if good:
+        history.append({
+            "role": "assistant",
+            "content": "## Retrieved Data\n" + "\n".join(
+                f"**{r['tool']}**:\n{_format_tool_result(r['tool'], r['result'])}" for r in good
+            ),
+        })
+    return inp.model_copy(update={"conversation_history": history})
+
+
+async def _react_plan_tools(inp: CrystalInput, ctx, request=None):
+    """Async generator driving the ReAct tool-selection phase.
+
+    Yields ('event', {sse-dict}) as tools run, then finally ('result', [tool_results]).
+    The LLM chooses tools AND their arguments each turn; errors are kept so it can correct.
+    """
+    from crystalos.lib.constants import CRYSTAL_MAX_TOOL_TURNS
+    from crystalos.crystal.tools import dispatch_tool
+
+    system = _build_system_prompt_agentic(ctx)
+    history = _build_history(inp)
+    tool_results: list[dict] = []
+    seen: set[tuple] = set()
 
     for turn in range(CRYSTAL_MAX_TOOL_TURNS):
-        # Build tool results context block
-        if tool_results_accumulated:
-            context_block = "\n\n## Tool Results\n" + "\n".join(
-                f"**{r['tool']}**:\n{_format_tool_result(r['tool'], r['result'])}"
-                for r in tool_results_accumulated
-            )
-            current_context = inp.message + context_block
+        if request is not None:
+            try:
+                if await request.is_disconnected():
+                    return
+            except Exception:
+                pass
 
+        user_content = inp.message + _build_tool_observations(tool_results)
         try:
-            output, _ = await call_agent(
+            step, _ = await call_agent(
                 agent_name="crystal",
                 system=system,
-                user=current_context,
-                output_schema=CrystalOutput,
-                prior_messages=history if history else None,
+                user=user_content,
+                output_schema=ReActStep,
+                prior_messages=history or None,
             )
-            best_output = output
         except Exception as exc:
-            logger.warning("crystal_react_llm_failed", turn=turn, error=str(exc))
+            logger.warning("crystal_react_step_failed", turn=turn, error=str(exc))
             break
 
-        # Check if output has tool calls (stored in a special field or detected in answer)
-        # For now, use the existing CrystalOutput and treat each turn as final
-        # Real ReAct would parse tool_calls from the LLM response
-        break
+        calls = step.tool_calls if step.action == "tool_call" else []
+        if not calls:
+            break  # LLM signalled it has enough — proceed to synthesis
 
-    if best_output is None:
-        raise RuntimeError("Crystal ReAct loop produced no output")
+        ran_any = False
+        for call in calls[:5]:
+            key = (call.tool, json.dumps(call.args or {}, sort_keys=True, default=str))
+            if key in seen:
+                continue
+            seen.add(key)
+            args = dict(call.args or {})
+            if ctx.survey_id and "survey_id" not in args:
+                args["survey_id"] = ctx.survey_id
 
-    return best_output
+            yield ("event", {"type": "thinking", "tool": call.tool,
+                             "message": f"Running {call.tool.replace('_', ' ')}..."})
+            try:
+                result = await dispatch_tool(call.tool, ctx, args)
+            except Exception as exc:
+                result = {"error": str(exc)}
+            ran_any = True
+            ok = isinstance(result, dict) and "error" not in result
+            yield ("event", {"type": "observation", "tool": call.tool,
+                             "summary": (("Found data" if ok else result.get("error", "no data")))[:200]})
+            tool_results.append({"tool": call.tool, "args": args, "result": result})
+
+        if not ran_any:
+            break
+        # Stop once we have a few solid results to keep latency bounded
+        if len([r for r in tool_results if "error" not in r["result"]]) >= 6:
+            break
+
+    yield ("result", tool_results)
+
+
+async def _run_react_loop(inp: CrystalInput, db_pool=None) -> CrystalOutput:
+    """Execute the Crystal ReAct loop — LLM-driven multi-step tool calling, then a
+    grounded + evaluated synthesis via _run_crystal (preserving the hallucination filter)."""
+    ctx = _build_ctx(inp)
+
+    if await _crystal_rate_count(inp.org_id) > 10:
+        raise ValueError("Rate limit exceeded: 10 requests per minute per org")
+
+    tool_results: list[dict] = []
+    async for kind, payload in _react_plan_tools(inp, ctx):
+        if kind == "result":
+            tool_results = payload
+
+    augmented = _augment_inp_with_tools(inp, tool_results)
+    output = await _run_crystal(augmented)
+    proposals = _extract_action_proposals(tool_results)
+    if proposals:
+        from pydantic import ValidationError
+        coerced = []
+        for p in proposals:
+            try:
+                coerced.append(ActionProposal(**p) if isinstance(p, dict) else p)
+            except ValidationError:
+                continue
+        output.action_proposals = coerced
+    return output
 
 
 # ── ReAct loop (streaming) ────────────────────────────────────────────────────
@@ -789,177 +925,59 @@ async def _run_react_loop_streaming(inp: CrystalInput, db_pool=None, request=Non
     emitted as an 'error' event rather than killing the generator silently.
     """
     import json as _json
+    import os
 
     # Wrap entire body so any exception — including lazy import failures or
     # unexpected runtime errors before the first yield — surfaces as an SSE event.
     try:
-        from crystalos.lib.constants import CRYSTAL_MAX_TOOL_TURNS, CRYSTAL_CONVERSATION_WINDOW
-        from crystalos.crystal.context import CrystalContext
-        from crystalos.crystal.tools import dispatch_tool
-        from crystalos.crystal.registry import TOOL_REGISTRY, get_tools_for_scope
-        import redis.asyncio as _redis_mod
-        import os
-    except Exception as _import_exc:
-        logger.error("crystal_streaming_import_failed", error=str(_import_exc))
-        yield _json.dumps({"type": "error", "message": "Crystal initialisation failed — agents service may need a restart."})
-        return
-
-    try:
-        ctx = CrystalContext(
-            org_id=inp.org_id,
-            user_id=inp.user_id or 'unknown',
-            survey_id=inp.survey_id,
-            scope=inp.scope,
-            has_open_text=inp.has_open_text,
-        )
+        ctx = _build_ctx(inp)
     except Exception as _ctx_exc:
         logger.error("crystal_streaming_context_failed", error=str(_ctx_exc))
         yield _json.dumps({"type": "error", "message": "Crystal context error — please try again."})
         return
 
-    # Rate limit — try/finally ensures connection is always closed before first yield
-    _rate_count = 0
-    try:
-        redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
-        r = await _redis_mod.from_url(redis_url)
-        try:
-            rate_key = f"crystal:{inp.org_id}:rpm"
-            _rate_count = await r.incr(rate_key)
-            if _rate_count == 1:
-                await r.expire(rate_key, 60)
-        finally:
-            await r.close()
-    except Exception:
-        pass  # Redis not available — skip rate limiting
-    if _rate_count > 10:
+    if await _crystal_rate_count(inp.org_id) > 10:
         yield _json.dumps({"type": "error", "message": "Rate limit exceeded"})
         return
 
-    # Select tools by keyword relevance to the user's question
-    _q_lower = inp.message.lower()
-    _all_tools = get_tools_for_scope(ctx.scope)
-    _scored = []
-    for _t in _all_tools:
-        _s = sum(2 for kw in _t["name"].replace("_", " ").split() if kw in _q_lower)
-        _s += sum(1 for w in _q_lower.split() if len(w) > 3 and w in (_t.get("description") or "").lower())
-        _scored.append((_s, _t))
-    _scored.sort(key=lambda x: x[0], reverse=True)
-    tools_to_run = [t for _, t in _scored[:3]] or _all_tools[:3]
-    tool_results = []
+    # ── ReAct tool phase: the LLM chooses tools AND their arguments each turn ──
+    tool_results: list[dict] = []
+    try:
+        async for kind, payload in _react_plan_tools(inp, ctx, request=request):
+            if kind == "event":
+                yield _json.dumps(payload)
+            elif kind == "result":
+                tool_results = payload
+    except Exception as exc:
+        logger.warning("crystal_stream_react_failed", error=str(exc))
 
-    _cold_start = True  # G28: track whether L3 was warm at session start
-
-    for tool_def in tools_to_run[:CRYSTAL_MAX_TOOL_TURNS]:
-        # G20 — Disconnect detection: check if client left before starting the next tool call.
-        # Saves $0.10-0.50 per orphaned session in tokens.
-        if request is not None:
-            try:
-                if await request.is_disconnected():
-                    logger.info("crystal_stream_disconnected", survey_id=inp.survey_id)
-                    return  # Generator exits; no more tool calls or LLM synthesis
-            except Exception:
-                pass  # Disconnect check itself failed — continue anyway
-
-        tool_name = tool_def["name"]
-        yield _json.dumps({
-            "type": "thinking",
-            "tool": tool_name,
-            "message": f"Checking {tool_name.replace('_', ' ')}...",
-        })
-
-        params = {}
-        if ctx.survey_id:
-            params["survey_id"] = ctx.survey_id
-
-        try:
-            result = await dispatch_tool(tool_name, ctx, params)
-            summary = (
-                f"Found {len(result)} fields of data"
-                if isinstance(result, dict) and "error" not in result
-                else result.get("error", "No data")
-            )
-
-            yield _json.dumps({
-                "type": "observation",
-                "tool": tool_name,
-                "summary": str(summary)[:200],
-            })
-
-            if "error" not in result:
-                tool_results.append({"tool": tool_name, "result": result})
-        except Exception as exc:
-            logger.warning("crystal_stream_tool_failed", tool=tool_name, error=str(exc))
-
-        # Only run tools that are relevant; stop if we have enough data
-        if len(tool_results) >= 3:
-            break
-
-    # G28 — Cold-start L3 warm: if survey_facts weren't in Redis before this session,
-    # populate them from the tool results we just fetched so the next Crystal session
-    # is faster. Pipeline publish will overwrite with authoritative data.
-    if _cold_start and tool_results:
+    # G28 — Cold-start L3 warm: populate survey_facts from the results we just fetched
+    # so the next Crystal session is faster. Pipeline publish overwrites with authoritative data.
+    good_results = [r for r in tool_results if isinstance(r.get("result"), dict) and "error" not in r["result"]]
+    if good_results:
         try:
             _redis_url = os.getenv("REDIS_URL", "")
             if _redis_url:
+                import redis.asyncio as _redis_mod
                 _r_warm = await _redis_mod.from_url(_redis_url)
                 try:
                     from crystalos.lib.memory import get_memory_manager
                     _mm = get_memory_manager(redis=_r_warm)
-                    _tool_results_dict = {tr["tool"]: tr["result"] for tr in tool_results}
+                    _tool_results_dict = {tr["tool"]: tr["result"] for tr in good_results}
                     await _mm.warm_from_tool_results(inp.survey_id, _tool_results_dict)
                 finally:
-                    await _r_warm.close()
+                    await _r_warm.aclose()
         except Exception as _warm_exc:
             logger.debug("crystal_l3_warm_failed", error=str(_warm_exc))
 
     yield _json.dumps({"type": "synthesizing", "message": "Putting it all together..."})
 
-    # Extract action proposals from action tool results
-    # These are emitted as a separate SSE event for the frontend to render as cards
-    from crystalos.crystal.registry import ACTION_TOOL_NAMES
-    action_proposals: list[dict] = []
-    for tr in tool_results:
-        if tr["tool"] in ACTION_TOOL_NAMES:
-            result = tr["result"]
-            # recommend_next_actions returns {actions: [...]}
-            if "actions" in result:
-                action_proposals.extend(result["actions"][:5])
-            # Individual proposal tools return a single proposal dict
-            elif "proposal_type" in result:
-                action_proposals.append(result)
-
+    # Action proposals → separate SSE event for the frontend to render as cards
+    action_proposals = _extract_action_proposals(tool_results)
     if action_proposals:
-        yield _json.dumps({
-            "type":     "action_proposals",
-            "proposals": action_proposals,
-        })
+        yield _json.dumps({"type": "action_proposals", "proposals": action_proposals})
 
-    # Pass tool results as prior conversation context — not appended to user message
-    tool_context_history = list(inp.conversation_history or [])
-    if tool_results:
-        tool_context_history.append({
-            "role": "assistant",
-            "content": "## Retrieved Data\n" + "\n".join(
-                f"**{r['tool']}**:\n{_format_tool_result(r['tool'], r['result'])}"
-                for r in tool_results
-            ),
-        })
-
-    augmented_inp = CrystalInput(
-        survey_id=inp.survey_id,
-        org_id=inp.org_id,
-        message=inp.message,
-        insights=inp.insights,
-        topics=inp.topics,
-        survey_title=inp.survey_title,
-        survey_response_count=inp.survey_response_count,
-        metrics=inp.metrics,
-        conversation_history=tool_context_history,
-        user_id=inp.user_id,
-        scope=inp.scope,
-        has_open_text=inp.has_open_text,
-    )
-
+    augmented_inp = _augment_inp_with_tools(inp, tool_results)
     try:
         final = await _run_crystal(augmented_inp)
         yield _json.dumps({
@@ -977,10 +995,14 @@ class CrystalAgent:
     """Thin agent wrapper — no BaseAgent needed since Crystal isn't in the graph."""
 
     async def run(self, inp: CrystalInput) -> tuple[CrystalOutput, list[dict]]:
-        import os
-        if os.getenv("CRYSTAL_STREAMING_ENABLED", "false").lower() == "true":
+        # Default path: the real ReAct loop (LLM-driven tool use + analytical skills).
+        # Falls back to single-shot synthesis if the loop fails for any non-rate-limit reason.
+        try:
             output = await _run_react_loop(inp)
-        else:
+        except ValueError:
+            raise  # rate limit — surface to caller
+        except Exception as exc:
+            logger.warning("crystal_react_loop_fallback", error=str(exc))
             output = await _run_crystal(inp)
         return output, []
 

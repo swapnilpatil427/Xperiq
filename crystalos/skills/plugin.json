@@ -30,7 +30,14 @@
     "./segment-action-advisor",
     "./journey-advisor",
     "./xm-market-researcher",
-    "./platform-gap-tracker"
+    "./platform-gap-tracker",
+    "./data-explorer",
+    "./trend-analyst",
+    "./segment-analyst",
+    "./driver-analyst",
+    "./proactive-insights",
+    "./report-composer",
+    "./gap-analyst"
   ],
   "tools": {
     "get_survey_overview":      "crystalos.crystal.tools:execute_get_survey_overview",
@@ -52,7 +59,13 @@
     "get_embeddings":           "crystalos.tools.embeddings:embed_texts",
     "compute_nps_ci":           "crystalos.tools.metrics:compute_nps_ci",
     "compute_csat":             "crystalos.tools.metrics:compute_csat",
-    "compute_ces":              "crystalos.tools.metrics:compute_ces"
+    "compute_ces":              "crystalos.tools.metrics:compute_ces",
+    "get_group_surveys":        "crystalos.crystal.tools:execute_get_group_surveys",
+    "get_group_metrics":        "crystalos.crystal.tools:execute_get_group_metrics",
+    "get_group_topics":         "crystalos.crystal.tools:execute_get_group_topics",
+    "analyze_group_coverage":   "crystalos.crystal.tools:execute_analyze_group_coverage",
+    "detect_data_gaps":         "crystalos.crystal.tools:execute_detect_data_gaps",
+    "suggest_new_survey":       "crystalos.crystal.tools:execute_suggest_new_survey"
   },
   "mcp_servers": {}
 }

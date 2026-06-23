@@ -940,6 +940,62 @@ async def generate_insights(
     return {"status": "started", "run_id": run_id}
 
 
+# ── Group insight generation ─────────────────────────────────────────────────────
+
+@app.post("/groups/insights/generate", summary="Kick off cross-survey group insight generation")
+async def generate_group_insights(
+    request: Request,
+    _: None = Depends(require_internal_key),
+) -> dict:
+    """Start group insight generation for a tagged survey group.
+
+    Body:
+      run_id    — UUID of the group_insight_runs row (created by backend before calling this)
+      tag_ids   — list of tag UUIDs defining the group
+      survey_ids — list of survey UUIDs in the group (optional; derived from tag_ids if omitted)
+      org_id    — organisation UUID
+
+    Returns:
+      { run_id, status: "running" }
+    """
+    body = await request.json()
+    run_id     = body.get("run_id")
+    tag_ids    = body.get("tag_ids") or []
+    survey_ids = body.get("survey_ids") or []
+    org_id     = body.get("org_id")
+
+    if not all([run_id, org_id]) or not tag_ids:
+        raise HTTPException(status_code=422, detail="run_id, org_id, and tag_ids required")
+
+    # Mark the run as running in DB
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """UPDATE group_insight_runs
+                       SET status = 'running', heartbeat_at = NOW()
+                       WHERE id = %s AND org_id = %s""",
+                    (run_id, org_id),
+                )
+            await conn.commit()
+    except Exception as exc:
+        logger.warning("group_insight_run_status_update_failed", run_id=run_id, error=str(exc))
+
+    from crystalos.graphs.group_insights import run_group_insight_generation
+    task = asyncio.create_task(
+        run_group_insight_generation(tag_ids, survey_ids, org_id, run_id)
+    )
+    task.add_done_callback(
+        lambda t: logger.warning("group_insight_task_unhandled_error", run_id=run_id,
+                                 error=str(t.exception()))
+        if not t.cancelled() and t.exception() else None
+    )
+
+    logger.info("group_insight_generation_started", run_id=run_id, org_id=org_id,
+                tag_count=len(tag_ids))
+    return {"run_id": run_id, "status": "running"}
+
+
 # ── Sample response generation ────────────────────────────────────────────────────
 
 @app.post("/responses/generate", summary="Generate synthetic sample responses for a survey")

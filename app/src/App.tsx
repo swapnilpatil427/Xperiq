@@ -43,6 +43,8 @@ import { TopicAnalysisHubPage } from './pages/experience/TopicAnalysisHubPage';
 import { TopicDeepDivePage } from './pages/experience/TopicDeepDivePage';
 import { SurveyTrendsPage } from './pages/experience/SurveyTrendsPage';
 import { OrgTrendsPage } from './pages/experience/OrgTrendsPage';
+import { GroupReportPage } from './pages/GroupReportPage';
+import { TagsSettingsPage } from './pages/settings/TagsSettingsPage';
 import { SignInPage } from './pages/SignInPage';
 import { SurveyFillPage } from './pages/SurveyFillPage';
 import { ErrorPage } from './pages/ErrorPage';
@@ -123,6 +125,9 @@ export default function App() {
             <Route path={ROUTES.EXPERIENCE_SURVEY_TOPICS} element={<ErrorBoundary inline><TopicAnalysisHubPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE_SURVEY_TOPIC}  element={<ErrorBoundary inline><TopicDeepDivePage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE_SURVEY_TRENDS} element={<ErrorBoundary inline><SurveyTrendsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.GROUP_REPORT}        element={<ErrorBoundary inline><GroupReportPage /></ErrorBoundary>} />
+            <Route path={ROUTES.GROUP_REPORT_LATEST} element={<ErrorBoundary inline><GroupReportPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_TAGS}       element={<ErrorBoundary inline><TagsSettingsPage /></ErrorBoundary>} />
           </Route>
 
           <Route path="/app" element={<Navigate to={ROUTES.SURVEYS} replace />} />

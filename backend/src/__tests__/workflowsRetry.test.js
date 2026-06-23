@@ -25,7 +25,7 @@ function buildApp() {
   _require.cache[REG_PATH] = fakeMod(REG_PATH, { registry: () => ({ triggers: [], conditionFields: [], conditionOperators: [], actions: [] }) });
   delete _require.cache[ROUTER_PATH];
   const router = _require(ROUTER_PATH);
-  const app = express(); app.use(express.json()); app.use('/api/workflows', router);
+  const app = express(); app.use(express.json()); app.use('/api/workflows', router.default || router);
   return app;
 }
 async function api(app, method, url) {

@@ -27,7 +27,7 @@ function buildApp() {
   _require.cache[ENGINE_PATH] = fakeMod(ENGINE_PATH, engineMock);
   delete _require.cache[ROUTER_PATH];
   const router = _require(ROUTER_PATH);
-  const app = express(); app.use(express.json()); app.use('/api/alerts', router);
+  const app = express(); app.use(express.json()); app.use('/api/alerts', router.default || router);
   return app;
 }
 async function api(app, method, url, body = null) {

@@ -35,7 +35,7 @@ function buildApp() {
   });
   delete _require.cache[ROUTER_PATH];
   const router = _require(ROUTER_PATH);
-  const app = express(); app.use(express.json()); app.use('/api/groups', router);
+  const app = express(); app.use(express.json()); app.use('/api/groups', router.default || router);
   return app;
 }
 async function api(app, method, url, body = null) {

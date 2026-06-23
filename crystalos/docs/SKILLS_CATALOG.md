@@ -1,7 +1,7 @@
 
 # CrystalOS Skills Catalog
 
-All 13 skills in the CrystalOS.
+Skills in the CrystalOS, grouped by tier. Discovery is by directory scan of `crystalos/skills/`.
 
 ---
 
@@ -40,6 +40,40 @@ These skills replace the Copilot agent logic for survey creation and editing.
 | `compliance-scanner` | `agents/compliance.py` | GDPR/CCPA compliance, bias detection, WCAG accessibility, sensitive topic handling | None | Beta |
 | `survey-recommender` | `agents/recommender.py` | Post-survey strategy: distribution channels, action planning, cadence, benchmarking | None | Beta |
 | `crystal-analyst` | `agents/crystal.py` (ReAct loop) | Crystal conversational XM analyst: answers data questions, cites sources, suggests follow-ups | get_survey_overview, get_topic_details, get_metric_history, get_insights_list, get_verbatims, get_benchmark_comparison, get_driver_analysis, get_segment_breakdown, get_anomaly_events | Beta |
+
+---
+
+## P4 — Analytical Skills (Dynamic Exploration & Reporting)
+
+These skills let Crystal *answer analytical questions and generate reports* on demand. Each does
+one analysis type well and emits structured output; `crystal-analyst` and the insight pipeline can
+delegate to them, and `report-composer` / `proactive-insights` compose their outputs.
+
+| Skill | Capability | Purpose | Allowed Tools | Status |
+|-------|-----------|---------|---------------|--------|
+| `data-explorer` | Summarize / explore | Dynamic qualitative summarization: themes, topics, takeaways, non-quant trends; adapts the lens to the question | get_survey_overview, get_topic_details, get_verbatims, get_cross_survey_themes, get_metric_history | Beta |
+| `trend-analyst` | Trends over time | Metric & theme trajectories, direction/magnitude/window, change points, signal-vs-noise | get_metric_history, get_checkpoint_history, get_topic_details, get_anomaly_events, get_survey_overview | Beta |
+| `segment-analyst` | Trends across segments | "Average trap" detector: between-segment gaps, ranking, hidden underperformers, small-n caveats | get_segment_breakdown, get_metric_history, get_verbatims, get_survey_overview | Beta |
+| `driver-analyst` | Key drivers | Importance × performance priority map: what moves the metric and where leverage lives | get_driver_analysis, get_topic_details, get_verbatims, get_metric_history | Beta |
+| `proactive-insights` | Proactive insights/report | Decides what's worth pushing unprompted; ranks anomaly/trend/driver/segment signals into notification-ready cards | get_anomaly_events, get_metric_history, get_driver_analysis, get_segment_breakdown, get_survey_overview, get_topic_details | Beta |
+| `report-composer` | Generate report | Assembles analytical outputs + benchmarks into an export-ready, sectioned report with exec summary and action appendix | get_survey_overview, get_insights_list, get_metric_history, get_segment_breakdown, get_driver_analysis, get_topic_details, get_verbatims, get_benchmark_comparison | Beta |
+
+> **"Recommend actions to improve key metrics & sentiment"** is already covered by
+> `action-recommender` + the 12 domain advisors (action suite). The P4 analytical skills feed
+> their analysis into `action-recommender` (via `proactive-insights.suggested_skill` and
+> `report-composer.action_appendix`) so analysis and recommendation stay one pipeline.
+
+### Capability → skill map
+
+| User-facing capability | Skill(s) |
+|------------------------|----------|
+| Summarize — themes, topics, takeaways, non-quant trends | `data-explorer` |
+| Generate report | `report-composer` (narrative engine: `insight-narrator`) |
+| Proactive insights / report | `proactive-insights` |
+| Analyze trends over time | `trend-analyst` |
+| Analyze trends across segments | `segment-analyst` |
+| Analyze key drivers | `driver-analyst` |
+| Recommend actions to improve metrics & sentiment | `action-recommender` + domain advisors |
 
 ---
 

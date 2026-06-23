@@ -43,6 +43,9 @@ export const ROUTES = {
   EXPERIENCE_SURVEY_TOPICS:    '/app/experience/survey/:surveyId/topics',
   EXPERIENCE_SURVEY_TOPIC:     '/app/experience/survey/:surveyId/topics/:topicId',
   EXPERIENCE_SURVEY_TRENDS:    '/app/experience/survey/:surveyId/trends',
+  GROUP_REPORT:        '/app/groups/:tagId/report/:runId',
+  GROUP_REPORT_LATEST: '/app/groups/:tagId/report',
+  SETTINGS_TAGS:       '/app/settings/tags',
 };
 
 /** Replace :param placeholders with concrete values */

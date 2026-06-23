@@ -7,12 +7,33 @@ from crystalos.agents.crystal import (
     CrystalAgent,
     CrystalInput,
     CrystalOutput,
+    ReActStep,
+    ReActToolCall,
     _build_insights_context,
     _build_topics_context,
     _build_metrics_context,
     _build_system_prompt,
 )
 from tests.conftest import make_credit
+
+
+def _schema_aware_call_agent(react_steps, answer_output=None):
+    """Return an async call_agent stub that returns successive ReActStep objects for the
+    planning phase (output_schema=ReActStep) and a CrystalOutput for the synthesis phase.
+
+    react_steps: list of ReActStep returned in order for each planning call (last one repeats).
+    """
+    answer_output = answer_output or _make_output()
+    state = {"i": 0}
+
+    async def _fn(agent_name, system, user, output_schema, current_tokens=0, prior_messages=None):
+        if getattr(output_schema, "__name__", "") == "ReActStep":
+            i = min(state["i"], len(react_steps) - 1)
+            state["i"] += 1
+            return (react_steps[i], make_credit("crystal"))
+        return (answer_output, make_credit("crystal"))
+
+    return _fn
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────────
@@ -576,11 +597,12 @@ class TestReactLoop:
         """_run_react_loop returns a CrystalOutput with a non-empty answer."""
         from crystalos.agents.crystal import _run_react_loop
 
-        mock_output = _make_output()
+        call_agent_stub = _schema_aware_call_agent([ReActStep(action="final", answer="done")])
 
         with (
-            patch("crystalos.agents.crystal.call_agent", new=AsyncMock(return_value=(mock_output, []))),
+            patch("crystalos.agents.crystal.call_agent", new=call_agent_stub),
             patch("crystalos.agents.crystal._build_system_prompt_agentic", return_value="system prompt"),
+            patch("crystalos.agents.crystal.evaluate_crystal_response", new=AsyncMock(side_effect=Exception("no eval"))),
             patch("redis.asyncio.from_url", new=AsyncMock(side_effect=Exception("no redis"))),
         ):
             result = await _run_react_loop(self._make_input())
@@ -618,11 +640,14 @@ class TestReactLoop:
 
         async def capture_call(agent_name, system, user, output_schema, current_tokens=0, prior_messages=None):
             captured["prior_messages"] = prior_messages
+            if getattr(output_schema, "__name__", "") == "ReActStep":
+                return (ReActStep(action="final", answer="done"), make_credit("crystal"))
             return (_make_output(), make_credit("crystal"))
 
         with (
             patch("crystalos.agents.crystal.call_agent", new=capture_call),
             patch("crystalos.agents.crystal._build_system_prompt_agentic", return_value="sys"),
+            patch("crystalos.agents.crystal.evaluate_crystal_response", new=AsyncMock(side_effect=Exception("no eval"))),
             patch("redis.asyncio.from_url", new=AsyncMock(side_effect=Exception("no redis"))),
         ):
             await _run_react_loop(self._make_input(conversation_history=long_history))
@@ -653,11 +678,16 @@ class TestReactLoopStreaming:
         events = []
         # dispatch_tool is imported locally inside the function, patch at source
         mock_dispatch = AsyncMock(return_value={"overview": "test data"})
-        mock_call_agent = AsyncMock(return_value=(_make_output(), make_credit("crystal")))
+        # Plan one tool call, then finalize; synthesis returns a CrystalOutput.
+        mock_call_agent = _schema_aware_call_agent([
+            ReActStep(action="tool_call", tool_calls=[ReActToolCall(tool="get_survey_overview", args={})]),
+            ReActStep(action="final", answer="done"),
+        ])
 
         patches_ctx = [
             patch("crystalos.crystal.tools.dispatch_tool", new=mock_dispatch),
             patch("crystalos.agents.crystal.call_agent", new=mock_call_agent),
+            patch("crystalos.agents.crystal.evaluate_crystal_response", new=AsyncMock(side_effect=Exception("no eval"))),
             patch("redis.asyncio.from_url", new=AsyncMock(side_effect=Exception("no redis"))),
         ]
         if extra_patches:
@@ -756,9 +786,11 @@ class TestBuildSystemPromptAgentic:
         from crystalos.agents.crystal import _build_system_prompt_agentic
 
         prompt = _build_system_prompt_agentic(self._make_ctx())
-        # Prompt now uses "Data Analysis Tools" + "Action Tools" sections
-        assert "Data Analysis Tools" in prompt or "Available Tools" in prompt
+        # Prompt now uses "Data Tools" + "Analytical Tools" + "Action Tools" sections
+        assert "Data Tools" in prompt
+        assert "Analytical Tools" in prompt
         assert "get_survey_overview" in prompt
+        assert "analyze_key_drivers" in prompt  # analytical tools listed
         assert "recommend_next_actions" in prompt  # action tools included in survey scope
 
     def test_no_open_text_mentions_score_only(self):

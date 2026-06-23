@@ -129,6 +129,16 @@ USE_SKILL_RUNTIME=true uvicorn agents.main:app
 
 Default: `false` — existing agents still work without the flag.
 
+### Analytical skill suite (P4)
+
+Six skills give Crystal dynamic analysis + reporting capabilities (live in `crystalos/skills/`):
+`data-explorer` (summarize themes/topics/takeaways + non-quant trends), `trend-analyst`
+(trends over time), `segment-analyst` (trends across segments / "average trap"), `driver-analyst`
+(key drivers via importance × performance), `proactive-insights` (unprompted insight cards), and
+`report-composer` (on-demand export-ready report). Action recommendations remain owned by
+`action-recommender` + the domain advisors, which the analytical skills feed into. See
+`docs/SKILLS_CATALOG.md` § P4 for the capability → skill map.
+
 ### New library files (Sprint 1)
 
 | File | Purpose |

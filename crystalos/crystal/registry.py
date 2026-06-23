@@ -123,6 +123,22 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "list_segmentable_questions",
+        "description": (
+            "List the survey's questions that can be used to segment responses (choice, scale, "
+            "and rating questions), returning each question's id and text. Call this BEFORE "
+            "analyze_segments / get_segment_breakdown so you can pick a real segment_question_id."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
         "name": "get_checkpoint_history",
         "description": "Get the history of insight checkpoints for a survey showing how metrics changed over time.",
         "scope": "survey",
@@ -183,6 +199,120 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
                 "days": {"type": "integer", "default": 30},
                 "limit": {"type": "integer", "default": 10},
             },
+        },
+    },
+    # ── Analytical-skill tools (delegate to CrystalOS analytical skills) ─────────
+    # Each fetches the raw data it needs, assembles the skill's input schema, and
+    # runs the skill via the skill runtime. Returns structured analysis (not a proposal).
+    {
+        "name": "summarize_themes",
+        "description": (
+            "Summarize and explore the qualitative feedback — themes, topics, key takeaways, and "
+            "non-quantitative trends (what people are saying and how sentiment is shifting). Use for "
+            "open-ended 'what are people saying / give me the gist / what's emerging' questions. "
+            "Delegates to the data-explorer skill."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "question": {"type": "string", "description": "The user's exploration request, verbatim, so the right lens is chosen"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "analyze_trends_over_time",
+        "description": (
+            "Analyze how a metric or themes have moved over time — direction, magnitude, inflection "
+            "points, and whether the movement is significant vs noise. Use for 'is X improving/declining', "
+            "'what changed in the last N days', 'how is sentiment trending'. Delegates to the trend-analyst skill."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "metric": {"type": "string", "enum": ["nps", "csat", "ces", "sentiment", "all"], "default": "all"},
+                "days": {"type": "integer", "default": 90, "description": "Lookback window in days"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "analyze_segments",
+        "description": (
+            "Analyze how experience differs across segments/cohorts (the 'average trap' detector) — "
+            "between-segment gaps, ranking, and where the aggregate hides an underperforming group. "
+            "Use for 'how does X differ by segment', 'which group is dragging the score'. "
+            "If you don't have a segment_question_id, call list_segmentable_questions first. "
+            "Delegates to the segment-analyst skill."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "segment_question_id": {"type": "string", "description": "Question id to segment by (from list_segmentable_questions)"},
+                "segment_question_text": {"type": "string", "description": "Question text to segment by, if id is unknown"},
+                "metric": {"type": "string", "enum": ["nps", "csat", "sentiment"], "default": "sentiment"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "analyze_key_drivers",
+        "description": (
+            "Key driver analysis — explain WHY the metric is where it is and where the leverage lives, "
+            "via an importance × performance priority map (fix-first / maintain / low-priority / monitor). "
+            "Use for 'what's driving our score', 'what should we fix to move the needle'. "
+            "Delegates to the driver-analyst skill."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "metric": {"type": "string", "enum": ["nps", "csat", "ces", "enps"], "default": "nps"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "proactive_insights",
+        "description": (
+            "Surface what changed and what matters right now without a specific question — ranks recent "
+            "anomalies, trend movements, driver shifts and segment gaps into a short list of "
+            "notification-ready insight cards. Use for 'anything I should know', 'what's important'. "
+            "Delegates to the proactive-insights skill."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "generate_report",
+        "description": (
+            "Generate a complete, export-ready experience report — assembles narrative findings, trends, "
+            "drivers, segments and benchmarks into a sectioned document with an executive summary and "
+            "action appendix. Use for 'generate a report', 'build the readout', 'give me the full writeup'. "
+            "Delegates to the report-composer skill."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "audience": {"type": "string", "enum": ["executive", "operational", "board"], "default": "executive"},
+                "length": {"type": "string", "enum": ["brief", "standard", "full"], "default": "standard"},
+            },
+            "required": ["survey_id"],
         },
     },
     # ── Action tools (propose-only — frontend executes after user confirmation) ──
@@ -333,6 +463,82 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
             },
         },
     },
+    # ── Group / Survey-tag tools (cross-survey intelligence) ─────────────────
+    {
+        "name": "get_group_surveys",
+        "description": "List all surveys belonging to one or more tags/groups, with their metadata and response counts.",
+        "scope": "group",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tag_ids": {"type": "array", "items": {"type": "string"}, "description": "UUIDs of tags"},
+            },
+            "required": ["tag_ids"],
+        },
+    },
+    {
+        "name": "get_group_metrics",
+        "description": "Get aggregated NPS/CSAT/CES metrics across all surveys in a group, plus per-survey breakdown.",
+        "scope": "group",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tag_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["tag_ids"],
+        },
+    },
+    {
+        "name": "get_group_topics",
+        "description": "Get cross-survey topic landscape: all topics from all surveys in the group with frequency, sentiment, and survey attribution.",
+        "scope": "group",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tag_ids": {"type": "array", "items": {"type": "string"}},
+                "limit": {"type": "integer", "default": 30},
+            },
+            "required": ["tag_ids"],
+        },
+    },
+    {
+        "name": "analyze_group_coverage",
+        "description": "Analyze coverage of a survey group: time periods covered, survey types present, segments represented, metric dimensions measured.",
+        "scope": "group",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tag_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["tag_ids"],
+        },
+    },
+    {
+        "name": "detect_data_gaps",
+        "description": "Identify what data is missing from a survey group. Detects temporal gaps (missing time periods), survey type gaps, topic semantic gaps, segment gaps, and metric dimension gaps. Returns prioritized gap list with severity.",
+        "scope": "group",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tag_ids": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["tag_ids"],
+        },
+    },
+    {
+        "name": "suggest_new_survey",
+        "description": "Propose a new survey to fill a detected gap in a group. Returns a survey creation proposal with title, type, suggested questions, and pre-filled tags.",
+        "scope": "group",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tag_ids": {"type": "array", "items": {"type": "string"}},
+                "gap_description": {"type": "string", "description": "Description of the gap to fill"},
+                "gap_type": {"type": "string", "enum": ["temporal", "survey_type", "segment", "metric", "topic"]},
+            },
+            "required": ["tag_ids", "gap_description", "gap_type"],
+        },
+    },
 ]
 
 
@@ -354,9 +560,19 @@ DATA_TOOL_NAMES = {
     "get_survey_overview", "get_topic_details", "get_metric_history",
     "get_insights_list", "get_verbatims", "get_benchmark_comparison",
     "get_driver_analysis", "get_segment_breakdown", "get_checkpoint_history",
+    "list_segmentable_questions",
     "compare_surveys", "get_org_portfolio", "get_cross_survey_themes",
     "get_anomaly_events",
     "get_user_directory_context", "segment_users_by_attribute",
+    "get_group_surveys", "get_group_metrics", "get_group_topics",
+    "analyze_group_coverage", "detect_data_gaps", "suggest_new_survey",
+}
+
+# Analytical-skill tools — read-only like data tools, but delegate to the skill runtime
+# and return structured analysis. Listed separately so the prompt can group them.
+ANALYSIS_TOOL_NAMES = {
+    "summarize_themes", "analyze_trends_over_time", "analyze_segments",
+    "analyze_key_drivers", "proactive_insights", "generate_report",
 }
 
 ACTION_TOOL_NAMES = {
@@ -368,3 +584,8 @@ ACTION_TOOL_NAMES = {
 def is_action_tool(tool_name: str) -> bool:
     """True when the tool proposes a user-confirming action (vs. read-only data query)."""
     return tool_name in ACTION_TOOL_NAMES
+
+
+def is_analysis_tool(tool_name: str) -> bool:
+    """True when the tool delegates to an analytical skill and returns structured analysis."""
+    return tool_name in ANALYSIS_TOOL_NAMES

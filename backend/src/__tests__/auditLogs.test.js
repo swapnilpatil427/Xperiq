@@ -25,7 +25,7 @@ function buildApp() {
   _require.cache[DB_PATH] = fakeMod(DB_PATH, { query: dbQuery, default: { query: dbQuery } });
   delete _require.cache[ROUTER_PATH];
   const router = _require(ROUTER_PATH);
-  const app = express(); app.use(express.json()); app.use('/api/audit-logs', router);
+  const app = express(); app.use(express.json()); app.use('/api/audit-logs', router.default || router);
   return app;
 }
 async function api(app, url) {

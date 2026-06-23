@@ -31,7 +31,7 @@ function buildApp() {
   });
   delete _require.cache[ROUTER_PATH];
   const router = _require(ROUTER_PATH);
-  const app = express(); app.use(express.json()); app.use('/scim/v2', router);
+  const app = express(); app.use(express.json()); app.use('/scim/v2', router.default || router);
   return app;
 }
 async function api(app, method, url, body = null) {

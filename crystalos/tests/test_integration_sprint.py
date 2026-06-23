@@ -368,7 +368,8 @@ async def test_crystal_l3_warm_runs_after_tool_results():
     import inspect
     src = inspect.getsource(_run_react_loop_streaming)
     assert "warm_from_tool_results" in src, "warm_from_tool_results must be called in streaming loop"
-    assert "_cold_start" in src, "_cold_start flag must exist for G28 cold-start detection"
+    # G28 cold-start warm: the streaming loop populates L3 from freshly-fetched tool results.
+    assert "good_results" in src, "L3 warm must run off the fetched tool results"
 
 
 # ── node_ingest idempotency lock (G25) ────────────────────────────────────────

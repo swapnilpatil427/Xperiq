@@ -28,7 +28,7 @@ function buildApp() {
   _require.cache[AUDIT_PATH] = fakeMod(AUDIT_PATH, { auditLog: vi.fn() });
   delete _require.cache[ROUTER_PATH];
   const router = _require(ROUTER_PATH);
-  const app = express(); app.use(express.json()); app.use('/api/departments', router);
+  const app = express(); app.use(express.json()); app.use('/api/departments', router.default || router);
   return app;
 }
 async function api(app, method, url, body = null) {

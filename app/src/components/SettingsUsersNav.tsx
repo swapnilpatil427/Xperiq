@@ -12,6 +12,7 @@ const TABS = [
   { key: 'settings.provisioning.pageTitle',  to: ROUTES.SETTINGS_PROVISIONING },
   { key: 'settings.seats.pageTitle',         to: ROUTES.SETTINGS_SEATS },
   { key: 'settings.audit.pageTitle',         to: ROUTES.SETTINGS_AUDIT },
+  { key: 'groups.settingsTitle',             to: ROUTES.SETTINGS_TAGS },
 ];
 
 export function SettingsUsersNav() {

@@ -1,34 +1,37 @@
-# Backend Libraries
+# Backend Libraries (TypeScript)
 
-## db.js
-Postgres connection pool singleton. Import and call `db.query(sql, params)`.
-```js
-const db = require('./db');
-const { rows } = await db.query('SELECT * FROM surveys WHERE id = $1', [id]);
+All files are `.ts`. Import using ES module syntax — compiled to CommonJS by tsconfig.
+
+## db.ts
+Postgres pool singleton. Generic typed query.
+```ts
+import { query } from './lib/db';
+const { rows } = await query<{ id: string }>('SELECT id FROM surveys WHERE id = $1', [id]);
 ```
-Connection string from `DATABASE_URL` env var.
 
-## openrouter.js
+## openrouter.ts
 AI API client wrapping OpenRouter (multi-model gateway).
 Default model: GPT-4o (configurable via env).
 Usage: `await openrouter.chat(messages, options)`
 
-## metrics.js
-Prometheus counters for observability.
-Key counters: surveysCreated, responsesSubmitted, aiCallsTotal.
-Import and call `.inc({ label: value })`.
+## metrics.ts
+Prometheus counters. Import named counters and call `.inc({ label })` or `.observe({ label }, value)`.
 
-## logger.js
-Structured JSON logger. Use instead of console.log for production logging.
-```js
-const log = require('./logger');
-log.info({ event: 'survey_created', surveyId: id });
-log.error({ event: 'db_error', error: err.message });
+## logger.ts
+Pino structured logger. Use instead of console.log.
+```ts
+import logger from './lib/logger';
+logger.info({ surveyId }, 'survey created');
+logger.error({ err: err.message }, 'db error');
 ```
 
-## rateLimiter.js
-Express middleware for rate limiting.
-- Uses Redis sorted-set sliding window when `REDIS_URL` is set
-- Falls back to in-memory Map when no Redis (dev-only, not suitable for multi-instance)
-- Sets `Retry-After` and `X-RateLimit-*` headers on 429 responses
-- Import: `const rateLimiter = require('./middleware/rateLimiter')`
+## redis.ts
+ioredis client singleton. Import `{ redis }`.
+
+## agentsClient.ts
+HTTP client for the Python agents service (CrystalOS). Exports typed functions:
+`startOrchestration`, `refineRun`, `generateGroupInsights`, `crystalStream`, etc.
+
+## httpError.ts
+`clientError(res, message, status?)` — 4xx responses
+`serverError(res, err, message?)` — 500 responses with logging

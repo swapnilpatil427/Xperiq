@@ -65,7 +65,7 @@ function setupAndBuildApp() {
 
   const app = express();
   app.use(express.json());
-  app.use('/api/orgs/me', router);
+  app.use('/api/orgs/me', router.default || router);
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }));
   return app;
