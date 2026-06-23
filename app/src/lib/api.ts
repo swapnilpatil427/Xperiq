@@ -3,8 +3,9 @@ import type {
   ListSurveysParams, ListSurveysResult, Survey, SurveyResponse,
   Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
   CopilotChange, AgenticInsight, InsightRunStatus, SurveyTopic, TopicDriver,
-  TopicTheme, TopicDetail, TopicVerbatim,
+  TopicTheme, TopicDetail, TopicVerbatim, ActionRecommendations,
 } from '../types';
+import type { SavedDashboardConfig, WidgetConfig, DashboardFilters } from '../types/dashboard';
 
 // ── Copilot types ──────────────────────────────────────────────────────────────
 export interface OrgContext {
@@ -58,10 +59,11 @@ export interface CopilotRefineResult {
 }
 
 export interface QuestionsResult {
-  questions:       Question[];
-  message:         string;
-  changes:         Record<string, unknown>[];
+  questions:        Question[];
+  message:          string;
+  changes:          Record<string, unknown>[];
   recommendations?: Recommendation[];
+  compliance_risk?: string;  // "low" | "medium" | "high" — set by check_compliance action
 }
 
 export interface Notification {
@@ -73,6 +75,278 @@ export interface Notification {
   run_id?:    string;
   read:       boolean;
   created_at: string;
+  // v2 additions (optional so existing consumers keep working)
+  priority?:   'critical' | 'warning' | 'info' | 'success' | 'digest';
+  actionUrl?:  string | null;
+  entityType?: string | null;
+}
+
+export interface NotificationPreference {
+  notificationType: string;
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  slackEnabled: boolean;
+  thresholdConfig?: Record<string, unknown>;
+}
+
+// ── User Directory types ─────────────────────────────────────────────────────
+
+export type PermissionScope = 'ALL' | 'OWNED' | 'SHARED' | 'OWN' | 'NONE';
+export type UserStatus = 'active' | 'pending' | 'deactivated';
+
+export interface DirectoryUser {
+  userId: string;
+  orgId: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  phone: string | null;
+  employeeId: string | null;
+  jobTitle: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  managerUserId: string | null;
+  costCenter: string | null;
+  location: string | null;
+  timezone: string | null;
+  locale: string | null;
+  roleId: string | null;
+  roleKey: string | null;
+  roleName: string | null;
+  seatWeight: number | null;
+  isActive: boolean;
+  status: UserStatus;
+  lastSeenAt: string | null;
+  customAttributes: Record<string, unknown>;
+  surveySegments: string[];
+  provisionedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deprovisionedAt: string | null;
+}
+
+export interface DirectoryRole {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  isBuiltin: boolean;
+  builtinKey: string | null;
+  permissions: Record<string, PermissionScope>;
+  seatWeight: number | null;
+  color: string | null;
+  assignedCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListUsersParams {
+  search?: string;
+  roleId?: string;
+  roleKey?: string;
+  departmentId?: string;
+  status?: 'active' | 'inactive';
+  limit?: number;
+  offset?: number;
+}
+
+export interface UpdateUserPayload {
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  jobTitle?: string | null;
+  employeeId?: string | null;
+  phone?: string | null;
+  costCenter?: string | null;
+  location?: string | null;
+  departmentId?: string | null;
+  managerUserId?: string | null;
+  roleId?: string | null;
+  isActive?: boolean;
+}
+
+export interface WorkflowTemplate {
+  slug: string; name: string; description: string; category: string | null;
+  trigger_type: string | null; nodes: unknown[]; edges: unknown[]; is_featured: boolean;
+}
+export interface WorkflowExecution {
+  id: string; trigger_type: string; status: string; triggered_at: string;
+  completed_at: string | null; duration_ms: number | null; error_message: string | null; step_count: number;
+}
+
+export interface ChartSpec {
+  chartType: 'bar' | 'line' | 'area' | 'pie' | 'scatter';
+  x: string;
+  y: string;
+  aggregate: 'avg' | 'count';
+  title: string;
+  rationale: string;
+  encoding: Record<string, unknown>;
+}
+
+export interface DashboardKpis {
+  nps: number | null; npsDelta: number | null;
+  csat: number | null; csatDelta: number | null;
+  responses: number; responsesDelta: number;
+  activeSurveys: number;
+}
+export interface DashboardForecast {
+  slope: number; intercept: number; points: number[]; direction: 'up' | 'down' | 'flat'; r2: number;
+}
+export interface ChartAnomaly { index: number; value: number; z: number; direction: 'up' | 'down' }
+export interface DashboardSummary {
+  kpis: DashboardKpis;
+  topMover: { title: string; npsDelta: number } | null;
+  narrative: { headline: string; paragraphs: string[]; sentiment: 'positive' | 'negative' | 'neutral' };
+  forecast: DashboardForecast | null;
+  anomalies: ChartAnomaly[];
+}
+export interface DashboardInsights {
+  actionItems: Array<{ id: string; alertType: string; severity: string; title: string; description: string; triggeredAt: string }>;
+  recentActivity: Array<{ id: string; type: string; priority: string; title: string; createdAt: string }>;
+  discoveryCount: number;
+}
+export interface DashboardOperations {
+  surveys: Array<{
+    id: string; title: string; status: string; responseCount: number;
+    lastResponseAt: string | null; nps: number | null; csat: number | null;
+    metricsAt: string | null; freshness: 'fresh' | 'stale' | 'none';
+  }>;
+  anomalies: Array<{ id: string; alertType: string; severity: string; title: string; triggeredAt: string }>;
+}
+
+export type AlertSeverity = 'critical' | 'warning' | 'info' | 'success';
+export type AlertStatus = 'active' | 'acknowledged' | 'snoozed' | 'resolved';
+
+export interface AlertTypeDef {
+  code: string;
+  name: string;
+  severity: AlertSeverity;
+  evaluator: boolean | 'crystal';
+  category: string;
+  categoryName: string;
+  thresholds: Record<string, unknown>;
+}
+
+export interface AlertSubscription {
+  alertType: string;
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  slackEnabled: boolean;
+}
+
+export interface AlertRule {
+  id: string;
+  orgId: string;
+  surveyId: string | null;
+  alertType: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  isSystem: boolean;
+  severity: AlertSeverity;
+  thresholdConfig: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AlertEvent {
+  id: string;
+  ruleId: string;
+  surveyId: string | null;
+  alertType: string;
+  severity: AlertSeverity;
+  title: string;
+  description: string;
+  crystalNarration: string | null;
+  crystalAction: string | null;
+  metricValue: number | null;
+  metricBaseline: number | null;
+  metricChange: number | null;
+  status: AlertStatus;
+  triggeredAt: string;
+  snoozedUntil: string | null;
+}
+
+export interface SeatBreakdown {
+  planTier: 'starter' | 'growth' | 'enterprise';
+  seatLimit: number | null;
+  billableSeats: number;
+  available: number | null;
+  gracePeriodEnd: string | null;
+  byRole: Array<{ roleName: string; builtinKey: string | null; seatWeight: number; activeUsers: number; billable: number }>;
+}
+
+export interface AuditEvent {
+  id: string;
+  eventType: string;
+  actorUserId: string | null;
+  actorName: string | null;
+  actorEmail: string | null;
+  actorType: string;
+  targetUserId: string | null;
+  targetName: string | null;
+  targetResourceType: string | null;
+  targetResourceId: string | null;
+  ipAddress: string | null;
+  occurredAt: string;
+}
+
+export interface ScimToken {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  provider: string | null;
+  lastUsedAt: string | null;
+  lastSyncAt: string | null;
+  syncStats: Record<string, unknown> | null;
+  isActive: boolean;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
+export type GroupType = 'static' | 'dynamic' | 'scim_synced';
+
+export interface DepartmentNode {
+  id: string;
+  name: string;
+  description: string | null;
+  parentDepartmentId: string | null;
+  headUserId: string | null;
+  headDisplayName: string | null;
+  headAvatarUrl: string | null;
+  depth: number;
+  path: string[] | null;
+  color: string | null;
+  sortOrder: number;
+  directMemberCount: number;
+  totalMemberCount?: number;
+  children?: DepartmentNode[];
+}
+
+export interface DynamicRule { field: string; op: string; value: unknown }
+export interface DynamicRuleSet { operator: 'AND' | 'OR'; rules: DynamicRule[] }
+
+export interface UserGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  groupType: GroupType;
+  dynamicRules: DynamicRuleSet | null;
+  scimExternalId: string | null;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GroupMember {
+  userId: string;
+  displayName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  jobTitle: string | null;
+  addedAt: string;
 }
 
 // ── Time-series types ──────────────────────────────────────────────────────────
@@ -125,6 +399,44 @@ export interface TopicTrend {
   topic_id:   string;
   topic_name: string;
   windows:    TopicWindow[];
+}
+
+// ── Survey Tag types ──────────────────────────────────────────────────────────
+
+export interface SurveyTag {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  description?: string;
+  program_config?: Record<string, unknown>;
+  survey_count?: number;
+  created_at: string;
+}
+
+export interface GroupInsightRun {
+  id: string;
+  org_id: string;
+  tag_ids: string[];
+  survey_ids: string[];
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  stream_events: Array<{ event: string; data: Record<string, unknown> }>;
+  result_json?: Record<string, unknown>;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface GroupInsight {
+  id: string;
+  layer: 'descriptive' | 'diagnostic' | 'predictive' | 'prescriptive';
+  category: string;
+  headline: string;
+  narrative: string;
+  trust_score?: number;
+  priority?: number;
+  data_gap_signals?: unknown[];
+  suggested_survey_types?: string[];
+  suggested_survey_json?: Record<string, unknown>;
 }
 
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
@@ -392,25 +704,164 @@ export function createApiClient(getToken: GetToken) {
     // ── Notifications ──────────────────────────────────────────────────────────
 
     getNotifications: async (): Promise<Notification[]> => {
-      const res = await http.get<Notification[]>('/api/copilot/notifications');
-      return res.data;
+      const res = await http.get<{ notifications: Array<Record<string, unknown>> }>('/api/notifications?limit=50');
+      // Map the v2 (camelCase) payload back to the Notification shape the UI uses.
+      return (res.data.notifications || []).map((n) => ({
+        id: n.id as string,
+        type: n.type as string,
+        title: n.title as string,
+        body: (n.body as string) ?? '',
+        payload: (n.payload as Record<string, unknown>) ?? {},
+        run_id: (n.runId as string) ?? undefined,
+        read: !!n.read,
+        created_at: n.createdAt as string,
+        priority: n.priority as Notification['priority'],
+        actionUrl: (n.actionUrl as string) ?? null,
+        entityType: (n.entityType as string) ?? null,
+      }));
     },
 
     getUnreadCount: async (): Promise<number> => {
-      const res = await http.get<{ count: number }>('/api/copilot/notifications/unread-count');
-      return res.data.count;
+      const res = await http.get<{ unread: number; critical: number }>('/api/notifications/count');
+      return res.data.unread;
+    },
+
+    getNotificationCount: async (): Promise<{ unread: number; critical: number }> => {
+      const res = await http.get<{ unread: number; critical: number }>('/api/notifications/count');
+      return res.data;
     },
 
     markNotificationRead: async (id: string): Promise<void> => {
-      await http.post(`/api/copilot/notifications/${id}/read`, {});
+      await http.post(`/api/notifications/${id}/read`, {});
     },
 
     markAllNotificationsRead: async (): Promise<void> => {
-      await http.post('/api/copilot/notifications/read-all', {});
+      await http.post('/api/notifications/read-all', {});
+    },
+
+    dismissNotification: async (id: string): Promise<void> => {
+      await http.delete(`/api/notifications/${id}`);
+    },
+
+    // ── Visual AI ────────────────────────────────────────────────────────────--
+    generateChartSpec: async (request: string): Promise<{ spec: ChartSpec }> => {
+      const res = await http.post('/api/visual/chart-spec', { request });
+      return res.data;
+    },
+
+    // ── Dashboard ──────────────────────────────────────────────────────────────
+    getDashboardSummary: async (
+      days = 30,
+      opts: { surveyId?: string | null; tagId?: string | null; npsSegment?: string } = {},
+    ): Promise<DashboardSummary> => {
+      const params: Record<string, string> = { days: String(days) };
+      if (opts.surveyId) params.surveyId = opts.surveyId;
+      if (opts.tagId) params.tagId = opts.tagId;
+      if (opts.npsSegment && opts.npsSegment !== 'all') params.npsSegment = opts.npsSegment;
+      const res = await http.get('/api/dashboard/summary', { params });
+      return res.data;
+    },
+    getDashboardOperations: async (): Promise<DashboardOperations> => {
+      const res = await http.get('/api/dashboard/operations');
+      return res.data;
+    },
+    getDashboardInsights: async (): Promise<DashboardInsights> => {
+      const res = await http.get('/api/dashboard/insights');
+      return res.data;
+    },
+    getDashboardConfig: async (): Promise<SavedDashboardConfig | null> => {
+      const res = await http.get<{ config: SavedDashboardConfig | null }>('/api/dashboard-configs');
+      return res.data.config;
+    },
+    saveDashboardConfig: async (config: {
+      name: string;
+      widgets: WidgetConfig[];
+      filters: DashboardFilters;
+    }): Promise<SavedDashboardConfig> => {
+      const res = await http.put<{ config: SavedDashboardConfig }>('/api/dashboard-configs', config);
+      return res.data.config;
+    },
+
+    // ── Alerts ───────────────────────────────────────────────────────────────--
+    listAlertTypes: async (): Promise<{ types: AlertTypeDef[] }> => {
+      const res = await http.get('/api/alerts/types');
+      return res.data;
+    },
+    getAlertSubscriptions: async (): Promise<{ subscriptions: AlertSubscription[] }> => {
+      const res = await http.get('/api/alerts/subscriptions');
+      return res.data;
+    },
+    updateAlertSubscription: async (data: {
+      alertType: string; inAppEnabled?: boolean; emailEnabled?: boolean; slackEnabled?: boolean;
+    }): Promise<{ success: boolean }> => {
+      const res = await http.put('/api/alerts/subscriptions', data);
+      return res.data;
+    },
+    listAlertRules: async (): Promise<{ rules: AlertRule[] }> => {
+      const res = await http.get('/api/alerts');
+      return res.data;
+    },
+    createAlertRule: async (data: {
+      alertType: string; name: string; description?: string; surveyId?: string | null;
+      severity?: AlertSeverity; thresholdConfig?: Record<string, unknown>;
+    }): Promise<{ rule: AlertRule }> => {
+      const res = await http.post('/api/alerts', data);
+      return res.data;
+    },
+    updateAlertRule: async (id: string, data: Record<string, unknown>): Promise<{ rule: AlertRule }> => {
+      const res = await http.patch(`/api/alerts/rules/${id}`, data);
+      return res.data;
+    },
+    deleteAlertRule: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/alerts/rules/${id}`);
+      return res.data;
+    },
+    listAlertEvents: async (params: { status?: string; severity?: string } = {}): Promise<{ events: AlertEvent[] }> => {
+      const qs = new URLSearchParams();
+      if (params.status) qs.set('status', params.status);
+      if (params.severity) qs.set('severity', params.severity);
+      const res = await http.get(`/api/alerts/events${qs.toString() ? `?${qs}` : ''}`);
+      return res.data;
+    },
+    acknowledgeAlert: async (id: string): Promise<{ event: AlertEvent }> => {
+      const res = await http.post(`/api/alerts/events/${id}/acknowledge`, {});
+      return res.data;
+    },
+    resolveAlert: async (id: string): Promise<{ event: AlertEvent }> => {
+      const res = await http.post(`/api/alerts/events/${id}/resolve`, {});
+      return res.data;
+    },
+    snoozeAlert: async (id: string, hours: number): Promise<{ event: AlertEvent }> => {
+      const res = await http.post(`/api/alerts/events/${id}/snooze`, { hours });
+      return res.data;
+    },
+
+    getNotificationDigest: async (period: 'day' | 'week' = 'day'): Promise<{
+      period: string; total: number; byPriority: Record<string, number>;
+      byType: Array<{ type: string; count: number }>; topItems: Notification[];
+    }> => {
+      const res = await http.get(`/api/notifications/digest?period=${period}`);
+      return res.data;
+    },
+
+    getNotificationPreferences: async (): Promise<{ preferences: NotificationPreference[] }> => {
+      const res = await http.get<{ preferences: NotificationPreference[] }>('/api/notifications/preferences');
+      return res.data;
+    },
+
+    updateNotificationPreferences: async (preferences: NotificationPreference[]): Promise<{ updated: number }> => {
+      const res = await http.put<{ updated: number }>('/api/notifications/preferences', { preferences });
+      return res.data;
     },
 
     getAgentRegistry: async () => {
-      const res = await http.get<unknown[]>('/api/copilot/agents/registry');
+      // Returns { agents: LegacyAgent[], skills: XosSkill[], total: number }
+      // agents = legacy BaseAgent subclasses; skills = XOS SKILL.md-based capabilities
+      const res = await http.get<{
+        agents: unknown[];
+        skills: Array<{ name: string; version: string; description: string; shared: boolean; allowed_tools: string[]; timeout_seconds: number; max_output_tokens: number }>;
+        total: number;
+      }>('/api/copilot/agents/registry');
       return res.data;
     },
 
@@ -507,6 +958,47 @@ export function createApiClient(getToken: GetToken) {
       const res = await http.post<{ status: string }>(`/api/workflows/${id}/toggle`, {});
       return res.data;
     },
+    getWorkflowRegistry: async () => {
+      const res = await http.get<{ triggers: unknown[]; conditionFields: unknown[]; conditionOperators: string[]; actions: unknown[] }>('/api/workflows/registry');
+      return res.data;
+    },
+    listWorkflowTemplates: async (): Promise<{ templates: WorkflowTemplate[] }> => {
+      const res = await http.get('/api/workflows/templates');
+      return res.data;
+    },
+    createGraphWorkflow: async (data: {
+      name: string; description?: string; triggerType: string; nodes: unknown[]; edges: unknown[]; status?: string;
+    }) => {
+      const res = await http.post('/api/workflows', data);
+      return res.data;
+    },
+    createWorkflowFromTemplate: async (tpl: WorkflowTemplate) => {
+      const res = await http.post('/api/workflows', {
+        name: tpl.name, description: tpl.description, triggerType: tpl.trigger_type,
+        nodes: tpl.nodes, edges: tpl.edges, status: 'draft',
+      });
+      return res.data;
+    },
+    testWorkflow: async (id: string, event?: Record<string, unknown>) => {
+      const res = await http.post(`/api/workflows/${id}/test`, event ? { event } : {});
+      return res.data;
+    },
+    getWorkflowExecutions: async (id: string): Promise<{ executions: WorkflowExecution[] }> => {
+      const res = await http.get(`/api/workflows/${id}/executions`);
+      return res.data;
+    },
+    listWorkflowApprovals: async (): Promise<{ approvals: Array<{ id: string; execution_id: string; workflow_id: string; node_id: string; requested_at: string; workflow_name: string }> }> => {
+      const res = await http.get('/api/workflows/approvals');
+      return res.data;
+    },
+    decideApproval: async (executionId: string, decision: 'approve' | 'reject') => {
+      const res = await http.post(`/api/workflows/approvals/${executionId}`, { decision });
+      return res.data;
+    },
+    retryWorkflowExecution: async (executionId: string) => {
+      const res = await http.post(`/api/workflows/executions/${executionId}/retry`, {});
+      return res.data;
+    },
 
     // ── Survey Insights (v2 — agentic) ────────────────────────────────────────
 
@@ -546,6 +1038,19 @@ export function createApiClient(getToken: GetToken) {
 
     updateInsightFeedback: async (insightId: string, feedback: { thumbs?: 'up' | 'down' | null; pinned?: boolean; dismissed?: boolean }): Promise<void> => {
       await http.post(`/api/insights/${insightId}/feedback`, feedback);
+    },
+
+    // ── Action Recommendations ─────────────────────────────────────────────────
+
+    /** Fetch AI-generated recommended next actions for a survey. */
+    getActionRecommendations: async (surveyId: string): Promise<ActionRecommendations> => {
+      const res = await http.get<ActionRecommendations>(`/api/insights/${surveyId}/actions`);
+      return res.data;
+    },
+
+    /** Dismiss an action so it no longer appears. */
+    dismissAction: async (surveyId: string, actionId: string): Promise<void> => {
+      await http.post(`/api/insights/${surveyId}/actions/${actionId}/dismiss`, {});
     },
 
     askInsights: async (surveyId: string, question: string): Promise<{ answer: string; citations: AgenticInsight[] }> => {
@@ -880,6 +1385,243 @@ export function createApiClient(getToken: GetToken) {
         `/api/insights/org/metric-history?days=${days}`,
       );
       return res.data;
+    },
+
+    // ── User Directory ─────────────────────────────────────────────────────────
+
+    listUsers: async (params: ListUsersParams = {}): Promise<{
+      users: DirectoryUser[]; total: number; limit: number; offset: number; hasMore: boolean;
+    }> => {
+      const qs = new URLSearchParams();
+      if (params.search)       qs.set('search', params.search);
+      if (params.roleId)       qs.set('roleId', params.roleId);
+      if (params.roleKey)      qs.set('roleKey', params.roleKey);
+      if (params.departmentId) qs.set('departmentId', params.departmentId);
+      if (params.status)       qs.set('status', params.status);
+      if (params.limit != null)  qs.set('limit', String(params.limit));
+      if (params.offset != null) qs.set('offset', String(params.offset));
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get(`/api/users${query}`);
+      return res.data;
+    },
+    getUser: async (userId: string): Promise<{ user: DirectoryUser }> => {
+      const res = await http.get(`/api/users/${userId}`);
+      return res.data;
+    },
+    inviteUser: async (payload: { email: string; roleId?: string; jobTitle?: string; departmentId?: string }): Promise<{ success: boolean; user: DirectoryUser }> => {
+      const res = await http.post('/api/users/invite', payload);
+      return res.data;
+    },
+    updateUser: async (userId: string, data: UpdateUserPayload): Promise<{ user: DirectoryUser }> => {
+      const res = await http.patch(`/api/users/${userId}`, data);
+      return res.data;
+    },
+    deleteUser: async (userId: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/users/${userId}`);
+      return res.data;
+    },
+
+    // ── Roles ──────────────────────────────────────────────────────────────────
+
+    listRoles: async (): Promise<{ roles: DirectoryRole[] }> => {
+      const res = await http.get('/api/roles');
+      return res.data;
+    },
+    createRole: async (data: {
+      name: string; description?: string; permissions: Record<string, PermissionScope>;
+      seatWeight?: number; color?: string;
+    }): Promise<{ role: DirectoryRole }> => {
+      const res = await http.post('/api/roles', data);
+      return res.data;
+    },
+    updateRole: async (id: string, data: {
+      name?: string; description?: string | null; permissions?: Record<string, PermissionScope>;
+      seatWeight?: number; color?: string | null;
+    }): Promise<{ role: DirectoryRole }> => {
+      const res = await http.patch(`/api/roles/${id}`, data);
+      return res.data;
+    },
+    deleteRole: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/roles/${id}`);
+      return res.data;
+    },
+
+    // ── Departments ────────────────────────────────────────────────────────────
+
+    listDepartments: async (): Promise<{ tree: DepartmentNode[]; flat: DepartmentNode[] }> => {
+      const res = await http.get('/api/departments');
+      return res.data;
+    },
+    createDepartment: async (data: {
+      name: string; description?: string | null; parentDepartmentId?: string | null;
+      headUserId?: string | null; color?: string | null; sortOrder?: number;
+    }): Promise<{ department: DepartmentNode }> => {
+      const res = await http.post('/api/departments', data);
+      return res.data;
+    },
+    updateDepartment: async (id: string, data: Record<string, unknown>): Promise<{ department: DepartmentNode }> => {
+      const res = await http.patch(`/api/departments/${id}`, data);
+      return res.data;
+    },
+    deleteDepartment: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/departments/${id}`);
+      return res.data;
+    },
+
+    // ── Groups ─────────────────────────────────────────────────────────────────
+
+    listGroups: async (): Promise<{ groups: UserGroup[] }> => {
+      const res = await http.get('/api/groups');
+      return res.data;
+    },
+    createGroup: async (data: {
+      name: string; description?: string | null; groupType: GroupType; dynamicRules?: DynamicRuleSet;
+    }): Promise<{ group: UserGroup }> => {
+      const res = await http.post('/api/groups', data);
+      return res.data;
+    },
+    updateGroup: async (id: string, data: Record<string, unknown>): Promise<{ group: UserGroup }> => {
+      const res = await http.patch(`/api/groups/${id}`, data);
+      return res.data;
+    },
+    deleteGroup: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/groups/${id}`);
+      return res.data;
+    },
+    getGroupMembers: async (id: string): Promise<{ members: GroupMember[] }> => {
+      const res = await http.get(`/api/groups/${id}/members`);
+      return res.data;
+    },
+    addGroupMember: async (id: string, userId: string): Promise<{ success: boolean }> => {
+      const res = await http.post(`/api/groups/${id}/members`, { userId });
+      return res.data;
+    },
+    removeGroupMember: async (id: string, userId: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/groups/${id}/members/${userId}`);
+      return res.data;
+    },
+
+    // ── SCIM provisioning tokens ─────────────────────────────────────────────────
+
+    listScimTokens: async (): Promise<{ tokens: ScimToken[]; scimBaseUrl: string }> => {
+      const res = await http.get('/api/scim-tokens');
+      return res.data;
+    },
+    createScimToken: async (data: { name: string; provider?: string }): Promise<{ token: string } & ScimToken> => {
+      const res = await http.post('/api/scim-tokens', data);
+      return res.data;
+    },
+    revokeScimToken: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/scim-tokens/${id}`);
+      return res.data;
+    },
+
+    // ── SSO attribute mapping ────────────────────────────────────────────────────
+
+    getSsoMappings: async (): Promise<{ mappings: Record<string, string> }> => {
+      const res = await http.get('/api/sso-mappings');
+      return res.data;
+    },
+    updateSsoMappings: async (mappings: Record<string, string>): Promise<{ mappings: Record<string, string> }> => {
+      const res = await http.put('/api/sso-mappings', { mappings });
+      return res.data;
+    },
+
+    // ── Seats + Audit ────────────────────────────────────────────────────────────
+
+    getSeatBreakdown: async (): Promise<SeatBreakdown> => {
+      const res = await http.get('/api/seats/breakdown');
+      return res.data;
+    },
+    listAuditLogs: async (params: {
+      page?: number; limit?: number; event_type?: string; actor_user_id?: string; target_user_id?: string;
+    } = {}): Promise<{ events: AuditEvent[]; total: number; page: number; limit: number; pages: number }> => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => { if (v != null) qs.set(k, String(v)); });
+      const res = await http.get(`/api/audit-logs${qs.toString() ? `?${qs}` : ''}`);
+      return res.data;
+    },
+    exportAuditLogsCsv: async (): Promise<string> => {
+      const res = await http.get('/api/audit-logs', { params: { format: 'csv' }, responseType: 'text' });
+      return res.data as string;
+    },
+    // ── Survey Tags ────────────────────────────────────────────────────────────
+
+    // ── Survey Tags ────────────────────────────────────────────────────────────
+
+    listTags: async (params: { q?: string } = {}): Promise<{ tags: SurveyTag[] }> => {
+      const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get<{ tags: SurveyTag[] }>(`/api/survey-tags${query}`);
+      return res.data;
+    },
+
+    createTag: async (data: { name: string; color?: string; description?: string }): Promise<{ tag: SurveyTag }> => {
+      const res = await http.post<{ tag: SurveyTag }>('/api/survey-tags', data);
+      return res.data;
+    },
+
+    updateTag: async (id: string, data: Partial<SurveyTag>): Promise<{ tag: SurveyTag }> => {
+      const res = await http.patch<{ tag: SurveyTag }>(`/api/survey-tags/${id}`, data);
+      return res.data;
+    },
+
+    deleteTag: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete<{ success: boolean }>(`/api/survey-tags/${id}`);
+      return res.data;
+    },
+
+    getTagSurveys: async (tagId: string): Promise<{ surveys: Survey[]; tag: SurveyTag }> => {
+      const res = await http.get<{ surveys: Survey[]; tag: SurveyTag }>(`/api/survey-tags/${tagId}/surveys`);
+      return res.data;
+    },
+
+    // Survey-tag mappings live under /api/surveys/:id/tags in surveys.js
+    addTagsToSurvey: async (surveyId: string, tagIds: string[]): Promise<{ success: boolean }> => {
+      const res = await http.post<{ success: boolean }>(`/api/surveys/${surveyId}/tags`, { tag_ids: tagIds });
+      return res.data;
+    },
+
+    removeTagFromSurvey: async (surveyId: string, tagId: string): Promise<{ success: boolean }> => {
+      const res = await http.delete<{ success: boolean }>(`/api/surveys/${surveyId}/tags/${tagId}`);
+      return res.data;
+    },
+
+    // ── Group Insights ─────────────────────────────────────────────────────────
+
+    generateGroupInsights: async (data: { tag_ids: string[]; survey_ids?: string[] }): Promise<{ run_id: string }> => {
+      const res = await http.post<{ run_id: string }>('/api/group-insights/generate', data);
+      return res.data;
+    },
+
+    getGroupInsightRunStatus: async (runId: string): Promise<GroupInsightRun> => {
+      const res = await http.get<GroupInsightRun>(`/api/group-insights/${runId}/status`);
+      return res.data;
+    },
+
+    getGroupInsightRun: async (runId: string): Promise<{ run: GroupInsightRun; insights: GroupInsight[] }> => {
+      const res = await http.get<{ run: GroupInsightRun; insights: GroupInsight[] }>(`/api/group-insights/${runId}`);
+      return res.data;
+    },
+
+    getLatestGroupReport: async (tagId: string): Promise<{ run: GroupInsightRun } | null> => {
+      try {
+        const res = await http.get<{ run: GroupInsightRun }>(`/api/survey-tags/${tagId}/latest-report`);
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+
+    // Download a survey insight report. 'pdf'/'pptx' return native files (when the
+    // server has puppeteer/pptxgenjs); otherwise the server falls back to HTML.
+    // Returns the actual format delivered so the caller can name the file correctly.
+    downloadReport: async (surveyId: string, format: 'pdf' | 'pptx' | 'html'): Promise<{ blob: Blob; format: string }> => {
+      const res = await http.get(`/api/visual/report/${surveyId}`, { params: { format }, responseType: 'blob' });
+      // If the server fell back to HTML it signals it via this header.
+      const fellBack = res.headers['x-export-fallback'];
+      return { blob: res.data as Blob, format: fellBack ? 'html' : format };
     },
   };
 }

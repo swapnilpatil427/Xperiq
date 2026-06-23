@@ -14,9 +14,14 @@ export const QTYPE_META = {
   matrix:          { label: 'Matrix Grid',    icon: 'grid_on',                  color: '#6d28d9', bg: 'rgba(109,40,217,0.08)',   group: 'Advanced', desc: 'Rows × columns grid' },
   date:            { label: 'Date / Time',    icon: 'calendar_today',           color: '#0f766e', bg: 'rgba(15,118,110,0.08)',   group: 'Advanced', desc: 'Date or time picker' },
   statement:       { label: 'Statement',      icon: 'title',                    color: '#64748b', bg: 'rgba(100,116,139,0.08)',  group: 'Advanced', desc: 'Text block or divider' },
+  // Visual AI question types
+  emoji_rating:    { label: 'Emoji Rating',   icon: 'mood',                     color: '#db2777', bg: 'rgba(219,39,119,0.08)',   group: 'Visual',   desc: 'React with an emoji scale' },
+  image_choice:    { label: 'Image Choice',   icon: 'image',                    color: '#7c3aed', bg: 'rgba(124,58,237,0.08)',   group: 'Visual',   desc: 'Pick from image options' },
+  image_upload:    { label: 'Image Upload',   icon: 'add_a_photo',              color: '#0891b2', bg: 'rgba(8,145,178,0.08)',    group: 'Visual',   desc: 'Respondent uploads a photo' },
+  annotation:      { label: 'Annotation',     icon: 'ads_click',                color: '#ea580c', bg: 'rgba(234,88,12,0.08)',    group: 'Visual',   desc: 'Click-to-mark on an image' },
 };
 
-export const QTYPE_GROUPS = ['Scale', 'Choice', 'Text', 'Advanced'];
+export const QTYPE_GROUPS = ['Scale', 'Choice', 'Text', 'Advanced', 'Visual'];
 
 // Returns a fully-populated question with sensible defaults for the given type.
 export function createQuestion(type: string) {
@@ -36,6 +41,10 @@ export function createQuestion(type: string) {
     matrix:          { question: 'Please rate each of the following areas', rows: ['Quality', 'Speed', 'Support'], columns: ['Poor', 'Fair', 'Good', 'Excellent'], matrixType: 'radio' },
     date:            { question: 'When did this occur?', dateType: 'date' },
     statement:       { question: 'Section Title', isStatement: true },
+    emoji_rating:    { question: 'How do you feel about this?', emojiSet: ['😡', '🙁', '😐', '🙂', '😍'] },
+    image_choice:    { question: 'Which do you prefer?', options: [{ label: 'Option A', imageUrl: '' }, { label: 'Option B', imageUrl: '' }], multiple: false },
+    image_upload:    { question: 'Upload a photo', maxFiles: 1, blurFaces: true, requireConsent: true },
+    annotation:      { question: 'Mark the area of interest', imageUrl: '', maxMarks: 5 },
   };
   return { ...base, ...(defaults[type] || {}) };
 }
@@ -50,6 +59,7 @@ export function mapAiToBuilderQuestion(q: Record<string, any>): import('../types
     nps: 'nps', rating: 'rating', multiple_choice: 'multiple_choice', open_text: 'open_text',
     csat: 'csat', slider: 'slider', checkbox: 'checkbox', dropdown: 'dropdown',
     ranking: 'ranking', short_text: 'short_text', matrix: 'matrix', date: 'date', statement: 'statement',
+    emoji_rating: 'emoji_rating', image_choice: 'image_choice', image_upload: 'image_upload', annotation: 'annotation',
   };
   const type = typeMap[q.type as string] || 'open_text';
   const base = createQuestion(type);

@@ -66,7 +66,7 @@ function buildApp({ userId = 'u-owner', orgId = 'org-1', skipAuth = false } = {}
 
   const app = express();
   app.use(express.json());
-  app.use('/api/copilot', router);
+  app.use('/api/copilot', router.default || router);
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }));
   return app;
 }

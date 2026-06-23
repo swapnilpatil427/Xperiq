@@ -1,20 +1,42 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useApi } from './useApi';
+import { useAppAuth } from '../lib/auth';
 import type { Notification } from '../lib/api';
 
 const POLL_INTERVAL_MS = 30_000;
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+
+// Map a live SSE payload (camelCase from the backend) into the Notification shape.
+function mapLive(n: Record<string, unknown>): Notification {
+  return {
+    id: n.id as string,
+    type: n.type as string,
+    title: n.title as string,
+    body: (n.body as string) ?? '',
+    payload: (n.payload as Record<string, unknown>) ?? {},
+    run_id: (n.runId as string) ?? undefined,
+    read: !!n.read,
+    created_at: (n.createdAt as string) ?? new Date().toISOString(),
+    priority: n.priority as Notification['priority'],
+    actionUrl: (n.actionUrl as string) ?? null,
+    entityType: (n.entityType as string) ?? null,
+  };
+}
 
 export function useNotifications() {
   const api = useApi();
+  const { getToken } = useAppAuth();
   const [unreadCount,   setUnreadCount]   = useState(0);
+  const [criticalCount, setCriticalCount] = useState(0);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading,       setLoading]       = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const fetchUnreadCount = useCallback(async () => {
     try {
-      const count = await api.getUnreadCount();
-      setUnreadCount(count);
+      const { unread, critical } = await api.getNotificationCount();
+      setUnreadCount(unread);
+      setCriticalCount(critical);
     } catch {
       // silently ignore — bell badge is non-critical
     }
@@ -44,15 +66,45 @@ export function useNotifications() {
   const markAllRead = useCallback(async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
+    setCriticalCount(0);
     try { await api.markAllNotificationsRead(); } catch { /* ignore */ }
   }, [api]);
 
-  // Poll unread count in background
+  const dismiss = useCallback(async (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    try { await api.dismissNotification(id); } catch { /* ignore */ }
+  }, [api]);
+
+  // Poll unread count in background (fallback + initial load).
   useEffect(() => {
     fetchUnreadCount();
     pollRef.current = setInterval(fetchUnreadCount, POLL_INTERVAL_MS);
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [fetchUnreadCount]);
 
-  return { unreadCount, notifications, loading, loadNotifications, markRead, markAllRead };
+  // Real-time delivery via Server-Sent Events. Falls back to polling when the
+  // browser/runtime lacks EventSource (e.g. jsdom in tests).
+  useEffect(() => {
+    if (typeof EventSource === 'undefined') return;
+    let es: EventSource | null = null;
+    let closed = false;
+    (async () => {
+      let token: string | null = null;
+      try { token = await getToken(); } catch { /* dev/no-clerk → null */ }
+      if (closed) return;
+      const url = `${API_BASE}/api/notifications/stream${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+      es = new EventSource(url);
+      es.addEventListener('notification', (evt) => {
+        try {
+          const n = mapLive(JSON.parse((evt as MessageEvent).data));
+          setNotifications((prev) => (prev.some((p) => p.id === n.id) ? prev : [n, ...prev]));
+          setUnreadCount((c) => c + 1);
+          if (n.priority === 'critical') setCriticalCount((c) => c + 1);
+        } catch { /* ignore malformed event */ }
+      });
+    })();
+    return () => { closed = true; if (es) es.close(); };
+  }, [getToken]);
+
+  return { unreadCount, criticalCount, notifications, loading, loadNotifications, markRead, markAllRead, dismiss };
 }

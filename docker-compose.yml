@@ -72,7 +72,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "3030:3000"
     depends_on:
       - prometheus
       - loki
@@ -99,11 +99,11 @@ services:
     profiles: ["agents", "prod"]
     build:
       context: .
-      dockerfile: agents/Dockerfile
+      dockerfile: crystalos/Dockerfile
     image: experient-agents:local
     container_name: experient-agents
     env_file:
-      - path: agents/.env
+      - path: crystalos/.env
         required: false          # allows startup without an .env file
     environment:
       AGENTS_ENV: ${AGENTS_ENV:-dev}
@@ -128,6 +128,30 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    restart: unless-stopped
+
+  event-engine:
+    # Notification/alert/workflow stream processor (reuses the backend codebase).
+    # Start with: docker-compose --profile event-engine up -d event-engine
+    # Locally you can instead run `npm --prefix backend run start:event-engine`,
+    # or set ENABLE_EVENT_ENGINE=true to run it in-process with the backend.
+    <<: *built-platform
+    profiles: ["event-engine", "prod"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: experient-backend:local
+    container_name: experient-event-engine
+    command: ["node", "src/eventEngine/index.js"]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/experient
+      REDIS_URL: redis://redis:6379
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

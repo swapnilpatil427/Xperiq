@@ -63,7 +63,7 @@ export interface ExperientCopilotProps {
   context?:                 CopilotContext;
   onRefine?:                (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<RefineResult>;
   onAction?:                (action: CopilotAction) => void;
-  onApplyRecommendation?:   (action: string) => Promise<{ recommendations?: Recommendation[] } | void>;
+  onApplyRecommendation?:   (action: string) => Promise<{ recommendations?: Recommendation[]; message?: string; compliance_risk?: string } | void>;
   recommendations?:         Recommendation[];
   quickCommands?:           string[];
   initiallyOpen?:           boolean;
@@ -219,18 +219,27 @@ export function ExperientCopilot({ context = {}, onRefine, onAction, onApplyReco
     setApplyingRec(rec.action);
     try {
       const applyResult = await onApplyRecommendation(rec.action);
-      const followUps = (applyResult as { recommendations?: Recommendation[] })?.recommendations;
-      // Remove the applied recommendation from all messages
+      const result = applyResult as { recommendations?: Recommendation[]; message?: string; compliance_risk?: string } | undefined;
+      const followUps       = result?.recommendations;
+      const resultMessage   = result?.message;
+      const complianceRisk  = result?.compliance_risk;
+
+      // Remove the applied card from all messages
       setMessages((prev) => prev.map((m) =>
         m.recommendations
           ? { ...m, recommendations: m.recommendations.filter((r) => r.action !== rec.action) }
           : m
       ));
+
+      // Show the actual result message from the server (not a hardcoded string)
+      const displayText = resultMessage || `✓ ${rec.label} applied.`;
       setMessages((prev) => [...prev, {
-        role: 'ai',
-        text: `✓ ${rec.label} applied.`,
+        role:            'ai',
+        text:            displayText,
+        risk:            complianceRisk,          // shows compliance badge if present
         recommendations: followUps?.length ? followUps : undefined,
       }]);
+
       if (!isOpen) setUnread((u) => u + 1);
     } catch {
       setMessages((prev) => [...prev, { role: 'ai', text: 'Could not apply that recommendation. Try again.' }]);

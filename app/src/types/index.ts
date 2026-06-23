@@ -4,7 +4,8 @@ export type QuestionType =
   | 'nps' | 'csat' | 'rating' | 'slider'
   | 'multiple_choice' | 'checkbox' | 'dropdown' | 'ranking'
   | 'open_text' | 'short_text'
-  | 'matrix' | 'date' | 'statement';
+  | 'matrix' | 'date' | 'statement'
+  | 'emoji_rating' | 'image_choice' | 'image_upload' | 'annotation';
 
 export interface SkipLogicCondition {
   operator: 'eq' | 'neq' | 'lt' | 'gt' | 'lte' | 'gte' | 'contains' | 'answered' | 'not_answered';
@@ -41,11 +42,16 @@ export interface TextQuestion extends BaseQuestion { type: 'open_text' | 'short_
 export interface MatrixQuestion extends BaseQuestion { type: 'matrix'; rows?: string[]; columns?: string[]; matrixType?: 'radio' | 'checkbox'; }
 export interface DateQuestion extends BaseQuestion { type: 'date'; dateType?: 'date' | 'time' | 'datetime'; }
 export interface StatementQuestion extends BaseQuestion { type: 'statement'; isStatement?: boolean; }
+export interface EmojiRatingQuestion extends BaseQuestion { type: 'emoji_rating'; emojiSet?: string[]; }
+export interface ImageChoiceQuestion extends BaseQuestion { type: 'image_choice'; options?: Array<{ label: string; imageUrl?: string }>; multiple?: boolean; }
+export interface ImageUploadQuestion extends BaseQuestion { type: 'image_upload'; maxFiles?: number; blurFaces?: boolean; requireConsent?: boolean; }
+export interface AnnotationQuestion extends BaseQuestion { type: 'annotation'; imageUrl?: string; maxMarks?: number; }
 
 export type Question =
   | NpsQuestion | CsatQuestion | RatingQuestion | SliderQuestion
   | ChoiceQuestion | TextQuestion | MatrixQuestion | DateQuestion
-  | StatementQuestion;
+  | StatementQuestion | EmojiRatingQuestion | ImageChoiceQuestion
+  | ImageUploadQuestion | AnnotationQuestion;
 
 // ── Survey ────────────────────────────────────────────────────────────────────
 
@@ -277,12 +283,58 @@ export interface AgenticInsight {
   superseded_at?: string | null;
 }
 
+// ── Action Proposals (from Crystal action tools + action-recommender skill) ───
+
+export type ActionProposalType =
+  | 'create_survey'
+  | 'edit_survey'
+  | 'distribute'
+  | 'workflow'
+  | 'template'
+  | 'schedule_rerun'
+  | 'export_insights'
+  // Internal proposal_type aliases from action tool executors
+  | 'create_followup_survey'
+  | 'edit_survey_questions'
+  | 'distribute_to_segment'
+  | 'create_workflow'
+  | 'view_template';
+
+export interface ActionProposal {
+  id:                    string;               // kebab-case unique ID
+  type:                  ActionProposalType;
+  priority:              'critical' | 'high' | 'medium' | 'low';
+  title:                 string;               // imperative label, max 60 chars
+  description:           string;               // what + why
+  cta_label?:            string;               // button label, default "Apply"
+  params:                Record<string, unknown>; // execution params for frontend API
+  estimated_time?:       string;
+  business_rationale?:   string;
+  confidence?:           number;
+  tags?:                 string[];
+  requires_confirmation: boolean;              // always true — safety guarantee
+}
+
+export interface ActionRecommendations {
+  actions:       ActionProposal[];
+  urgency_level: 'immediate' | 'this_week' | 'this_month' | 'strategic' | null;
+  summary:       string | null;
+  generated_at:  string | null;
+}
+
 export interface InsightRunStatus {
   run_id:    string;
-  status:    'running' | 'completed' | 'failed';
+  status:    'running' | 'completed' | 'failed' | 'none';
   progress?: number;
   stream_events: Array<{ event: string; agent: string; data: Record<string, unknown>; timestamp: string }>;
   insights_count?: number;
+  // Failure details — populated when status = 'failed'
+  error?:            string | null;   // last error message
+  error_log?:        string[];        // full error chain
+  duration_seconds?: number | null;
+  created_at?:       string;
+  completed_at?:     string | null;
+  last_heartbeat_at?: string | null;
 }
 
 // ── Org Profile ───────────────────────────────────────────────────────────────

@@ -15,7 +15,11 @@ import { Badge }   from '@/components/ui/badge';
 import { Button }  from '@/components/ui/button';
 import { PageHeader } from '../components/PageHeader';
 import { usePermissions } from '../lib/permissions';
+import { TagBadge } from '../components/TagBadge';
+import { TagSelector } from '../components/TagSelector';
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import type { Survey, SurveyStatus } from '../types';
+import type { SurveyTag } from '../lib/api';
 
 // ── constants ─────────────────────────────────────────────────────────────────
 
@@ -91,9 +95,10 @@ interface MultiSelectDropdownProps {
   selected: string[];
   onChange: (next: string[]) => void;
   renderOption?: (opt: string) => React.ReactNode;
+  dropdownWidth?: string;
 }
 
-function MultiSelectDropdown({ label, icon, options, selected, onChange, renderOption }: MultiSelectDropdownProps) {
+function MultiSelectDropdown({ label, icon, options, selected, onChange, renderOption, dropdownWidth = 'w-48' }: MultiSelectDropdownProps) {
   const toggle = (val: string) =>
     onChange(selected.includes(val) ? selected.filter((v) => v !== val) : [...selected, val]);
   return (
@@ -114,7 +119,7 @@ function MultiSelectDropdown({ label, icon, options, selected, onChange, renderO
           <Icon name="expand_more" size={14} />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-48">
+      <DropdownMenuContent align="start" className={dropdownWidth}>
         {options.map((opt) => (
           <DropdownMenuItem
             key={opt}
@@ -206,6 +211,12 @@ export function SurveysListPage() {
   const [typeFilter,    setTypeFilter]    = useState<string[]>([]);
   const [sortBy,        setSortBy]        = useState<string>('updated_at');
   const [sortOrder,     setSortOrder]     = useState<'asc' | 'desc'>('desc');
+  const [tagFilter,       setTagFilter]       = useState<string[]>([]);
+  const [availableTags,   setAvailableTags]   = useState<SurveyTag[]>([]);
+  const [generatingReport, setGeneratingReport] = useState(false);
+
+  // ── tag editing state
+  const [tagEditSurvey, setTagEditSurvey] = useState<{ id: string; title: string; tags: SurveyTag[] } | null>(null);
 
   // ── modal state
   const [statusChanging, setStatusChanging] = useState<string | null>(null);
@@ -223,6 +234,11 @@ export function SurveysListPage() {
     debounceRef.current = setTimeout(() => setSearch(val.length >= 2 || val.length === 0 ? val : ''), 300);
   };
 
+  // ── tag loading
+  useEffect(() => {
+    api.listTags().then(r => setAvailableTags(r.tags)).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── data fetching
   const fetchSurveys = useCallback(async (fetchPage: number, append: boolean) => {
     if (append) setLoadingMore(true);
@@ -236,7 +252,8 @@ export function SurveysListPage() {
         sort_order:     sortOrder,
         page:           fetchPage,
         limit:          PAGE_SIZE,
-      });
+        ...(tagFilter.length > 0 ? { tag_ids: tagFilter.join(',') } as Record<string, unknown> : {}),
+      } as Parameters<typeof api.listSurveys>[0]);
       setSurveys((prev) => append ? [...prev, ...result.surveys] : result.surveys);
       setTotal(result.total);
       setPage(fetchPage);
@@ -249,7 +266,7 @@ export function SurveysListPage() {
       if (append) setLoadingMore(false);
       else        setLoading(false);
     }
-  }, [api, search, statusFilter.join(','), typeFilter.join(','), sortBy, sortOrder]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [api, search, statusFilter.join(','), typeFilter.join(','), sortBy, sortOrder, tagFilter.join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchSurveys(1, false); }, [fetchSurveys]);
 
@@ -264,6 +281,16 @@ export function SurveysListPage() {
     setTotal((n) => n - 1);
     try { await api.deleteSurvey(id); } catch { fetchSurveys(1, false); }
   }, [api, fetchSurveys]);
+
+  const handleGenerateGroupReport = useCallback(async () => {
+    setGeneratingReport(true);
+    try {
+      const { run_id } = await api.generateGroupInsights({ tag_ids: tagFilter });
+      navigate(toPath(ROUTES.GROUP_REPORT, { tagId: tagFilter[0], runId: run_id }));
+    } catch {
+      setGeneratingReport(false);
+    }
+  }, [api, tagFilter, navigate]);
 
   // ── derived KPI values (from server stats when available, fallback to loaded data)
   const kpiTotalSurveys  = stats?.total_surveys  ?? surveys.length;
@@ -282,7 +309,7 @@ export function SurveysListPage() {
     { label: t('surveys.metrics.avgNps'),       value: kpiAvgNps != null ? kpiAvgNps : '—', icon: 'thumb_up', gradient:'linear-gradient(135deg,rgba(217,119,6,0.08),rgba(217,119,6,0.02))', iconColor:'#d97706' },
   ];
 
-  const activeFilterCount = statusFilter.length + typeFilter.length;
+  const activeFilterCount = statusFilter.length + typeFilter.length + tagFilter.length;
   const hasActiveFilters  = activeFilterCount > 0 || search.length > 0;
   const remaining         = total - surveys.length;
 
@@ -300,6 +327,21 @@ export function SurveysListPage() {
                   className="rounded-xl font-headline text-on-surface-variant gap-1.5">
                   <Icon name="library_books" size={16} />{t('nav.templates')}
                 </Button>
+                {tagFilter.length > 0 && (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleGenerateGroupReport}
+                    disabled={generatingReport}
+                    className="rounded-xl font-headline gap-1.5"
+                    style={{ background: 'var(--color-primary)' }}
+                  >
+                    <Icon name="auto_awesome" size={16} />
+                    {generatingReport
+                      ? t('groups.generatingReport', { count: surveys.length })
+                      : t('groups.generateReport')}
+                  </Button>
+                )}
                 {isAnalyst && (
                   <Button variant="gradient" size="sm" onClick={() => navigate(ROUTES.CREATE)}
                     className="rounded-xl font-headline">
@@ -389,6 +431,25 @@ export function SurveysListPage() {
                 }}
               />
 
+              {/* Tag filter */}
+              <MultiSelectDropdown
+                label={t('groups.tags')}
+                icon="label"
+                options={availableTags.map(tag => tag.id)}
+                selected={tagFilter}
+                onChange={setTagFilter}
+                dropdownWidth="w-64"
+                renderOption={id => {
+                  const tag = availableTags.find(tg => tg.id === id);
+                  return tag ? (
+                    <span className="flex items-center gap-2 text-sm min-w-0">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: tag.color }} />
+                      <span className="truncate">{tag.name}</span>
+                    </span>
+                  ) : <span className="text-sm">{id}</span>;
+                }}
+              />
+
               {/* Sort */}
               <SortDropdown value={sortBy} order={sortOrder} onChange={(by, ord) => { setSortBy(by); setSortOrder(ord as 'asc' | 'desc'); }} />
             </div>
@@ -412,8 +473,20 @@ export function SurveysListPage() {
                       <Icon name="close" size={10} />
                     </button>
                   ))}
+                  {tagFilter.map(tagId => {
+                    const tag = availableTags.find(tg => tg.id === tagId);
+                    return tag ? (
+                      <TagBadge
+                        key={tagId}
+                        tag={tag}
+                        size="sm"
+                        removable
+                        onRemove={() => setTagFilter(p => p.filter(x => x !== tagId))}
+                      />
+                    ) : null;
+                  })}
                   {activeFilterCount > 0 && (
-                    <button onClick={() => { setStatusFilter([]); setTypeFilter([]); }}
+                    <button onClick={() => { setStatusFilter([]); setTypeFilter([]); setTagFilter([]); }}
                       className="text-[11px] font-semibold text-muted-foreground hover:text-on-surface underline underline-offset-2">
                       {t('surveys.filters.clearAll')}
                     </button>
@@ -502,6 +575,13 @@ export function SurveysListPage() {
                               {topics.length > 3 && <span className="tag-topic">+{topics.length - 3}</span>}
                             </div>
                           )}
+                          {(survey as Survey & { tags?: SurveyTag[] }).tags && (survey as Survey & { tags?: SurveyTag[] }).tags!.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {(survey as Survey & { tags?: SurveyTag[] }).tags!.map(tag => (
+                                <TagBadge key={tag.id} tag={tag} size="sm" />
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         {/* Metrics */}
@@ -560,7 +640,7 @@ export function SurveysListPage() {
                           </Button>
                           {survey.status !== 'closed' && (
                             <Button variant="ghost" size="icon"
-                              onClick={(e: React.MouseEvent) => { e.stopPropagation(); navigate(toPath(ROUTES.BUILDER, { surveyId: survey.id }), { state: { title: survey.title, questions: survey.questions || [], surveyTypeId: survey.survey_type_id || null } }); }}
+                              onClick={(e: React.MouseEvent) => { e.stopPropagation(); navigate(toPath(ROUTES.BUILDER, { surveyId: survey.id }), { state: { title: survey.title, questions: survey.questions || [], surveyTypeId: survey.survey_type_id || null, tags: (survey as Survey & { tags?: SurveyTag[] }).tags || [] } }); }}
                               className="rounded-xl text-on-surface-variant hover:bg-[rgba(171,173,175,0.15)]">
                               <Icon name="edit" size={16} />
                             </Button>
@@ -573,6 +653,13 @@ export function SurveysListPage() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-52">
+                              <DropdownMenuItem className="text-on-surface gap-2"
+                                onClick={(e: React.MouseEvent) => {
+                                  e.stopPropagation();
+                                  setTagEditSurvey({ id: survey.id, title: survey.title, tags: (survey as Survey & { tags?: SurveyTag[] }).tags ?? [] });
+                                }}>
+                                <Icon name="label" size={15} className="text-[#6366f1]" />{t('groups.manageTags')}
+                              </DropdownMenuItem>
                               <DropdownMenuItem className="text-on-surface gap-2"
                                 onClick={(e: React.MouseEvent) => { e.stopPropagation(); navigate(toPath(ROUTES.SAMPLE_RESPONSES, { surveyId: survey.id })); }}>
                                 <Icon name="auto_awesome" size={15} className="text-primary" />{t('surveys.actions.generateResponses')}
@@ -616,7 +703,7 @@ export function SurveysListPage() {
                         : t('surveys.empty.description')}
                     </p>
                     {hasActiveFilters ? (
-                      <Button variant="outline" onClick={() => { setSearchInput(''); setSearch(''); setStatusFilter([]); setTypeFilter([]); }}
+                      <Button variant="outline" onClick={() => { setSearchInput(''); setSearch(''); setStatusFilter([]); setTypeFilter([]); setTagFilter([]); }}
                         className="rounded-xl gap-1.5">
                         <Icon name="filter_alt_off" size={16} />Clear all filters
                       </Button>
@@ -711,6 +798,52 @@ export function SurveysListPage() {
         surveyTitle={deleteTarget?.title} responseCount={deleteTarget?.responseCount ?? 0}
         busy={statusChanging === deleteTarget?.id}
         onConfirm={async () => { if (!deleteTarget) return; setStatusChanging(deleteTarget.id); await deleteSurvey(deleteTarget.id); setStatusChanging(null); setDeleteTarget(null); }} />
+
+      {/* Tag management sheet — opens from the ⋮ menu on any survey row */}
+      <Sheet open={!!tagEditSurvey} onOpenChange={(o) => { if (!o) setTagEditSurvey(null); }}>
+        <SheetContent side="right" className="w-full sm:max-w-sm">
+          <SheetHeader className="mb-5">
+            <SheetTitle className="flex items-center gap-2 text-base font-bold">
+              <Icon name="label" size={16} style={{ color: '#6366f1' }} />
+              {t('groups.manageTags')}
+            </SheetTitle>
+            {tagEditSurvey && (
+              <p className="text-sm text-muted-foreground truncate">{tagEditSurvey.title}</p>
+            )}
+          </SheetHeader>
+          {tagEditSurvey && (
+            <TagSelector
+              selectedTags={tagEditSurvey.tags}
+              onAdd={async (tag) => {
+                const updated = [...tagEditSurvey.tags, tag];
+                setTagEditSurvey(prev => prev ? { ...prev, tags: updated } : null);
+                setSurveys(prev => prev.map(s =>
+                  s.id === tagEditSurvey.id
+                    ? { ...s, tags: updated } as Survey & { tags: SurveyTag[] }
+                    : s
+                ));
+                try { await api.addTagsToSurvey(tagEditSurvey.id, [tag.id]); }
+                catch { /* revert on failure */ }
+              }}
+              onRemove={async (tagId) => {
+                const updated = tagEditSurvey.tags.filter(t => t.id !== tagId);
+                setTagEditSurvey(prev => prev ? { ...prev, tags: updated } : null);
+                setSurveys(prev => prev.map(s =>
+                  s.id === tagEditSurvey.id
+                    ? { ...s, tags: updated } as Survey & { tags: SurveyTag[] }
+                    : s
+                ));
+                try { await api.removeTagFromSurvey(tagEditSurvey.id, tagId); }
+                catch { /* revert on failure */ }
+              }}
+            />
+          )}
+          <p className="text-xs text-muted-foreground mt-4 flex items-center gap-1.5">
+            <Icon name="info" size={11} />
+            {t('groups.tagHint')}
+          </p>
+        </SheetContent>
+      </Sheet>
     </>
   );
 }

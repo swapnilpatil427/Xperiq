@@ -9,7 +9,7 @@
 // report.* insights are separate from voice.topic insights (Intelligence page).
 // They are the synthesised view combining established prior findings + fresh responses.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useTranslation } from '../../lib/i18n';
@@ -18,6 +18,7 @@ import { useSurveys } from '../../hooks/useSurveys';
 import { useSetPageTitle } from '../../contexts/pageTitle';
 import { useCrystalPanel } from '../../contexts/crystalPanel';
 import { Icon } from '../../components/Icon';
+import { Button } from '../../components/ui/button';
 import { GlassCard } from '../insights/shared';
 import { ROUTES, toPath } from '../../constants/routes';
 import { stripCitationRefs } from '../../lib/utils';
@@ -227,6 +228,90 @@ function ThemeCard({ ins, onAskCrystal, surveyId }: {
   );
 }
 
+// ── Sub-nav ───────────────────────────────────────────────────────────────────
+function ReportSubNav({ surveyId, onExport, exporting }: {
+  surveyId: string;
+  onExport: (fmt: 'pdf' | 'pptx' | 'html') => void;
+  exporting: boolean;
+}) {
+  const { t } = useTranslation();
+  const [exportOpen, setExportOpen] = useState(false);
+  const dropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!exportOpen) return;
+    const close = (e: MouseEvent) => {
+      if (!dropRef.current?.contains(e.target as Node)) setExportOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [exportOpen]);
+
+  const navItems = [
+    { label: t('experience.nav.intelligence'), icon: 'auto_awesome', path: toPath(ROUTES.EXPERIENCE_SURVEY, { surveyId }) },
+    { label: t('experience.nav.topics'),       icon: 'hub',          path: toPath(ROUTES.EXPERIENCE_SURVEY_TOPICS, { surveyId }) },
+    { label: t('experience.nav.advanced'),     icon: 'analytics',    path: `${ROUTES.ADVANCED_INSIGHTS}?survey=${surveyId}` },
+    { label: t('experience.nav.trends'),       icon: 'timeline',     path: toPath(ROUTES.EXPERIENCE_SURVEY_TRENDS, { surveyId }) },
+    { label: t('experience.nav.report'),       icon: 'description',  path: toPath(ROUTES.EXPERIENCE_SURVEY_REPORT, { surveyId }), active: true },
+  ] as const;
+
+  const exportOptions = [
+    { fmt: 'pdf'  as const, label: t('experience.report.exportPdf'),  icon: 'picture_as_pdf' },
+    { fmt: 'pptx' as const, label: t('experience.report.exportPptx'), icon: 'slideshow' },
+    { fmt: 'html' as const, label: t('experience.report.exportHtml'), icon: 'code' },
+  ];
+
+  return (
+    <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="glass-card-premium rounded-2xl px-4 py-3 sticky top-0 z-20 flex items-center gap-3 flex-wrap"
+      style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.9)' }}>
+
+      {/* Pills */}
+      <div className="flex items-center gap-1 flex-wrap">
+        {navItems.map(item => (
+          <Link key={item.label} to={item.path}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold transition-all"
+            style={'active' in item && item.active
+              ? { background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))', color: 'white', boxShadow: '0 2px 8px rgba(42,75,217,0.25)' }
+              : { background: 'var(--color-surface-container)', color: 'var(--color-on-surface-variant)' }
+            }>
+            <Icon name={item.icon} size={12} />{item.label}
+          </Link>
+        ))}
+      </div>
+
+      <div className="flex-1" />
+
+      {/* Export dropdown */}
+      <div className="relative" ref={dropRef}>
+        <Button size="sm"
+          disabled={exporting}
+          onClick={() => setExportOpen(o => !o)}
+          className="text-xs font-bold text-white border-0 flex items-center gap-1.5 flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg, #2a4bd9, #8329c8)' }}>
+          <Icon name={exporting ? 'hourglass_empty' : 'download'} size={13} />
+          {exporting ? t('experience.report.exporting') : t('experience.report.export')}
+          {!exporting && <Icon name="expand_more" size={13} />}
+        </Button>
+        {exportOpen && (
+          <div className="absolute right-0 top-full mt-1.5 w-48 rounded-xl overflow-hidden"
+            style={{ background: 'var(--color-surface)', boxShadow: '0 8px 32px rgba(0,0,0,0.14)', border: '1px solid var(--color-outline-variant)' }}>
+            {exportOptions.map(opt => (
+              <button key={opt.fmt}
+                className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-xs font-medium text-on-surface hover:bg-surface-container transition-colors text-left"
+                onClick={() => { setExportOpen(false); onExport(opt.fmt); }}>
+                <Icon name={opt.icon} size={14} style={{ color: 'var(--color-primary)' }} />
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 export function SurveyReportPage() {
   const { t } = useTranslation();
@@ -240,6 +325,8 @@ export function SurveyReportPage() {
 
   const [insights, setInsights] = useState<AgenticInsight[]>([]);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
+  const [exportToast, setExportToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (!surveyId) return;
@@ -278,9 +365,31 @@ export function SurveyReportPage() {
     openCrystal(q, ctx);
   };
 
+  const handleExport = async (format: 'pdf' | 'pptx' | 'html') => {
+    if (!surveyId || exporting) return;
+    setExporting(true);
+    setExportToast(null);
+    try {
+      const { blob, format: delivered } = await api.downloadReport(surveyId, format);
+      const ext = delivered === 'html' ? 'html' : delivered === 'pptx' ? 'pptx' : 'pdf';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${survey?.title ?? 'report'}.${ext}`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (delivered !== format) setExportToast(t('experience.report.exportFallback'));
+    } catch {
+      // silent — user sees no download
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="max-w-4xl mx-auto w-full pt-8">
+      <div className="max-w-4xl mx-auto w-full pt-6 md:pt-8 space-y-5">
+        <ReportSubNav surveyId={surveyId!} onExport={handleExport} exporting={exporting} />
         <div className="space-y-4">
           {[1,2,3].map(i => (
             <div key={i} className="skeleton h-32 rounded-2xl" />
@@ -292,7 +401,8 @@ export function SurveyReportPage() {
 
   if (!hasReport) {
     return (
-      <div className="max-w-4xl mx-auto w-full">
+      <div className="max-w-4xl mx-auto w-full pt-6 md:pt-8 space-y-5">
+        <ReportSubNav surveyId={surveyId!} onExport={handleExport} exporting={exporting} />
         <div className="py-20 text-center">
           <Icon name="description" size={48} style={{ color: 'var(--color-on-surface-variant)', opacity: 0.3 }} />
           <p className="text-on-surface-variant mt-4 text-sm">
@@ -313,7 +423,23 @@ export function SurveyReportPage() {
   }
 
   return (
-    <div className="max-w-4xl mx-auto w-full space-y-6">
+    <div className="max-w-4xl mx-auto w-full pt-6 md:pt-8 space-y-6">
+
+      {/* ── Sub-nav + export ──────────────────────────────────────────── */}
+      <ReportSubNav surveyId={surveyId!} onExport={handleExport} exporting={exporting} />
+
+      {/* ── Export fallback toast ─────────────────────────────────────── */}
+      {exportToast && (
+        <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl text-xs font-medium"
+          style={{ background: '#fffbeb', border: '1px solid #fbbf24', color: '#92400e' }}>
+          <Icon name="info" size={14} style={{ color: '#d97706', flexShrink: 0 }} />
+          {exportToast}
+          <button onClick={() => setExportToast(null)} className="ml-auto hover:opacity-70">
+            <Icon name="close" size={14} />
+          </button>
+        </motion.div>
+      )}
 
       {/* ── § 1  Executive Summary ────────────────────────────────────── */}
       {execSummary && (

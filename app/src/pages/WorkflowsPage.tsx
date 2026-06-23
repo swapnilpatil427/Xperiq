@@ -1,7 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Icon } from '../components/Icon';
 import { useSetPageTitle } from '../contexts/pageTitle';
 import { useWorkflows } from '../hooks/useWorkflows';
+import { useApi } from '../hooks/useApi';
+import { useNavigate } from 'react-router-dom';
+import type { WorkflowTemplate } from '../lib/api';
 import type { Workflow, WorkflowCondition, WorkflowAction } from '../types';
 import { GRADIENTS } from '../constants/colors';
 import { ROUTES } from '../constants/routes';
@@ -64,7 +67,8 @@ function formatAction(wf: Workflow): string {
 export function WorkflowsPage() {
   const { t } = useTranslation();
   useSetPageTitle(t('workflows.pageTitle'), t('workflows.pageSubtitle'));
-  const { workflows, loading, createWorkflow, toggleWorkflow, deleteWorkflow } = useWorkflows();
+  const { workflows, loading, createWorkflow, toggleWorkflow, deleteWorkflow, reload } = useWorkflows();
+  const navigate = useNavigate();
   const [showNewModal, setShowNewModal] = useState(false);
   const [newName, setNewName] = useState('');
   const [newConditionIdx, setNewConditionIdx] = useState(0);
@@ -100,14 +104,24 @@ export function WorkflowsPage() {
             title={t('workflows.mainHeading')}
             subtitle={t('workflows.mainDescription')}
             actions={
-              <Button
-                onClick={() => setShowNewModal(true)}
-                className="flex items-center gap-2 font-bold text-sm text-white rounded-xl px-5 py-2.5"
-                style={{ background: '#2a4bd9' }}
-              >
-                <Icon name="add" size={18} />
-                {t('workflows.newWorkflowButton')}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => navigate(ROUTES.WORKFLOW_BUILD)}>
+                  <Icon name="account_tree" size={16} className="mr-1.5" />
+                  {t('workflows.buildVisually')}
+                </Button>
+                <Button variant="outline" onClick={() => navigate(ROUTES.WORKFLOW_CANVAS)}>
+                  <Icon name="schema" size={16} className="mr-1.5" />
+                  {t('workflows.buildOnCanvas')}
+                </Button>
+                <Button
+                  onClick={() => setShowNewModal(true)}
+                  className="flex items-center gap-2 font-bold text-sm text-white rounded-xl px-5 py-2.5"
+                  style={{ background: '#2a4bd9' }}
+                >
+                  <Icon name="add" size={18} />
+                  {t('workflows.newWorkflowButton')}
+                </Button>
+              </div>
             }
           />
 
@@ -127,6 +141,12 @@ export function WorkflowsPage() {
               </Card>
             ))}
           </div>
+
+          {/* Pending approvals */}
+          <PendingApprovals />
+
+          {/* Pre-built templates */}
+          <WorkflowTemplates onUse={reload} />
 
           {/* Loading */}
           {loading && (
@@ -367,5 +387,91 @@ export function WorkflowsPage() {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+// Workflows paused awaiting human approval (flow.approval step).
+function PendingApprovals() {
+  const { t } = useTranslation();
+  const api = useApi();
+  const [approvals, setApprovals] = useState<Array<{ id: string; execution_id: string; workflow_name: string; requested_at: string }>>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listWorkflowApprovals().then(({ approvals }) => setApprovals(approvals)).catch(() => {});
+  }, [api]);
+
+  if (approvals.length === 0) return null;
+
+  async function decide(execId: string, decision: 'approve' | 'reject') {
+    setBusy(execId);
+    try { await api.decideApproval(execId, decision); setApprovals((p) => p.filter((a) => a.execution_id !== execId)); }
+    catch { /* ignore */ }
+    finally { setBusy(null); }
+  }
+
+  return (
+    <div className="mb-8">
+      <p className="label-caps mb-3">{t('workflows.approvals.heading')}</p>
+      <div className="flex flex-col gap-2">
+        {approvals.map((a) => (
+          <Card key={a.id} className="p-4 rounded-2xl bg-white border-0 flex items-center gap-3" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+            <Icon name="approval" size={20} className="text-warning" />
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-on-surface truncate">{a.workflow_name}</p>
+              <p className="text-xs text-on-surface-variant">{t('workflows.approvals.waiting')}</p>
+            </div>
+            <Button variant="outline" size="sm" disabled={busy === a.execution_id} onClick={() => decide(a.execution_id, 'approve')}>
+              {t('workflows.approvals.approve')}
+            </Button>
+            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" disabled={busy === a.execution_id} onClick={() => decide(a.execution_id, 'reject')}>
+              {t('workflows.approvals.reject')}
+            </Button>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Pre-built workflow templates — one-click to add a draft workflow.
+function WorkflowTemplates({ onUse }: { onUse: () => void }) {
+  const { t } = useTranslation();
+  const api = useApi();
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
+  const [usingSlug, setUsingSlug] = useState<string | null>(null);
+
+  useEffect(() => {
+    api.listWorkflowTemplates().then(({ templates }) => setTemplates(templates)).catch(() => {});
+  }, [api]);
+
+  if (templates.length === 0) return null;
+
+  async function use(tpl: WorkflowTemplate) {
+    setUsingSlug(tpl.slug);
+    try { await api.createWorkflowFromTemplate(tpl); onUse(); }
+    catch { /* ignore */ }
+    finally { setUsingSlug(null); }
+  }
+
+  return (
+    <div className="mb-8">
+      <p className="label-caps mb-3">{t('workflows.templatesHeading')}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {templates.map((tpl) => (
+          <Card key={tpl.slug} className="p-4 rounded-2xl bg-white border-0" style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.04)' }}>
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-bold text-on-surface">{tpl.name}</p>
+              {tpl.is_featured && <Badge variant="purple" className="text-[10px]">{t('workflows.featured')}</Badge>}
+            </div>
+            <p className="text-sm text-on-surface-variant mt-1 mb-3">{tpl.description}</p>
+            <Button variant="outline" size="sm" onClick={() => use(tpl)} disabled={usingSlug === tpl.slug}>
+              <Icon name="add" size={14} className="mr-1" />
+              {usingSlug === tpl.slug ? t('workflows.adding') : t('workflows.useTemplate')}
+            </Button>
+          </Card>
+        ))}
+      </div>
+    </div>
   );
 }
