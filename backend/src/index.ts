@@ -40,6 +40,7 @@ import seatsRouter from './routes/seats';
 import auditLogsRouter from './routes/auditLogs';
 import alertsRouter from './routes/alerts';
 import dashboardRouter from './routes/dashboard';
+import dashboardConfigsRouter from './routes/dashboard-configs';
 import visualRouter from './routes/visual';
 import notificationChannelsRouter from './routes/notificationChannels';
 import scimRouter from './routes/scim';
@@ -101,6 +102,7 @@ app.use('/api/seats',       apiLimiter, seatsRouter);
 app.use('/api/audit-logs',  apiLimiter, auditLogsRouter);
 app.use('/api/alerts',      apiLimiter, alertsRouter);
 app.use('/api/dashboard',   apiLimiter, dashboardRouter);
+app.use('/api/dashboard-configs', apiLimiter, dashboardConfigsRouter);
 app.use('/api/visual',      apiLimiter, visualRouter);
 app.use('/api/notification-channels', apiLimiter, notificationChannelsRouter);
 // SCIM 2.0 — separate namespace, bearer-token auth (NOT Clerk JWT), no apiLimiter.

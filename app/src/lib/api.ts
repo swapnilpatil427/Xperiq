@@ -5,6 +5,7 @@ import type {
   CopilotChange, AgenticInsight, InsightRunStatus, SurveyTopic, TopicDriver,
   TopicTheme, TopicDetail, TopicVerbatim, ActionRecommendations,
 } from '../types';
+import type { SavedDashboardConfig, WidgetConfig, DashboardFilters } from '../types/dashboard';
 
 // ── Copilot types ──────────────────────────────────────────────────────────────
 export interface OrgContext {
@@ -760,6 +761,18 @@ export function createApiClient(getToken: GetToken) {
     getDashboardInsights: async (): Promise<DashboardInsights> => {
       const res = await http.get('/api/dashboard/insights');
       return res.data;
+    },
+    getDashboardConfig: async (): Promise<SavedDashboardConfig | null> => {
+      const res = await http.get<{ config: SavedDashboardConfig | null }>('/api/dashboard-configs');
+      return res.data.config;
+    },
+    saveDashboardConfig: async (config: {
+      name: string;
+      widgets: WidgetConfig[];
+      filters: DashboardFilters;
+    }): Promise<SavedDashboardConfig> => {
+      const res = await http.put<{ config: SavedDashboardConfig }>('/api/dashboard-configs', config);
+      return res.data.config;
     },
 
     // ── Alerts ───────────────────────────────────────────────────────────────--
