@@ -34,7 +34,6 @@ import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage';
 import { WorkflowCanvasPage } from './pages/WorkflowCanvasPage';
 import { AlertsPage } from './pages/AlertsPage';
 import { DashboardPage } from './pages/DashboardPage';
-import { ChartStudioPage } from './pages/ChartStudioPage';
 import { DataPage } from './pages/DataPage';
 import { ExperienceHubPage } from './pages/experience/ExperienceHubPage';
 import { SurveyIntelligencePage } from './pages/experience/SurveyIntelligencePage';
@@ -107,7 +106,7 @@ export default function App() {
             <Route path={ROUTES.WORKFLOW_CANVAS}    element={<ErrorBoundary inline><WorkflowCanvasPage /></ErrorBoundary>} />
             <Route path={ROUTES.ALERTS}             element={<ErrorBoundary inline><AlertsPage /></ErrorBoundary>} />
             <Route path={ROUTES.DASHBOARD}          element={<ErrorBoundary inline><DashboardPage /></ErrorBoundary>} />
-            <Route path={ROUTES.VISUAL_STUDIO}      element={<ErrorBoundary inline><ChartStudioPage /></ErrorBoundary>} />
+            <Route path={ROUTES.VISUAL_STUDIO}      element={<Navigate to={ROUTES.DASHBOARD} replace />} />
             <Route path={ROUTES.SETTINGS}           element={<ErrorBoundary inline><BrandSettingsPage /></ErrorBoundary>} />
             <Route path={ROUTES.NOTIFICATION_PREFS} element={<ErrorBoundary inline><NotificationPreferencesPage /></ErrorBoundary>} />
             <Route path={ROUTES.SETTINGS_USERS}     element={<ErrorBoundary inline><UserDirectoryPage /></ErrorBoundary>} />

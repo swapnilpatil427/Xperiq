@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor, cleanup } from '@testing-library/react';
+import { render, screen, waitFor, cleanup, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -23,11 +23,14 @@ vi.mock('recharts', () => ({
   LineChart: () => <div data-testid="line-chart" />,
   BarChart: () => <div data-testid="bar-chart" />,
   PieChart: () => <div data-testid="pie-chart" />,
+  RadialBarChart: ({ children }: { children: React.ReactNode }) => <div data-testid="radial-chart">{children}</div>,
   Area: () => null,
   Line: () => null,
   Bar: () => null,
   Pie: () => null,
   Cell: () => null,
+  RadialBar: () => null,
+  PolarAngleAxis: () => null,
   XAxis: () => null,
   YAxis: () => null,
   Tooltip: () => null,
@@ -48,10 +51,6 @@ vi.mock('../../contexts/crystalPanel', () => ({
 }));
 
 vi.mock('../../contexts/pageTitle', () => ({ useSetPageTitle: vi.fn() }));
-
-vi.mock('../../components/dashboard/CustomLayout', () => ({
-  CustomLayout: () => <div data-testid="custom-layout" />,
-}));
 
 import { useApi } from '../../hooks/useApi';
 import { DashboardPage } from '../../pages/DashboardPage';
@@ -91,18 +90,20 @@ const opsData = {
   anomalies: [{ id: 'an1', title: 'Drop in NPS', severity: 'warning' }],
 };
 
-const insightsData = {
-  actionItems: [{ id: 'a1', title: 'Fix checkout flow', severity: 'critical' }],
-  recentActivity: [{ id: 'n1', title: 'New insight generated', createdAt: '2026-06-01T10:00:00Z' }],
-  discoveryCount: 3,
-};
-
 function buildApiMock(overrides: Record<string, unknown> = {}) {
   return {
+    getDashboardConfig: vi.fn().mockResolvedValue(null),
+    saveDashboardConfig: vi.fn().mockResolvedValue({ name: 'My Dashboard', widgets: [], filters: {} }),
+    listSurveys: vi.fn().mockResolvedValue({ surveys: [{ id: 's1', title: 'CSAT Survey' }] }),
+    listTags: vi.fn().mockResolvedValue({ tags: [{ id: 't1', name: 'VOC', color: '#6366f1' }] }),
     getDashboardSummary: vi.fn().mockResolvedValue(summary),
     getOrgMetricHistory: vi.fn().mockResolvedValue(historyData),
+    getSurveyMetricHistory: vi.fn().mockResolvedValue({ history: [] }),
     getDashboardOperations: vi.fn().mockResolvedValue(opsData),
-    getDashboardInsights: vi.fn().mockResolvedValue(insightsData),
+    getDashboardInsights: vi.fn().mockResolvedValue({ actionItems: [], recentActivity: [], discoveryCount: 0 }),
+    getOrgAnalytics: vi.fn().mockResolvedValue({ responses_by_day: [] }),
+    getSurveyAnalytics: vi.fn().mockResolvedValue({ responses_by_day: [] }),
+    listTopics: vi.fn().mockResolvedValue({ topics: [] }),
     ...overrides,
   } as unknown as ReturnType<typeof useApi>;
 }
@@ -121,127 +122,64 @@ function renderDashboard() {
   return render(<MemoryRouter><DashboardPage /></MemoryRouter>);
 }
 
-describe('DashboardPage', () => {
-  it('renders the Crystal narrative headline text', async () => {
+describe('DashboardPage (configurable widgets)', () => {
+  it('renders the Crystal narrative headline from summary', async () => {
     renderDashboard();
     await waitFor(() =>
       expect(screen.getByText('Momentum is positive')).toBeInTheDocument(),
     );
   });
 
-  it('renders all 5 tab triggers', () => {
+  it('renders the toolbar with Add Widget and Save buttons', async () => {
     renderDashboard();
-    expect(screen.getByRole('tab', { name: 'dashboard.layouts.executive' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'dashboard.layouts.analyst' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'dashboard.layouts.operations' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'dashboard.layouts.insights' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'dashboard.layouts.custom' })).toBeInTheDocument();
+    expect(screen.getByText('dashboard.toolbar.addWidget')).toBeInTheDocument();
+    expect(screen.getByText('dashboard.toolbar.save')).toBeInTheDocument();
   });
 
-  it('renders NPS KPI tile with value 45 from summary data', async () => {
+  it('renders the default NPS KPI tile from summary data', async () => {
     renderDashboard();
     await waitFor(() => expect(screen.getByText('45')).toBeInTheDocument());
-    expect(screen.getByText('dashboard.kpiNps')).toBeInTheDocument();
+    expect(screen.getAllByText('dashboard.kpiNps').length).toBeGreaterThan(0);
   });
 
   it('"Ask Crystal" button calls openCrystal from useCrystalPanel', async () => {
     const user = userEvent.setup();
     renderDashboard();
     await waitFor(() => expect(screen.getByText('Momentum is positive')).toBeInTheDocument());
-    const buttons = screen.getAllByRole('button', { name: /dashboard\.askCrystal/i });
-    await user.click(buttons[0]);
+    await user.click(screen.getByRole('button', { name: /dashboard\.askCrystal/i }));
     expect(mockOpenCrystal).toHaveBeenCalledTimes(1);
   });
 
-  it('switching to Analyst tab shows metrics table', async () => {
+  it('opens the widget library panel when Add Widget is clicked', async () => {
     const user = userEvent.setup();
     renderDashboard();
-    await waitFor(() => expect(screen.getByText('Momentum is positive')).toBeInTheDocument());
-    await user.click(screen.getByRole('tab', { name: 'dashboard.layouts.analyst' }));
+    await user.click(screen.getByText('dashboard.toolbar.addWidget'));
     await waitFor(() =>
-      expect(screen.getByText('dashboard.analyst.title')).toBeInTheDocument(),
+      expect(screen.getByText('dashboard.widgetLibrary.subtitle')).toBeInTheDocument(),
     );
-    expect(screen.getByText('dashboard.analyst.metric')).toBeInTheDocument();
-    expect(screen.getByText('dashboard.analyst.current')).toBeInTheDocument();
-    expect(screen.getByText('dashboard.analyst.change')).toBeInTheDocument();
   });
 
-  it('switching to Operations tab shows Health Matrix + Anomalies sections', async () => {
-    const user = userEvent.setup();
+  it('loads the saved config on mount', async () => {
+    const getConfig = vi.fn().mockResolvedValue(null);
+    vi.mocked(useApi).mockReturnValue(buildApiMock({ getDashboardConfig: getConfig }));
     renderDashboard();
-    await user.click(screen.getByRole('tab', { name: 'dashboard.layouts.operations' }));
-    await waitFor(() =>
-      expect(screen.getByText('dashboard.ops.healthMatrix')).toBeInTheDocument(),
-    );
-    expect(screen.getByText('dashboard.ops.anomalies')).toBeInTheDocument();
+    await waitFor(() => expect(getConfig).toHaveBeenCalledTimes(1));
   });
 
-  it('switching to Insights tab shows Action Board + Activity sections', async () => {
-    const user = userEvent.setup();
-    renderDashboard();
-    await user.click(screen.getByRole('tab', { name: 'dashboard.layouts.insights' }));
-    await waitFor(() =>
-      expect(screen.getByText('dashboard.insights.actionBoard')).toBeInTheDocument(),
-    );
-    expect(screen.getByText('dashboard.insights.activity')).toBeInTheDocument();
-  });
-
-  it('switching to Custom tab renders CustomLayout', async () => {
-    const user = userEvent.setup();
-    renderDashboard();
-    await user.click(screen.getByRole('tab', { name: 'dashboard.layouts.custom' }));
-    expect(screen.getByTestId('custom-layout')).toBeInTheDocument();
-  });
-
-  it('date range select: changing to 90 days triggers another getDashboardSummary(90) call', async () => {
+  it('date range change to 30d triggers a new getDashboardSummary(30) call', async () => {
     const mockGetSummary = vi.fn().mockResolvedValue(summary);
-    const mockGetHistory = vi.fn().mockResolvedValue(historyData);
-    vi.mocked(useApi).mockReturnValue(
-      buildApiMock({
-        getDashboardSummary: mockGetSummary,
-        getOrgMetricHistory: mockGetHistory,
-      }),
-    );
+    vi.mocked(useApi).mockReturnValue(buildApiMock({ getDashboardSummary: mockGetSummary }));
     renderDashboard();
-    await waitFor(() => expect(mockGetSummary).toHaveBeenCalledTimes(1));
-    // The Select component wraps a hidden <select>; fire a change event on it directly
-    // to avoid Radix UI pointer-capture issues in jsdom.
-    const hiddenSelect = document.querySelector('select') as HTMLSelectElement;
-    if (hiddenSelect) {
-      // Change value to 90 via fireEvent on the underlying select
-      const { fireEvent } = await import('@testing-library/react');
-      fireEvent.change(hiddenSelect, { target: { value: '90' } });
-      await waitFor(() => expect(mockGetSummary).toHaveBeenCalledTimes(2));
-      expect(mockGetSummary).toHaveBeenLastCalledWith(90);
-    } else {
-      // Fallback: verify at least one call was made on initial render
-      expect(mockGetSummary).toHaveBeenCalledWith(90);
-    }
-  });
-
-  it('error state: when getDashboardSummary rejects, error banner is shown', async () => {
-    vi.mocked(useApi).mockReturnValue(
-      buildApiMock({
-        getDashboardSummary: vi.fn().mockRejectedValue(new Error('Network failure')),
-      }),
-    );
-    renderDashboard();
-    await waitFor(() =>
-      expect(screen.getByText('Network failure')).toBeInTheDocument(),
-    );
-  });
-
-  it('renders NPS trend chart when history data is present', async () => {
-    renderDashboard();
-    await waitFor(() => expect(screen.getByTestId('area-chart')).toBeInTheDocument());
+    // default is 90d
+    await waitFor(() => expect(mockGetSummary).toHaveBeenCalledWith(90));
+    fireEvent.click(screen.getByText('30d'));
+    await waitFor(() => expect(mockGetSummary).toHaveBeenCalledWith(30));
   });
 
   it('renders narrative paragraphs from summary', async () => {
     renderDashboard();
     await waitFor(() =>
-      expect(
-        screen.getByText(/organization-wide NPS rose to 45/),
-      ).toBeInTheDocument(),
+      expect(screen.getByText(/organization-wide NPS rose to 45/)).toBeInTheDocument(),
     );
   });
 });
