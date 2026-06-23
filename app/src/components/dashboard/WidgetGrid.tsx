@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { Icon } from '../Icon';
 import { useTranslation } from '../../lib/i18n';
 import { WidgetCard } from './WidgetCard';
@@ -12,6 +13,8 @@ import { ResponseVolumeWidget } from './widgets/ResponseVolumeWidget';
 import { TopicGridWidget } from './widgets/TopicGridWidget';
 import { SurveyHealthWidget } from './widgets/SurveyHealthWidget';
 import { CrystalNarrativeWidget } from './widgets/CrystalNarrativeWidget';
+import { RecentResponsesWidget } from './widgets/RecentResponsesWidget';
+import { AlertFeedWidget } from './widgets/AlertFeedWidget';
 
 interface WidgetGridProps {
   widgets: WidgetConfig[];
@@ -26,6 +29,11 @@ const REGISTRY_BY_TYPE = Object.fromEntries(WIDGET_REGISTRY.map((w) => [w.type, 
   WidgetType,
   (typeof WIDGET_REGISTRY)[number]
 >;
+
+const stagger = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06, delayChildren: 0.05 } },
+};
 
 function renderWidgetBody(
   w: WidgetConfig,
@@ -44,6 +52,8 @@ function renderWidgetBody(
     case 'topic_grid': return <TopicGridWidget filters={filters} />;
     case 'survey_health': return <SurveyHealthWidget operations={operations} />;
     case 'crystal_narrative': return <CrystalNarrativeWidget summary={summary} />;
+    case 'recent_responses': return <RecentResponsesWidget filters={filters} />;
+    case 'alert_feed': return <AlertFeedWidget operations={operations} />;
     default: return null;
   }
 }
@@ -56,12 +66,17 @@ export function WidgetGrid({ widgets, filters, summary, operations, onRemove, on
 
   if (widgets.length === 0) {
     return (
-      <div className="grid grid-cols-12 gap-4 mt-4">
-        <div className="col-span-12 rounded-2xl border border-dashed border-[var(--color-outline)]/30 bg-[var(--color-surface-raised)]/50 py-16 flex flex-col items-center justify-center text-center">
-          <Icon name="auto_awesome" size={40} className="text-on-surface-variant/40 mb-3" />
-          <p className="text-sm text-on-surface-variant max-w-xs">{t('dashboard.widget.empty')}</p>
+      <motion.div
+        className="grid grid-cols-12 gap-4 mt-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.4 }}
+      >
+        <div className="col-span-12 rounded-2xl border border-dashed border-[var(--color-outline)]/30 bg-[var(--color-surface-raised)]/50 py-20 flex flex-col items-center justify-center text-center">
+          <Icon name="auto_awesome" size={40} className="text-on-surface-variant/30 mb-3" />
+          <p className="text-sm text-on-surface-variant/60 max-w-xs">{t('dashboard.widget.empty')}</p>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
@@ -72,7 +87,12 @@ export function WidgetGrid({ widgets, filters, summary, operations, onRemove, on
   };
 
   return (
-    <div className="grid grid-cols-12 gap-4 mt-4">
+    <motion.div
+      className="grid grid-cols-12 gap-4 mt-4"
+      variants={stagger}
+      initial="hidden"
+      animate="visible"
+    >
       {widgets.map((w) => {
         const reg = REGISTRY_BY_TYPE[w.type];
         return (
@@ -93,6 +113,6 @@ export function WidgetGrid({ widgets, filters, summary, operations, onRemove, on
           </WidgetCard>
         );
       })}
-    </div>
+    </motion.div>
   );
 }

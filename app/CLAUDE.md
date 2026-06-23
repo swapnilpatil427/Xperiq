@@ -567,6 +567,25 @@ afterEach(cleanup);
 
 Test files live in `src/__tests__/` mirroring `src/` structure. Setup at `src/test/setup.ts` extends Vitest with `@testing-library/jest-dom` matchers.
 
+### Testing rules
+
+Every code change requires a corresponding test change:
+- **New component or hook** → add tests in `src/__tests__/` mirroring the source path
+- **Modified component behavior** → update existing tests; delete tests for removed behavior
+- **Bug fix** → add a regression test
+
+Run the relevant test file before submitting:
+```bash
+nvm use 20 && npx vitest run src/__tests__/pages/experience/SurveyReportPage.test.tsx
+```
+
+Mock checklist for page tests:
+- `vi.mock('../../lib/i18n', ...)` — always mock `useTranslation`
+- `vi.mock('framer-motion', ...)` — replace motion components with plain HTML
+- `vi.mock('../../hooks/useApi', ...)` + `vi.mock('../../hooks/useSurveys', ...)` — mock all data hooks
+- `global.URL.createObjectURL` / `URL.revokeObjectURL` — mock in `beforeEach` if the component downloads files
+- Wrap `render()` in `MemoryRouter` when component uses router hooks
+
 ---
 
 ## Environment Variables

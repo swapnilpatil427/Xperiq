@@ -68,7 +68,7 @@ app.set('trust proxy', 1);
 const corsOrigin = process.env.NODE_ENV === 'production'
   ? (process.env.ALLOWED_ORIGIN || false)
   : true;
-app.use(cors({ origin: corsOrigin, credentials: true }));
+app.use(cors({ origin: corsOrigin, credentials: true, exposedHeaders: ['X-Export-Fallback'] }));
 
 // Clerk webhook needs the RAW body for Svix signature verification — mount it
 // BEFORE express.json() so the JSON parser doesn't consume the stream.

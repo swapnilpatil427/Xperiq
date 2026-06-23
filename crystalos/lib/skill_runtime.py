@@ -93,6 +93,7 @@ class SkillRuntime:
                     user=user_msg,
                     output_schema=_SkillOutput,
                     current_tokens=ctx.get("current_tokens", 0),
+                    model_config=model_cfg,
                 ),
                 timeout=float(timeout),
             )
@@ -153,11 +154,12 @@ class SkillRuntime:
             try:
                 result2, credit2 = await asyncio.wait_for(
                     call_agent(
-                        agent_name=f"{skill_name}",
+                        agent_name=skill_name,
                         system=system,
                         user=retry_user,
                         output_schema=_SkillOutput,
                         current_tokens=tokens_used,
+                        model_config=model_cfg,
                     ),
                     timeout=float(timeout),
                 )

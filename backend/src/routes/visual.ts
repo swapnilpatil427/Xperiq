@@ -56,17 +56,33 @@ router.get('/report/:surveyId', requireAuth, async (req: Request, res: Response)
     );
     if (!survey) { clientError(res, 404, 'Survey not found'); return; }
 
-    const { rows: [m] } = await query(
-      `SELECT nps, csat, response_count FROM survey_metric_snapshots
-        WHERE survey_id = $1 AND org_id = $2 ORDER BY captured_at DESC LIMIT 1`,
-      [req.params.surveyId, req.orgId]
-    );
-    const { rows: topics } = await query(
-      `SELECT name, dominant_emotion AS sentiment, volume FROM survey_topics
-        WHERE survey_id = $1 AND org_id = $2 AND time_window = 'all_time'
-        ORDER BY volume DESC LIMIT 8`,
-      [req.params.surveyId, req.orgId]
-    ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
+    const [metricsResult, topicsResult, insightsResult] = await Promise.all([
+      query(
+        `SELECT nps, csat, response_count FROM survey_metric_snapshots
+          WHERE survey_id = $1 AND org_id = $2 ORDER BY captured_at DESC LIMIT 1`,
+        [req.params.surveyId, req.orgId]
+      ).catch(() => ({ rows: [] as Record<string, unknown>[] })),
+      query(
+        `SELECT name, dominant_emotion AS sentiment, volume FROM survey_topics
+          WHERE survey_id = $1 AND org_id = $2 AND time_window = 'all_time'
+          ORDER BY volume DESC LIMIT 8`,
+        [req.params.surveyId, req.orgId]
+      ).catch(() => ({ rows: [] as Record<string, unknown>[] })),
+      query(
+        `SELECT category, headline, narrative, recommended_action, priority,
+                metric_json, citations_json, trust_score
+          FROM insights
+          WHERE survey_id = $1 AND org_id = $2
+            AND superseded_at IS NULL
+            AND category IN ('report.executive_summary','report.priority_action','report.full_theme')
+          ORDER BY priority DESC NULLS LAST, generated_at DESC`,
+        [req.params.surveyId, req.orgId]
+      ).catch(() => ({ rows: [] as Record<string, unknown>[] })),
+    ]);
+
+    const m = metricsResult.rows[0] as Record<string, unknown> | undefined;
+    const topics = topicsResult.rows;
+    const insights = insightsResult.rows;
 
     const num = (v: unknown) => (v == null ? null : Number(v));
     const metrics = m
@@ -76,7 +92,7 @@ router.get('/report/:surveyId', requireAuth, async (req: Request, res: Response)
       ? `This survey is at NPS ${num(m.nps)} across ${m.response_count ?? 0} responses.`
       : '';
 
-    const reportData = { survey, metrics, topics, summary };
+    const reportData = { survey, metrics, topics, insights, summary } as import('../lib/visualReport').ReportData;
     const format = String(req.query.format || 'html').toLowerCase();
     const safeName = (survey.title || 'report').replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 60);
 

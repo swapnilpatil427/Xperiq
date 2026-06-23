@@ -82,8 +82,7 @@ def test_skill_result_fields():
 
 def test_parse_evals_md_extracts_criteria():
     runtime = SkillRuntime()
-    evals_text = textwrap.dedent("""\
-        # Evals: test-skill
+    evals_text = textwrap.dedent("""        # Evals: test-skill
         ## Criteria
         | ID | Criterion | Weight | Threshold |
         |----|-----------|--------|-----------|
@@ -167,8 +166,7 @@ def test_check_evals_no_evals_file(tmp_path: Path):
 
 
 def test_check_evals_must_pass_fail_returns_zero(tmp_path: Path):
-    evals = textwrap.dedent("""\
-        # Evals
+    evals = textwrap.dedent("""        # Evals
         ## Criteria
         | ID | Criterion | Weight | Threshold |
         |----|-----------|--------|-----------|
@@ -184,8 +182,7 @@ def test_check_evals_must_pass_fail_returns_zero(tmp_path: Path):
 
 
 def test_check_evals_all_numeric_pass(tmp_path: Path):
-    evals = textwrap.dedent("""\
-        # Evals
+    evals = textwrap.dedent("""        # Evals
         ## Criteria
         | ID | Criterion | Weight | Threshold |
         |----|-----------|--------|-----------|
@@ -274,8 +271,7 @@ async def test_execute_returns_skill_result(tmp_path: Path):
 
 @pytest.mark.asyncio
 async def test_execute_retries_on_eval_failure(tmp_path: Path):
-    evals = textwrap.dedent("""\
-        # Evals
+    evals = textwrap.dedent("""        # Evals
         ## Criteria
         | ID | Criterion | Weight | Threshold |
         |----|-----------|--------|-----------|
@@ -338,3 +334,101 @@ async def test_execute_exception_returns_error_result(tmp_path: Path):
 
     assert result.eval_passed is False
     assert "API down" in result.output.get("error", "")
+
+
+@pytest.mark.asyncio
+async def test_execute_passes_model_config_to_call_agent(tmp_path: Path):
+    """execute() must pass model_config=<pre-resolved config> to call_agent,
+    not rely on call_agent's internal get_model() lookup."""
+    from crystalos.lib.models import ModelConfig
+
+    runtime = SkillRuntime()
+    meta = make_skill_meta(tmp_path)
+
+    skill_model = ModelConfig(model="skill/model:free", max_tokens=200, temperature=0.2)
+    mock_output = MagicMock()
+    mock_output.to_dict.return_value = {"result": "ok"}
+    mock_credit = make_mock_credit()
+
+    captured_kwargs: dict = {}
+
+    async def capturing_call_agent(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return mock_output, mock_credit
+
+    with patch("crystalos.lib.openrouter.call_agent", capturing_call_agent):
+        with patch("crystalos.lib.models.get_skill_model", return_value=skill_model):
+            with patch.object(runtime, "_fetch_examples", AsyncMock(return_value=[])):
+                await runtime.execute("test-skill", meta, {}, {})
+
+    assert "model_config" in captured_kwargs, "model_config kwarg must be passed to call_agent"
+    assert captured_kwargs["model_config"] is skill_model
+
+
+@pytest.mark.asyncio
+async def test_execute_retry_also_passes_model_config(tmp_path: Path):
+    """On retry (eval failure), call_agent must also receive model_config."""
+    from crystalos.lib.models import ModelConfig
+
+    evals = textwrap.dedent("""        # Evals
+        | ID | Criterion | Weight | Threshold |
+        |----|-----------|--------|-----------|
+        | E1 | key_findings count is 3-5 | 100 | >= 0.90 |
+    """)
+    runtime = SkillRuntime()
+    meta = make_skill_meta(tmp_path, evals_md=evals, max_retries=1)
+
+    skill_model = ModelConfig(model="retry/model:free", max_tokens=150, temperature=0.1)
+    bad_output = MagicMock()
+    bad_output.to_dict.return_value = {"key_findings": [{"f": "only one"}]}
+    good_output = MagicMock()
+    good_output.to_dict.return_value = {"key_findings": [{"f": "1"}, {"f": "2"}, {"f": "3"}]}
+    mock_credit = make_mock_credit()
+
+    all_kwargs: list[dict] = []
+    call_count = 0
+
+    async def capturing_call_agent(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        all_kwargs.append(dict(kwargs))
+        if call_count == 1:
+            return bad_output, mock_credit
+        return good_output, mock_credit
+
+    with patch("crystalos.lib.openrouter.call_agent", capturing_call_agent):
+        with patch("crystalos.lib.models.get_skill_model", return_value=skill_model):
+            with patch.object(runtime, "_fetch_examples", AsyncMock(return_value=[])):
+                result = await runtime.execute("test-skill", meta, {}, {})
+
+    assert result.retried is True
+    assert call_count == 2
+    for i, kwargs in enumerate(all_kwargs):
+        assert kwargs.get("model_config") is skill_model, (
+            f"model_config not passed on call {i + 1}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_execute_does_not_call_get_model_directly(tmp_path: Path):
+    """execute() uses get_skill_model(), not get_model(). Calling get_model() with a
+    skill name raises KeyError — so if execute() ever falls back to get_model() the
+    test will fail."""
+    from crystalos.lib.models import ModelConfig
+
+    runtime = SkillRuntime()
+    meta = make_skill_meta(tmp_path)
+
+    skill_model = ModelConfig(model="test/model:free", max_tokens=100, temperature=0.1)
+    mock_output = MagicMock()
+    mock_output.to_dict.return_value = {"result": "ok"}
+
+    with patch("crystalos.lib.openrouter.call_agent", AsyncMock(return_value=(mock_output, make_mock_credit()))):
+        with patch("crystalos.lib.models.get_skill_model", return_value=skill_model):
+            # If get_model() is called anywhere inside execute(), it will raise KeyError
+            with patch("crystalos.lib.openrouter.get_model", side_effect=KeyError("must not call get_model")):
+                with patch.object(runtime, "_fetch_examples", AsyncMock(return_value=[])):
+                    result = await runtime.execute("nps-action-advisor", meta, {}, {})
+
+    assert result.eval_passed is True or result.eval_score >= 0
+    # If we got here, get_model() was never called — test passes

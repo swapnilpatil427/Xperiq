@@ -750,8 +750,15 @@ export function createApiClient(getToken: GetToken) {
     },
 
     // ── Dashboard ──────────────────────────────────────────────────────────────
-    getDashboardSummary: async (days = 30): Promise<DashboardSummary> => {
-      const res = await http.get(`/api/dashboard/summary?days=${days}`);
+    getDashboardSummary: async (
+      days = 30,
+      opts: { surveyId?: string | null; tagId?: string | null; npsSegment?: string } = {},
+    ): Promise<DashboardSummary> => {
+      const params: Record<string, string> = { days: String(days) };
+      if (opts.surveyId) params.surveyId = opts.surveyId;
+      if (opts.tagId) params.tagId = opts.tagId;
+      if (opts.npsSegment && opts.npsSegment !== 'all') params.npsSegment = opts.npsSegment;
+      const res = await http.get('/api/dashboard/summary', { params });
       return res.data;
     },
     getDashboardOperations: async (): Promise<DashboardOperations> => {

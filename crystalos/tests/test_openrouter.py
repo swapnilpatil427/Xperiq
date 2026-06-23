@@ -203,6 +203,92 @@ class TestCircuitBreakerIntegration:
                     assert mock.call_count == first_call_count
 
 
+# ── call_agent model_config parameter ────────────────────────────────────────
+
+class TestCallAgentModelConfig:
+    """call_agent() accepts an explicit model_config that bypasses get_model()."""
+
+    @pytest.mark.asyncio
+    async def test_uses_explicit_model_config_when_provided(self, model_cfg: ModelConfig):
+        """When model_config is passed, get_model() must NOT be called."""
+        import json as _json
+        from crystalos.lib.openrouter import call_agent
+        from pydantic import BaseModel
+
+        class Output(BaseModel):
+            value: str = "ok"
+
+        async def fake_call_with_backoff(messages, config):
+            return _json.dumps({"value": "explicit-model-response"}), {}
+
+        with patch("crystalos.lib.openrouter._call_with_backoff", fake_call_with_backoff):
+            with patch("crystalos.lib.openrouter.get_model") as mock_get_model:
+                mock_get_model.side_effect = KeyError("should not be called")
+                result, credit = await call_agent(
+                    agent_name="nonexistent-agent",
+                    system="system json",
+                    user="user",
+                    output_schema=Output,
+                    model_config=model_cfg,
+                )
+        # get_model was never called — no KeyError raised
+        assert result.value == "explicit-model-response"
+        mock_get_model.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_get_model_when_model_config_is_none(self):
+        """When model_config=None, get_model(agent_name) is used."""
+        import json as _json
+        from crystalos.lib.openrouter import call_agent
+        from crystalos.lib.models import ModelConfig
+        from pydantic import BaseModel
+
+        class Output(BaseModel):
+            value: str = "ok"
+
+        fallback_cfg = ModelConfig(model="fallback/model:free", max_tokens=50, temperature=0.1)
+
+        async def fake_call_with_backoff(messages, config):
+            return _json.dumps({"value": "fallback-response"}), {}
+
+        with patch("crystalos.lib.openrouter._call_with_backoff", fake_call_with_backoff):
+            with patch("crystalos.lib.openrouter.get_model", return_value=fallback_cfg) as mock_get_model:
+                result, credit = await call_agent(
+                    agent_name="some-pipeline-agent",
+                    system="system json",
+                    user="user",
+                    output_schema=Output,
+                    model_config=None,
+                )
+        mock_get_model.assert_called_once_with("some-pipeline-agent")
+        assert result.value == "fallback-response"
+
+    @pytest.mark.asyncio
+    async def test_model_config_overrides_routing_for_skill_agents(self, model_cfg: ModelConfig):
+        """Skill names like 'nps-action-advisor' are not in the pipeline routing dict.
+        Passing model_config avoids the KeyError that would otherwise be raised."""
+        import json as _json
+        from crystalos.lib.openrouter import call_agent
+        from pydantic import BaseModel
+
+        class Output(BaseModel):
+            recommendation: str = "fix it"
+
+        async def fake_call_with_backoff(messages, config):
+            return _json.dumps({"recommendation": "use model_config"}), {}
+
+        with patch("crystalos.lib.openrouter._call_with_backoff", fake_call_with_backoff):
+            # nps-action-advisor is a skill name that doesn't exist in _ROUTING
+            result, credit = await call_agent(
+                agent_name="nps-action-advisor",
+                system="You are a skill. Respond in json.",
+                user="{}",
+                output_schema=Output,
+                model_config=model_cfg,  # bypasses get_model() lookup
+            )
+        assert result.recommendation == "use model_config"
+
+
 # ── Env-specific config sanity checks ────────────────────────────────────────
 
 class TestEnvConfig:

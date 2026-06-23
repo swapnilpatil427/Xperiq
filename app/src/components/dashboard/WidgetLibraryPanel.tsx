@@ -36,8 +36,15 @@ export function WidgetLibraryPanel({ open, onClose, onAdd, existingTypes }: Widg
                     <Icon name={widget.icon} size={20} style={{ color: widget.color }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-on-surface">{widget.label}</p>
-                    <p className="text-xs text-[var(--color-on-surface-variant)] line-clamp-2">{widget.description}</p>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-medium text-on-surface">{widget.label}</p>
+                      {widget.surveyRequired && (
+                        <span className="text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600">
+                          Survey required
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-[var(--color-on-surface-variant)] line-clamp-2 mt-0.5">{widget.description}</p>
                   </div>
                   <Button
                     size="sm"

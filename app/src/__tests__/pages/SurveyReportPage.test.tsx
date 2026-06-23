@@ -148,6 +148,7 @@ function buildApiMock(overrides: Record<string, unknown> = {}) {
     listInsights: vi.fn().mockResolvedValue({
       insights: [execSummaryInsight, priorityActionInsight, themeInsight],
     }),
+    downloadReport: vi.fn().mockResolvedValue({ blob: new Blob(['html'], { type: 'text/html' }), format: 'html' }),
     ...overrides,
   } as unknown as ReturnType<typeof useApi>;
 }
@@ -164,11 +165,16 @@ function buildSurveysMock(surveys = [mockSurvey]) {
   } as unknown as ReturnType<typeof useSurveys>;
 }
 
+const mockCreateObjectURL = vi.fn(() => 'blob:fake-url');
+const mockRevokeObjectURL = vi.fn();
+
 beforeEach(() => {
   mockOpenCrystal.mockClear();
   mockSetScope.mockClear();
   vi.mocked(useApi).mockReturnValue(buildApiMock());
   vi.mocked(useSurveys).mockReturnValue(buildSurveysMock());
+  global.URL.createObjectURL = mockCreateObjectURL;
+  global.URL.revokeObjectURL = mockRevokeObjectURL;
 });
 
 afterEach(() => {
@@ -326,5 +332,87 @@ describe('SurveyReportPage', () => {
     await waitFor(() =>
       expect(screen.getByText('Confirmed ↑')).toBeInTheDocument(),
     );
+  });
+
+  it('renders the sub-nav with 5 navigation pills', async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText('experience.nav.intelligence')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('experience.nav.topics')).toBeInTheDocument();
+    expect(screen.getByText('experience.nav.advanced')).toBeInTheDocument();
+    expect(screen.getByText('experience.nav.trends')).toBeInTheDocument();
+    expect(screen.getByText('experience.nav.report')).toBeInTheDocument();
+  });
+
+  it('renders the Export button in the sub-nav', async () => {
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText('Executive Summary')).toBeInTheDocument(),
+    );
+    expect(screen.getByText('experience.report.export')).toBeInTheDocument();
+  });
+
+  it('export dropdown opens when Export button is clicked', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText('experience.report.export')).toBeInTheDocument(),
+    );
+    const exportBtn = screen.getByText('experience.report.export').closest('button')!;
+    await user.click(exportBtn);
+    expect(screen.getByText('experience.report.exportPdf')).toBeInTheDocument();
+    expect(screen.getByText('experience.report.exportPptx')).toBeInTheDocument();
+    expect(screen.getByText('experience.report.exportHtml')).toBeInTheDocument();
+  });
+
+  it('clicking PDF option calls downloadReport with "pdf"', async () => {
+    const mockDownloadReport = vi.fn().mockResolvedValue({
+      blob: new Blob(['%PDF'], { type: 'application/pdf' }),
+      format: 'pdf',
+    });
+    vi.mocked(useApi).mockReturnValue(
+      buildApiMock({ downloadReport: mockDownloadReport }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText('experience.report.export')).toBeInTheDocument(),
+    );
+    await user.click(screen.getByText('experience.report.export').closest('button')!);
+    await user.click(screen.getByText('experience.report.exportPdf'));
+    await waitFor(() => expect(mockDownloadReport).toHaveBeenCalledWith('survey1', 'pdf'));
+  });
+
+  it('shows fallback toast when delivered format differs from requested', async () => {
+    const mockDownloadReport = vi.fn().mockResolvedValue({
+      blob: new Blob(['<html>'], { type: 'text/html' }),
+      format: 'html',  // requested pdf but got html
+    });
+    vi.mocked(useApi).mockReturnValue(
+      buildApiMock({ downloadReport: mockDownloadReport }),
+    );
+    const user = userEvent.setup();
+    renderPage();
+    await waitFor(() =>
+      expect(screen.getByText('experience.report.export')).toBeInTheDocument(),
+    );
+    await user.click(screen.getByText('experience.report.export').closest('button')!);
+    await user.click(screen.getByText('experience.report.exportPdf'));
+    await waitFor(() =>
+      expect(screen.getByText('experience.report.exportFallback')).toBeInTheDocument(),
+    );
+  });
+
+  it('shows loading skeleton while insights load', () => {
+    vi.mocked(useApi).mockReturnValue(
+      buildApiMock({
+        listInsights: vi.fn().mockReturnValue(new Promise(() => {})), // never resolves
+      }),
+    );
+    renderPage();
+    // Skeleton divs have class "skeleton"
+    const skeletons = document.querySelectorAll('.skeleton');
+    expect(skeletons.length).toBeGreaterThan(0);
   });
 });

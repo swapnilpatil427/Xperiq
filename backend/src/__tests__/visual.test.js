@@ -91,7 +91,7 @@ describe('buildReportHtml', () => {
       topics: [{ name: 'Shipping', sentiment: 'negative', volume: 40 }],
       summary: 'NPS is healthy.',
     });
-    expect(html).toContain('<!doctype html>');
+    expect(html).toContain('<\!doctype html>');
     expect(html).toContain('Q4 NPS');
     expect(html).toContain('42');
     expect(html).toContain('Shipping');
@@ -124,6 +124,76 @@ describe('GET /api/visual/report/:surveyId', () => {
     dbQuery = vi.fn(async () => ({ rows: [] }));
     const res = await inject(buildApp(), { method: 'GET', url: '/api/visual/report/nope' });
     expect(res.statusCode).toBe(404);
+    dbQuery = null;
+  });
+
+  it('includes executive summary and themes when insights are present', async () => {
+    dbQuery = vi.fn(async (text) => {
+      if (text.includes('FROM surveys')) return { rows: [{ id: 's1', title: 'Exec Report Survey' }] };
+      if (text.includes('survey_metric_snapshots')) return { rows: [{ nps: 28, csat: 3.8, response_count: 95 }] };
+      if (text.includes('survey_topics')) return { rows: [] };
+      if (text.includes('FROM insights')) return {
+        rows: [
+          {
+            category: 'report.executive_summary',
+            headline: 'Summary',
+            narrative: 'Customer satisfaction is improving after last quarter.',
+            priority: 100,
+            trust_score: 85,
+            metric_json: { response_count: 95, prior_insights_used: 2, cross_theme_patterns: 'Support and product issues reinforce each other.' },
+            citations_json: [],
+            recommended_action: null,
+          },
+          {
+            category: 'report.full_theme',
+            headline: 'Support wait times remain critical',
+            narrative: 'Ticket resolution averages 48 hours.',
+            priority: 80,
+            trust_score: 70,
+            metric_json: { sentiment: 'negative', frequency_estimate: 14, trend_direction: 'declining', business_impact: 'High churn risk.', root_cause_hypothesis: 'Understaffed team.', is_new_theme: false, confirms_prior: true },
+            citations_json: [{ quote: 'Support took two days to reply', sentiment: 'negative', response_id: 'r1' }],
+            recommended_action: { label: 'Hire 2 support agents', time_horizon: 'short_term', priority: 'high' },
+          },
+        ],
+      };
+      return { rows: [] };
+    });
+    const res = await inject(buildApp(), { method: 'GET', url: '/api/visual/report/s1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toContain('Customer satisfaction is improving after last quarter.');
+    expect(res.payload).toContain('Support and product issues reinforce each other.');
+    expect(res.payload).toContain('Support wait times remain critical');
+    expect(res.payload).toContain('Support took two days to reply');
+    expect(res.payload).toContain('High churn risk.');
+    dbQuery = null;
+  });
+
+  it('insights query uses generated_at and superseded_at IS NULL (regression guard)', async () => {
+    const queries = [];
+    dbQuery = vi.fn(async (text) => {
+      queries.push(text);
+      if (text.includes('FROM surveys')) return { rows: [{ id: 's1', title: 'T' }] };
+      return { rows: [] };
+    });
+    await inject(buildApp(), { method: 'GET', url: '/api/visual/report/s1' });
+    const insightsQuery = queries.find(q => q.includes('FROM insights'));
+    expect(insightsQuery).toBeDefined();
+    expect(insightsQuery).toContain('generated_at');
+    expect(insightsQuery).not.toContain("ORDER BY priority DESC NULLS LAST, created_at");
+    expect(insightsQuery).toContain('superseded_at IS NULL');
+    dbQuery = null;
+  });
+
+  it('falls back to NPS summary sentence when no insights exist', async () => {
+    dbQuery = vi.fn(async (text) => {
+      if (text.includes('FROM surveys')) return { rows: [{ id: 's1', title: 'Fallback Survey' }] };
+      if (text.includes('survey_metric_snapshots')) return { rows: [{ nps: -5, csat: null, response_count: 40 }] };
+      return { rows: [] };
+    });
+    const res = await inject(buildApp(), { method: 'GET', url: '/api/visual/report/s1' });
+    expect(res.statusCode).toBe(200);
+    expect(res.payload).toContain('-5');
+    expect(res.payload).toContain('40');
     dbQuery = null;
   });
 });

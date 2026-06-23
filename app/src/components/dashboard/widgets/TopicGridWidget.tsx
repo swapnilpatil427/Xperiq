@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { useApi } from '../../../hooks/useApi';
 import { useTranslation } from '../../../lib/i18n';
 import type { DashboardFilters } from '../../../types/dashboard';
@@ -8,16 +9,18 @@ interface TopicGridWidgetProps {
   filters: DashboardFilters;
 }
 
-const HEALTH_COLOR: Record<string, string> = {
-  healthy: '#10b981',
-  stable: '#6366f1',
-  'at-risk': '#ef4444',
+const HEALTH_GRADIENT: Record<string, string> = {
+  healthy:  'linear-gradient(90deg, #10b981, #34d399)',
+  stable:   'linear-gradient(90deg, var(--color-primary), #818cf8)',
+  'at-risk':'linear-gradient(90deg, #ef4444, #f97316)',
 };
 
-/**
- * Top topics by urgency for the selected survey. Topics are survey-scoped, so
- * without a survey filter the widget prompts the user to pick one.
- */
+const HEALTH_COLOR: Record<string, string> = {
+  healthy:  '#10b981',
+  stable:   'var(--color-primary)',
+  'at-risk':'#ef4444',
+};
+
 export function TopicGridWidget({ filters }: TopicGridWidgetProps) {
   const { t } = useTranslation();
   const api = useApi();
@@ -38,39 +41,73 @@ export function TopicGridWidget({ filters }: TopicGridWidgetProps) {
   }, [api, filters.surveyId]);
 
   if (!filters.surveyId) {
-    return <p className="text-sm text-on-surface-variant py-10 text-center">{t('dashboard.widget.topicsPrompt')}</p>;
+    return (
+      <p className="text-sm text-on-surface-variant/60 py-10 text-center">
+        {t('dashboard.widget.topicsPrompt')}
+      </p>
+    );
   }
   if (loading) {
-    return <div className="space-y-2">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-6 rounded-lg" />)}</div>;
+    return (
+      <div className="space-y-3">
+        {[0, 1, 2, 3].map((i) => <div key={i} className="skeleton h-7 rounded-lg" />)}
+      </div>
+    );
   }
   if (topics.length === 0) {
-    return <p className="text-sm text-on-surface-variant py-10 text-center">{t('dashboard.widget.noData')}</p>;
+    return <p className="text-sm text-on-surface-variant/60 py-10 text-center">{t('dashboard.widget.noData')}</p>;
   }
 
   return (
-    <div className="space-y-2.5">
-      {topics.map((topic) => {
+    <div className="space-y-3">
+      {topics.map((topic, idx) => {
         const urgency = topic.urgency_score ?? 0;
         const pct = Math.max(2, Math.min(100, (urgency / 10) * 100));
-        const color = HEALTH_COLOR[topic.health_label || ''] || 'var(--color-primary)';
+        const label = topic.health_label || '';
+        const gradient = HEALTH_GRADIENT[label] || HEALTH_GRADIENT.stable;
+        const color = HEALTH_COLOR[label] || 'var(--color-primary)';
         const npsImpact = topic.nps_impact;
+
         return (
-          <div key={topic.id} className="text-xs">
-            <div className="flex items-center justify-between gap-2 mb-0.5">
-              <span className="truncate text-on-surface font-medium min-w-0">{topic.name}</span>
-              <span className="flex-shrink-0 text-on-surface-variant">
-                {urgency.toFixed(1)} {t('dashboard.widget.urgency')}
+          <motion.div
+            key={topic.id}
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.35, delay: idx * 0.04, ease: [0.22, 1, 0.36, 1] }}
+            className="text-xs"
+          >
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <span className="truncate text-on-surface font-semibold min-w-0">{topic.name}</span>
+              <span className="flex-shrink-0 flex items-center gap-1.5 text-on-surface-variant/70">
+                <span className="font-bold tabular-nums" style={{ color }}>
+                  {urgency.toFixed(1)}
+                </span>
                 {npsImpact != null && (
-                  <span className={npsImpact >= 0 ? 'text-success ml-1.5' : 'text-destructive ml-1.5'}>
-                    NPS: {npsImpact >= 0 ? '+' : ''}{npsImpact.toFixed(1)}
+                  <span
+                    className="px-1.5 py-0.5 rounded-full font-bold tabular-nums text-[10px]"
+                    style={{
+                      background: npsImpact >= 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                      color: npsImpact >= 0 ? '#10b981' : '#ef4444',
+                    }}
+                  >
+                    NPS {npsImpact >= 0 ? '+' : ''}{npsImpact.toFixed(1)}
                   </span>
                 )}
               </span>
             </div>
-            <div className="h-1.5 w-full rounded-full bg-[var(--color-outline)]/15 overflow-hidden">
-              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+            <div
+              className="h-2 w-full rounded-full overflow-hidden"
+              style={{ background: 'var(--color-outline, rgba(0,0,0,0.08))' }}
+            >
+              <motion.div
+                className="h-full rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${pct}%` }}
+                transition={{ duration: 0.6, delay: idx * 0.04 + 0.1, ease: [0.22, 1, 0.36, 1] }}
+                style={{ background: gradient }}
+              />
             </div>
-          </div>
+          </motion.div>
         );
       })}
     </div>

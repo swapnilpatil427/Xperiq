@@ -104,6 +104,15 @@ const en = {
       noActions: 'Nothing needs action right now.',
       noActivity: 'No recent activity.',
     },
+    scope: {
+      scopeLabel: 'Viewing',
+      all: 'All Surveys',
+      selectSurvey: 'Select a survey',
+      context: {
+        allSurveys: 'Aggregate view across all your surveys',
+        specificSurvey: 'Data scoped to this survey only',
+      },
+    },
     filterBar: {
       dateLabel: 'Date Range',
       surveyLabel: 'Survey',
@@ -111,6 +120,11 @@ const en = {
       allSurveys: 'All Surveys',
       allGroups: 'All Groups',
       reset: 'Reset filters',
+      segmentLabel: 'NPS Segment',
+      allSegments: 'All segments',
+      promoters: 'Promoters (9–10)',
+      passives: 'Passives (7–8)',
+      detractors: 'Detractors (0–6)',
     },
     toolbar: {
       addWidget: 'Add Widget',
@@ -138,6 +152,12 @@ const en = {
       detractors: 'Detractors',
       noSurveys: 'No active surveys',
       urgency: 'urgency',
+      recentResponsesPrompt: 'Select a survey to see its most recent responses',
+      viewAllResponses: 'View all in Data',
+      noRecentResponses: 'No responses yet for this survey',
+      anonymous: 'Anonymous',
+      alertFeedEmpty: 'No active alerts — everything looks healthy',
+      alertFeedViewAll: 'View all alerts',
     },
   },
   alerts: {
@@ -2026,6 +2046,20 @@ const en = {
       report:           'Report',
       backTopics:       '← Back to topics',
       backHub:          '← Experience hub',
+    },
+
+    // Report page
+    report: {
+      subtitle:       'Full intelligence report — synthesised from all evidence',
+      noReport:       'No report generated yet',
+      generateHint:   'Generate insights from the Intelligence page to produce a full report',
+      export:         'Export',
+      exportPdf:      'PDF document',
+      exportPptx:     'PowerPoint (PPTX)',
+      exportHtml:     'Printable HTML',
+      exporting:      'Exporting…',
+      exportFallback: 'PDF/PPTX not available — downloaded as HTML instead',
+      askCrystal:     'Ask Crystal',
     },
 
     // Common labels reused across multiple experience pages

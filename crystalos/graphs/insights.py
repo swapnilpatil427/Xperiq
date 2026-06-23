@@ -2597,7 +2597,7 @@ async def node_narrate(state: dict) -> dict:
 
     # ── Query 2: find the anchor run for prior context ────────────────────────
     # The anchor = last completed insight_generation run that had real new data:
-    #   • trigger IN ('schedule', 'stream') — scheduled runs always have new data
+    #   • trigger_type IN ('schedule', 'stream') — scheduled/stream runs always process data
     #   • OR new_response_count > 0 — manual run that actually processed new responses
     # Excludes the CURRENT run (id != run_id) and manual regens with 0 new responses.
     anchor_run_id: str = ""
@@ -2614,7 +2614,7 @@ async def node_narrate(state: dict) -> dict:
                          AND run_type  = 'insight_generation'
                          AND id        != %s
                          AND (
-                               trigger IN ('schedule', 'stream')
+                               trigger_type IN ('schedule', 'stream')
                             OR new_response_count > 0
                          )
                        ORDER BY completed_at DESC
@@ -3453,16 +3453,18 @@ async def node_publish(state: dict) -> dict:
         sampled_ids          = [str(r["id"]) for r in state.get("responses", []) if r.get("id")]
         new_response_count   = len(state.get("new_response_ids") or set())
         prior_ctx_run_id     = state.get("prior_context_run_id") or None
+        trigger_type         = state.get("trigger", "manual")
         async with db._pool_conn().connection() as conn:
             await conn.execute(
                 """UPDATE agent_runs
                    SET status='completed', completed_at=NOW(),
+                       trigger_type=%s,
                        sampled_response_ids=%s,
                        sampled_response_count=%s,
                        new_response_count=%s,
                        prior_context_run_id=%s
                    WHERE id=%s""",
-                (json.dumps(sampled_ids), len(sampled_ids),
+                (trigger_type, json.dumps(sampled_ids), len(sampled_ids),
                  new_response_count, prior_ctx_run_id, run_id),
             )
     except Exception as exc:

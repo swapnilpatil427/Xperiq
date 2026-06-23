@@ -14,71 +14,130 @@ const data = {
   metrics: { nps: 42, csat: 4.3, responseCount: 1280 },
   topics: [{ name: 'Wait time', sentiment: 'negative', volume: 120 }],
   summary: 'NPS recovered 8 points this quarter.',
+  insights: [],
 };
 
 // ── renderPdf ─────────────────────────────────────────────────────────────────
 
 describe('renderPdf', () => {
-  it('degrades gracefully when puppeteer is not installed', async () => {
+  function makeFakePdfmake() {
+    return {
+      virtualfs: { storage: {} },
+      addFonts: vi.fn(),
+      setLocalAccessPolicy: vi.fn(),
+      setUrlAccessPolicy: vi.fn(),
+      createPdf: vi.fn(() => ({ getBuffer: vi.fn(async () => Buffer.from('%PDF-1.7 fake')) })),
+    };
+  }
+
+  it('degrades gracefully when pdfmake is not installed', async () => {
     const r = await renderPdf(data, { load: () => null });
     expect(r.available).toBe(false);
-    expect(r.reason).toBe('puppeteer_not_installed');
+    expect(r.reason).toBe('pdfmake_not_installed');
   });
 
-  it('renders a PDF buffer via headless Chromium when available', async () => {
-    const pdf = vi.fn(async () => Buffer.from('%PDF-1.7 fake'));
-    const setContent = vi.fn(async () => {});
-    const newPage = vi.fn(async () => ({ setContent, pdf }));
-    const close = vi.fn(async () => {});
-    const launch = vi.fn(async () => ({ newPage, close }));
-    const fakePuppeteer = { launch };
-
-    const r = await renderPdf(data, { load: () => fakePuppeteer });
+  it('renders a PDF buffer when pdfmake is available', async () => {
+    const fake = makeFakePdfmake();
+    const r = await renderPdf(data, { load: (name) => name === 'pdfmake' ? fake : null });
     expect(r.available).toBe(true);
     expect(r.contentType).toBe('application/pdf');
     expect(r.ext).toBe('pdf');
     expect(Buffer.isBuffer(r.buffer)).toBe(true);
-    expect(setContent).toHaveBeenCalledWith(expect.stringContaining('Q3 Relationship Survey'), expect.any(Object));
-    expect(close).toHaveBeenCalled(); // browser always closed
+    expect(fake.createPdf).toHaveBeenCalled();
   });
 
-  it('closes the browser even when page.pdf throws', async () => {
-    const pdf = vi.fn(async () => { throw new Error('render failed'); });
-    const setContent = vi.fn(async () => {});
-    const newPage = vi.fn(async () => ({ setContent, pdf }));
-    const close = vi.fn(async () => {});
-    const launch = vi.fn(async () => ({ newPage, close }));
-
-    await expect(renderPdf(data, { load: () => ({ launch }) })).rejects.toThrow('render failed');
-    // browser must be closed in the finally block even on error
-    expect(close).toHaveBeenCalled();
+  it('injects fonts on first call and skips injection on second', async () => {
+    const fake = makeFakePdfmake();
+    const fakeFonts = { 'Roboto-Regular.ttf': Buffer.from('fakefont').toString('base64') };
+    const load = (name) => name === 'pdfmake' ? fake : name === 'pdfmake/build/vfs_fonts' ? fakeFonts : null;
+    await renderPdf(data, { load });
+    expect(fake.addFonts).toHaveBeenCalledTimes(1);
+    // Second call: storage key already present, skip injection
+    fake.virtualfs.storage['Roboto-Regular.ttf'] = Buffer.from('already');
+    await renderPdf(data, { load });
+    expect(fake.addFonts).toHaveBeenCalledTimes(1); // still 1, not 2
   });
 
-  it('passes --no-sandbox and --disable-setuid-sandbox launch args', async () => {
-    const pdf = vi.fn(async () => Buffer.from('fake'));
-    const setContent = vi.fn(async () => {});
-    const newPage = vi.fn(async () => ({ setContent, pdf }));
-    const close = vi.fn(async () => {});
-    const launch = vi.fn(async () => ({ newPage, close }));
-
-    await renderPdf(data, { load: () => ({ launch }) });
-    const launchOpts = launch.mock.calls[0][0];
-    expect(launchOpts.args).toContain('--no-sandbox');
-    expect(launchOpts.args).toContain('--disable-setuid-sandbox');
+  it('sets local and url access policies to deny', async () => {
+    const fake = makeFakePdfmake();
+    // Must provide fonts so the injection block (which sets policies) actually runs
+    const fakeFonts = { 'Roboto-Regular.ttf': Buffer.from('fakefont').toString('base64') };
+    const load = (name) => name === 'pdfmake' ? fake : name === 'pdfmake/build/vfs_fonts' ? fakeFonts : null;
+    await renderPdf(data, { load });
+    expect(fake.setLocalAccessPolicy).toHaveBeenCalled();
+    expect(fake.setUrlAccessPolicy).toHaveBeenCalled();
+    // Policies should deny access (return false)
+    const localPolicy = fake.setLocalAccessPolicy.mock.calls[0][0];
+    const urlPolicy = fake.setUrlAccessPolicy.mock.calls[0][0];
+    expect(localPolicy()).toBe(false);
+    expect(urlPolicy()).toBe(false);
   });
 
-  it('passes waitUntil networkidle0 to page.setContent', async () => {
-    const pdf = vi.fn(async () => Buffer.from('fake'));
-    const setContent = vi.fn(async () => {});
-    const newPage = vi.fn(async () => ({ setContent, pdf }));
-    const close = vi.fn(async () => {});
-    const launch = vi.fn(async () => ({ newPage, close }));
+  it('passes survey title as docDef info.title', async () => {
+    const fake = makeFakePdfmake();
+    await renderPdf(data, { load: (name) => name === 'pdfmake' ? fake : null });
+    const docDef = fake.createPdf.mock.calls[0][0];
+    expect(docDef.info.title).toBe('Q3 Relationship Survey');
+  });
 
-    await renderPdf(data, { load: () => ({ launch }) });
-    expect(setContent).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ waitUntil: 'networkidle0' })
-    );
+  it('includes exec summary narrative in PDF content', async () => {
+    const fake = makeFakePdfmake();
+    const richData = {
+      ...data,
+      insights: [{
+        category: 'report.executive_summary',
+        headline: 'Exec headline',
+        narrative: 'NPS climbed 8 points driven by onboarding improvements.',
+        priority: 100,
+        trust_score: 85,
+        metric_json: { response_count: 200, prior_insights_used: 2, cross_theme_patterns: 'Both bugs and slow support overlap.' },
+        citations_json: [],
+        recommended_action: null,
+      }],
+    };
+    await renderPdf(richData, { load: (name) => name === 'pdfmake' ? fake : null });
+    const docDef = fake.createPdf.mock.calls[0][0];
+    const allText = JSON.stringify(docDef.content);
+    expect(allText).toContain('NPS climbed 8 points');
+    expect(allText).toContain('Both bugs and slow support overlap.');
+    expect(allText).toContain('200');
+  });
+
+  it('includes theme headline, trend badge, frequency and citations in PDF', async () => {
+    const fake = makeFakePdfmake();
+    const richData = {
+      ...data,
+      insights: [{
+        category: 'report.full_theme',
+        headline: 'Onboarding friction blocks activation',
+        narrative: 'Multiple users report setup confusion.',
+        priority: 80,
+        trust_score: 72,
+        metric_json: {
+          sentiment: 'negative',
+          frequency_estimate: 18,
+          trend_direction: 'declining',
+          business_impact: 'Increases churn in first 7 days.',
+          root_cause_hypothesis: 'Missing onboarding checklist.',
+          is_new_theme: false,
+          confirms_prior: true,
+        },
+        citations_json: [
+          { quote: 'Setup was confusing and slow', sentiment: 'negative', response_id: 'r1' },
+        ],
+        recommended_action: { label: 'Add onboarding checklist', time_horizon: 'short_term', priority: 'high' },
+      }],
+    };
+    await renderPdf(richData, { load: (name) => name === 'pdfmake' ? fake : null });
+    const docDef = fake.createPdf.mock.calls[0][0];
+    const allText = JSON.stringify(docDef.content);
+    expect(allText).toContain('Onboarding friction blocks activation');
+    expect(allText).toContain('Declining');
+    expect(allText).toContain('18');
+    expect(allText).toContain('Setup was confusing and slow');
+    expect(allText).toContain('Increases churn in first 7 days');
+    expect(allText).toContain('Missing onboarding checklist');
+    expect(allText).toContain('Add onboarding checklist');
   });
 });
 
@@ -117,21 +176,34 @@ describe('renderPptx', () => {
     );
   });
 
-  it('renders "No topics yet." placeholder row when topics is empty', async () => {
-    let capturedTableArgs = null;
+  it('does not add a topics slide when topics array is empty', async () => {
+    const slides = [];
     function FakePptx() {
-      this.addSlide = () => ({
-        addText: vi.fn(),
-        addTable: vi.fn((...args) => { capturedTableArgs = args[0]; }),
-        background: null,
-      });
+      this.addSlide = () => { const s = { addText: vi.fn(), addTable: vi.fn(), background: null }; slides.push(s); return s; };
       this.write = vi.fn(async () => Buffer.from('PK'));
     }
-    await renderPptx({ ...data, topics: [] }, { load: () => FakePptx });
-    // First element of the table arg array is the rows array (header + data rows)
-    expect(capturedTableArgs).not.toBeNull();
-    const dataRows = capturedTableArgs.slice(1); // skip header
-    expect(dataRows[0][0]).toBe('No topics yet.');
+    await renderPptx({ ...data, topics: [], insights: [] }, { load: () => FakePptx });
+    // title + metrics = 2; no topics slide
+    expect(slides).toHaveLength(2);
+    slides.forEach(s => expect(s.addTable).not.toHaveBeenCalled());
+  });
+
+  it('adds one slide per theme when insights contain report.full_theme', async () => {
+    const slides = [];
+    function FakePptx() {
+      this.addSlide = () => { const s = { addText: vi.fn(), addTable: vi.fn(), background: null }; slides.push(s); return s; };
+      this.write = vi.fn(async () => Buffer.from('PK'));
+    }
+    const themeData = {
+      ...data,
+      insights: [
+        { category: 'report.full_theme', headline: 'Theme A', narrative: 'desc A', priority: 80, trust_score: 75, metric_json: null, citations_json: [], recommended_action: null },
+        { category: 'report.full_theme', headline: 'Theme B', narrative: 'desc B', priority: 70, trust_score: 65, metric_json: null, citations_json: [], recommended_action: null },
+      ],
+    };
+    await renderPptx(themeData, { load: () => FakePptx });
+    // title(1) + metrics(1) + 2 themes(2) + topics(1) = 5
+    expect(slides).toHaveLength(5);
   });
 
   it('uses survey title as the title slide text', async () => {
@@ -233,9 +305,9 @@ describe('buildReportHtml', () => {
     expect(html).toMatch(/<body/i);
   });
 
-  it('starts with <!doctype html>', () => {
+  it('starts with <\!doctype html>', () => {
     const html = buildReportHtml(data);
-    expect(html.trimStart()).toMatch(/^<!doctype html>/i);
+    expect(html.trimStart()).toMatch(/^<\!doctype html>/i);
   });
 
   it('embeds the survey title in the output', () => {
@@ -267,14 +339,15 @@ describe('buildReportHtml', () => {
     expect(html).toContain('NPS recovered 8 points this quarter.');
   });
 
-  it('omits the summary div when summary is empty string', () => {
-    const html = buildReportHtml({ ...data, summary: '' });
-    expect(html).not.toContain('class="summary"');
+  it('omits the exec summary box when no exec insight and empty summary', () => {
+    const html = buildReportHtml({ ...data, summary: '', insights: [] });
+    expect(html).not.toContain('class="exec-box"');
   });
 
-  it('renders "No topics yet." when topics array is empty', () => {
+  it('hides topics section entirely when topics array is empty', () => {
     const html = buildReportHtml({ ...data, topics: [] });
-    expect(html).toContain('No topics yet.');
+    expect(html).not.toContain('Top Topics');
+    expect(html).not.toContain('<table');
   });
 
   it('renders "Insight Report" as fallback title when survey has no title', () => {
@@ -316,5 +389,121 @@ describe('buildReportHtml', () => {
     expect(html).toContain('Onboarding');
     // Null sentiment should fall back to —
     expect(html).toContain('—');
+  });
+
+  it('renders exec-box with narrative when executive summary insight is present', () => {
+    const html = buildReportHtml({
+      ...data,
+      insights: [{
+        category: 'report.executive_summary',
+        headline: 'H',
+        narrative: 'Satisfaction improved significantly.',
+        priority: 100,
+        trust_score: 90,
+        metric_json: null,
+        citations_json: [],
+        recommended_action: null,
+      }],
+    });
+    expect(html).toContain('class="exec-box"');
+    expect(html).toContain('Satisfaction improved significantly.');
+  });
+
+  it('renders cross-theme-patterns section when metric_json has cross_theme_patterns', () => {
+    const html = buildReportHtml({
+      ...data,
+      insights: [{
+        category: 'report.executive_summary',
+        headline: 'H',
+        narrative: 'Main narrative.',
+        priority: 100,
+        trust_score: 85,
+        metric_json: {
+          response_count: 150,
+          prior_insights_used: 3,
+          cross_theme_patterns: 'Bugs and support failures amplify each other.',
+        },
+        citations_json: [],
+        recommended_action: null,
+      }],
+    });
+    expect(html).toContain('Cross-theme patterns');
+    expect(html).toContain('Bugs and support failures amplify each other.');
+    expect(html).toContain('150');
+    expect(html).toContain('3 prior findings');
+  });
+
+  it('renders theme card with sentiment accent, badges, frequency, citations, and business impact', () => {
+    const html = buildReportHtml({
+      ...data,
+      insights: [{
+        category: 'report.full_theme',
+        headline: 'Checkout abandonment rising',
+        narrative: 'Users drop off at payment step.',
+        priority: 85,
+        trust_score: 78,
+        metric_json: {
+          sentiment: 'negative',
+          frequency_estimate: 22,
+          trend_direction: 'declining',
+          business_impact: 'Lost revenue at checkout.',
+          root_cause_hypothesis: 'Too many payment fields.',
+          is_new_theme: true,
+          confirms_prior: false,
+        },
+        citations_json: [
+          { quote: 'The payment page is awful', sentiment: 'negative', response_id: 'r1' },
+        ],
+        recommended_action: { label: 'Streamline payment form', time_horizon: 'short_term', priority: 'high' },
+      }],
+    });
+    expect(html).toContain('Checkout abandonment rising');
+    expect(html).toContain('Users drop off at payment step.');
+    expect(html).toContain('New finding');
+    expect(html).toContain('↓ Declining');
+    expect(html).toContain('22 mentions');
+    expect(html).toContain('The payment page is awful');
+    expect(html).toContain('Lost revenue at checkout.');
+    expect(html).toContain('Too many payment fields.');
+    expect(html).toContain('Streamline payment form');
+  });
+
+  it('renders priority actions table with priority badge and horizon', () => {
+    const html = buildReportHtml({
+      ...data,
+      insights: [{
+        category: 'report.priority_action',
+        headline: 'Fix login bugs immediately',
+        narrative: 'Auth errors block 12% of users.',
+        priority: 90,
+        trust_score: 88,
+        metric_json: null,
+        citations_json: [],
+        recommended_action: { label: 'Patch auth service', time_horizon: 'immediate', priority: 'critical' },
+      }],
+    });
+    expect(html).toContain('Priority Actions');
+    expect(html).toContain('Fix login bugs immediately');
+    expect(html).toContain('priority-critical');
+    expect(html).toContain('critical');
+    expect(html).toContain('immediate');
+  });
+
+  it('escapes XSS in insight narrative', () => {
+    const html = buildReportHtml({
+      ...data,
+      insights: [{
+        category: 'report.executive_summary',
+        headline: '<img onerror=alert(1)>',
+        narrative: '<script>alert("xss")</script>',
+        priority: 100,
+        trust_score: 80,
+        metric_json: null,
+        citations_json: [],
+        recommended_action: null,
+      }],
+    });
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
   });
 });

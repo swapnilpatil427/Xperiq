@@ -133,7 +133,8 @@ describe('DashboardPage (configurable widgets)', () => {
   it('renders the toolbar with Add Widget and Save buttons', async () => {
     renderDashboard();
     expect(screen.getByText('dashboard.toolbar.addWidget')).toBeInTheDocument();
-    expect(screen.getByText('dashboard.toolbar.save')).toBeInTheDocument();
+    // Initial load has no unsaved changes — button shows "saved" state
+    expect(screen.getByText('dashboard.toolbar.saved')).toBeInTheDocument();
   });
 
   it('renders the default NPS KPI tile from summary data', async () => {
@@ -169,11 +170,12 @@ describe('DashboardPage (configurable widgets)', () => {
   it('date range change to 30d triggers a new getDashboardSummary(30) call', async () => {
     const mockGetSummary = vi.fn().mockResolvedValue(summary);
     vi.mocked(useApi).mockReturnValue(buildApiMock({ getDashboardSummary: mockGetSummary }));
+    const defaultFilters = { surveyId: null, tagId: null, npsSegment: 'all' as const };
     renderDashboard();
     // default is 90d
-    await waitFor(() => expect(mockGetSummary).toHaveBeenCalledWith(90));
+    await waitFor(() => expect(mockGetSummary).toHaveBeenCalledWith(90, defaultFilters));
     fireEvent.click(screen.getByText('30d'));
-    await waitFor(() => expect(mockGetSummary).toHaveBeenCalledWith(30));
+    await waitFor(() => expect(mockGetSummary).toHaveBeenCalledWith(30, defaultFilters));
   });
 
   it('renders narrative paragraphs from summary', async () => {

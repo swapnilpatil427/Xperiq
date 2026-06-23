@@ -9,11 +9,13 @@ interface KpiWidgetProps {
   summary: DashboardSummary | null;
 }
 
-/**
- * A single KPI tile pulling its value + delta out of the dashboard summary.
- * v1: value + delta only. TODO: add a 90-day sparkline (AreaChart) when metric
- * history is threaded through.
- */
+const METRIC_COLORS: Record<KpiMetric, string> = {
+  nps:       'var(--color-primary)',
+  csat:      '#10b981',
+  responses: '#f59e0b',
+  active:    'var(--color-tertiary)',
+};
+
 export function KpiWidget({ metric, summary }: KpiWidgetProps) {
   const { t } = useTranslation();
 
@@ -43,16 +45,34 @@ export function KpiWidget({ metric, summary }: KpiWidgetProps) {
   const fmt = (n: number) => (integer ? Math.round(n).toLocaleString() : n.toFixed(decimals));
   const up = (delta ?? 0) > 0;
   const down = (delta ?? 0) < 0;
+  const color = METRIC_COLORS[metric];
 
   return (
-    <div>
-      <p className="text-xs text-on-surface-variant uppercase tracking-wide">{label}</p>
-      <p className="text-4xl font-black text-on-surface mt-1 leading-none">{value == null ? '—' : fmt(value)}</p>
+    <div className="pb-1">
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-on-surface-variant/70 mb-1.5">{label}</p>
+      <p
+        className="text-5xl font-black leading-none tabular-nums"
+        style={{
+          background: `linear-gradient(135deg, ${color} 0%, ${color}bb 100%)`,
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+        }}
+      >
+        {value == null ? '—' : fmt(value)}
+      </p>
       {delta != null && delta !== 0 && (
-        <p className={`text-xs mt-1.5 flex items-center gap-0.5 ${up ? 'text-success' : down ? 'text-destructive' : 'text-on-surface-variant'}`}>
-          <Icon name={up ? 'trending_up' : 'trending_down'} size={13} />
+        <div
+          className={`inline-flex items-center gap-1 mt-2.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
+            up ? 'text-emerald-700' : 'text-red-600'
+          }`}
+          style={{
+            background: up ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+          }}
+        >
+          <Icon name={up ? 'trending_up' : 'trending_down'} size={12} />
           {up ? '+' : ''}{integer ? Math.round(delta).toLocaleString() : delta.toFixed(decimals)}
-        </p>
+        </div>
       )}
     </div>
   );

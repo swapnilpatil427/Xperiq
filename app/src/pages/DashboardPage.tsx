@@ -4,7 +4,9 @@ import { useSetPageTitle } from '../contexts/pageTitle';
 import { useApi } from '../hooks/useApi';
 import { Icon } from '../components/Icon';
 import { Button } from '@/components/ui/button';
+import { PageHeader } from '../components/PageHeader';
 import { DashboardFilterBar } from '../components/dashboard/DashboardFilterBar';
+import { DashboardScopeBar } from '../components/dashboard/DashboardScopeBar';
 import { WidgetGrid } from '../components/dashboard/WidgetGrid';
 import { WidgetLibraryPanel } from '../components/dashboard/WidgetLibraryPanel';
 import {
@@ -40,7 +42,8 @@ export function DashboardPage() {
       .then(([savedConfig, surveysResp, tagsResp]) => {
         if (savedConfig) {
           if (Array.isArray(savedConfig.widgets) && savedConfig.widgets.length) setWidgets(savedConfig.widgets);
-          if (savedConfig.filters) setFilters(savedConfig.filters);
+          // Merge saved filters with defaults so new fields (npsSegment) have fallbacks
+          if (savedConfig.filters) setFilters({ ...DEFAULT_FILTERS, ...savedConfig.filters });
           if (savedConfig.name) setDashboardName(savedConfig.name);
         }
         setSurveys(surveysResp.surveys || []);
@@ -49,17 +52,21 @@ export function DashboardPage() {
       .catch(() => {});
   }, [api]);
 
-  // Reload summary-level data when the date range changes.
+  // Reload summary whenever any filter changes — all filters now drive the API.
   useEffect(() => {
     const days = DATE_RANGE_DAYS[filters.dateRange];
     Promise.all([
-      api.getDashboardSummary(days).catch(() => null),
+      api.getDashboardSummary(days, {
+        surveyId:   filters.surveyId,
+        tagId:      filters.tagId,
+        npsSegment: filters.npsSegment,
+      }).catch(() => null),
       api.getDashboardOperations().catch(() => null),
     ]).then(([sum, ops]) => {
       setSummary(sum);
       setOperations(ops);
     });
-  }, [api, filters.dateRange]);
+  }, [api, filters.dateRange, filters.surveyId, filters.tagId, filters.npsSegment]);
 
   const handleAddWidget = (type: WidgetType, colSpan: number) => {
     setWidgets((prev) => [
@@ -104,8 +111,37 @@ export function DashboardPage() {
     }
   };
 
+  const saveLabel = saving
+    ? t('dashboard.toolbar.saving')
+    : dirty
+      ? t('dashboard.toolbar.save')
+      : t('dashboard.toolbar.saved');
+
   return (
     <div className="max-w-7xl mx-auto w-full">
+      <PageHeader
+        crumbs={[{ label: t('dashboard.pageTitle') }]}
+        title={dashboardName}
+        subtitle={t('dashboard.pageSubtitle')}
+        actions={
+          <>
+            <Button variant="outline" size="sm" onClick={() => setShowLibrary(true)}>
+              <Icon name="add" size={16} className="mr-1" />
+              {t('dashboard.toolbar.addWidget')}
+            </Button>
+            <Button
+              size="sm"
+              variant={dirty ? 'default' : 'secondary'}
+              disabled={saving}
+              onClick={handleSave}
+            >
+              <Icon name={dirty ? 'save' : 'check_circle'} size={16} className="mr-1" />
+              {saveLabel}
+            </Button>
+          </>
+        }
+      />
+
       <DashboardFilterBar
         filters={filters}
         surveys={surveys.map((s) => ({ id: s.id, title: s.title }))}
@@ -113,25 +149,12 @@ export function DashboardPage() {
         onChange={handleFilterChange}
       />
 
-      {/* Toolbar */}
-      <div className="flex items-center justify-between mt-6 mb-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-lg font-bold text-[var(--color-on-surface)]">{dashboardName}</h2>
-          {dirty && (
-            <span className="text-xs text-[var(--color-on-surface-variant)]">{t('dashboard.toolbar.unsavedChanges')}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => setShowLibrary(true)}>
-            <Icon name="add" size={16} className="mr-1" />
-            {t('dashboard.toolbar.addWidget')}
-          </Button>
-          <Button size="sm" disabled={!dirty || saving} onClick={handleSave}>
-            <Icon name="save" size={16} className="mr-1" />
-            {saving ? t('dashboard.toolbar.saving') : t('dashboard.toolbar.save')}
-          </Button>
-        </div>
-      </div>
+      <DashboardScopeBar
+        filters={filters}
+        surveys={surveys.map((s) => ({ id: s.id, title: s.title }))}
+        tags={tags.map((tag) => ({ id: tag.id, name: tag.name }))}
+        summary={summary}
+      />
 
       <WidgetGrid
         widgets={widgets}

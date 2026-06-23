@@ -82,6 +82,26 @@ cd agents
 .venv/bin/pytest tests/test_integration.py  # end-to-end pipeline smoke tests
 ```
 
+## Testing rules
+
+Every code change requires a corresponding test change:
+- **New function or class** → add tests in `tests/test_<module>.py`
+- **Modified function signature** (e.g. new parameter) → add a test that exercises the new parameter and a test that verifies the old behavior is preserved when the parameter is omitted
+- **Bug fix** → add a regression test named `test_<what_was_broken>`
+
+Mock patterns:
+- Async functions: `unittest.mock.AsyncMock`
+- `call_agent()`: patch as `"crystalos.lib.openrouter.call_agent"` (not the local import)
+- `get_skill_model()`: patch as `"crystalos.lib.skill_runtime.get_skill_model"`
+- Never make real LLM calls in tests
+
+Run tests:
+```bash
+cd crystalos
+.venv/bin/pytest tests/test_skill_runtime.py -v    # single file
+.venv/bin/pytest                                    # all 580+ tests
+```
+
 ## Adding a new Crystal tool
 1. Add the JSON Schema tool definition to `crystal/registry.py` (in `TOOL_DEFINITIONS`)
 2. Add an `execute_<tool_name>()` async function to `crystal/tools.py`
@@ -93,101 +113,3 @@ cd agents
 2. Register it: `g.add_node("<name>", node_<name>)`
 3. Wire edges: `g.add_edge("prior_node", "<name>")` and `g.add_edge("<name>", "next_node")`
 4. Add unit tests in `tests/test_pipeline.py`
-
----
-
-## CrystalOS Skill Framework (Sprint 1 — 2026-06-03)
-
-### Adding a new AI capability (recommended — no Python required)
-
-1. Create `crystalos/skills/<skill-name>/`
-2. Write `SKILL.md` with frontmatter + prompt body (see format below)
-3. Write `EVALS.md` with quality criteria
-4. Create `EXAMPLES.md` stub (one line comment)
-5. Add skill path to `crystalos/skills/plugin.json`
-
-See the [10-minute quick start](../docs/agent-framework/QUICKSTART.md) for details and a working example.
-
-### SKILL.md frontmatter fields
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `name` | yes | kebab-case, max 64 chars, globally unique |
-| `version` | yes | semver — bump minor for prompt changes |
-| `shared` | yes | true = platform skill, false = internal |
-| `description` | yes | LLM-readable, include input/output shape |
-| `allowed-tools` | no | space-delimited tool names from plugin.json |
-| `max_output_tokens` | no | Default: model max |
-| `max_retries` | no | Default: 1 (retry on eval failure) |
-| `timeout_seconds` | no | Default: 60 |
-
-### Enabling the skill runtime
-
-```bash
-USE_SKILL_RUNTIME=true uvicorn agents.main:app
-```
-
-Default: `false` — existing agents still work without the flag.
-
-### Analytical skill suite (P4)
-
-Six skills give Crystal dynamic analysis + reporting capabilities (live in `crystalos/skills/`):
-`data-explorer` (summarize themes/topics/takeaways + non-quant trends), `trend-analyst`
-(trends over time), `segment-analyst` (trends across segments / "average trap"), `driver-analyst`
-(key drivers via importance × performance), `proactive-insights` (unprompted insight cards), and
-`report-composer` (on-demand export-ready report). Action recommendations remain owned by
-`action-recommender` + the domain advisors, which the analytical skills feed into. See
-`docs/SKILLS_CATALOG.md` § P4 for the capability → skill map.
-
-### New library files (Sprint 1)
-
-| File | Purpose |
-|------|---------|
-| `lib/skill_registry.py` | Discovers SKILL.md files, indexes metadata, dispatches execution |
-| `lib/skill_runtime.py` | Loads skills, calls LLM, runs evals, retries on failure |
-| `lib/tool_dispatcher.py` | Routes tool calls to Python functions via plugin.json |
-| `lib/memory.py` | 4-layer memory (L0: tool cache, L1: semantic cache, L2: thread compression, L3: survey facts, L4: org memory) |
-| `lib/tracer.py` | Langfuse distributed tracing (no-op without LANGFUSE_PUBLIC_KEY) |
-| `lib/hallucination_scorer.py` | Deterministic + LLM hybrid hallucination scoring |
-| `lib/pii_scrubber.py` | Regex PII scrubbing for trace inputs |
-
-### New DB tables (Sprint 1 migrations)
-
-| Migration | Table | Purpose |
-|-----------|-------|---------|
-| `20260603000001_skill_examples.sql` | `skill_examples` | Few-shot example bank for skills (replaces flat EXAMPLES.md) |
-| `20260603000002_crystal_org_memory.sql` | `crystal_org_memory` | L4 org/user-scoped memory with pgvector |
-| `20260603000003_crystal_threads_context_state.sql` | `crystal_threads` | L2 compression: context_state, turn_count, last_active_at columns |
-| `20260603000004_insights_reasoning_trace.sql` | `insights` | G26 audit trail: reasoning_trace JSONB column |
-
-### Running framework tests
-
-```bash
-cd agents
-.venv/bin/pytest tests/test_skill_registry.py tests/test_skill_runtime.py \
-                 tests/test_tool_dispatcher.py tests/test_memory.py \
-                 tests/test_pii_scrubber.py tests/test_hallucination_scorer.py -v
-```
-
-Full suite (580+ tests, all passing):
-```bash
-.venv/bin/pytest
-```
-
-## Documentation
-
-All CrystalOS documentation lives in `crystalos/docs/`:
-
-| File | What it covers |
-|------|---------------|
-| [README.md](./docs/README.md) | Architecture overview, system diagram, layer breakdown |
-| [QUICKSTART.md](./docs/QUICKSTART.md) | Add a new skill in 10 minutes |
-| [SKILLS_CATALOG.md](./docs/SKILLS_CATALOG.md) | All 26 skills with purpose and ownership |
-| [TESTING.md](./docs/TESTING.md) | Running tests, writing skill tests, CI |
-| [GAPS_STATUS.md](./docs/GAPS_STATUS.md) | Gap tracking (G1-G29), implementation status |
-| [architecture.md](./docs/architecture.md) | Full system diagram, component responsibilities |
-| [skills.md](./docs/skills.md) | SKILL.md format spec, EVALS.md, EXAMPLES.md |
-| [memory.md](./docs/memory.md) | 4-layer memory system design |
-| [observability.md](./docs/observability.md) | Langfuse, hallucination gate, PII scrubbing |
-| [migration.md](./docs/migration.md) | Agent → skill migration plan |
-| [a2a.md](./docs/a2a.md) | A2A protocol integration design |

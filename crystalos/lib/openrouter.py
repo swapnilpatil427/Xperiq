@@ -381,6 +381,7 @@ async def call_agent(
     output_schema: type[T],
     current_tokens: int = 0,
     prior_messages: list[dict] | None = None,
+    model_config: ModelConfig | None = None,
 ) -> tuple[T, CreditEntry]:
     """
     High-level agent LLM call — routes to Anthropic SDK or OpenRouter based on env config.
@@ -389,6 +390,9 @@ async def call_agent(
     for native tool use (more reliable schema adherence than JSON mode).
     All other models (dev free/paid, Google Gemini QC) use OpenRouter.
 
+    model_config: optional pre-resolved ModelConfig — used by skill runtime so skill
+        names (e.g. 'nps-action-advisor') don't get looked up in the pipeline _ROUTING dict.
+
     Raises:
         BudgetExceededError  — run would exceed MAX_TOKENS_PER_RUN
         AgentOutputError     — JSON parse failed after all retries (OpenRouter path)
@@ -396,7 +400,7 @@ async def call_agent(
         CircuitBreakerOpen   — OpenRouter circuit is open
         AnthropicOutputError — tool use response invalid (Anthropic path)
     """
-    config = get_model(agent_name)  # type: ignore[arg-type]
+    config = model_config if model_config is not None else get_model(agent_name)  # type: ignore[arg-type]
 
     # Route to Anthropic SDK for prod Anthropic models
     if config.use_anthropic_sdk:
