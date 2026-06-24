@@ -46,8 +46,10 @@ const QUESTION_TYPE_ICONS: Record<string, string> = {
   statement:       'info',
 };
 
-// estimated seconds per 5-response batch (matches backend _responseGenTimeout: 45s/batch)
-const EST_SECS_PER_BATCH = 45;
+// Estimated total seconds for the generation (batches now run in PARALLEL).
+// 25 responses = 5 batches × ~30s each, but all running concurrently → ~35s total.
+// EST_SECS_PER_BATCH is now used as the base time for ONE parallel run, not per-sequential-batch.
+const EST_SECS_PER_BATCH = 30;
 
 function estimatedSeconds(count: number): number {
   return Math.ceil(count / 5) * EST_SECS_PER_BATCH;

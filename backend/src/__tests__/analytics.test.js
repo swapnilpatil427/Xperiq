@@ -103,7 +103,7 @@ function buildSurveysApp(overrides = {}) {
 
   const app = express();
   app.use(express.json());
-  app.use('/api/surveys', router);
+  app.use('/api/surveys', router.default || router);
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }));
   return app;
 }
@@ -124,7 +124,7 @@ function buildOrgsApp(overrides = {}) {
 
   const app = express();
   app.use(express.json());
-  app.use('/api/orgs', router);
+  app.use('/api/orgs', router.default || router);
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }));
   return app;
 }

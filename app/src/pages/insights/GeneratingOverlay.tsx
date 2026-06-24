@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Icon } from '../../components/Icon';
 import { GlassCard } from './shared';
+import { useTranslation } from '../../lib/i18n';
 import type { Survey } from '../../types';
 
 interface PipelineNode {
@@ -26,6 +27,7 @@ export function GeneratingOverlay({
   focusSurvey,
   onRetry,
 }: GeneratingOverlayProps) {
+  const { t } = useTranslation();
   const activeNodeIdx = nodesDone.length < nodes.length ? nodesDone.length : -1;
 
   return (
@@ -58,14 +60,14 @@ export function GeneratingOverlay({
 
             {genError ? (
               <div className="space-y-3">
-                <h3 className="text-lg font-black font-headline text-red-600">Generation failed</h3>
+                <h3 className="text-lg font-black font-headline text-red-600">{t('insights.generate.errorHeading')}</h3>
                 <p className="text-sm text-muted-foreground">{genError}</p>
                 {onRetry && (
                   <button
                     onClick={onRetry}
                     className="text-xs font-bold px-4 py-2 rounded-full bg-primary text-white hover:opacity-90 transition-opacity"
                   >
-                    Retry
+                    {t('common.retry')}
                   </button>
                 )}
               </div>

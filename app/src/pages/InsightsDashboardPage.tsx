@@ -5,6 +5,7 @@
 // See docs/insights/SURVEY_SCOPE_UX.md and docs/insights/ARCHITECTURE.md.
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useSearchParams, useNavigate, Link } from 'react-router-dom';
 import { useSetPageTitle } from '../contexts/pageTitle';
 import { useInsights } from '../hooks/useInsights';
@@ -21,6 +22,11 @@ import { useCrystalPanel } from '../contexts/crystalPanel';
 import type { AgenticInsight, SurveyTopic } from '../types';
 
 const SCOPE_STORAGE_KEY = 'insights_scope';
+
+// Exported so tests can mock this module and shrink timeouts to 1 tick.
+export const POLL_INTERVAL_MS  = 3_000;
+export const POLL_TIMEOUT_S    = 300;   // seconds; timeout = POLL_TIMEOUT_S / (POLL_INTERVAL_MS/1000) ticks
+export const BG_POLL_INTERVAL_MS = 10_000;
 
 // Pipeline nodes for the generating overlay
 const INSIGHT_NODES = [
@@ -132,7 +138,11 @@ export function InsightsDashboardPage() {
   const [generating,      setGenerating]      = useState(false);
   const [nodesDone,       setNodesDone]       = useState<string[]>([]);
   const [genError,        setGenError]        = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // genBackground: overlay dismissed, pipeline still running — background poll active
+  const [genBackground,   setGenBackground]   = useState(false);
+  const [genToast,        setGenToast]        = useState<string | null>(null);
+  const pollRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bgPollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadAgentic = useCallback(async () => {
     if (!focusSurveyId) { setAgenticInsights([]); setCrystalData([], []); return; }
@@ -151,18 +161,45 @@ export function InsightsDashboardPage() {
 
   useEffect(() => {
     loadAgentic();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => {
+      if (pollRef.current)   clearInterval(pollRef.current);
+      if (bgPollRef.current) clearInterval(bgPollRef.current);
+    };
   }, [loadAgentic]);
+
+  // Background poll: slower cadence, runs after the overlay is dismissed.
+  // Notifies the user when the pipeline finally completes.
+  const startBackgroundPoll = useCallback((surveyId: string) => {
+    if (bgPollRef.current) clearInterval(bgPollRef.current);
+    bgPollRef.current = setInterval(async () => {
+      try {
+        const { status } = await api.getInsightRunStatus(surveyId);
+        if (status === 'completed') {
+          clearInterval(bgPollRef.current!);
+          await loadAgentic();
+          setGenBackground(false);
+          setGenToast(t('insights.generate.readyToast'));
+        } else if (status === 'failed') {
+          clearInterval(bgPollRef.current!);
+          setGenBackground(false);
+          setGenError(t('insights.generate.errorFailed'));
+        }
+      } catch { /* keep polling */ }
+    }, BG_POLL_INTERVAL_MS);
+  }, [api, loadAgentic, t]);
 
   const handleGenerate = useCallback(async () => {
     if (!focusSurveyId || generating) return;
     setGenerating(true);
     setNodesDone([]);
     setGenError(null);
+    setGenBackground(false);
+    setGenToast(null);
+    if (bgPollRef.current) clearInterval(bgPollRef.current);
     try {
       await api.triggerInsightGeneration(focusSurveyId);
     } catch {
-      setGenError('Failed to start insight generation. Is the agents service running?');
+      setGenError(t('insights.generate.errorStart'));
       setGenerating(false);
       return;
     }
@@ -177,7 +214,7 @@ export function InsightsDashboardPage() {
         setNodesDone(completed);
         if (status === 'failed') {
           clearInterval(pollRef.current!);
-          setGenError('Insight generation failed. Check the agents service logs.');
+          setGenError(t('insights.generate.errorFailed'));
           setGenerating(false);
           return;
         }
@@ -191,13 +228,16 @@ export function InsightsDashboardPage() {
           return;
         }
       } catch { /* keep polling */ }
-      if (elapsed >= 120) {
+      // Overlay timeout: dismiss generating UI, keep polling in background.
+      if (elapsed >= POLL_TIMEOUT_S) {
         clearInterval(pollRef.current!);
-        setGenError('Generation timed out.');
         setGenerating(false);
+        setNodesDone([]);
+        setGenBackground(true);
+        startBackgroundPoll(focusSurveyId);
       }
-    }, 3000);
-  }, [api, focusSurveyId, generating, loadAgentic]);
+    }, POLL_INTERVAL_MS);
+  }, [api, focusSurveyId, generating, loadAgentic, startBackgroundPoll, t]);
 
   const subtitle =
     scope === 'all'
@@ -331,6 +371,55 @@ export function InsightsDashboardPage() {
           </div>
         );
       })()}
+
+      {/* Background-generation banner — pipeline still running after overlay dismissed */}
+      <AnimatePresence>
+        {genBackground && (
+          <motion.div
+            key="gen-background-banner"
+            data-testid="bg-banner"
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25 }}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm"
+            style={{ background: '#eff2ff', border: '1px solid rgba(42,75,217,0.25)', color: '#1e40af' }}
+          >
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ background: '#2a4bd9', animation: 'pulse-glow 2s ease-in-out infinite' }}
+            />
+            <span className="flex-1 font-medium">{t('insights.generate.backgroundBanner')}</span>
+            <span className="text-xs opacity-60">{t('insights.generate.readyToastBody')}</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Completion toast — slides in when background generation finishes */}
+      <AnimatePresence>
+        {genToast && (
+          <motion.div
+            key="gen-toast"
+            data-testid="ready-toast"
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+            className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium"
+            style={{ background: '#d1fae5', border: '1px solid #059669', color: '#065f46' }}
+          >
+            <Icon name="check_circle" size={18} style={{ color: '#059669', flexShrink: 0 }} />
+            <span className="flex-1">{genToast}</span>
+            <button
+              onClick={() => setGenToast(null)}
+              className="ml-auto hover:opacity-70 transition-opacity"
+              aria-label={t('insights.generate.dismiss')}
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <UnifiedInsightsView
         insights={insights}

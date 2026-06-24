@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { Icon } from './Icon';
 import type { Variants } from 'framer-motion';
 import { SideNav } from './SideNav';
 import { TopBar } from './TopBar';
@@ -23,7 +24,7 @@ function AppShellInner() {
   const { isExpanded, toggle, setExpanded } = useSidebarState();
   const breakpoint = useBreakpoint();
   const location = useLocation();
-  const { toggleCrystal, scope } = useCrystalPanel();
+  const { toggleCrystal, scope, isOpen, closeCrystal } = useCrystalPanel();
   const { surveys } = useSurveys();
 
   const isMobile = breakpoint === 'mobile';
@@ -33,6 +34,11 @@ function AppShellInner() {
   useEffect(() => {
     if (isTablet) setExpanded(false);
   }, [isTablet]);
+
+  // Close Crystal on every navigation — each page starts fresh with the icon
+  useEffect(() => {
+    closeCrystal();
+  }, [location.pathname, closeCrystal]);
 
   // Global ⌘K / Ctrl+K shortcut to toggle Crystal panel
   useEffect(() => {
@@ -96,6 +102,35 @@ function AppShellInner() {
       {!isBuilder && (
         <CrystalPanel scope={scope} surveys={surveys} insights={null} />
       )}
+
+      {/* Crystal FAB — collapsed icon when panel is closed */}
+      <AnimatePresence>
+        {!isBuilder && !isOpen && (
+          <motion.button
+            key="crystal-fab"
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.93 }}
+            onClick={toggleCrystal}
+            title="Ask Crystal (⌘K)"
+            aria-label="Open Crystal AI assistant"
+            className="fixed z-40 flex items-center justify-center rounded-full"
+            style={{
+              bottom: isMobile ? '5.5rem' : '1.5rem',
+              right: '1.5rem',
+              width: 52,
+              height: 52,
+              background: 'linear-gradient(135deg, #2a4bd9 0%, #8329c8 100%)',
+              boxShadow: '0 8px 24px rgba(42,75,217,0.40), 0 2px 8px rgba(0,0,0,0.12)',
+            }}
+          >
+            <Icon name="diamond" size={22} style={{ color: 'white' }} />
+          </motion.button>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

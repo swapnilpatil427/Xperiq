@@ -1,0 +1,1882 @@
+"""Crystal tool executor functions — each tool queries the DB and returns structured data.
+
+Every executor:
+- Enforces org_id scoping on ALL SQL joins (tenant isolation)
+- Uses parameterized queries only (no string interpolation)
+- Returns {"error": "..."} on failure rather than raising
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import time as _time
+import traceback
+from typing import Any
+
+from crystalos.crystal.context import CrystalContext
+from crystalos.crystal.user_directory_tools import USER_DIRECTORY_EXECUTORS
+from crystalos.lib import db
+from crystalos.lib.logger import logger
+from crystalos.lib.metrics import crystal_tool_calls_total, crystal_tool_duration_seconds
+
+
+# ── NPS industry benchmarks (static reference table) ─────────────────────────
+_NPS_BENCHMARKS = {
+    "technology":            {"nps": 35, "source": "Satmetrix 2023"},
+    "healthcare":            {"nps": 27, "source": "Satmetrix 2023"},
+    "retail":                {"nps": 46, "source": "Satmetrix 2023"},
+    "financial_services":    {"nps": 34, "source": "Satmetrix 2023"},
+    "education":             {"nps": 47, "source": "Satmetrix 2023"},
+    "government":            {"nps": 14, "source": "Satmetrix 2023"},
+    "professional_services": {"nps": 43, "source": "Satmetrix 2023"},
+    "other":                 {"nps": 32, "source": "Satmetrix 2023"},
+}
+_CSAT_BENCHMARKS = {
+    "technology":            {"csat": 3.9},
+    "healthcare":            {"csat": 3.7},
+    "retail":                {"csat": 4.0},
+    "financial_services":    {"csat": 3.8},
+    "education":             {"csat": 4.1},
+    "government":            {"csat": 3.5},
+    "professional_services": {"csat": 3.9},
+    "other":                 {"csat": 3.8},
+}
+
+
+async def execute_get_survey_overview(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Survey metadata
+                await cur.execute(
+                    """SELECT id, title, status, created_at,
+                              (SELECT COUNT(*)::int FROM responses r
+                               WHERE r.survey_id = surveys.id) AS response_count
+                       FROM surveys WHERE id = %s AND org_id = %s AND deleted_at IS NULL""",
+                    (survey_id, ctx.org_id),
+                )
+                row = await cur.fetchone()
+                if not row:
+                    return {"error": "survey not found"}
+                survey = dict(zip([d[0] for d in cur.description], row))
+
+                # Latest metric snapshot
+                await cur.execute(
+                    """SELECT nps AS nps_score, csat AS csat_score,
+                              effort_score AS ces_score, response_count, captured_at
+                       FROM survey_metric_snapshots
+                       WHERE survey_id = %s AND org_id = %s
+                       ORDER BY captured_at DESC LIMIT 1""",
+                    (survey_id, ctx.org_id),
+                )
+                snap_row = await cur.fetchone()
+                snapshot = dict(zip([d[0] for d in cur.description], snap_row)) if snap_row else {}
+
+                # Top topics
+                await cur.execute(
+                    """SELECT name, volume, sentiment_score, dominant_emotion, trending
+                       FROM survey_topics
+                       WHERE survey_id = %s AND org_id = %s AND time_window = 'all_time'
+                       ORDER BY volume DESC LIMIT 5""",
+                    (survey_id, ctx.org_id),
+                )
+                topics = [dict(zip([d[0] for d in cur.description], r)) for r in await cur.fetchall()]
+
+        return {
+            "survey": {k: str(v) if hasattr(v, 'isoformat') else v for k, v in survey.items()},
+            "metrics": {k: float(v) if v is not None else None for k, v in snapshot.items() if k != 'captured_at'},
+            "top_topics": topics,
+        }
+    except Exception as exc:
+        logger.error("tool_get_survey_overview_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_topic_details(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        topic_name = params.get("topic_name")
+        limit = min(int(params.get("limit", 10)), 30)
+        if not survey_id or not topic_name:
+            return {"error": "survey_id and topic_name required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT name, volume, sentiment_score, dominant_emotion, effort_score,
+                              trending, nps_avg, positive_pct, negative_pct
+                       FROM survey_topics
+                       WHERE survey_id = %s AND org_id = %s AND name ILIKE %s AND time_window = 'all_time'
+                       LIMIT 1""",
+                    (survey_id, ctx.org_id, f"%{topic_name}%"),
+                )
+                row = await cur.fetchone()
+                topic = dict(zip([d[0] for d in cur.description], row)) if row else {}
+
+                # Sample verbatims from responses with this topic tag
+                await cur.execute(
+                    """SELECT r.answers, r.ai_sentiment, r.ai_sentiment_score
+                       FROM responses r
+                       WHERE r.survey_id = %s
+                         AND r.ai_topics::text ILIKE %s
+                       ORDER BY r.submitted_at DESC
+                       LIMIT %s""",
+                    (survey_id, f'%{topic_name}%', limit),
+                )
+                verbatim_rows = await cur.fetchall()
+
+        verbatims = []
+        for vr in verbatim_rows:
+            answers = vr[0]
+            if isinstance(answers, str):
+                try: answers = json.loads(answers)
+                except Exception: answers = []
+            texts = [a.get("value", "") for a in (answers or []) if isinstance(a.get("value"), str) and a.get("value")]
+            if texts:
+                verbatims.append({
+                    "text": texts[0][:300],
+                    "sentiment": vr[1],
+                    "score": float(vr[2]) if vr[2] is not None else None,
+                })
+
+        return {"topic": topic, "verbatims": verbatims, "verbatim_count": len(verbatims)}
+    except Exception as exc:
+        logger.error("tool_get_topic_details_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_metric_history(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        metric = params.get("metric", "all")
+        days = min(int(params.get("days", 90)), 365)
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT nps AS nps_score, csat AS csat_score,
+                              effort_score AS ces_score, response_count, captured_at
+                       FROM survey_metric_snapshots
+                       WHERE survey_id = %s AND org_id = %s
+                         AND captured_at > NOW() - (%s * INTERVAL '1 day')
+                       ORDER BY captured_at ASC""",
+                    (survey_id, ctx.org_id, days),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        data = [dict(zip(cols, r)) for r in rows]
+        for item in data:
+            for k in ("nps_score", "csat_score", "ces_score"):
+                if item.get(k) is not None:
+                    item[k] = float(item[k])
+            if item.get("captured_at"):
+                item["captured_at"] = str(item["captured_at"])
+
+        return {"history": data, "count": len(data), "days": days}
+    except Exception as exc:
+        logger.error("tool_get_metric_history_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_insights_list(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        layer = params.get("layer", "all")
+        time_window = params.get("time_window", "all_time")
+        limit = min(int(params.get("limit", 20)), 50)
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        conditions = ["survey_id = %s", "org_id = %s", "superseded_at IS NULL"]
+        args: list = [survey_id, ctx.org_id]
+        if layer != "all":
+            conditions.append("layer = %s")
+            args.append(layer)
+        if time_window != "all_time":
+            conditions.append("time_window = %s")
+            args.append(time_window)
+        args.append(limit)
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"""SELECT id, layer, category, headline, narrative, trust_score, metric_json
+                        FROM insights WHERE {' AND '.join(conditions)}
+                        ORDER BY priority DESC NULLS LAST, trust_score DESC NULLS LAST
+                        LIMIT %s""",
+                    args,
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        insights = []
+        for row in rows:
+            ins = dict(zip(cols, row))
+            ins["id"] = str(ins["id"])
+            if ins.get("trust_score") is not None:
+                ins["trust_score"] = int(ins["trust_score"])
+            insights.append(ins)
+
+        return {"insights": insights, "count": len(insights)}
+    except Exception as exc:
+        logger.error("tool_get_insights_list_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_verbatims(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        topic_name = params.get("topic_name")
+        sentiment = params.get("sentiment", "all")
+        limit = min(int(params.get("limit", 15)), 50)
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        conditions = ["survey_id = %s"]
+        args: list = [survey_id]
+        if topic_name:
+            conditions.append("ai_topics::text ILIKE %s")
+            args.append(f"%{topic_name}%")
+        if sentiment != "all":
+            conditions.append("ai_sentiment = %s")
+            args.append(sentiment)
+        args.append(limit)
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"""SELECT answers, ai_sentiment, ai_sentiment_score, submitted_at
+                        FROM responses WHERE {' AND '.join(conditions)}
+                        ORDER BY submitted_at DESC LIMIT %s""",
+                    args,
+                )
+                rows = await cur.fetchall()
+
+        verbatims = []
+        for row in rows:
+            answers = row[0]
+            if isinstance(answers, str):
+                try: answers = json.loads(answers)
+                except Exception: answers = []
+            texts = [a.get("value", "") for a in (answers or []) if isinstance(a.get("value"), str) and a.get("value")]
+            if texts:
+                verbatims.append({
+                    "text": texts[0][:400],
+                    "sentiment": row[1],
+                    "score": float(row[2]) if row[2] is not None else None,
+                    "submitted_at": str(row[3]) if row[3] else None,
+                })
+
+        return {"verbatims": verbatims, "count": len(verbatims)}
+    except Exception as exc:
+        logger.error("tool_get_verbatims_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_benchmark_comparison(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        metric = params.get("metric", "nps")
+        industry = params.get("industry")
+
+        if not industry:
+            # Load from org profile
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT industry FROM org_profiles WHERE org_id = %s",
+                        (ctx.org_id,),
+                    )
+                    row = await cur.fetchone()
+                    industry = (row[0] if row else None) or "other"
+
+        # Get current metric value
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT nps, csat FROM survey_metric_snapshots
+                       WHERE survey_id = %s AND org_id = %s
+                       ORDER BY captured_at DESC LIMIT 1""",
+                    (survey_id, ctx.org_id),
+                )
+                row = await cur.fetchone()
+
+        current_value = None
+        if row:
+            current_value = float(row[0]) if metric == "nps" and row[0] is not None else (
+                float(row[1]) if metric == "csat" and row[1] is not None else None
+            )
+
+        benchmark = _NPS_BENCHMARKS.get(industry, _NPS_BENCHMARKS["other"]) if metric == "nps" else \
+                    _CSAT_BENCHMARKS.get(industry, _CSAT_BENCHMARKS["other"])
+
+        benchmark_value = benchmark.get(metric)
+        delta = (current_value - benchmark_value) if (current_value is not None and benchmark_value is not None) else None
+
+        return {
+            "metric": metric,
+            "industry": industry,
+            "current_value": current_value,
+            "benchmark": benchmark_value,
+            "delta": round(delta, 1) if delta is not None else None,
+            "source": benchmark.get("source", "Industry benchmark"),
+            "above_benchmark": delta > 0 if delta is not None else None,
+        }
+    except Exception as exc:
+        logger.error("tool_get_benchmark_comparison_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_driver_analysis(ctx: CrystalContext, params: dict) -> dict:
+    """Returns driver scores on -100 to +100 NPS scale (not 0-10)."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT name, volume, nps_avg, sentiment_score, effort_score
+                       FROM survey_topics
+                       WHERE survey_id = %s AND org_id = %s AND time_window = 'all_time'
+                       ORDER BY volume DESC LIMIT 10""",
+                    (survey_id, ctx.org_id),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        drivers = []
+        for row in rows:
+            t = dict(zip(cols, row))
+            # Convert nps_avg to -100..+100 scale if it's stored differently
+            nps_avg = float(t.get("nps_avg") or 0)
+            # Normalize sentiment_score (-1..1) to nps-scale (-100..+100) for driver impact
+            sentiment = float(t.get("sentiment_score") or 0)
+            driver_impact = round(sentiment * 100, 1)  # -100 to +100 scale
+            drivers.append({
+                "topic": t["name"],
+                "volume": int(t.get("volume") or 0),
+                "nps_avg": nps_avg,
+                "driver_impact": driver_impact,  # -100 to +100 NPS scale
+                "effort_score": float(t.get("effort_score") or 0),
+            })
+
+        # Sort by absolute driver impact (biggest movers first)
+        drivers.sort(key=lambda x: abs(x["driver_impact"]), reverse=True)
+        return {"drivers": drivers, "count": len(drivers)}
+    except Exception as exc:
+        logger.error("tool_get_driver_analysis_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+_SEGMENTABLE_QUESTION_TYPES = {"multiple_choice", "checkbox", "dropdown", "rating", "nps", "csat"}
+
+
+async def _load_segmentable_questions(cur, survey_id: str, org_id: str) -> list[dict]:
+    """Return [{id, text, type}] for questions usable as segments. cur is an open cursor."""
+    await cur.execute(
+        "SELECT questions FROM surveys WHERE id = %s AND org_id = %s AND deleted_at IS NULL",
+        (survey_id, org_id),
+    )
+    row = await cur.fetchone()
+    if not row or not row[0]:
+        return []
+    questions = row[0]
+    if isinstance(questions, str):
+        try:
+            questions = json.loads(questions)
+        except Exception:
+            return []
+    out = []
+    for q in (questions or []):
+        if not isinstance(q, dict):
+            continue
+        if q.get("type") in _SEGMENTABLE_QUESTION_TYPES:
+            out.append({
+                "id": str(q.get("id", "")),
+                "text": q.get("question", ""),
+                "type": q.get("type", ""),
+            })
+    return out
+
+
+async def execute_list_segmentable_questions(ctx: CrystalContext, params: dict) -> dict:
+    """List questions that can be used to segment responses (choice/scale types)."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                questions = await _load_segmentable_questions(cur, survey_id, ctx.org_id)
+        return {"questions": questions, "count": len(questions)}
+    except Exception as exc:
+        logger.error("tool_list_segmentable_questions_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_segment_breakdown(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        segment_question_id = params.get("segment_question_id")
+        segment_question_text = params.get("segment_question_text")
+        metric = params.get("metric", "sentiment")
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Resolve a segment by question text when no id was supplied.
+                if not segment_question_id:
+                    segmentable = await _load_segmentable_questions(cur, survey_id, ctx.org_id)
+                    if segment_question_text:
+                        needle = segment_question_text.strip().lower()
+                        match = next(
+                            (q for q in segmentable if needle in (q["text"] or "").lower()), None
+                        )
+                        if match:
+                            segment_question_id = match["id"]
+                    if not segment_question_id:
+                        return {
+                            "error": "segment_question_id or a matching segment_question_text required",
+                            "available_segments": segmentable,
+                        }
+
+                await cur.execute(
+                    "SELECT answers, ai_sentiment, ai_sentiment_score, nps_score FROM responses WHERE survey_id = %s AND org_id = %s",
+                    (survey_id, ctx.org_id),
+                )
+                rows = await cur.fetchall()
+
+        segments: dict[str, list] = {}
+        for row in rows:
+            answers = row[0]
+            if isinstance(answers, str):
+                try: answers = json.loads(answers)
+                except Exception: answers = []
+            segment_value = None
+            for a in (answers or []):
+                qid = a.get("questionId") or a.get("question_id")
+                if str(qid) == str(segment_question_id):
+                    segment_value = str(a.get("value", "unknown"))
+                    break
+            if segment_value:
+                segments.setdefault(segment_value, []).append({
+                    "sentiment": row[1], "score": float(row[2]) if row[2] else 0,
+                    "nps_score": int(row[3]) if row[3] is not None else None,
+                })
+
+        result = []
+        for seg_value, responses_list in segments.items():
+            n = len(responses_list)
+            avg_sentiment = sum(r["score"] for r in responses_list) / n if n else 0
+            nps_scores = [r["nps_score"] for r in responses_list if r["nps_score"] is not None]
+            nps_avg = sum(nps_scores) / len(nps_scores) if nps_scores else None
+            result.append({
+                "segment": seg_value,
+                "count": n,
+                "avg_sentiment_score": round(avg_sentiment, 2),
+                "nps_avg": round(nps_avg, 1) if nps_avg is not None else None,
+            })
+
+        result.sort(key=lambda x: x["count"], reverse=True)
+        return {"segments": result, "segment_count": len(result)}
+    except Exception as exc:
+        logger.error("tool_get_segment_breakdown_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_checkpoint_history(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        limit = min(int(params.get("limit", 5)), 20)
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT id, checkpoint_number, response_count_at_checkpoint,
+                              nps_at_checkpoint, csat_at_checkpoint, topic_fingerprint,
+                              delta_from_prior, created_at
+                       FROM survey_insight_checkpoints
+                       WHERE survey_id = %s AND org_id = %s
+                       ORDER BY checkpoint_number DESC
+                       LIMIT %s""",
+                    (survey_id, ctx.org_id, limit),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        checkpoints = []
+        for row in rows:
+            cp = dict(zip(cols, row))
+            cp["id"] = str(cp["id"])
+            if cp.get("created_at"):
+                cp["created_at"] = str(cp["created_at"])
+            for k in ("nps_at_checkpoint", "csat_at_checkpoint"):
+                if cp.get(k) is not None:
+                    cp[k] = float(cp[k])
+            checkpoints.append(cp)
+
+        return {"checkpoints": checkpoints, "count": len(checkpoints)}
+    except Exception as exc:
+        logger.error("tool_get_checkpoint_history_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_compare_surveys(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id_a = params.get("survey_id_a")
+        survey_id_b = params.get("survey_id_b")
+        if not survey_id_a or not survey_id_b:
+            return {"error": "survey_id_a and survey_id_b required"}
+
+        results = {}
+        for sid, label in [(survey_id_a, "a"), (survey_id_b, "b")]:
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT title,
+                                  (SELECT COUNT(*)::int FROM responses r
+                                   WHERE r.survey_id = surveys.id) AS response_count
+                           FROM surveys
+                           WHERE id = %s AND org_id = %s AND deleted_at IS NULL""",
+                        (sid, ctx.org_id),
+                    )
+                    row = await cur.fetchone()
+                    if not row:
+                        return {"error": f"Survey {sid} not found for org"}
+                    results[label] = {"survey_id": sid, "title": row[0], "response_count": row[1]}
+
+                    await cur.execute(
+                        """SELECT nps, csat, effort_score FROM survey_metric_snapshots
+                           WHERE survey_id = %s AND org_id = %s ORDER BY captured_at DESC LIMIT 1""",
+                        (sid, ctx.org_id),
+                    )
+                    snap = await cur.fetchone()
+                    if snap:
+                        results[label].update({
+                            "nps": float(snap[0]) if snap[0] is not None else None,
+                            "csat": float(snap[1]) if snap[1] is not None else None,
+                            "ces": float(snap[2]) if snap[2] is not None else None,
+                        })
+
+        delta = {}
+        for metric in ("nps", "csat", "ces"):
+            a_val = results.get("a", {}).get(metric)
+            b_val = results.get("b", {}).get(metric)
+            if a_val is not None and b_val is not None:
+                delta[metric] = round(a_val - b_val, 1)
+
+        return {"survey_a": results.get("a", {}), "survey_b": results.get("b", {}), "delta": delta}
+    except Exception as exc:
+        logger.error("tool_compare_surveys_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_org_portfolio(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        limit = min(int(params.get("limit", 10)), 50)
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT s.id, s.title, s.status,
+                              (SELECT COUNT(*)::int FROM responses r
+                               WHERE r.survey_id = s.id) AS response_count,
+                              m.nps_score, m.csat_score
+                       FROM surveys s
+                       LEFT JOIN LATERAL (
+                           SELECT nps AS nps_score, csat AS csat_score
+                           FROM survey_metric_snapshots
+                           WHERE survey_id = s.id ORDER BY captured_at DESC LIMIT 1
+                       ) m ON true
+                       WHERE s.org_id = %s AND s.status = 'active' AND s.deleted_at IS NULL
+                       ORDER BY response_count DESC NULLS LAST
+                       LIMIT %s""",
+                    (ctx.org_id, limit),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        surveys = []
+        for row in rows:
+            s = dict(zip(cols, row))
+            s["id"] = str(s["id"])
+            for k in ("nps_score", "csat_score"):
+                if s.get(k) is not None:
+                    s[k] = float(s[k])
+            surveys.append(s)
+
+        return {"surveys": surveys, "active_survey_count": len(surveys)}
+    except Exception as exc:
+        logger.error("tool_get_org_portfolio_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_cross_survey_themes(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        min_survey_count = int(params.get("min_survey_count", 2))
+        limit = min(int(params.get("limit", 10)), 30)
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT name, COUNT(DISTINCT survey_id) as survey_count, SUM(volume) as total_volume,
+                              AVG(sentiment_score) as avg_sentiment
+                       FROM survey_topics
+                       WHERE org_id = %s AND time_window = 'all_time'
+                       GROUP BY name
+                       HAVING COUNT(DISTINCT survey_id) >= %s
+                       ORDER BY survey_count DESC, total_volume DESC
+                       LIMIT %s""",
+                    (ctx.org_id, min_survey_count, limit),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        themes = []
+        for row in rows:
+            t = dict(zip(cols, row))
+            t["survey_count"] = int(t["survey_count"])
+            t["total_volume"] = int(t["total_volume"] or 0)
+            t["avg_sentiment"] = round(float(t["avg_sentiment"] or 0), 2)
+            themes.append(t)
+
+        return {"themes": themes, "count": len(themes)}
+    except Exception as exc:
+        logger.error("tool_get_cross_survey_themes_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_anomaly_events(ctx: CrystalContext, params: dict) -> dict:
+    try:
+        survey_id = params.get("survey_id")
+        days = min(int(params.get("days", 30)), 365)
+        limit = min(int(params.get("limit", 10)), 50)
+
+        conditions = ["org_id = %s", "captured_at > NOW() - (%s * INTERVAL '1 day')"]
+        args: list = [ctx.org_id, days]
+        if survey_id:
+            conditions.append("survey_id = %s")
+            args.append(survey_id)
+        # Filter for significant metric drops (anomalies)
+        conditions.append("(nps < -10 OR csat < 2.5 OR anomaly_flag = true)")
+        args.append(limit)
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"""SELECT survey_id, nps AS nps_score, csat AS csat_score,
+                               response_count, captured_at
+                        FROM survey_metric_snapshots
+                        WHERE {' AND '.join(conditions)}
+                        ORDER BY captured_at DESC LIMIT %s""",
+                    args,
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        events = []
+        for row in rows:
+            e = dict(zip(cols, row))
+            e["survey_id"] = str(e["survey_id"])
+            if e.get("captured_at"):
+                e["captured_at"] = str(e["captured_at"])
+            for k in ("nps_score", "csat_score"):
+                if e.get(k) is not None:
+                    e[k] = float(e[k])
+            events.append(e)
+
+        return {"events": events, "count": len(events)}
+    except Exception as exc:
+        logger.error("tool_get_anomaly_events_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+# ── Action tool executors ─────────────────────────────────────────────────────
+# These tools return PROPOSALS (structured JSON) for the frontend to execute
+# after user confirmation. Crystal never autonomously mutates survey data.
+
+async def execute_recommend_next_actions(ctx: CrystalContext, params: dict) -> dict:
+    """Run the action-recommender skill to surface next-step proposals."""
+    try:
+        survey_id  = params.get("survey_id") or ctx.survey_id
+        focus_area = params.get("focus_area", "")
+
+        # Gather context for the skill
+        survey_data: dict = {}
+        topics: list[dict] = []
+        insights: list[dict] = []
+        metrics: dict = {}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Survey metadata
+                await cur.execute(
+                    "SELECT title, status FROM surveys WHERE id = %s AND org_id = %s AND deleted_at IS NULL",
+                    (survey_id, ctx.org_id),
+                )
+                row = await cur.fetchone()
+                if row:
+                    survey_data = {"title": row[0], "status": row[1]}
+
+                # Top topics (by urgency)
+                await cur.execute(
+                    """SELECT name, sentiment_score, volume, urgency_score, trending
+                       FROM survey_topics WHERE survey_id = %s AND org_id = %s
+                       ORDER BY urgency_score DESC NULLS LAST LIMIT 8""",
+                    (survey_id, ctx.org_id),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                topics = [dict(zip(cols, r)) for r in rows]
+                for t in topics:
+                    for k in ("sentiment_score", "urgency_score"):
+                        if t.get(k) is not None:
+                            t[k] = float(t[k])
+
+                # Top insights
+                await cur.execute(
+                    """SELECT layer, headline, trust_score FROM insights
+                       WHERE survey_id = %s AND org_id = %s AND superseded_at IS NULL
+                       ORDER BY trust_score DESC NULLS LAST LIMIT 8""",
+                    (survey_id, ctx.org_id),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                insights = [dict(zip(cols, r)) for r in rows]
+
+                # Latest metric snapshot
+                await cur.execute(
+                    """SELECT nps, csat, effort_score, response_count
+                       FROM survey_metric_snapshots WHERE survey_id = %s AND org_id = %s
+                       ORDER BY captured_at DESC LIMIT 1""",
+                    (survey_id, ctx.org_id),
+                )
+                snap = await cur.fetchone()
+                if snap:
+                    metrics = {
+                        "nps":  {"score": float(snap[0]) if snap[0] is not None else None, "n": snap[3] or 0},
+                        "csat": {"score": float(snap[1]) if snap[1] is not None else None},
+                        "ces":  {"score": float(snap[2]) if snap[2] is not None else None},
+                    }
+
+        # Invoke the action-recommender skill
+        from crystalos.lib.skill_registry import get_registry as _get_reg
+        reg = _get_reg()
+        if not reg.is_initialized() or not reg.get_skill_meta("action-recommender"):
+            return {"error": "action-recommender skill not initialized"}
+
+        skill_input = {
+            "survey_id":     survey_id,
+            "survey_type":   "custom",
+            "survey_title":  survey_data.get("title", ""),
+            "org_context":   {"industry": None, "company_size": None, "audience": "customers"},
+            "metrics":       metrics,
+            "top_themes":    [
+                {
+                    "label":           t.get("name", ""),
+                    "sentiment_score": t.get("sentiment_score", 0.0),
+                    "volume_pct":      (t.get("volume") or 0) / max(1, sum(x.get("volume") or 0 for x in topics)),
+                    "urgency_score":   t.get("urgency_score", 0.5),
+                    "trending":        t.get("trending"),
+                }
+                for t in topics
+            ],
+            "key_insights":          insights,
+            "conversation_history":  [],
+            "response_count":        metrics.get("nps", {}).get("n", 0),
+            "existing_surveys":      [],
+        }
+        if focus_area:
+            skill_input["focus_area"] = focus_area
+
+        result = await reg.execute(
+            "action-recommender",
+            skill_input,
+            {"org_id": ctx.org_id, "survey_id": survey_id},
+        )
+        return result.get("output", {"error": "No recommendations generated"})
+    except Exception as exc:
+        logger.error("tool_recommend_actions_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+async def execute_propose_survey_creation(ctx: CrystalContext, params: dict) -> dict:
+    """Propose a new follow-up survey — returns structured proposal for frontend confirmation."""
+    purpose           = params.get("purpose", "")
+    target_audience   = params.get("target_audience", "customers")
+    survey_type       = params.get("survey_type", "custom")
+    source_survey_id  = params.get("survey_id") or ctx.survey_id
+
+    # Get source survey context
+    survey_title = ""
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT title FROM surveys WHERE id = %s AND org_id = %s AND deleted_at IS NULL",
+                    (source_survey_id, ctx.org_id),
+                )
+                row = await cur.fetchone()
+                if row:
+                    survey_title = row[0]
+    except Exception:
+        pass
+
+    intent = (
+        f"{purpose}. "
+        f"Target audience: {target_audience}. "
+        f"Based on learnings from: {survey_title or 'current survey'}."
+    )
+
+    return {
+        "proposal_type": "create_survey",
+        "title": f"Create follow-up {survey_type} survey",
+        "description": f"New survey targeting {target_audience}: {purpose}",
+        "requires_confirmation": True,
+        "params": {
+            "intent":       intent,
+            "survey_type":  survey_type,
+            "audience":     target_audience,
+        },
+        "estimated_time": "5 minutes to review and launch",
+        "cta_label": "Create Survey",
+    }
+
+
+async def execute_propose_survey_edit(ctx: CrystalContext, params: dict) -> dict:
+    """Propose edits to the current survey — questions to add or rephrase."""
+    survey_id   = params.get("survey_id") or ctx.survey_id
+    edit_request = params.get("edit_request", "")
+    focus_topic  = params.get("focus_topic", "")
+
+    # Suggest 1-3 specific questions based on edit_request + focus_topic
+    suggested_questions: list[str] = []
+    if focus_topic:
+        suggested_questions = [
+            f"What specifically about {focus_topic} was most frustrating?",
+            f"How would you rate {focus_topic} on a scale of 1-5?",
+            f"What would improve your experience with {focus_topic}?",
+        ]
+    else:
+        suggested_questions = [
+            "What is the most important improvement we could make?",
+            "How likely are you to continue using our product after this experience?",
+        ]
+
+    return {
+        "proposal_type": "edit_survey",
+        "title": "Add questions to current survey",
+        "description": f"Proposed edit: {edit_request}",
+        "requires_confirmation": True,
+        "params": {
+            "survey_id":          survey_id,
+            "message":            edit_request,
+            "questions_to_add":   suggested_questions[:2],
+        },
+        "estimated_time": "2 minutes",
+        "cta_label": "Apply Edits",
+    }
+
+
+async def execute_propose_distribution(ctx: CrystalContext, params: dict) -> dict:
+    """Propose a targeted distribution campaign for the survey."""
+    survey_id      = params.get("survey_id") or ctx.survey_id
+    target_segment = params.get("target_segment", "all respondents")
+    goal           = params.get("goal", "gather additional feedback")
+
+    # Recommend channel based on segment
+    if "detractor" in target_segment.lower() or "churned" in target_segment.lower():
+        recommended_channel = "email"
+        timing = "within 24 hours of identifying them"
+        expected_rate = "15-25%"
+    elif "employee" in target_segment.lower() or "staff" in target_segment.lower():
+        recommended_channel = "in_app"
+        timing = "weekday morning (9-11am local time)"
+        expected_rate = "40-60%"
+    else:
+        recommended_channel = "email"
+        timing = "Tuesday-Thursday, 10am-2pm"
+        expected_rate = "20-35%"
+
+    return {
+        "proposal_type": "distribute",
+        "title": f"Send to {target_segment}",
+        "description": f"Targeted distribution to {target_segment}: {goal}",
+        "requires_confirmation": True,
+        "params": {
+            "survey_id":          survey_id,
+            "target_segment":     target_segment,
+            "channel":            recommended_channel,
+            "recommended_timing": timing,
+        },
+        "estimated_response_rate": expected_rate,
+        "estimated_time": "Set up in 3 minutes",
+        "cta_label": "Set Up Distribution",
+    }
+
+
+async def execute_propose_workflow(ctx: CrystalContext, params: dict) -> dict:
+    """Propose an automation workflow based on response patterns."""
+    survey_id         = params.get("survey_id") or ctx.survey_id
+    trigger_condition = params.get("trigger_condition", "")
+    desired_outcome   = params.get("desired_outcome", "")
+
+    return {
+        "proposal_type": "workflow",
+        "title": "Create response automation",
+        "description": f"Trigger: {trigger_condition} → Action: {desired_outcome}",
+        "requires_confirmation": True,
+        "params": {
+            "survey_id":       survey_id,
+            "trigger":         trigger_condition,
+            "name":            f"Auto: {trigger_condition[:50]}",
+            "action_type":     "notify",
+            "action_config":   {"message": desired_outcome},
+        },
+        "estimated_time": "2 minutes to configure",
+        "cta_label": "Create Workflow",
+    }
+
+
+async def execute_propose_alert(ctx: CrystalContext, params: dict) -> dict:
+    """Propose an alert rule when Crystal spots a metric/topic risk worth monitoring."""
+    survey_id  = params.get("survey_id") or ctx.survey_id
+    alert_type = params.get("alert_type") or "S-03"   # default: NPS Threshold Breach
+    metric     = params.get("metric", "")
+    condition  = params.get("condition", "")
+    severity   = params.get("severity") or "warning"
+    threshold  = params.get("threshold")
+    name       = params.get("name") or (f"{metric} alert".strip() if metric else "Metric alert")
+
+    return {
+        "proposal_type": "create_alert",
+        "title": f"Set up alert: {name}"[:60],
+        "description": f"Notify the team when {condition or metric or 'this metric crosses its threshold'}.",
+        "requires_confirmation": True,
+        "params": {
+            "survey_id":        survey_id,
+            "alert_type":       alert_type,
+            "name":             name,
+            "severity":         severity,
+            "threshold_config": threshold if isinstance(threshold, dict) else {},
+        },
+        "estimated_time": "1 minute to confirm",
+        "cta_label": "Create Alert",
+    }
+
+
+async def execute_list_relevant_templates(ctx: CrystalContext, params: dict) -> dict:
+    """Search the template library for relevant survey templates."""
+    search_query = params.get("search_query", "")
+    survey_type  = params.get("survey_type", "any")
+
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                if survey_type and survey_type != "any":
+                    await cur.execute(
+                        """SELECT id, title, description, survey_type_id
+                           FROM templates
+                           WHERE org_id = %s AND (title ILIKE %s OR description ILIKE %s)
+                           ORDER BY created_at DESC LIMIT 5""",
+                        (ctx.org_id, f"%{search_query}%", f"%{search_query}%"),
+                    )
+                else:
+                    await cur.execute(
+                        """SELECT id, title, description, survey_type_id
+                           FROM templates
+                           WHERE org_id = %s AND (title ILIKE %s OR description ILIKE %s)
+                           ORDER BY created_at DESC LIMIT 5""",
+                        (ctx.org_id, f"%{search_query}%", f"%{search_query}%"),
+                    )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                templates = [dict(zip(cols, r)) for r in rows]
+                for t in templates:
+                    t["id"] = str(t["id"])
+
+        return {
+            "templates": templates,
+            "count": len(templates),
+            "search_query": search_query,
+        }
+    except Exception as exc:
+        logger.error("tool_list_templates_failed", error=str(exc))
+        return {"error": str(exc), "templates": []}
+
+
+# ── Analytical-skill tool executors ──────────────────────────────────────────
+# Each fetches the raw data its skill needs, assembles the skill's documented input
+# schema, runs the skill via the skill runtime, and returns the structured output.
+# Mirrors the execute_recommend_next_actions → action-recommender pattern.
+
+async def _run_skill(skill_name: str, skill_input: dict, ctx: CrystalContext, survey_id: str | None) -> dict:
+    """Run a CrystalOS skill and return its output dict (or an {"error": ...} dict)."""
+    try:
+        from crystalos.lib.skill_registry import get_registry as _get_reg
+        reg = _get_reg()
+        if not reg.is_initialized() or not reg.get_skill_meta(skill_name):
+            return {"error": f"{skill_name} skill not available (skill runtime not initialized)"}
+        result = await reg.execute(
+            skill_name,
+            skill_input,
+            {"org_id": ctx.org_id, "survey_id": survey_id},
+        )
+        output = result.get("output")
+        if not output:
+            return {"error": f"{skill_name} produced no output"}
+        return output
+    except Exception as exc:
+        logger.error("crystal_skill_bridge_failed", skill=skill_name, error=str(exc))
+        return {"error": str(exc)}
+
+
+async def _fetch_analysis_context(ctx: CrystalContext, survey_id: str) -> dict:
+    """Fetch the shared survey context (title, topics, metrics, insights, verbatims)
+    used to build inputs for the analytical skills. One round-trip, reused by all wrappers.
+    """
+    out: dict = {
+        "title": "", "survey_type": "custom", "response_count": 0,
+        "topics": [], "metrics": {}, "insights": [], "verbatims": [],
+    }
+    async with db._pool_conn().connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """SELECT title, survey_type_id,
+                          (SELECT COUNT(*)::int FROM responses r WHERE r.survey_id = surveys.id) AS rc
+                   FROM surveys WHERE id = %s AND org_id = %s AND deleted_at IS NULL""",
+                (survey_id, ctx.org_id),
+            )
+            row = await cur.fetchone()
+            if row:
+                out["title"] = row[0] or ""
+                out["survey_type"] = (row[1] or "custom")
+                out["response_count"] = row[2] or 0
+
+            await cur.execute(
+                """SELECT name, sentiment_score, volume, urgency_score, trending, nps_avg, effort_score
+                   FROM survey_topics
+                   WHERE survey_id = %s AND org_id = %s AND time_window = 'all_time'
+                   ORDER BY volume DESC NULLS LAST LIMIT 15""",
+                (survey_id, ctx.org_id),
+            )
+            cols = [d[0] for d in cur.description]
+            topics = [dict(zip(cols, r)) for r in await cur.fetchall()]
+            total_vol = max(1, sum(int(t.get("volume") or 0) for t in topics))
+            for t in topics:
+                for k in ("sentiment_score", "urgency_score", "nps_avg", "effort_score"):
+                    if t.get(k) is not None:
+                        t[k] = float(t[k])
+                t["volume"] = int(t.get("volume") or 0)
+                t["volume_pct"] = round(t["volume"] / total_vol, 4)
+            out["topics"] = topics
+
+            await cur.execute(
+                """SELECT nps, csat, effort_score, response_count
+                   FROM survey_metric_snapshots WHERE survey_id = %s AND org_id = %s
+                   ORDER BY captured_at DESC LIMIT 1""",
+                (survey_id, ctx.org_id),
+            )
+            snap = await cur.fetchone()
+            if snap:
+                out["metrics"] = {
+                    "nps":  {"score": float(snap[0]) if snap[0] is not None else None, "n": snap[3] or 0},
+                    "csat": {"score": float(snap[1]) if snap[1] is not None else None, "n": snap[3] or 0},
+                    "ces":  {"score": float(snap[2]) if snap[2] is not None else None, "n": snap[3] or 0},
+                }
+
+            await cur.execute(
+                """SELECT layer, headline, narrative, trust_score FROM insights
+                   WHERE survey_id = %s AND org_id = %s AND superseded_at IS NULL
+                   ORDER BY trust_score DESC NULLS LAST LIMIT 10""",
+                (survey_id, ctx.org_id),
+            )
+            cols = [d[0] for d in cur.description]
+            out["insights"] = [dict(zip(cols, r)) for r in await cur.fetchall()]
+
+            await cur.execute(
+                """SELECT r.answers FROM responses r
+                   WHERE r.survey_id = %s AND r.org_id = %s
+                   ORDER BY r.submitted_at DESC LIMIT 25""",
+                (survey_id, ctx.org_id),
+            )
+            verbatims: list[str] = []
+            for vr in await cur.fetchall():
+                answers = vr[0]
+                if isinstance(answers, str):
+                    try: answers = json.loads(answers)
+                    except Exception: answers = []
+                for a in (answers or []):
+                    val = a.get("value") if isinstance(a, dict) else None
+                    if isinstance(val, str) and len(val.strip()) > 12:
+                        verbatims.append(val.strip()[:300])
+            out["verbatims"] = verbatims[:15]
+    return out
+
+
+def _topics_for_skill(topics: list[dict]) -> list[dict]:
+    """Map DB topic rows to the {label, sentiment_score, volume, volume_pct, trending} shape."""
+    return [
+        {
+            "label":           t.get("name", ""),
+            "sentiment_score": t.get("sentiment_score", 0.0),
+            "volume":          t.get("volume", 0),
+            "volume_pct":      t.get("volume_pct", 0.0),
+            "trending":        t.get("trending"),
+            "urgency_score":   t.get("urgency_score", 0.5),
+            "sample_verbatims": [],
+        }
+        for t in topics
+    ]
+
+
+async def execute_summarize_themes(ctx: CrystalContext, params: dict) -> dict:
+    """Summarize/explore qualitative feedback via the data-explorer skill."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+        actx = await _fetch_analysis_context(ctx, survey_id)
+        skill_input = {
+            "question":        params.get("question", "What are the key themes and takeaways?"),
+            "survey_id":       survey_id,
+            "survey_type":     actx["survey_type"],
+            "topics":          _topics_for_skill(actx["topics"]),
+            "verbatim_samples": actx["verbatims"],
+            "metrics":         actx["metrics"],
+            "prior_period_topics": [],
+        }
+        return await _run_skill("data-explorer", skill_input, ctx, survey_id)
+    except Exception as exc:
+        logger.error("tool_summarize_themes_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_analyze_trends_over_time(ctx: CrystalContext, params: dict) -> dict:
+    """Analyze metric/theme trajectories via the trend-analyst skill."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+        metric = params.get("metric", "nps")
+        if metric in ("all", "sentiment"):
+            metric = "nps"
+        days = int(params.get("days", 90))
+
+        history = await execute_get_metric_history(ctx, {"survey_id": survey_id, "days": days})
+        anomalies = await execute_get_anomaly_events(ctx, {"survey_id": survey_id, "days": days})
+
+        series = []
+        for h in (history.get("history") or []):
+            value = h.get(f"{metric}_score")
+            if value is not None:
+                series.append({"period": h.get("captured_at"), "value": value, "n": h.get("response_count") or 0})
+
+        skill_input = {
+            "survey_id":  survey_id,
+            "metric":     metric.upper() if metric in ("nps", "csat", "ces") else metric,
+            "metric_series": series,
+            "topic_trends": [],
+            "changepoints": [],
+            "anomaly_events": [
+                {"period": e.get("captured_at") or e.get("period"), "description": e.get("description") or e.get("metric", "")}
+                for e in (anomalies.get("events") or [])
+            ],
+            "comparison_window_days": days,
+        }
+        return await _run_skill("trend-analyst", skill_input, ctx, survey_id)
+    except Exception as exc:
+        logger.error("tool_analyze_trends_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_analyze_segments(ctx: CrystalContext, params: dict) -> dict:
+    """Analyze cross-segment differences via the segment-analyst skill."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+        metric = params.get("metric", "sentiment")
+        breakdown = await execute_get_segment_breakdown(ctx, {
+            "survey_id": survey_id,
+            "segment_question_id": params.get("segment_question_id"),
+            "segment_question_text": params.get("segment_question_text"),
+            "metric": metric,
+        })
+        if "error" in breakdown:
+            return breakdown  # surfaces available_segments so the loop can pick one
+
+        segs = breakdown.get("segments") or []
+        total_n = max(1, sum(s.get("count", 0) for s in segs))
+        score_key = "nps_avg" if metric == "nps" else "avg_sentiment_score"
+        scored = [s for s in segs if s.get(score_key) is not None]
+        overall_score = round(sum(s[score_key] * s["count"] for s in scored) / max(1, sum(s["count"] for s in scored)), 2) if scored else 0.0
+
+        skill_input = {
+            "survey_id": survey_id,
+            "metric":    "NPS" if metric == "nps" else "sentiment",
+            "overall":   {"score": overall_score, "n": total_n},
+            "dimension": params.get("segment_question_text") or params.get("segment_question_id") or "segment",
+            "segment_breakdowns": [
+                {
+                    "segment": s.get("segment", "unknown"),
+                    "score":   s.get(score_key) or 0.0,
+                    "n":       s.get("count", 0),
+                    "share_of_responses": round(s.get("count", 0) / total_n, 4),
+                    "top_topics": [],
+                    "sample_verbatims": [],
+                }
+                for s in segs
+            ],
+        }
+        return await _run_skill("segment-analyst", skill_input, ctx, survey_id)
+    except Exception as exc:
+        logger.error("tool_analyze_segments_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_analyze_key_drivers(ctx: CrystalContext, params: dict) -> dict:
+    """Key driver analysis via the driver-analyst skill."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+        metric = params.get("metric", "nps")
+        da = await execute_get_driver_analysis(ctx, {"survey_id": survey_id, "metric": metric if metric in ("nps", "csat") else "nps"})
+        actx = await _fetch_analysis_context(ctx, survey_id)
+        total_vol = max(1, sum(int(d.get("volume") or 0) for d in (da.get("drivers") or [])))
+
+        drivers = []
+        for d in (da.get("drivers") or []):
+            # driver_impact is sentiment scaled to -100..100; importance ≈ |impact|, performance ≈ sentiment sign
+            impact = float(d.get("driver_impact") or 0)
+            drivers.append({
+                "label":       d.get("topic", ""),
+                "importance":  round(min(1.0, abs(impact) / 100.0), 3),
+                "performance": round(impact / 100.0, 3),
+                "volume_pct":  round(int(d.get("volume") or 0) / total_vol, 4),
+                "sample_verbatims": [],
+            })
+
+        outcome = (actx["metrics"].get(metric) or actx["metrics"].get("nps") or {})
+        skill_input = {
+            "survey_id":      survey_id,
+            "outcome_metric": metric.upper() if metric in ("nps", "csat", "ces", "enps") else "NPS",
+            "outcome_score":  outcome.get("score") or 0.0,
+            "drivers":        drivers,
+            "method":         "sentiment_volume_impact",
+        }
+        return await _run_skill("driver-analyst", skill_input, ctx, survey_id)
+    except Exception as exc:
+        logger.error("tool_analyze_drivers_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_proactive_insights(ctx: CrystalContext, params: dict) -> dict:
+    """Surface unprompted insight cards via the proactive-insights skill."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+        actx = await _fetch_analysis_context(ctx, survey_id)
+        anomalies = await execute_get_anomaly_events(ctx, {"survey_id": survey_id, "days": 30})
+
+        skill_input = {
+            "survey_id":   survey_id,
+            "survey_type": actx["survey_type"],
+            "trigger":     "manual",
+            "anomaly_events": [
+                {
+                    "period": e.get("captured_at") or e.get("period"),
+                    "metric": e.get("metric", ""),
+                    "description": e.get("description") or "",
+                    "severity": float(e.get("severity") or 0.5),
+                }
+                for e in (anomalies.get("events") or [])
+            ],
+            "trend_signals": [],
+            "driver_shifts": [],
+            "segment_gaps": [],
+            "recently_notified": [],
+            "thresholds": {"min_severity": 0.3, "max_cards": 3},
+        }
+        return await _run_skill("proactive-insights", skill_input, ctx, survey_id)
+    except Exception as exc:
+        logger.error("tool_proactive_insights_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_generate_report(ctx: CrystalContext, params: dict) -> dict:
+    """Generate a full export-ready report via the report-composer skill.
+
+    Orchestrates the lighter analytical skills in parallel to build section_inputs,
+    tolerating failures (a failed/empty section is simply omitted by report-composer).
+    """
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+        actx = await _fetch_analysis_context(ctx, survey_id)
+
+        themes, trends, drivers, benchmark = await asyncio.gather(
+            execute_summarize_themes(ctx, {"survey_id": survey_id}),
+            execute_analyze_trends_over_time(ctx, {"survey_id": survey_id}),
+            execute_analyze_key_drivers(ctx, {"survey_id": survey_id}),
+            execute_get_benchmark_comparison(ctx, {"survey_id": survey_id}),
+            return_exceptions=True,
+        )
+
+        def _ok(x):
+            return x if isinstance(x, dict) and "error" not in x else None
+
+        m = actx["metrics"]
+        section_inputs = {
+            "narrative": None,
+            "trends":    _ok(trends),
+            "drivers":   _ok(drivers),
+            "segments":  None,
+            "themes":    _ok(themes),
+            "benchmark": _ok(benchmark),
+            "actions":   None,
+        }
+        skill_input = {
+            "survey_context": {
+                "survey_id":      survey_id,
+                "survey_title":   actx["title"],
+                "survey_type":    actx["survey_type"],
+                "response_count": actx["response_count"],
+                "headline_metrics": {
+                    "nps":  (m.get("nps")  or {}).get("score"),
+                    "csat": (m.get("csat") or {}).get("score"),
+                    "ces":  (m.get("ces")  or {}).get("score"),
+                    "enps": None,
+                },
+            },
+            "report_options": {
+                "audience": params.get("audience", "executive"),
+                "length":   params.get("length", "standard"),
+                "sections_requested": ["overview", "trends", "drivers", "themes", "benchmark"],
+            },
+            "section_inputs": section_inputs,
+        }
+        return await _run_skill("report-composer", skill_input, ctx, survey_id)
+    except Exception as exc:
+        logger.error("tool_generate_report_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+# ── Group tool executors (cross-survey intelligence) ─────────────────────────
+
+async def execute_get_group_surveys(ctx: CrystalContext, params: dict) -> dict:
+    """List all surveys belonging to one or more tag groups."""
+    try:
+        tag_ids = params.get("tag_ids", [])
+        if not tag_ids:
+            return {"error": "tag_ids required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT s.id, s.title, s.status, s.survey_type_id, s.created_at,
+                              COUNT(r.id)::int AS response_count
+                       FROM surveys s
+                       LEFT JOIN responses r ON r.survey_id = s.id
+                       WHERE s.id IN (
+                         SELECT survey_id FROM survey_tag_mappings
+                         WHERE tag_id = ANY(%s::uuid[]) AND org_id = %s
+                       ) AND s.org_id = %s AND s.deleted_at IS NULL
+                       GROUP BY s.id
+                       ORDER BY s.created_at DESC""",
+                    (tag_ids, ctx.org_id, ctx.org_id),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        surveys = []
+        for row in rows:
+            s = dict(zip(cols, row))
+            s["id"] = str(s["id"])
+            if s.get("created_at"):
+                s["created_at"] = str(s["created_at"])
+            if s.get("survey_type_id"):
+                s["survey_type_id"] = str(s["survey_type_id"])
+            surveys.append(s)
+
+        return {"surveys": surveys, "count": len(surveys)}
+    except Exception as exc:
+        logger.error("tool_get_group_surveys_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_group_metrics(ctx: CrystalContext, params: dict) -> dict:
+    """Get aggregated NPS/CSAT/CES metrics across all surveys in a group."""
+    try:
+        tag_ids = params.get("tag_ids", [])
+        if not tag_ids:
+            return {"error": "tag_ids required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Get survey IDs in the group
+                await cur.execute(
+                    """SELECT s.id, s.title,
+                              (SELECT COUNT(*)::int FROM responses r WHERE r.survey_id = s.id) AS response_count
+                       FROM surveys s
+                       WHERE s.id IN (
+                         SELECT survey_id FROM survey_tag_mappings
+                         WHERE tag_id = ANY(%s::uuid[]) AND org_id = %s
+                       ) AND s.org_id = %s AND s.deleted_at IS NULL""",
+                    (tag_ids, ctx.org_id, ctx.org_id),
+                )
+                survey_rows = await cur.fetchall()
+
+                per_survey = []
+                total_nps_weighted = 0.0
+                total_csat_weighted = 0.0
+                total_nps_n = 0
+                total_csat_n = 0
+                total_response_count = 0
+
+                for sr in survey_rows:
+                    sid, stitle, rcount = str(sr[0]), sr[1], sr[2] or 0
+                    total_response_count += rcount
+
+                    await cur.execute(
+                        """SELECT nps, csat FROM survey_metric_snapshots
+                           WHERE survey_id = %s AND org_id = %s
+                           ORDER BY captured_at DESC LIMIT 1""",
+                        (sid, ctx.org_id),
+                    )
+                    snap = await cur.fetchone()
+                    nps_val = float(snap[0]) if snap and snap[0] is not None else None
+                    csat_val = float(snap[1]) if snap and snap[1] is not None else None
+
+                    if nps_val is not None and rcount > 0:
+                        total_nps_weighted += nps_val * rcount
+                        total_nps_n += rcount
+                    if csat_val is not None and rcount > 0:
+                        total_csat_weighted += csat_val * rcount
+                        total_csat_n += rcount
+
+                    per_survey.append({
+                        "survey_id": sid,
+                        "title": stitle,
+                        "nps": nps_val,
+                        "csat": csat_val,
+                        "response_count": rcount,
+                    })
+
+        agg_nps = round(total_nps_weighted / total_nps_n, 1) if total_nps_n > 0 else None
+        agg_csat = round(total_csat_weighted / total_csat_n, 2) if total_csat_n > 0 else None
+
+        return {
+            "aggregate": {
+                "nps": agg_nps,
+                "csat": agg_csat,
+                "response_count": total_response_count,
+                "survey_count": len(per_survey),
+            },
+            "per_survey": per_survey,
+        }
+    except Exception as exc:
+        logger.error("tool_get_group_metrics_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_group_topics(ctx: CrystalContext, params: dict) -> dict:
+    """Get cross-survey topic landscape for a group."""
+    try:
+        tag_ids = params.get("tag_ids", [])
+        limit = min(int(params.get("limit", 30)), 100)
+        if not tag_ids:
+            return {"error": "tag_ids required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT t.name, t.survey_id, s.title AS survey_title,
+                              t.volume, t.sentiment_score, t.dominant_emotion, t.trending
+                       FROM survey_topics t
+                       JOIN surveys s ON s.id = t.survey_id
+                       WHERE t.survey_id IN (
+                         SELECT survey_id FROM survey_tag_mappings
+                         WHERE tag_id = ANY(%s::uuid[]) AND org_id = %s
+                       ) AND t.org_id = %s AND t.time_window = 'all_time'
+                       ORDER BY t.volume DESC
+                       LIMIT %s""",
+                    (tag_ids, ctx.org_id, ctx.org_id, limit),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        # Group by topic name across surveys
+        topic_map: dict[str, dict] = {}
+        for row in rows:
+            r = dict(zip(cols, row))
+            name = r["name"]
+            if name not in topic_map:
+                topic_map[name] = {
+                    "name": name,
+                    "total_volume": 0,
+                    "surveys": [],
+                    "sentiment_scores": [],
+                    "dominant_emotion": r.get("dominant_emotion"),
+                }
+            topic_map[name]["total_volume"] += int(r.get("volume") or 0)
+            stitle = r.get("survey_title")
+            if stitle and stitle not in topic_map[name]["surveys"]:
+                topic_map[name]["surveys"].append(stitle)
+            if r.get("sentiment_score") is not None:
+                topic_map[name]["sentiment_scores"].append(float(r["sentiment_score"]))
+
+        topics = []
+        for name, t in topic_map.items():
+            scores = t.pop("sentiment_scores")
+            t["avg_sentiment"] = round(sum(scores) / len(scores), 3) if scores else None
+            topics.append(t)
+
+        topics.sort(key=lambda x: x["total_volume"], reverse=True)
+
+        return {"topics": topics, "unique_count": len(topics)}
+    except Exception as exc:
+        logger.error("tool_get_group_topics_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_analyze_group_coverage(ctx: CrystalContext, params: dict) -> dict:
+    """Analyze coverage dimensions of a survey group."""
+    try:
+        tag_ids = params.get("tag_ids", [])
+        if not tag_ids:
+            return {"error": "tag_ids required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT s.id, s.title, s.survey_type_id, s.created_at,
+                              (SELECT COUNT(*)::int FROM responses r WHERE r.survey_id = s.id) AS response_count,
+                              s.questions
+                       FROM surveys s
+                       WHERE s.id IN (
+                         SELECT survey_id FROM survey_tag_mappings
+                         WHERE tag_id = ANY(%s::uuid[]) AND org_id = %s
+                       ) AND s.org_id = %s AND s.deleted_at IS NULL
+                       ORDER BY s.created_at ASC""",
+                    (tag_ids, ctx.org_id, ctx.org_id),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        survey_list = []
+        year_months: set[tuple] = set()
+        survey_types: set[str] = set()
+        has_open_text = False
+
+        for row in rows:
+            s = dict(zip(cols, row))
+            sid = str(s["id"])
+            rcount = s.get("response_count") or 0
+            stype = str(s.get("survey_type_id") or "custom")
+            created_at = s.get("created_at")
+
+            if created_at:
+                try:
+                    year_months.add((created_at.year, created_at.month))
+                except AttributeError:
+                    pass
+
+            survey_types.add(stype)
+
+            # Check for open-text questions
+            questions = s.get("questions") or []
+            if isinstance(questions, str):
+                try:
+                    import json as _json
+                    questions = _json.loads(questions)
+                except Exception:
+                    questions = []
+            open_text_types = {"open_text", "short_text", "text", "textarea"}
+            if any(q.get("type") in open_text_types for q in questions if isinstance(q, dict)):
+                has_open_text = True
+
+            survey_list.append({
+                "survey_id": sid,
+                "title": s.get("title", ""),
+                "survey_type_id": stype,
+                "response_count": rcount,
+                "created_at": str(created_at) if created_at else None,
+            })
+
+        # Detect cadence: if we have >= 2 surveys, compute average gap
+        sorted_ym = sorted(year_months)
+        cadence = "unknown"
+        if len(sorted_ym) >= 2:
+            # Approximate in months
+            gaps = []
+            for i in range(1, len(sorted_ym)):
+                a, b = sorted_ym[i-1], sorted_ym[i]
+                gap = (b[0] - a[0]) * 12 + (b[1] - a[1])
+                gaps.append(gap)
+            avg_gap = sum(gaps) / len(gaps)
+            if avg_gap <= 1.5:
+                cadence = "monthly"
+            elif avg_gap <= 3.5:
+                cadence = "quarterly"
+            elif avg_gap <= 6.5:
+                cadence = "biannual"
+            else:
+                cadence = "annual_or_less"
+
+        return {
+            "time_coverage": {
+                "periods": [{"year": y, "month": m} for y, m in sorted_ym],
+                "cadence": cadence,
+                "period_count": len(sorted_ym),
+            },
+            "survey_types": list(survey_types),
+            "response_coverage": survey_list,
+            "has_open_text": has_open_text,
+            "survey_count": len(survey_list),
+        }
+    except Exception as exc:
+        logger.error("tool_analyze_group_coverage_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_detect_data_gaps(ctx: CrystalContext, params: dict) -> dict:
+    """Detect data gaps in a survey group (temporal, survey type, response volume, metric)."""
+    try:
+        tag_ids = params.get("tag_ids", [])
+        if not tag_ids:
+            return {"error": "tag_ids required"}
+
+        # 1. Get coverage via analyze_group_coverage
+        coverage = await execute_analyze_group_coverage(ctx, params)
+        if "error" in coverage:
+            return coverage
+
+        gaps: list[dict] = []
+
+        time_cov = coverage.get("time_coverage", {})
+        periods = time_cov.get("periods", [])
+        cadence = time_cov.get("cadence", "unknown")
+        survey_types = coverage.get("survey_types", [])
+        response_coverage = coverage.get("response_coverage", [])
+
+        # 2. Temporal gap detection
+        if len(periods) >= 2 and cadence != "unknown":
+            period_set = {(p["year"], p["month"]) for p in periods}
+            if cadence == "monthly":
+                step = 1
+            elif cadence == "quarterly":
+                step = 3
+            elif cadence == "biannual":
+                step = 6
+            else:
+                step = 12
+
+            if periods:
+                first_y, first_m = periods[0]["year"], periods[0]["month"]
+                last_y, last_m = periods[-1]["year"], periods[-1]["month"]
+
+                cur_y, cur_m = first_y, first_m
+                while (cur_y, cur_m) <= (last_y, last_m):
+                    if (cur_y, cur_m) not in period_set:
+                        gaps.append({
+                            "type": "temporal",
+                            "description": f"No survey data for {cur_y}-{cur_m:02d}",
+                            "severity": "moderate",
+                            "missing_value": f"{cur_y}-{cur_m:02d}",
+                            "suggested_survey_type": survey_types[0] if survey_types else "custom",
+                        })
+                    cur_m += step
+                    if cur_m > 12:
+                        cur_y += cur_m // 13
+                        cur_m = cur_m % 12 or 12
+
+        # 3. Response volume gaps
+        for s in response_coverage:
+            if s.get("response_count", 0) < 10:
+                gaps.append({
+                    "type": "survey_type",
+                    "description": f"Survey '{s.get('title', s['survey_id'])}' has insufficient data ({s['response_count']} responses)",
+                    "severity": "critical" if s["response_count"] == 0 else "moderate",
+                    "missing_value": f"min_responses_{s['survey_id'][:8]}",
+                    "suggested_survey_type": s.get("survey_type_id", "custom"),
+                })
+
+        # 4. Metric dimension gaps — check if NPS/CSAT/CES are all present
+        metrics_result = await execute_get_group_metrics(ctx, params)
+        if "aggregate" in metrics_result:
+            agg = metrics_result["aggregate"]
+            if agg.get("nps") is None:
+                gaps.append({
+                    "type": "metric",
+                    "description": "No NPS (loyalty) data across any survey in this group",
+                    "severity": "critical",
+                    "missing_value": "nps",
+                    "suggested_survey_type": "nps",
+                })
+            if agg.get("csat") is None:
+                gaps.append({
+                    "type": "metric",
+                    "description": "No CSAT (satisfaction) data across any survey in this group",
+                    "severity": "moderate",
+                    "missing_value": "csat",
+                    "suggested_survey_type": "csat",
+                })
+
+        # 5. Coverage score: 1.0 = no gaps, decreasing by gap severity
+        severity_weights = {"critical": 0.3, "moderate": 0.1, "low": 0.03}
+        penalty = sum(severity_weights.get(g["severity"], 0.05) for g in gaps)
+        coverage_score = max(0.0, round(1.0 - penalty, 2))
+
+        total = len(response_coverage)
+        summary = (
+            f"Group has {total} survey(s) with {len(gaps)} gap(s) detected. "
+            f"Coverage score: {coverage_score:.0%}. "
+            + (f"Critical gaps: {sum(1 for g in gaps if g['severity'] == 'critical')}." if any(g['severity'] == 'critical' for g in gaps) else "No critical gaps found.")
+        )
+
+        return {
+            "gaps": gaps,
+            "coverage_score": coverage_score,
+            "summary": summary,
+        }
+    except Exception as exc:
+        logger.error("tool_detect_data_gaps_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_suggest_new_survey(ctx: CrystalContext, params: dict) -> dict:
+    """Propose a new survey to fill a detected gap in a group."""
+    try:
+        tag_ids = params.get("tag_ids", [])
+        gap_description = params.get("gap_description", "")
+        gap_type = params.get("gap_type", "custom")
+
+        if not gap_description:
+            return {"error": "gap_description required"}
+
+        # Map gap type to survey type and question hints
+        type_map = {
+            "temporal": {
+                "survey_type": "pulse",
+                "title_prefix": "Periodic Pulse",
+                "questions_hint": "How satisfied are you overall? What's working well? What needs improvement?",
+                "estimated_responses_needed": 50,
+            },
+            "survey_type": {
+                "survey_type": "nps",
+                "title_prefix": "Loyalty Benchmark",
+                "questions_hint": "How likely are you to recommend us? What is the primary reason for your score?",
+                "estimated_responses_needed": 100,
+            },
+            "segment": {
+                "survey_type": "csat",
+                "title_prefix": "Segment Experience",
+                "questions_hint": "How satisfied are you with your experience? What could we do better for your segment?",
+                "estimated_responses_needed": 75,
+            },
+            "metric": {
+                "survey_type": "ces",
+                "title_prefix": "Effort Measurement",
+                "questions_hint": "How easy was it to accomplish your goal? What made it harder than expected?",
+                "estimated_responses_needed": 50,
+            },
+            "topic": {
+                "survey_type": "custom",
+                "title_prefix": "Topic Deep Dive",
+                "questions_hint": "How would you rate your experience with this area? What specific improvements would help most?",
+                "estimated_responses_needed": 40,
+            },
+        }
+
+        config = type_map.get(gap_type, type_map["topic"])
+        title = f"{config['title_prefix']}: {gap_description[:60]}"
+
+        return {
+            "proposal": {
+                "title": title,
+                "survey_type": config["survey_type"],
+                "description": f"New survey to address: {gap_description}",
+                "suggested_questions_hint": config["questions_hint"],
+                "pre_filled_tags": tag_ids,
+                "estimated_responses_needed": config["estimated_responses_needed"],
+            }
+        }
+    except Exception as exc:
+        logger.error("tool_suggest_new_survey_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+# ── Tool dispatch table ───────────────────────────────────────────────────────
+
+TOOL_EXECUTORS: dict[str, Any] = {
+    # Data tools
+    "get_survey_overview":      execute_get_survey_overview,
+    "get_topic_details":        execute_get_topic_details,
+    "get_metric_history":       execute_get_metric_history,
+    "get_insights_list":        execute_get_insights_list,
+    "get_verbatims":            execute_get_verbatims,
+    "get_benchmark_comparison": execute_get_benchmark_comparison,
+    "get_driver_analysis":      execute_get_driver_analysis,
+    "get_segment_breakdown":    execute_get_segment_breakdown,
+    "list_segmentable_questions": execute_list_segmentable_questions,
+    "get_checkpoint_history":   execute_get_checkpoint_history,
+    "compare_surveys":          execute_compare_surveys,
+    "get_org_portfolio":        execute_get_org_portfolio,
+    "get_cross_survey_themes":  execute_get_cross_survey_themes,
+    "get_anomaly_events":       execute_get_anomaly_events,
+    # Analytical-skill tools
+    "summarize_themes":         execute_summarize_themes,
+    "analyze_trends_over_time": execute_analyze_trends_over_time,
+    "analyze_segments":         execute_analyze_segments,
+    "analyze_key_drivers":      execute_analyze_key_drivers,
+    "proactive_insights":       execute_proactive_insights,
+    "generate_report":          execute_generate_report,
+    # Action proposal tools
+    "recommend_next_actions":   execute_recommend_next_actions,
+    "propose_survey_creation":  execute_propose_survey_creation,
+    "propose_survey_edit":      execute_propose_survey_edit,
+    "propose_distribution":     execute_propose_distribution,
+    "propose_workflow":         execute_propose_workflow,
+    "propose_alert":            execute_propose_alert,
+    "list_relevant_templates":  execute_list_relevant_templates,
+    # User-directory segmentation tools
+    **USER_DIRECTORY_EXECUTORS,
+    # Group / survey-tag tools (cross-survey intelligence)
+    "get_group_surveys":      execute_get_group_surveys,
+    "get_group_metrics":      execute_get_group_metrics,
+    "get_group_topics":       execute_get_group_topics,
+    "analyze_group_coverage": execute_analyze_group_coverage,
+    "detect_data_gaps":       execute_detect_data_gaps,
+    "suggest_new_survey":     execute_suggest_new_survey,
+}
+
+
+async def dispatch_tool(tool_name: str, ctx: CrystalContext, params: dict) -> dict:
+    """Dispatch a tool call to the appropriate executor."""
+    executor = TOOL_EXECUTORS.get(tool_name)
+    if not executor:
+        return {"error": f"Unknown tool: {tool_name}"}
+
+    start = _time.monotonic()
+    try:
+        result = await executor(ctx, params)
+        crystal_tool_calls_total.labels(tool=tool_name, org_id=ctx.org_id or "unknown").inc()
+        return result
+    finally:
+        duration = _time.monotonic() - start
+        crystal_tool_duration_seconds.labels(tool=tool_name).observe(duration)

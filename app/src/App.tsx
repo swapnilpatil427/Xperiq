@@ -19,9 +19,21 @@ import { InsightsFindingsPage } from './pages/insights/InsightsFindingsPage';
 import { InsightsSurfacedPage } from './pages/insights/InsightsSurfacedPage';
 import { ResponseCollectionPage } from './pages/ResponseCollectionPage';
 import { BrandSettingsPage } from './pages/BrandSettingsPage';
+import { UserDirectoryPage } from './pages/settings/UserDirectoryPage';
+import { RolesPage } from './pages/settings/RolesPage';
+import { DepartmentsPage } from './pages/settings/DepartmentsPage';
+import { GroupsPage } from './pages/settings/GroupsPage';
+import { ProvisioningPage } from './pages/settings/ProvisioningPage';
+import { SeatsPage } from './pages/settings/SeatsPage';
+import { AuditLogPage } from './pages/settings/AuditLogPage';
+import { NotificationPreferencesPage } from './pages/settings/NotificationPreferencesPage';
 import { TemplateLibraryPage } from './pages/TemplateLibraryPage';
 import { TemplateEditorPage } from './pages/TemplateEditorPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
+import { WorkflowBuilderPage } from './pages/WorkflowBuilderPage';
+import { WorkflowCanvasPage } from './pages/WorkflowCanvasPage';
+import { AlertsPage } from './pages/AlertsPage';
+import { DashboardPage } from './pages/DashboardPage';
 import { DataPage } from './pages/DataPage';
 import { ExperienceHubPage } from './pages/experience/ExperienceHubPage';
 import { SurveyIntelligencePage } from './pages/experience/SurveyIntelligencePage';
@@ -30,6 +42,14 @@ import { TopicAnalysisHubPage } from './pages/experience/TopicAnalysisHubPage';
 import { TopicDeepDivePage } from './pages/experience/TopicDeepDivePage';
 import { SurveyTrendsPage } from './pages/experience/SurveyTrendsPage';
 import { OrgTrendsPage } from './pages/experience/OrgTrendsPage';
+import { GroupReportPage } from './pages/GroupReportPage';
+import { TagsSettingsPage } from './pages/settings/TagsSettingsPage';
+import { AdminCrystalSkillsPage } from './pages/admin/AdminCrystalSkillsPage';
+import { AdminCrystalSkillDetailPage } from './pages/admin/AdminCrystalSkillDetailPage';
+import { AdminCrystalQualityPage } from './pages/admin/AdminCrystalQualityPage';
+import { AdminCrystalSignalsPage } from './pages/admin/AdminCrystalSignalsPage';
+import { AdminCrystalDlqPage } from './pages/admin/AdminCrystalDlqPage';
+import { AdminCrystalGapsPage } from './pages/admin/AdminCrystalGapsPage';
 import { SignInPage } from './pages/SignInPage';
 import { SurveyFillPage } from './pages/SurveyFillPage';
 import { ErrorPage } from './pages/ErrorPage';
@@ -88,7 +108,20 @@ export default function App() {
             <Route path={ROUTES.TEMPLATES}          element={<ErrorBoundary inline><TemplateLibraryPage /></ErrorBoundary>} />
             <Route path={ROUTES.TEMPLATE_EDITOR}    element={<ErrorBoundary inline><TemplateEditorPage /></ErrorBoundary>} />
             <Route path={ROUTES.WORKFLOWS}          element={<ErrorBoundary inline><WorkflowsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.WORKFLOW_BUILD}     element={<ErrorBoundary inline><WorkflowBuilderPage /></ErrorBoundary>} />
+            <Route path={ROUTES.WORKFLOW_CANVAS}    element={<ErrorBoundary inline><WorkflowCanvasPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ALERTS}             element={<ErrorBoundary inline><AlertsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.DASHBOARD}          element={<ErrorBoundary inline><DashboardPage /></ErrorBoundary>} />
+            <Route path={ROUTES.VISUAL_STUDIO}      element={<Navigate to={ROUTES.DASHBOARD} replace />} />
             <Route path={ROUTES.SETTINGS}           element={<ErrorBoundary inline><BrandSettingsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.NOTIFICATION_PREFS} element={<ErrorBoundary inline><NotificationPreferencesPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_USERS}     element={<ErrorBoundary inline><UserDirectoryPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_ROLES}     element={<ErrorBoundary inline><RolesPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_DEPARTMENTS} element={<ErrorBoundary inline><DepartmentsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_GROUPS}    element={<ErrorBoundary inline><GroupsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_PROVISIONING} element={<ErrorBoundary inline><ProvisioningPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_SEATS}     element={<ErrorBoundary inline><SeatsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_AUDIT}     element={<ErrorBoundary inline><AuditLogPage /></ErrorBoundary>} />
             <Route path={ROUTES.DATA}               element={<ErrorBoundary inline><DataPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE}              element={<ErrorBoundary inline><ExperienceHubPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE_ORG_TRENDS}   element={<ErrorBoundary inline><OrgTrendsPage /></ErrorBoundary>} />
@@ -97,6 +130,18 @@ export default function App() {
             <Route path={ROUTES.EXPERIENCE_SURVEY_TOPICS} element={<ErrorBoundary inline><TopicAnalysisHubPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE_SURVEY_TOPIC}  element={<ErrorBoundary inline><TopicDeepDivePage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE_SURVEY_TRENDS} element={<ErrorBoundary inline><SurveyTrendsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.GROUP_REPORT}        element={<ErrorBoundary inline><GroupReportPage /></ErrorBoundary>} />
+            <Route path={ROUTES.GROUP_REPORT_LATEST} element={<ErrorBoundary inline><GroupReportPage /></ErrorBoundary>} />
+            <Route path={ROUTES.SETTINGS_TAGS}       element={<ErrorBoundary inline><TagsSettingsPage /></ErrorBoundary>} />
+
+            {/* Admin Crystal */}
+            <Route path={ROUTES.ADMIN_CRYSTAL} element={<Navigate to={ROUTES.ADMIN_CRYSTAL_SKILLS} replace />} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_SKILLS}       element={<ErrorBoundary inline><AdminCrystalSkillsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_SKILL_DETAIL} element={<ErrorBoundary inline><AdminCrystalSkillDetailPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_QUALITY}      element={<ErrorBoundary inline><AdminCrystalQualityPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_SIGNALS}      element={<ErrorBoundary inline><AdminCrystalSignalsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_DLQ}          element={<ErrorBoundary inline><AdminCrystalDlqPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_GAPS}         element={<ErrorBoundary inline><AdminCrystalGapsPage /></ErrorBoundary>} />
           </Route>
 
           <Route path="/app" element={<Navigate to={ROUTES.SURVEYS} replace />} />

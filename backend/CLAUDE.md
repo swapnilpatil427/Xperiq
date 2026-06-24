@@ -77,3 +77,24 @@ Key tables: surveys, responses, templates, workflows, orgs, insights, survey_top
 - `crystal_threads`: Crystal AI conversation threads (7-day TTL via `last_active_at`)
 - `agent_runs`: pipeline run tracking with `status`, `heartbeat_at`, `stream_events`
 - `notification_preferences` + `notification_events`: notification infrastructure (channels: in_app/email/push)
+
+## Testing
+
+Every code change requires a corresponding test change:
+- **New function or route** → add unit/integration tests in `src/__tests__/`
+- **Modified behavior** → update existing tests to match new behavior; delete tests for removed behavior
+- **Bug fix** → add a regression test that would have caught the bug (e.g. the `created_at` vs `generated_at` column name bug needs a test that asserts the query contains `generated_at`)
+
+Test files mirror `src/` structure. Use `.js` (not `.ts`) — they run via the `setup.cjs` hook.
+
+Run tests:
+```bash
+nvm use 22 && npx vitest run          # all tests
+nvm use 22 && npx vitest run src/__tests__/visual.test.js  # single file
+```
+
+Mock patterns:
+- DB: inject into `require.cache[DB_PATH]` via `fakeMod()`
+- Auth middleware: inject `requireAuth` that sets `req.orgId = 'o1'`
+- HTTP: use `light-my-request` `inject()` against an Express app
+- External libs (pdfmake, pptxgenjs): use `deps.load` injection pattern in exporters

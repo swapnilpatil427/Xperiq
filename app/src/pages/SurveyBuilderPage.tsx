@@ -18,7 +18,9 @@ import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { ExperientCopilot } from '../components/ExperientCopilot';
+import { TagSelector } from '../components/TagSelector';
 import type { Question, Template, SkipLogicRule, DisplayLogic } from '../types';
+import type { SurveyTag } from '../lib/api';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal types
@@ -1616,15 +1618,48 @@ function LogicView({ questions }: LogicViewProps) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 interface SurveySettingsPanelProps {
+  surveyId: string;
+  initialTags: SurveyTag[];
+  onTagsChange: (tags: SurveyTag[]) => void;
   settings: SurveySettings;
   onChange: (settings: SurveySettings) => void;
   onClose: () => void;
   fromTemplate: Template | null;
 }
 
-function SurveySettingsPanel({ settings, onChange, onClose, fromTemplate }: SurveySettingsPanelProps) {
+function SurveySettingsPanel({ surveyId, initialTags, onTagsChange, settings, onChange, onClose, fromTemplate }: SurveySettingsPanelProps) {
   const { t } = useTranslation();
+  const api = useApi();
   const u = (patch: Partial<SurveySettings>) => onChange({ ...settings, ...patch });
+
+  const [tags, setTags] = useState<SurveyTag[]>(initialTags);
+
+  // Re-sync when panel reopens (initialTags may have been updated by parent)
+  useEffect(() => { setTags(initialTags); }, [initialTags]);
+
+  async function handleAddTag(tag: SurveyTag) {
+    const updated = [...tags, tag];
+    setTags(updated);
+    onTagsChange(updated);
+    try {
+      await api.addTagsToSurvey(surveyId, [tag.id]);
+    } catch {
+      setTags(tags);
+      onTagsChange(tags);
+    }
+  }
+
+  async function handleRemoveTag(tagId: string) {
+    const updated = tags.filter(t => t.id !== tagId);
+    setTags(updated);
+    onTagsChange(updated);
+    try {
+      await api.removeTagFromSurvey(surveyId, tagId);
+    } catch {
+      setTags(tags);
+      onTagsChange(tags);
+    }
+  }
 
   return (
     <div className="h-full flex flex-col overflow-y-auto bg-[#fafbfc]">
@@ -1680,6 +1715,23 @@ function SurveySettingsPanel({ settings, onChange, onClose, fromTemplate }: Surv
             )}
           </div>
         )}
+
+        {/* Tags — immediate save to API, no pending state needed */}
+        <div>
+          <Label className="text-[10px] font-black uppercase tracking-widest block mb-1.5 text-muted-foreground">
+            {t('builder.settings.tagsLabel')}
+          </Label>
+          <TagSelector
+            selectedTags={tags}
+            onAdd={handleAddTag}
+            onRemove={handleRemoveTag}
+          />
+          <p className="text-[10px] text-muted-foreground/60 mt-1.5 flex items-center gap-1">
+            <Icon name="info" size={10} />{t('groups.tagHint')}
+          </p>
+        </div>
+
+        <Separator />
 
         <div>
           <Label className="text-[10px] font-black uppercase tracking-widest block mb-1.5 text-muted-foreground">
@@ -1781,6 +1833,8 @@ export function SurveyBuilderPage() {
 
   const fromTemplate = (pending?.fromTemplate as Template) || null;
 
+  const [surveyTags, setSurveyTags] = useState<SurveyTag[]>((pending?.tags as SurveyTag[]) || []);
+
   // Only survey-run-specific fields — template data (tags, estimated_minutes, etc.) is
   // derived from the template record via template_id, never duplicated on the survey.
   const [surveySettings, setSurveySettings] = useState<SurveySettings>({
@@ -1806,6 +1860,7 @@ export function SurveyBuilderPage() {
             thankYouMessage: (s.thank_you_message as string) || '',
             templateId:      (s.template_id as string) || null,
           });
+          setSurveyTags((s.tags as SurveyTag[]) || []);
           if ((s.questions as Question[])?.length) {
             setQuestions((s.questions as Question[]).map(mapAiToBuilderQuestion));
           }
@@ -1946,7 +2001,12 @@ export function SurveyBuilderPage() {
       isDirtyRef.current = true;
       setQuestions(result.questions.map(mapAiToBuilderQuestion) as Question[]);
     }
-    return { recommendations: result.recommendations };
+    // Return message + compliance_risk so ExperientCopilot can show rich result
+    return {
+      recommendations:  result.recommendations,
+      message:          result.message || undefined,
+      compliance_risk:  result.compliance_risk || undefined,
+    };
   }, [api, copilotRunId, surveyTypeId, surveySettings, surveyTitle]);
 
   const buildPayload = () => ({
@@ -2329,6 +2389,9 @@ export function SurveyBuilderPage() {
         <div className="w-[320px] h-full overflow-hidden">
           {settingsOpen ? (
             <SurveySettingsPanel
+              surveyId={surveyIdParam ?? ''}
+              initialTags={surveyTags}
+              onTagsChange={setSurveyTags}
               settings={surveySettings}
               onChange={(v: SurveySettings) => { isDirtyRef.current = true; setSurveySettings(v); }}
               onClose={() => setSettingsOpen(false)}
