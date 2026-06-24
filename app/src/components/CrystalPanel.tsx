@@ -5,12 +5,15 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
 import { Icon } from './Icon';
 import { Button } from '@/components/ui/button';
 import { useCrystalPanel, type CrystalCtx } from '../contexts/crystalPanel';
 import { GlassCard, CitationChip, ConfidenceChip, SENTIMENT_BORDER } from '../pages/insights/shared';
 import { useApi } from '../hooks/useApi';
 import { useAppAuth } from '../lib/auth';
+import { invalidate } from '../lib/dataBus';
+import { ROUTES, toPath } from '../constants/routes';
 import type { SurveyScope } from './SurveyScopePicker';
 import type { Insight, Survey, AgenticInsight, SurveyTopic } from '../types';
 import type { AlertSeverity } from '../lib/api';
@@ -135,6 +138,7 @@ export function CrystalPanel({
   useEffect(() => { scopeRef.current = scope; }, [scope]);
   const api = useApi();
   const { getToken } = useAppAuth();
+  const navigate = useNavigate();
 
   const isAll = scope === 'all';
   const activeSurveys = surveys.filter((s) => s.status === 'active' && !s.deleted_at);
@@ -497,41 +501,73 @@ export function CrystalPanel({
   const executeAction = useCallback(async (proposal: import('../types').ActionProposal) => {
     if (executingAction) return;
     setExecutingAction(proposal.id);
+    const surveyId = focusSurvey?.id;
+
+    // Fire-and-forget outcome telemetry — records the funnel (accepted → succeeded/failed).
+    const track = (status: 'accepted' | 'succeeded' | 'failed', outcomeRef?: string, errorDetail?: string) => {
+      api.recordProposalOutcome(surveyId ?? 'global', {
+        proposalKey:       proposal.id,
+        type:              proposal.type,
+        params:            proposal.params,
+        priority:          proposal.priority,
+        businessRationale: proposal.business_rationale,
+        confidence:        proposal.confidence,
+        status,
+        outcomeRef,
+        errorDetail,
+      }).catch(() => {});
+    };
+    const note = (content: string) => setMessages(prev => [...prev, {
+      id: crypto.randomUUID(), role: 'crystal' as const, content, timestamp: new Date(),
+    }]);
+
+    track('accepted');
     try {
-      const surveyId = focusSurvey?.id;
       switch (proposal.type) {
         case 'create_followup_survey':
         case 'create_survey': {
-          // Navigate to survey creation with pre-filled intent
           const intent  = (proposal.params.intent as string) || proposal.description;
           const typeId  = (proposal.params.survey_type as string) || undefined;
           const result  = await api.startRun({ intent, surveyTypeId: typeId });
-          // Navigate to the new survey builder
-          window.location.href = `/surveys?run=${result.run_id}`;
+          track('succeeded', result.run_id);
+          // Client-side nav into the builder for the new run — preserves the Crystal panel.
+          navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
+            state: { intent, surveyTypeId: typeId, runId: result.run_id, openCrystal: true },
+          });
           break;
         }
         case 'edit_survey_questions':
         case 'edit_survey': {
-          if (!surveyId) break;
+          if (!surveyId) { track('failed', undefined, 'no survey in scope'); break; }
           const msg = (proposal.params.message as string)
             || (proposal.params.questions_to_add ? `Add these questions: ${(proposal.params.questions_to_add as string[]).join('; ')}` : proposal.description);
-          // Open Copilot with the edit request pre-filled
-          const currentRun = (await api.getInsightRunStatus(surveyId)).run_id;
-          if (currentRun) {
-            await api.copilotRefine(currentRun, { message: msg, questions: [] });
-            window.location.href = `/surveys/${surveyId}/build`;
-          }
+          const runStatus = await api.getInsightRunStatus(surveyId);
+          const currentRun = runStatus.run_id;
+          if (!currentRun) { track('failed', undefined, 'no run for survey'); break; }
+          // Compute the refined questions, then hand them to the builder for review +
+          // explicit save (no silent mutation of the live survey, no discarded result).
+          const refined = await api.copilotRefine(currentRun, { message: msg, questions: [] });
+          track('succeeded', currentRun);
+          navigate(toPath(ROUTES.BUILDER, { surveyId }), {
+            state: {
+              id:        surveyId,
+              runId:     currentRun,
+              questions: refined.questions ?? [],
+              openCrystal: true,
+            },
+          });
           break;
         }
         case 'distribute_to_segment':
         case 'distribute': {
-          if (!surveyId) break;
-          // Navigate to survey distribution settings
-          window.location.href = `/surveys/${surveyId}/build?tab=distribute`;
+          if (!surveyId) { track('failed', undefined, 'no survey in scope'); break; }
+          track('succeeded', surveyId);
+          // Distribution is configured on the destination page — this only navigates.
+          navigate(toPath(ROUTES.BUILDER, { surveyId }), { state: { openTab: 'distribute' } });
           break;
         }
         case 'create_workflow': {
-          if (!surveyId) break;
+          if (!surveyId) { track('failed', undefined, 'no survey in scope'); break; }
           const wf = {
             name:          (proposal.params.name as string) || proposal.title,
             trigger:       (proposal.params.trigger as string) || proposal.params.trigger_event as string,
@@ -540,17 +576,14 @@ export function CrystalPanel({
             survey_id:     surveyId,
             enabled:       true,
           };
-          await api.createWorkflow(wf);
-          setMessages(prev => [...prev, {
-            id: crypto.randomUUID(),
-            role: 'crystal' as const,
-            content: `✓ Workflow created: "${proposal.title}". You can manage it in the Workflows section.`,
-            timestamp: new Date(),
-          }]);
+          const created = await api.createWorkflow(wf);
+          invalidate('workflows');   // any open Workflows page re-fetches
+          track('succeeded', (created as { id?: string })?.id);
+          note(`✓ Workflow created: "${proposal.title}". Open the Workflows page to manage it.`);
           break;
         }
         case 'create_alert': {
-          await api.createAlertRule({
+          const created = await api.createAlertRule({
             alertType:       (proposal.params.alert_type as string) || 'S-03',
             name:            (proposal.params.name as string) || proposal.title,
             description:     proposal.description,
@@ -558,54 +591,57 @@ export function CrystalPanel({
             severity:        (proposal.params.severity as AlertSeverity) || 'warning',
             thresholdConfig: (proposal.params.threshold_config as Record<string, unknown>) || {},
           });
-          setMessages(prev => [...prev, {
-            id: crypto.randomUUID(),
-            role: 'crystal' as const,
-            content: `✓ Alert created: "${proposal.title}". Manage it in Settings → Alerts.`,
-            timestamp: new Date(),
-          }]);
+          invalidate('alerts');
+          track('succeeded', (created as { rule?: { id?: string } })?.rule?.id);
+          note(`✓ Alert created: "${proposal.title}". Open the Alerts page to manage it.`);
           break;
         }
         case 'schedule_rerun': {
-          if (!surveyId) break;
+          if (!surveyId) { track('failed', undefined, 'no survey in scope'); break; }
           await api.triggerInsightGeneration(surveyId, { trigger: 'manual' });
-          setMessages(prev => [...prev, {
-            id: crypto.randomUUID(),
-            role: 'crystal' as const,
-            content: '✓ Insight regeneration triggered. Refreshing in the background...',
-            timestamp: new Date(),
-          }]);
+          invalidate('insights');    // open insight pages re-fetch when it completes
+          track('succeeded', surveyId);
+          note('✓ Insight regeneration triggered. The insights view will refresh when it completes.');
           break;
         }
         case 'view_template': {
-          window.location.href = `/templates`;
+          track('succeeded');
+          navigate(ROUTES.TEMPLATES);
           break;
         }
         default:
-          // Unknown type — open a Crystal follow-up
+          // Unknown type — open a Crystal follow-up rather than a dead end.
+          track('failed', undefined, `unhandled proposal type: ${proposal.type}`);
           submitQuery(`Help me with: ${proposal.title}`);
       }
       // Remove the executed action from proposals
       setActionProposals(prev => prev.filter(p => p.id !== proposal.id));
     } catch (err) {
-      setMessages(prev => [...prev, {
-        id: crypto.randomUUID(),
-        role: 'crystal' as const,
-        content: `Couldn't complete that action. Try again or do it manually.`,
-        timestamp: new Date(),
-      }]);
+      const detail = err instanceof Error ? err.message : String(err);
+      track('failed', undefined, detail);
+      note(`Couldn't complete "${proposal.title}". ${detail}. You can try again or do it manually.`);
     } finally {
       setExecutingAction(null);
     }
-  }, [api, executingAction, focusSurvey, submitQuery]);
+  }, [api, executingAction, focusSurvey, submitQuery, navigate]);
 
   const dismissAction = useCallback((actionId: string) => {
+    const proposal = actionProposals.find(p => p.id === actionId);
     setActionProposals(prev => prev.filter(p => p.id !== actionId));
-    // Also persist dismissal if we have a survey ID
+    // Persist dismissal (legacy) + record it in the proposal outcome funnel.
     if (focusSurvey?.id) {
       api.dismissAction(focusSurvey.id, actionId).catch(() => {});
     }
-  }, [api, focusSurvey]);
+    if (proposal) {
+      api.recordProposalOutcome(focusSurvey?.id ?? 'global', {
+        proposalKey: proposal.id,
+        type:        proposal.type,
+        params:      proposal.params,
+        priority:    proposal.priority,
+        status:      'dismissed',
+      }).catch(() => {});
+    }
+  }, [api, focusSurvey, actionProposals]);
 
   // Auto-submit when panel opens with a pre-loaded query.
   // Uses autoSubmittedQuery (not lastSubmittedQuery) so that suggestion chip
@@ -944,7 +980,9 @@ export function CrystalPanel({
                       <p className="text-xs font-medium px-1" style={{ color: 'rgba(42,75,217,0.7)' }}>
                         Recommended actions
                       </p>
-                      {actionProposals.map((proposal) => (
+                      {[...actionProposals].sort(
+                        (a, b) => (PRIORITY_RANK[b.priority] ?? 1) - (PRIORITY_RANK[a.priority] ?? 1),
+                      ).map((proposal) => (
                         <ActionProposalCard
                           key={proposal.id}
                           proposal={proposal}
@@ -1172,7 +1210,6 @@ function parseInlineCitations(text: string): { text: string; extraIds: string[] 
 
 // ── Citation helpers ─────────────────────────────────────────────────────────
 import { Link } from 'react-router-dom';
-import { ROUTES, toPath } from '../constants/routes';
 
 const LAYER_COLORS: Record<string, string> = {
   prescriptive: '#059669',
@@ -1999,6 +2036,35 @@ const PRIORITY_COLORS: Record<string, string> = {
   low:      '#6b7280',
 };
 
+const PRIORITY_RANK: Record<string, number> = { critical: 3, high: 2, medium: 1, low: 0 };
+
+// Humanize a proposal's params into a "What will happen" preview so the user
+// never confirms an unseen payload (bug B2 / gap G1). Keys are mapped to labels;
+// unknown keys are title-cased. Empty/objecty values are skipped.
+const PARAM_LABELS: Record<string, string> = {
+  alert_type: 'Alert type', threshold_config: 'Threshold', severity: 'Severity',
+  metric: 'Metric', condition: 'Trigger', name: 'Name', trigger: 'Trigger',
+  action_type: 'Action', intent: 'Goal', survey_type: 'Survey type',
+  audience: 'Audience', channel: 'Channel', message: 'Change',
+};
+function humanizeParams(params: Record<string, unknown>): Array<{ label: string; value: string }> {
+  const out: Array<{ label: string; value: string }> = [];
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v == null || v === '' || k === 'survey_id') continue;
+    let value: string;
+    if (typeof v === 'object') {
+      const entries = Object.entries(v as Record<string, unknown>);
+      if (entries.length === 0) continue;
+      value = entries.map(([kk, vv]) => `${kk}: ${vv}`).join(', ');
+    } else {
+      value = String(v);
+    }
+    const label = PARAM_LABELS[k] ?? k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    out.push({ label, value: value.slice(0, 120) });
+  }
+  return out;
+}
+
 function ActionProposalCard({
   proposal,
   isExecuting,
@@ -2013,6 +2079,8 @@ function ActionProposalCard({
   const iconName    = ACTION_TYPE_ICONS[proposal.type] ?? 'auto_fix_high';
   const priorityClr = PRIORITY_COLORS[proposal.priority] ?? '#2a4bd9';
   const ctaLabel    = proposal.cta_label ?? 'Apply';
+  const willDo      = humanizeParams(proposal.params || {});
+  const [showDetails, setShowDetails] = useState(false);
 
   return (
     <div
@@ -2097,19 +2165,46 @@ function ActionProposalCard({
               {proposal.business_rationale}
             </p>
           )}
-          {proposal.estimated_time && (
-            <p
-              style={{
-                fontSize:  '0.7rem',
-                color:     'var(--color-on-surface-variant, #888)',
-                marginTop: '0.2rem',
-              }}
-            >
-              ⏱ {proposal.estimated_time}
-            </p>
-          )}
+          <div className="flex items-center gap-3" style={{ marginTop: '0.2rem' }}>
+            {proposal.estimated_time && (
+              <span style={{ fontSize: '0.7rem', color: 'var(--color-on-surface-variant, #888)' }}>
+                ⏱ {proposal.estimated_time}
+              </span>
+            )}
+            {typeof proposal.confidence === 'number' && (
+              <span
+                title="How confident Crystal is in this recommendation"
+                style={{ fontSize: '0.7rem', color: 'var(--color-on-surface-variant, #888)' }}
+              >
+                ◆ {Math.round(proposal.confidence * 100)}% confidence
+              </span>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* "What will happen" — make the payload visible so nothing mutates unseen */}
+      {showDetails && willDo.length > 0 && (
+        <div
+          style={{
+            marginTop: '0.6rem',
+            padding: '0.5rem 0.6rem',
+            background: 'rgba(0,0,0,0.03)',
+            borderRadius: '0.5rem',
+            border: '1px solid rgba(0,0,0,0.06)',
+          }}
+        >
+          <p style={{ fontSize: '0.65rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-on-surface-variant, #888)', marginBottom: '0.3rem' }}>
+            What will happen
+          </p>
+          {willDo.map((row) => (
+            <div key={row.label} style={{ display: 'flex', gap: '0.4rem', fontSize: '0.72rem', lineHeight: 1.5 }}>
+              <span style={{ color: 'var(--color-on-surface-variant, #888)', minWidth: 72 }}>{row.label}</span>
+              <span style={{ color: 'var(--color-on-surface, #1a1a2e)', fontWeight: 500 }}>{row.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Action buttons */}
       <div className="flex items-center gap-2 mt-3">
@@ -2131,6 +2226,24 @@ function ActionProposalCard({
         >
           {isExecuting ? 'Applying…' : ctaLabel}
         </button>
+        {willDo.length > 0 && (
+          <button
+            onClick={() => setShowDetails((s) => !s)}
+            disabled={isExecuting}
+            aria-expanded={showDetails}
+            style={{
+              padding:      '0.4rem 0.6rem',
+              borderRadius: '0.5rem',
+              fontSize:     '0.75rem',
+              color:        priorityClr,
+              background:   'transparent',
+              border:       `1px solid ${priorityClr}40`,
+              cursor:       'pointer',
+            }}
+          >
+            {showDetails ? 'Hide' : 'Details'}
+          </button>
+        )}
         <button
           onClick={onDismiss}
           disabled={isExecuting}

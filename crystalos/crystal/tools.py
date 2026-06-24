@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time as _time
 import traceback
 from typing import Any
@@ -40,6 +41,53 @@ _CSAT_BENCHMARKS = {
     "government":            {"csat": 3.5},
     "professional_services": {"csat": 3.9},
     "other":                 {"csat": 3.8},
+}
+
+
+# ── Alert threshold parsing (bug B4) ──────────────────────────────────────────
+# The LLM usually passes `condition` as prose ("NPS drops below 30") rather than a
+# structured threshold dict. Parse common phrasings into a threshold config so the
+# proposed alert ships with a real, actionable threshold instead of an empty one.
+_THRESHOLD_BELOW_RE = re.compile(
+    r"\b(?:below|under|less\s+than|drops?\s+below|falls?\s+below|fewer\s+than)\b\s*(-?\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_THRESHOLD_ABOVE_RE = re.compile(
+    r"\b(?:above|over|greater\s+than|more\s+than|exceeds?|rises?\s+above|climbs?\s+above)\b\s*(-?\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+
+
+def _parse_threshold(condition: str) -> dict | None:
+    """Regex-parse prose alert conditions into a threshold config dict.
+
+    "NPS drops below 30" → {"below": 30}; "CSAT above 4.5" → {"above": 4.5}.
+    Returns None when nothing parseable is found.
+    """
+    if not condition or not isinstance(condition, str):
+        return None
+
+    def _num(raw: str):
+        return float(raw) if "." in raw else int(raw)
+
+    m = _THRESHOLD_BELOW_RE.search(condition)
+    if m:
+        return {"below": _num(m.group(1))}
+    m = _THRESHOLD_ABOVE_RE.search(condition)
+    if m:
+        return {"above": _num(m.group(1))}
+    return None
+
+
+# Sensible default thresholds per alert-catalog code, used when neither an explicit
+# threshold dict nor a parseable condition is supplied. Keeps known alert types from
+# shipping with an empty (non-actionable) threshold.
+_ALERT_TYPE_DEFAULT_THRESHOLDS: dict[str, dict] = {
+    "S-01": {"minDrop": 5, "windowDays": 7},
+    "S-03": {"below": 30},
+    "S-04": {"below": 3.5},
+    "S-05": {"above": 5},
+    "T-03": {},
 }
 
 
@@ -851,6 +899,10 @@ async def execute_propose_survey_creation(ctx: CrystalContext, params: dict) -> 
         },
         "estimated_time": "5 minutes to review and launch",
         "cta_label": "Create Survey",
+        "business_rationale": (
+            f"Captures targeted feedback from {target_audience} on {purpose or 'this area'} "
+            f"so the team can validate the issue and prioritise the right fix."
+        )[:159],
     }
 
 
@@ -886,6 +938,10 @@ async def execute_propose_survey_edit(ctx: CrystalContext, params: dict) -> dict
         },
         "estimated_time": "2 minutes",
         "cta_label": "Apply Edits",
+        "business_rationale": (
+            f"Closes the measurement gap around {focus_topic or 'this theme'} so future "
+            f"responses pinpoint the root cause instead of leaving it ambiguous."
+        )[:159],
     }
 
 
@@ -923,6 +979,10 @@ async def execute_propose_distribution(ctx: CrystalContext, params: dict) -> dic
         "estimated_response_rate": expected_rate,
         "estimated_time": "Set up in 3 minutes",
         "cta_label": "Set Up Distribution",
+        "business_rationale": (
+            f"Reaches {target_segment} via {recommended_channel} at an expected {expected_rate} "
+            f"response rate, widening coverage to {goal}."
+        )[:159],
     }
 
 
@@ -946,6 +1006,10 @@ async def execute_propose_workflow(ctx: CrystalContext, params: dict) -> dict:
         },
         "estimated_time": "2 minutes to configure",
         "cta_label": "Create Workflow",
+        "business_rationale": (
+            f"Automatically {desired_outcome or 'responds'} when {trigger_condition or 'the trigger fires'}, "
+            f"cutting manual follow-up time and ensuring no at-risk response slips through."
+        )[:159],
     }
 
 
@@ -959,6 +1023,18 @@ async def execute_propose_alert(ctx: CrystalContext, params: dict) -> dict:
     threshold  = params.get("threshold")
     name       = params.get("name") or (f"{metric} alert".strip() if metric else "Metric alert")
 
+    # Resolve threshold_config in priority order so known alert types rarely ship empty:
+    #   1. explicit threshold dict (non-empty)
+    #   2. threshold parsed from the prose condition
+    #   3. catalog default for the alert type
+    if isinstance(threshold, dict) and threshold:
+        threshold_config = threshold
+    else:
+        threshold_config = (
+            _parse_threshold(condition)
+            or _ALERT_TYPE_DEFAULT_THRESHOLDS.get(alert_type, {})
+        )
+
     return {
         "proposal_type": "create_alert",
         "title": f"Set up alert: {name}"[:60],
@@ -969,10 +1045,14 @@ async def execute_propose_alert(ctx: CrystalContext, params: dict) -> dict:
             "alert_type":       alert_type,
             "name":             name,
             "severity":         severity,
-            "threshold_config": threshold if isinstance(threshold, dict) else {},
+            "threshold_config": threshold_config,
         },
         "estimated_time": "1 minute to confirm",
         "cta_label": "Create Alert",
+        "business_rationale": (
+            f"Catches {metric or 'metric'} erosion within the alert window so the team "
+            f"can intervene before detractors churn."
+        )[:159],
     }
 
 

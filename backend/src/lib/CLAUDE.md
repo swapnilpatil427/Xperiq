@@ -1,6 +1,8 @@
 # Backend Libraries (TypeScript)
 
-All files are `.ts`. Import using ES module syntax — compiled to CommonJS by tsconfig.
+All files are `.ts`, run directly via `tsx` (no compile step). `npm run build`
+runs `tsc` as a typecheck only. There are ~38 modules in `src/lib/` — the ones
+below are the most-used; the directory itself is the authoritative list.
 
 ## db.ts
 Postgres pool singleton. Generic typed query.
@@ -33,5 +35,5 @@ HTTP client for the Python agents service (CrystalOS). Exports typed functions:
 `startOrchestration`, `refineRun`, `generateGroupInsights`, `crystalStream`, etc.
 
 ## httpError.ts
-`clientError(res, message, status?)` — 4xx responses
-`serverError(res, err, message?)` — 500 responses with logging
+`clientError(res, status, message)` — 4xx responses (status first, e.g. `clientError(res, 400, 'bad input')`)
+`serverError(res, err, context?)` — 500 responses with logging (3rd arg is a context object, not a message)

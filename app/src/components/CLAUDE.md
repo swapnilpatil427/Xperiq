@@ -1,6 +1,9 @@
 # Components — Shared UI
 
-## AppShell.jsx (critical)
+> All components are TypeScript (`.tsx`). Filenames below using `.jsx` are historical —
+> read them as `.tsx`. `App.jsx` → `App.tsx`.
+
+## AppShell.tsx (critical)
 The central layout wrapper for all authenticated pages. Provides:
 - Collapsible SideNav (desktop/tablet) via `useSidebarState`
 - Fixed TopBar (hamburger + CreditsChip + notifications + UserButton)
@@ -46,6 +49,25 @@ Use these instead of any `psychology` Material icon for branding.
 Wraps Material Symbols Outlined.
 `<Icon name="poll" size={20} fill={0|1} className="..." />`
 fill=1 = filled variant. Common names: poll, dataset, psychology, groups, account_tree, auto_awesome, settings, add, refresh, menu, menu_open, chevron_right.
+
+## CrystalPanel.tsx — Crystal AI + action proposals
+Mounted once globally inside AppShell (never render it in a page). Streams Crystal
+answers over SSE and renders **action proposals** as confirmation cards.
+
+- **Boundary: Crystal proposes, the app executes.** Crystal never mutates data
+  autonomously. The stream can emit an `action_proposals` event; each renders as an
+  `ActionProposalCard` showing title, description, business rationale, confidence,
+  priority, and a **Details** toggle ("What will happen" — a `humanizeParams` preview
+  so nothing mutates unseen). The user clicks **Apply** (the confirm gesture).
+- `executeAction` dispatches by `proposal.type`: write actions (`create_workflow`,
+  `create_alert`, `schedule_rerun`) call the API then `invalidate(...)` the DataBus;
+  builder actions (`create_survey`, `edit_survey`, `distribute`) `navigate(toPath(ROUTES.BUILDER, …))`
+  with state — never `window.location.href`.
+- **Outcome telemetry:** every interaction calls `api.recordProposalOutcome(...)`
+  through the funnel `accepted → succeeded | failed` (and `dismissed`).
+- Types: `ActionProposal` / `ActionProposalType` in `types/index.ts`; `requires_confirmation`
+  is always true. Adding a new proposal type → handle it in `executeAction`, add to the
+  type union, and `invalidate()` after any mutation.
 
 ## ui/ subdirectory
 shadcn/UI primitives. Available: badge, button, card, dialog, dropdown-menu, input, label, progress, scroll-area, select, separator, sheet, switch, tabs, textarea, tooltip.

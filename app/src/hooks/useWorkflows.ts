@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Workflow } from '../types';
 import { useApi } from './useApi';
+import { useInvalidation } from '../lib/dataBus';
 
 const MOCK_WORKFLOWS: Workflow[] = [
   { id: 'w1', name: 'Critical Alert',         condition: { field:'sentiment',operator:'=',value:'Negative' }, action: { type:'email',  config:{ to:'support@company.com' } },  status: 'active', trigger_count: 48  },
@@ -26,6 +27,9 @@ export function useWorkflows() {
   }, [api]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Re-fetch when Crystal (or anything else) creates/changes a workflow.
+  useInvalidation('workflows', load);
 
   const createWorkflow = useCallback(async (data: Partial<Workflow>): Promise<Workflow> => {
     try {

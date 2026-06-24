@@ -791,7 +791,96 @@ class TestProposeAlert:
         result = await execute_propose_alert(self._ctx(), {"condition": "CSAT falls"})
         assert result["params"]["alert_type"] == "S-03"      # default catalog code
         assert result["params"]["severity"] == "warning"     # default severity
-        assert result["params"]["threshold_config"] == {}
+        # "CSAT falls" is not parseable → falls back to S-03 catalog default
+        assert result["params"]["threshold_config"] == {"below": 30}
+
+    # ── _parse_threshold (bug B4) ──────────────────────────────────────────
+    def test_parse_threshold_below(self):
+        from crystalos.crystal.tools import _parse_threshold
+        assert _parse_threshold("NPS drops below 30") == {"below": 30}
+
+    def test_parse_threshold_above_decimal(self):
+        from crystalos.crystal.tools import _parse_threshold
+        assert _parse_threshold("CSAT above 4.5") == {"above": 4.5}
+
+    def test_parse_threshold_synonyms(self):
+        from crystalos.crystal.tools import _parse_threshold
+        assert _parse_threshold("score under 10") == {"below": 10}
+        assert _parse_threshold("rating exceeds 8") == {"above": 8}
+        assert _parse_threshold("less than 2.5 stars") == {"below": 2.5}
+
+    def test_parse_threshold_garbage_returns_none(self):
+        from crystalos.crystal.tools import _parse_threshold
+        assert _parse_threshold("garbage") is None
+        assert _parse_threshold("") is None
+        assert _parse_threshold(None) is None
+
+    @pytest.mark.asyncio
+    async def test_propose_alert_uses_parsed_threshold_from_prose(self):
+        """When condition is prose and no explicit threshold dict, parse it."""
+        from crystalos.crystal.tools import execute_propose_alert
+        result = await execute_propose_alert(
+            self._ctx(),
+            {"metric": "NPS", "condition": "NPS drops below 25", "alert_type": "S-03"},
+        )
+        assert result["params"]["threshold_config"] == {"below": 25}
+
+    @pytest.mark.asyncio
+    async def test_propose_alert_explicit_dict_wins_over_prose(self):
+        from crystalos.crystal.tools import execute_propose_alert
+        result = await execute_propose_alert(
+            self._ctx(),
+            {"condition": "NPS drops below 25", "threshold": {"below": 40}},
+        )
+        assert result["params"]["threshold_config"] == {"below": 40}
+
+    @pytest.mark.asyncio
+    async def test_propose_alert_falls_back_to_catalog_default_s04(self):
+        """No condition + S-04 alert type → S-04 catalog default."""
+        from crystalos.crystal.tools import execute_propose_alert
+        result = await execute_propose_alert(
+            self._ctx(), {"metric": "CSAT", "alert_type": "S-04"},
+        )
+        assert result["params"]["threshold_config"] == {"below": 3.5}
+
+    @pytest.mark.asyncio
+    async def test_all_propose_tools_include_business_rationale(self):
+        """Gap G1: every propose_* tool returns a non-empty business_rationale."""
+        from crystalos.crystal.tools import (
+            execute_propose_survey_creation,
+            execute_propose_survey_edit,
+            execute_propose_distribution,
+            execute_propose_workflow,
+            execute_propose_alert,
+        )
+        ctx = self._ctx()
+        with patch("crystalos.crystal.tools.db._pool_conn") as mock_pool:
+            # survey_creation queries the DB for the survey title; make it a no-op
+            mock_conn = MagicMock()
+            mock_pool.return_value.connection.return_value.__aenter__ = AsyncMock(
+                side_effect=Exception("skip db")
+            )
+            results = [
+                await execute_propose_survey_creation(
+                    ctx, {"purpose": "understand churn", "target_audience": "detractors"}
+                ),
+                await execute_propose_survey_edit(
+                    ctx, {"edit_request": "add question", "focus_topic": "checkout"}
+                ),
+                await execute_propose_distribution(
+                    ctx, {"target_segment": "detractors", "goal": "recover at-risk accounts"}
+                ),
+                await execute_propose_workflow(
+                    ctx, {"trigger_condition": "NPS < 30", "desired_outcome": "notify CSM"}
+                ),
+                await execute_propose_alert(
+                    ctx, {"metric": "NPS", "condition": "NPS drops below 30"}
+                ),
+            ]
+        for r in results:
+            rationale = r.get("business_rationale")
+            assert isinstance(rationale, str) and rationale.strip(), r
+            assert len(rationale) < 160, rationale
 
     def test_propose_alert_registered(self):
         from crystalos.crystal.registry import ACTION_TOOL_NAMES, TOOL_REGISTRY

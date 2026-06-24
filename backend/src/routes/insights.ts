@@ -1677,6 +1677,93 @@ router.post('/:surveyId/actions/:actionId/dismiss', requireAuth, async (req: Req
   }
 });
 
+// ── POST /api/insights/:surveyId/crystal/proposals ────────────────────────────
+// Records the outcome of a Crystal action proposal (emitted/accepted/dismissed/
+// succeeded/failed). UPSERTs on (org_id, proposal_key) so repeated calls for the
+// same proposal update the existing row rather than duplicating it.
+
+router.post('/:surveyId/crystal/proposals', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { surveyId } = req.params;
+  const {
+    proposalKey,
+    type,
+    params,
+    priority,
+    businessRationale,
+    confidence,
+    status,
+    outcomeRef,
+    errorDetail,
+    brandId,
+  } = req.body as Record<string, unknown>;
+
+  if (typeof type !== 'string' || !type) {
+    clientError(res, 400, 'type is required');
+    return;
+  }
+  if (typeof status !== 'string' || !status) {
+    clientError(res, 400, 'status is required');
+    return;
+  }
+
+  try {
+    const { rows } = await query(
+      `INSERT INTO crystal_action_proposals
+         (org_id, brand_id, survey_id, proposal_key, type, params, priority,
+          business_rationale, confidence, status, outcome_ref, error_detail)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, '{}')::jsonb, COALESCE($7, 'medium'),
+               $8, $9, $10, $11, $12)
+       ON CONFLICT (org_id, proposal_key) WHERE proposal_key IS NOT NULL
+       DO UPDATE SET
+         status       = EXCLUDED.status,
+         outcome_ref  = COALESCE(EXCLUDED.outcome_ref, crystal_action_proposals.outcome_ref),
+         error_detail = EXCLUDED.error_detail,
+         updated_at   = NOW()
+       RETURNING *`,
+      [
+        req.orgId,
+        brandId ?? null,
+        surveyId,
+        proposalKey ?? null,
+        type,
+        params != null ? JSON.stringify(params) : null,
+        priority ?? null,
+        businessRationale ?? null,
+        confidence ?? null,
+        status,
+        outcomeRef ?? null,
+        errorDetail ?? null,
+      ],
+    );
+    res.json(rows[0]);
+  } catch (err: unknown) {
+    serverError(res, err instanceof Error ? err : new Error(String(err)), { endpoint: 'crystal_proposals', surveyId });
+  }
+});
+
+// ── GET /api/insights/:surveyId/crystal/proposals ─────────────────────────────
+// Recent proposals for the org (optionally filtered by status) — for future analytics.
+
+router.get('/:surveyId/crystal/proposals', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { surveyId } = req.params;
+  const status = typeof req.query.status === 'string' ? req.query.status : null;
+  try {
+    const params: unknown[] = [req.orgId];
+    let sql = `SELECT * FROM crystal_action_proposals WHERE org_id = $1`;
+    if (status) {
+      params.push(status);
+      sql += ` AND status = $${params.length}`;
+    }
+    sql += ` ORDER BY updated_at DESC LIMIT 200`;
+
+    const { rows } = await query(sql, params);
+    res.json({ proposals: rows });
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message, surveyId }, 'insights:crystal:proposals:list:error');
+    res.json({ proposals: [] });
+  }
+});
+
 // ── Legacy: GET /api/surveys/:surveyId/insights ───────────────────────────────
 
 router.get('/:surveyId/insights', async (req: Request, res: Response): Promise<void> => {

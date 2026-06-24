@@ -105,12 +105,24 @@ run). The skill↔`Question`-schema mapping lives in `lib/skill_survey_adapter.p
 `survey-qc` remains on the legacy `quality_control_agent` (coupled to the
 creation graph's revision loop).
 
-### Crystal Intelligence (ReAct loop)
-- Entry: `POST /api/insights/:surveyId/crystal` (via `insights.js` → `agentsClient.js`)
-- Crystal agent in `agents/crystal.py` runs a ReAct loop calling 13 tools
-- SSE stream: each tool call + thinking step emits a `data:` event to the client
-- Thread continuity: `get_or_create_thread()` looks up `crystal_threads` by `(survey_id, org_id)`, reuses if TTL active, starts fresh otherwise (7-day TTL)
-- Rate limit: 10 Crystal requests per org per minute (Redis sliding window)
+### Crystal Intelligence (skill-first streaming — default)
+- Entry: `POST /api/insights/:surveyId/crystal` → `crystal_stream_endpoint` (`main.py`) → `_run_skill_stream` (`agents/crystal.py`)
+- Flow: **semantic-route** to the best skill (`skill_registry.find`, top_k=1) → directly call up to 3 of that skill's allowed context tools (no LLM tool selection) → synthesize via `SkillRuntime` (`_skill_synthesis`) → emit SSE `answer` + `action_proposals`
+- **Fallback chain:** skill synthesis returns None (no match / eval fail / normalize fail) → single-shot `_run_crystal`; if the stream throws before the first event → `_run_crystal` once more (`main.py`)
+- **Legacy:** `?legacy=true` (admin/brand_admin only) runs `_run_react_loop_streaming` — the old LLM-driven ReAct tool loop, preserved for admin debug. `?debug=true` (admin) emits `debug_routing`/`debug_timing` events
+- Semantic routing is live because the lifespan calls `await _skill_reg.warm_router()` at startup (pre-embeds skill descriptions); falls back to difflib `find_sync()` if not warmed
+- `TOOL_REGISTRY` (`crystal/registry.py`) has **35** tool definitions; executors + `dispatch_tool` in `crystal/tools.py`
+- Thread continuity: `crystal_threads` by `(survey_id, org_id)`, 7-day TTL. Rate limit: 10 req/org/min (Redis)
+
+### Crystal action proposals & telemetry
+- Two emitters, one shape: skill path (`action_proposals[]` in skill output → `_normalize_skill_output`) and tool path (`propose_*` tools in `ACTION_TOOL_NAMES` → `_extract_action_proposals`). Both pass through `_normalize_proposal` (maps `_PROPOSAL_TYPE_ALIASES`, fills slug `id`, defaults priority/`requires_confirmation`). See the "Crystal vs Copilot" table above.
+- `_fire_telemetry` (end of both stream paths) fires two fire-and-forget tasks: `turn_publisher.publish_turn_event` (TurnEvent: tools, eval_score, latency, skill_name, quality signal) and `feedback_detector.detect_and_route_signal` + `persist_signal` (product-signal detection).
+
+### SkillRuntime quality gate
+`lib/skill_runtime.py` `execute()` runs EVALS.md (hybrid structural + LLM-judge), gated by `SKILL_EVAL_PASS_THRESHOLD`; retries once on failure with failure context; skills with no EVALS.md get a baseline output gate (not a blind pass); high-scoring runs are written to the example bank. Authoring details in `SKILLS.md`.
+
+### BrandContext / permissions (`crystal/context.py`)
+`BrandContext` carries brand persona + `permitted_features`/`restricted_features` allowlist + per-brand limits; `ROLE_PERMISSIONS` resolved via `_resolve_permissions` (role defaults ∩ brand contract) gates which tools Crystal may use per request.
 
 ### Insight Pipeline (LangGraph)
 - Entry: `run_insight_generation(survey_id, org_id, run_id, trigger)` in `graphs/insights.py`
@@ -136,10 +148,10 @@ creation graph's revision loop).
 
 ## Running tests
 ```bash
-cd agents
-.venv/bin/pytest              # all 425 tests
-.venv/bin/pytest tests/test_crystal.py   # Crystal-specific
-.venv/bin/pytest tests/test_integration.py  # end-to-end pipeline smoke tests
+cd crystalos
+.venv/bin/pytest              # full suite (~1400 tests; re-derive with --collect-only, don't trust prose)
+.venv/bin/pytest tests/test_crystal.py        # Crystal-specific
+.venv/bin/pytest tests/test_skill_runtime.py  # skill runtime / EVALS
 ```
 
 ## Testing rules
@@ -163,9 +175,9 @@ cd crystalos
 ```
 
 ## Adding a new Crystal tool
-1. Add the JSON Schema tool definition to `crystal/registry.py` (in `TOOL_DEFINITIONS`)
+1. Add the JSON Schema tool definition to `crystal/registry.py` (in `TOOL_REGISTRY`)
 2. Add an `execute_<tool_name>()` async function to `crystal/tools.py`
-3. Add the dispatch case to `dispatch_tool()` in `crystal/tools.py`
+3. Add the dispatch entry to `TOOL_EXECUTORS`/`dispatch_tool()` in `crystal/tools.py`
 4. Add a unit test in `tests/test_insight_tools.py`
 
 ## Adding a new pipeline node
@@ -173,3 +185,9 @@ cd crystalos
 2. Register it: `g.add_node("<name>", node_<name>)`
 3. Wire edges: `g.add_edge("prior_node", "<name>")` and `g.add_edge("<name>", "next_node")`
 4. Add unit tests in `tests/test_pipeline.py`
+
+## Keeping CrystalOS docs current
+- New skill → add `skills/<name>/{SKILL.md,EVALS.md,EXAMPLES.md}` and register in `skills/plugin.json`. It auto-registers (`registry.initialize` + `warm_router` at startup) and is routable via `registry.find` — no code change. Re-derive the skill count if you quote one.
+- New `propose_*` action tool → add to `TOOL_REGISTRY` + `ACTION_TOOL_NAMES` (registry) + executor in `crystal/tools.py`; if `proposal_type` ≠ frontend handler name, add a `_PROPOSAL_TYPE_ALIASES` entry (`agents/crystal.py`); add the frontend handler in `CrystalPanel.tsx`; update the proposal table above.
+- Changed the default Crystal flow → update "Crystal Intelligence (skill-first)". ReAct is legacy/admin-only (`?legacy=true`), not the default.
+- Quoting a test/tool count → re-derive (`pytest --collect-only -q`; count `"name":` in `TOOL_REGISTRY`); don't trust prose.

@@ -24,9 +24,9 @@ Reference for writing new Python code in CrystalOS. All patterns reflect the act
 crystalos/
   main.py              — FastAPI app entry: routers, lifespan (pool init/close)
   agents/              — Individual AI agent classes
-    crystal.py         — Crystal ReAct loop agent (SSE-streaming Q&A)
-    copilot.py         — Survey question editor
-    creator.py         — Survey creation orchestrator
+    crystal.py         — Crystal skill-first SSE-streaming Q&A (legacy ReAct loop kept for admin debug)
+    copilot.py         — Survey question editor (skill-first: copilot-analyst, legacy fallback)
+    creator.py         — Survey creation orchestrator (skill-first: survey-creator, legacy fallback)
   crystal/             — Crystal Intelligence platform
     context.py         — CrystalContext frozen dataclass (org_id, survey_id, thread)
     registry.py        — TOOL_REGISTRY: list of tool definitions (JSON Schema)
@@ -51,14 +51,11 @@ crystalos/
     pii_scrubber.py    — Regex PII scrubbing for trace inputs
   schemas/             — Pydantic models
     insight.py         — InsightStateModel, InsightRecord, TrustComponents, etc.
-  skills/              — Skill directory (each skill = a subdirectory with SKILL.md)
+  skills/              — Skill directory (36 skills; each = a subdirectory with SKILL.md). Examples:
     plugin.json        — Skill manifest: lists all registered skill paths
-    data-explorer/
-    trend-analyst/
-    segment-analyst/
-    driver-analyst/
-    proactive-insights/
-    report-composer/
+    crystal-analyst/   — the conversational Crystal skill (default chat path)
+    data-explorer/  trend-analyst/  segment-analyst/  driver-analyst/
+    proactive-insights/  report-composer/  survey-creator/  copilot-analyst/  …
   consumers/           — Redis stream consumers
     response_stream.py — Progressive tier trigger listener
   specialists/         — 7 domain specialist agents (NPS, CES, CSAT, etc.)
@@ -166,7 +163,8 @@ async with db._pool_conn().connection() as conn:
 
 ## How to Add a New Crystal Tool
 
-Crystal has a 13-tool ReAct loop. To add a 14th:
+Crystal's `TOOL_REGISTRY` has 35 tools (default path calls them directly via skill
+routing; the legacy ReAct loop is admin-only). To add another:
 
 **Step 1 — Add tool definition to `crystal/registry.py`:**
 
@@ -456,7 +454,7 @@ Config lives in `pyproject.toml`. Third-party packages without stubs (langgraph,
 ```bash
 cd crystalos
 
-# All tests (580+ passing)
+# All tests (~1400; re-derive with --collect-only, don't trust this number)
 .venv/bin/pytest
 
 # Crystal-specific

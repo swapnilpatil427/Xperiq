@@ -1,33 +1,33 @@
 # Constants — Single Source of Truth
 
-Never use raw string literals for routes, colors, or question types in components/pages.
+All constants files are TypeScript (`.ts`). Never use raw string literals for
+routes, colors, or question types in components/pages — import the constant.
 
-## routes.js — ROUTES object
-All app routes as named constants. Always import ROUTES and use `ROUTES.SURVEYS` etc.
-`toPath(ROUTES.BUILDER, { surveyId: id })` for parameterized routes.
+## routes.ts — ROUTES object
+All app routes as named constants. Always import `ROUTES` and use `ROUTES.SURVEYS`;
+use `toPath(ROUTES.BUILDER, { surveyId: id })` for parameterized routes. Every
+authenticated route is `/app`-prefixed. For programmatic navigation use
+`useNavigate()` + `toPath` — **never** `window.location.href` (full reload drops
+SPA state incl. the Crystal panel).
 
-Current routes:
-- SURVEYS: /app/surveys
-- CREATE: /app/surveys/create
-- BUILDER: /app/surveys/:surveyId/build
-- RESPONSE_DASHBOARD: /app/surveys/:surveyId/responses
-- INSIGHTS: /app/insights
-- ADVANCED_INSIGHTS: /app/insights/advanced
-- RESPONDENTS: /app/respondents
-- TEMPLATES: /app/templates
-- TEMPLATE_EDITOR: /app/templates/new
-- WORKFLOWS: /app/workflows
-- SETTINGS: /app/settings
-- DATA: /app/data
+Route groups (see `routes.ts` for the authoritative list — keep this in sync):
+- Surveys: `SURVEYS`, `CREATE`, `BUILDER`, `RESPONSE_DASHBOARD`, `SAMPLE_RESPONSES`
+- Insights: `INSIGHTS`, `ADVANCED_INSIGHTS`, `SURVEY_INSIGHTS`, `INSIGHTS_TOPICS/BRIEF/METRICS/FINDINGS/SURFACED`, `DASHBOARD`, `VISUAL_STUDIO`
+- Experience: `EXPERIENCE_SURVEY` (+ `_REPORT/_TOPICS/_TOPIC/_TRENDS`), `GROUP_REPORT*`
+- Automation: `WORKFLOWS`, `WORKFLOW_BUILD`, `WORKFLOW_CANVAS`, `ALERTS`, `NOTIFICATION_PREFS`
+- Library/data: `TEMPLATES`, `TEMPLATE_EDITOR`, `RESPONDENTS`, `DATA`
+- Settings: `SETTINGS`, `SETTINGS_USERS/ROLES/DEPARTMENTS/GROUPS/PROVISIONING/SEATS/AUDIT/TAGS`
+- Admin (Crystal): `ADMIN_CRYSTAL*` (skills, quality, signals, gaps, dlq, skill detail)
+- Public: `LANDING`, `SIGNIN`, `ONBOARDING`
 
-## colors.js — GRADIENTS, BADGES, SENTIMENT_COLORS
-Pre-defined color palettes for survey types, sentiment indicators, and gradients.
+## colors.ts — GRADIENTS, BADGES, SENTIMENT_COLORS
+Color palettes for survey types, sentiment indicators, gradients.
 
-## questionTypes.js — QTYPE_META, QTYPE_GROUPS
-All survey question type metadata (icon, label, group). Use `createQuestion(typeKey)` factory.
+## questionTypes.ts — QTYPE_META, QTYPE_GROUPS
+Survey question type metadata (icon, label, group). Use the `createQuestion(typeKey)` factory.
 
-## surveyTypes.js — SURVEY_CATEGORIES
-The list of survey category types (NPS, CSAT, Product Feedback, etc.) with descriptions.
+## surveyTypes.ts — SURVEY_CATEGORIES
+Survey category types (NPS, CSAT, Product Feedback, …) with descriptions.
 
-## thresholds.js — NPS, SENTIMENT, CSAT
-Score interpretation thresholds for NPS, CSAT, and sentiment analysis.
+## thresholds.ts — NPS, SENTIMENT, CSAT
+Score interpretation thresholds for NPS, CSAT, and sentiment.

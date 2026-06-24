@@ -76,10 +76,18 @@ const mockApi = {
   createAlertRule:          vi.fn().mockResolvedValue({ rule: { id: 'al-1' } }),
   triggerInsightGeneration: vi.fn().mockResolvedValue({}),
   dismissAction:            vi.fn().mockResolvedValue({}),
+  recordProposalOutcome:    vi.fn().mockResolvedValue(undefined),
   crystalChat:              vi.fn().mockResolvedValue({ answer: 'ok', suggestions: [], insight_refs: [] }),
   crystalChat2:             vi.fn().mockResolvedValue({ answer: 'ok', suggestions: [], insight_refs: [] }),
   updateInsightFeedback:    vi.fn().mockResolvedValue({}),
 };
+
+// ── Capture client-side navigation (replaces window.location.href) ────────────
+const mockNavigate = vi.fn();
+vi.mock('react-router-dom', async (importActual) => {
+  const actual = await importActual<typeof import('react-router-dom')>();
+  return { ...actual, useNavigate: () => mockNavigate };
+});
 
 vi.mock('../../hooks/useApi', () => ({
   useApi:  () => mockApi,
@@ -301,7 +309,10 @@ describe('CrystalPanel — action execution: navigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockHrefSetter).toHaveBeenCalledWith('/surveys?run=run-123');
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/app/surveys/new/build',
+        expect.objectContaining({ state: expect.objectContaining({ runId: 'run-123' }) }),
+      );
     });
   });
 
@@ -326,7 +337,10 @@ describe('CrystalPanel — action execution: navigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockHrefSetter).toHaveBeenCalledWith('/surveys?run=run-123');
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/app/surveys/new/build',
+        expect.objectContaining({ state: expect.objectContaining({ runId: 'run-123' }) }),
+      );
     });
   });
 
@@ -343,7 +357,10 @@ describe('CrystalPanel — action execution: navigation', () => {
     await user.click(screen.getByRole('button', { name: /apply/i }));
 
     await waitFor(() => {
-      expect(mockHrefSetter).toHaveBeenCalledWith('/surveys/survey-abc/build?tab=distribute');
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/app/surveys/survey-abc/build',
+        expect.objectContaining({ state: expect.objectContaining({ openTab: 'distribute' }) }),
+      );
     });
 
     expect(mockApi.startRun).not.toHaveBeenCalled();
@@ -362,7 +379,10 @@ describe('CrystalPanel — action execution: navigation', () => {
     await user.click(screen.getByRole('button', { name: /apply/i }));
 
     await waitFor(() => {
-      expect(mockHrefSetter).toHaveBeenCalledWith('/surveys/survey-abc/build?tab=distribute');
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/app/surveys/survey-abc/build',
+        expect.objectContaining({ state: expect.objectContaining({ openTab: 'distribute' }) }),
+      );
     });
   });
 
@@ -379,7 +399,7 @@ describe('CrystalPanel — action execution: navigation', () => {
     await user.click(screen.getByRole('button', { name: /apply/i }));
 
     await waitFor(() => {
-      expect(mockHrefSetter).toHaveBeenCalledWith('/templates');
+      expect(mockNavigate).toHaveBeenCalledWith('/app/templates');
     });
   });
 
@@ -407,7 +427,10 @@ describe('CrystalPanel — action execution: navigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockHrefSetter).toHaveBeenCalledWith('/surveys/survey-abc/build');
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/app/surveys/survey-abc/build',
+        expect.objectContaining({ state: expect.objectContaining({ runId: 'run-456' }) }),
+      );
     });
   });
 
@@ -431,7 +454,36 @@ describe('CrystalPanel — action execution: navigation', () => {
     });
 
     await waitFor(() => {
-      expect(mockHrefSetter).toHaveBeenCalledWith('/surveys/survey-abc/build');
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/app/surveys/survey-abc/build',
+        expect.objectContaining({ state: expect.objectContaining({ runId: 'run-456' }) }),
+      );
+    });
+  });
+
+  it('create_alert records the proposal outcome funnel (accepted → succeeded)', async () => {
+    const proposal = makeProposal({
+      id:    'ap-track',
+      type:  'create_alert',
+      title: 'Alert on NPS below 30',
+      params: { alert_type: 'S-03', threshold_config: { below: 30 } },
+    });
+
+    await triggerProposals([proposal]);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /apply/i }));
+
+    await waitFor(() => {
+      expect(mockApi.recordProposalOutcome).toHaveBeenCalledWith(
+        'survey-abc',
+        expect.objectContaining({ proposalKey: 'ap-track', status: 'accepted' }),
+      );
+    });
+    await waitFor(() => {
+      expect(mockApi.recordProposalOutcome).toHaveBeenCalledWith(
+        'survey-abc',
+        expect.objectContaining({ proposalKey: 'ap-track', status: 'succeeded' }),
+      );
     });
   });
 });

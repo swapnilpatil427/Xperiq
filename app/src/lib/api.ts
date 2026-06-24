@@ -1053,6 +1053,24 @@ export function createApiClient(getToken: GetToken) {
       await http.post(`/api/insights/${surveyId}/actions/${actionId}/dismiss`, {});
     },
 
+    /** Record the outcome of a Crystal action proposal (idempotent upsert keyed on proposalKey). */
+    recordProposalOutcome: async (
+      surveyId: string,
+      data: {
+        proposalKey: string;
+        type: string;
+        params?: Record<string, unknown>;
+        priority?: string;
+        businessRationale?: string;
+        confidence?: number;
+        status: 'emitted' | 'accepted' | 'dismissed' | 'succeeded' | 'failed';
+        outcomeRef?: string;
+        errorDetail?: string;
+      },
+    ): Promise<void> => {
+      await http.post(`/api/insights/${surveyId}/crystal/proposals`, data);
+    },
+
     askInsights: async (surveyId: string, question: string): Promise<{ answer: string; citations: AgenticInsight[] }> => {
       const res = await http.post<{ answer: string; citations: AgenticInsight[] }>(`/api/insights/${surveyId}/ask`, { question });
       return res.data;

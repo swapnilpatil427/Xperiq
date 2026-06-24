@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useApi } from './useApi';
+import { useInvalidation } from '../lib/dataBus';
 import type { AlertEvent, AlertRule } from '../lib/api';
 
 export function useAlerts() {
@@ -25,6 +26,9 @@ export function useAlerts() {
   }, [api]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Re-fetch when Crystal (or anything else) creates/changes an alert rule.
+  useInvalidation('alerts', load);
 
   const act = useCallback(async (id: string, action: 'acknowledge' | 'resolve' | 'snooze', hours = 24) => {
     if (action === 'acknowledge') await api.acknowledgeAlert(id);

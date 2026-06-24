@@ -1,46 +1,46 @@
-# Experient — Backend (Cloud Functions / Express API)
+# Experient — Backend (Express API, TypeScript)
 
 ## What this is
-Node.js Express API run locally and deployed to production.
-Handles all write operations, AI calls, and business logic.
-All data is Postgres-backed (no Firestore).
+Express API written in **TypeScript**, run directly via `tsx` (no build step) under
+PM2. Handles all write operations, AI calls, and business logic. All data is
+Postgres-backed (no Firestore). For authoring conventions see `backend/SKILLS.md`.
 
 ## Stack
-- Node.js + Express
-- Postgres via `pg` (db.js) — primary datastore
-- Redis via ioredis — sliding-window rate limiter (falls back to in-memory if no REDIS_URL)
-- OpenRouter — AI model gateway (GPT-4o, Claude, etc.)
+- Node.js 20+ · Express · **TypeScript (strict) via `tsx`** (no compile step; `npm run build` = `tsc` typecheck only)
+- Postgres via `pg` (`src/lib/db.ts`) — primary datastore
+- Redis via ioredis (`src/lib/redis.ts`) — sliding-window rate limiter (in-memory fallback)
+- OpenRouter (`src/lib/openrouter.ts`) — AI model gateway
+- Zod (request validation) · Pino (logging) · prom-client (metrics) · Clerk (JWT auth) · Sentry
 
 ## Directory structure
 ```
 src/
-  index.js          # Express app entry; mounts all routers
-  routes/           # All Postgres-backed routes (no subdirectory)
-    surveys.js      # Survey CRUD + publish/pause/close
-    responses.js    # Response submission and retrieval
-    insights.js     # Insight pipeline trigger, list, feedback, topics
-    ai.js           # AI endpoints (generate-survey, refine-survey)
-    copilot.js      # Crystal AI Q&A chat
-    templates.js    # Template library
-    workflows.js    # Workflow automation
-    orgProfile.js   # Org profile CRUD
-    orgs.js         # Org management
-    members.js      # Team member management
-    runs.js         # Agent run status/events
-    public.js       # Public survey fill endpoint (no auth)
-  lib/
-    db.js           # Postgres pool singleton
-    agentsClient.js # HTTP client for the Python agents service
-    openrouter.js   # AI API client (OpenRouter)
-    httpError.js    # clientError() / serverError() helpers
-    metrics.js      # Prometheus counters
-    logger.js       # Structured logging
-  middleware/
-    auth.js         # requireAuth middleware — verifies Bearer token
-    rateLimiter.js  # Sliding-window rate limiter (Redis or in-memory)
-    httpLogger.js   # Request logging
+  index.ts          # Express app entry; mounts all routers (see "Routers" below)
+  routes/           # ~31 route files (.ts), plus routes/webhooks/clerk.ts (raw-body, mounted before express.json())
+  lib/              # ~38 infra modules (.ts) — db, agentsClient, openrouter, httpError, metrics, logger,
+                    #   redis, rbac, alertEngine, workflowEngine, exporters, connectors, … (dir is authoritative)
+  middleware/       # auth, requireRole, requirePermission, rateLimiter, httpLogger, requestId, scimAuth
+  schemas/          # Zod request schemas (alerts, …)
+  test/setup.cjs    # registers the tsx CJS hook so .test.js files can require() .ts source
   data/             # Seed data / reference JSON
 ```
+
+## Routers (mounted in `src/index.ts`)
+`/api/public`, `/api/surveys` (surveys + responses + insights), `/api/insights`,
+`/api/templates`, `/api/ai` (aiLimiter), `/api/workflows`, `/api/org-profile`,
+`/api/orgs`, `/api/orgs/me`, `/api/users`, `/api/roles`, `/api/departments`,
+`/api/groups`, `/api/survey-tags`, `/api/group-insights`, `/api/scim-tokens`,
+`/api/sso-mappings`, `/api/seats`, `/api/audit-logs`, `/api/alerts`,
+`/api/dashboard`, `/api/dashboard-configs`, `/api/visual`,
+`/api/notification-channels`, `/scim/v2` (bearer-token auth, **no** apiLimiter),
+`/api/copilot`, `/api/runs`, `/api/experience`, `/api/notifications`,
+`/api/admin` (proxy → CrystalOS, see below). Plus `/webhooks/clerk`, `/api/health`, `/api/metrics`.
+
+## Two outbound paths to CrystalOS (port 8001)
+- **`lib/agentsClient.ts`** — typed client for orchestration/insights/Crystal calls.
+- **`/api/admin` proxy** (`routes/admin.ts`) — forwards `/api/admin/*` to `AGENTS_URL`,
+  gated by Clerk `requireAuth` then injects `X-Internal-Key: AGENTS_INTERNAL_KEY`
+  before forwarding (15s timeout → 504). Powers the Crystal admin UI.
 
 ## Key patterns
 - All routes use `requireAuth` middleware — extracts `req.orgId` and `req.userId`
@@ -59,13 +59,14 @@ src/
 - `SKIP_AUTH=true` — Bypasses auth for LOCAL DEV ONLY
 
 ## Crystal Intelligence (AI) routes
-`routes/insights.js` exposes the Crystal/AI endpoints:
-- `POST /api/insights/:surveyId/generate` — trigger insight pipeline via `agentsClient.js`
-- `GET  /api/insights/:surveyId/crystal` — Crystal SSE stream (streamed ReAct loop response)
-- `GET  /api/insights/:surveyId/topics` — flat topic list with sort/window params
-- `GET  /api/insights/:surveyId/topics/hierarchy` — topic hierarchy grouped by theme
-- `GET  /api/insights/:surveyId/crystal/history` — Crystal conversation history
-- `DELETE /api/insights/:surveyId/crystal/history` — clear Crystal history
+`routes/insights.ts` exposes the Crystal/AI endpoints:
+- `POST /api/insights/:surveyId/generate` — trigger insight pipeline via `agentsClient.ts`
+- `POST /api/insights/:surveyId/crystal` — Crystal SSE stream (proxied to CrystalOS skill-first path)
+- `GET  /api/insights/:surveyId/topics` (+ `/topics/hierarchy`) — topic list / hierarchy
+- `GET|DELETE /api/insights/:surveyId/crystal/history` — Crystal conversation history
+- `POST|GET /api/insights/:surveyId/crystal/proposals` — **action-proposal outcome tracking**.
+  POST upserts on `(org_id, proposal_key)` with `status ∈ {emitted,accepted,dismissed,succeeded,failed}`
+  (idempotent); GET lists recent proposals for analytics. Backed by `crystal_action_proposals`.
 
 ## Postgres schema highlights
 See docs/SURVEY_DATA_MODEL.md for full schema.
@@ -77,6 +78,7 @@ Key tables: surveys, responses, templates, workflows, orgs, insights, survey_top
 - `crystal_threads`: Crystal AI conversation threads (7-day TTL via `last_active_at`)
 - `agent_runs`: pipeline run tracking with `status`, `heartbeat_at`, `stream_events`
 - `notification_preferences` + `notification_events`: notification infrastructure (channels: in_app/email/push)
+- `crystal_action_proposals`: outcome funnel for Crystal action proposals (emitted→accepted→succeeded/failed/dismissed)
 
 ## Testing
 
@@ -85,12 +87,13 @@ Every code change requires a corresponding test change:
 - **Modified behavior** → update existing tests to match new behavior; delete tests for removed behavior
 - **Bug fix** → add a regression test that would have caught the bug (e.g. the `created_at` vs `generated_at` column name bug needs a test that asserts the query contains `generated_at`)
 
-Test files mirror `src/` structure. Use `.js` (not `.ts`) — they run via the `setup.cjs` hook.
+Test files mirror `src/` structure. Tests are `.js` (not `.ts`) — they `require()`
+`.ts` source via the tsx CJS hook registered in `src/test/setup.cjs`.
 
-Run tests:
+Run tests (Node 22):
 ```bash
-nvm use 22 && npx vitest run          # all tests
-nvm use 22 && npx vitest run src/__tests__/visual.test.js  # single file
+nvm use 22 && npm test                          # all tests (vitest run)
+nvm use 22 && npx vitest run src/__tests__/x.test.js  # single file
 ```
 
 Mock patterns:
@@ -98,3 +101,9 @@ Mock patterns:
 - Auth middleware: inject `requireAuth` that sets `req.orgId = 'o1'`
 - HTTP: use `light-my-request` `inject()` against an Express app
 - External libs (pdfmake, pptxgenjs): use `deps.load` injection pattern in exporters
+
+## Keeping these docs in sync
+- New router → register in `src/index.ts` AND add to the "Routers" list (note any non-standard limiter/auth).
+- New Crystal-facing endpoint → list it under "Crystal Intelligence routes"; new tables → "Postgres schema highlights".
+- New outbound call to CrystalOS → goes through `lib/agentsClient.ts` (typed) or the `/api/admin` proxy (`X-Internal-Key`); document which.
+- All source is `.ts` via `tsx` (no build step); tests are `.js` via the tsx hook. Any doc referencing a `.js` source file is stale.
