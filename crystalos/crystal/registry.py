@@ -561,6 +561,124 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
             "required": ["tag_ids", "gap_description", "gap_type"],
         },
     },
+    # ── Tier 3 — X+O intelligence tools ─────────────────────────────────────────
+    {
+        "name": "get_contact_identity",
+        "description": "Fetch the contact record linked to a specific survey response. Requires data:pii permission. Returns contact name, email, account, segment attributes, and consent status.",
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "response_id": {"type": "string", "description": "UUID of the response to look up the linked contact for"},
+            },
+            "required": ["response_id"],
+        },
+    },
+    {
+        "name": "get_ownership_route",
+        "description": "Resolve a dimension+value pair (e.g. driver='onboarding', account='Acme') to the owner identity via the org's ownership routing rules. Safe for all roles — returns no PII beyond owner label.",
+        "scope": "org",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dimension": {"type": "string", "description": "The routing dimension, e.g. 'driver', 'account', 'segment', 'region'"},
+                "match_value": {"type": "string", "description": "The value to match against routing rules"},
+            },
+            "required": ["dimension", "match_value"],
+        },
+    },
+    {
+        "name": "get_ontology_context",
+        "description": "Fetch ontology nodes and edges relevant to a given concept, topic, or signal. Use to understand how X-data signals map to O-data operational concepts (e.g. 'churn risk', 'renewal', 'SLA breach').",
+        "scope": "org",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "concept": {"type": "string", "description": "The concept, signal, or topic to look up in the ontology (e.g. 'detractor', 'churn', 'effort')"},
+            },
+        },
+    },
+    {
+        "name": "get_xo_context",
+        "description": "Cross X-data signals (NPS/sentiment for a segment or account) with O-data ontology mappings to identify convergence risks — accounts or segments where both experience signals AND operational signals indicate risk.",
+        "scope": "org",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "segment": {"type": "string", "description": "Segment name to analyze (e.g. 'enterprise', 'SMB')"},
+                "account_id": {"type": "string", "description": "Account ID to analyze (for account-level X+O fusion)"},
+                "survey_id": {"type": "string", "description": "Limit X-data to this survey (optional)"},
+            },
+        },
+    },
+    {
+        "name": "get_case_history",
+        "description": "Get the CX case history for a contact or driver. Use to check whether a detractor already has an open case, or whether a recurring driver has been actioned before.",
+        "scope": "org",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "contact_id": {"type": "string", "description": "UUID of the contact to look up cases for"},
+                "driver": {"type": "string", "description": "Driver/topic name to look up cases for (e.g. 'onboarding', 'support')"},
+            },
+        },
+    },
+    {
+        "name": "propose_create_case",
+        "description": "Propose creating a CX case for a detractor, high-churn account, or driver finding. Automatically resolves the owner via ownership routing rules. Returns a proposal the user confirms before the case is created.",
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Case title"},
+                "description": {"type": "string", "description": "Case description"},
+                "contact_id": {"type": "string", "description": "Contact UUID (from get_contact_identity)"},
+                "response_id": {"type": "string", "description": "Source response UUID"},
+                "severity": {"type": "string", "enum": ["critical", "high", "medium", "low"], "default": "high"},
+                "category": {"type": "string", "default": "cx"},
+                "driver_ref": {"type": "string", "description": "Driver/topic that triggered the case (for ownership routing)"},
+                "account_id": {"type": "string", "description": "Account ID (for ownership routing)"},
+                "segment": {"type": "string", "description": "Segment name (for ownership routing)"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"], "default": "high"},
+                "business_rationale": {"type": "string", "description": "Why this case will impact business outcomes"},
+                "confidence": {"type": "number", "default": 0.8},
+            },
+            "required": ["title"],
+        },
+    },
+    {
+        "name": "propose_assign_owner",
+        "description": "Propose assigning an open CX case to a resolved owner. Use after get_ownership_route identifies the right owner.",
+        "scope": "org",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "case_id": {"type": "string", "description": "UUID of the case to assign"},
+                "owner_user_id": {"type": "string", "description": "User ID to assign to"},
+                "owner_label": {"type": "string", "description": "Human-readable owner label"},
+                "role_label": {"type": "string", "description": "Role label for display"},
+                "rationale": {"type": "string", "description": "Why this owner was chosen"},
+            },
+            "required": ["case_id", "owner_user_id"],
+        },
+    },
+    {
+        "name": "propose_slack_alert",
+        "description": "Propose sending a Slack alert to a webhook URL. Use to notify a team about a critical case, SLA breach, or convergence risk. The org must have a Slack webhook configured (or the user supplies one).",
+        "scope": "org",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Alert notification title"},
+                "message": {"type": "string", "description": "Alert message body"},
+                "webhook_url": {"type": "string", "description": "Slack webhook URL (org-configured or provided)"},
+                "channel": {"type": "string", "description": "Slack channel name", "default": "#cx-alerts"},
+                "priority": {"type": "string", "enum": ["critical", "high", "medium", "low"], "default": "medium"},
+                "case_id": {"type": "string", "description": "Related case ID (optional)"},
+            },
+            "required": ["message"],
+        },
+    },
 ]
 
 
@@ -588,6 +706,8 @@ DATA_TOOL_NAMES = {
     "get_user_directory_context", "segment_users_by_attribute",
     "get_group_surveys", "get_group_metrics", "get_group_topics",
     "analyze_group_coverage", "detect_data_gaps", "suggest_new_survey",
+    "get_contact_identity", "get_ownership_route", "get_ontology_context",
+    "get_xo_context", "get_case_history",
 }
 
 # Analytical-skill tools — read-only like data tools, but delegate to the skill runtime
@@ -600,6 +720,7 @@ ANALYSIS_TOOL_NAMES = {
 ACTION_TOOL_NAMES = {
     "recommend_next_actions", "propose_survey_creation", "propose_survey_edit",
     "propose_distribution", "propose_workflow", "propose_alert", "list_relevant_templates",
+    "propose_create_case", "propose_assign_owner", "propose_slack_alert",
 }
 
 

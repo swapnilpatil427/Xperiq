@@ -17,6 +17,11 @@ import { apiLimiter, aiLimiter } from './middleware/rateLimiter';
 // Webhooks (raw body — must mount before express.json())
 import clerkWebhookRouter from './routes/webhooks/clerk';
 
+// Novu Framework workflows — served to Novu Cloud for orchestration
+import { serve } from '@novu/framework/express';
+import { allWorkflows } from './lib/novu/workflows';
+import { createHmac } from 'crypto';
+
 // Routes
 import publicRouter from './routes/public';
 import surveysRouter from './routes/surveys';
@@ -49,6 +54,16 @@ import runsRouter from './routes/runs';
 import experienceRouter from './routes/experience';
 import notificationsRouter from './routes/notifications';
 import adminRouter from './routes/admin';
+import crystalNovuRouter from './routes/crystal-novu';
+import contactSegmentsRouter from './routes/contact-segments';
+import contactSyncRouter from './routes/contact-sync';
+import contactsRouter from './routes/contacts';
+import cxCasesRouter from './routes/cx-cases';
+import ownershipRouter from './routes/ownership';
+import ontologyRouter from './routes/ontology';
+import outreachRouter from './routes/outreach';
+import outreachAnalyticsRouter, { frequencyCapsRouter } from './routes/outreach-analytics';
+import suppressionRouter from './routes/suppression';
 
 // ── Production validation — fail fast before starting the server ──────────────
 if (process.env.NODE_ENV === 'production') {
@@ -74,6 +89,89 @@ app.use(cors({ origin: corsOrigin, credentials: true, exposedHeaders: ['X-Export
 // Clerk webhook needs the RAW body for Svix signature verification — mount it
 // BEFORE express.json() so the JSON parser doesn't consume the stream.
 app.use('/webhooks/clerk', express.raw({ type: '*/*' }), clerkWebhookRouter);
+
+// Novu Framework Bridge — serves workflow definitions to Novu Cloud.
+// Must be mounted before express.json() as it handles its own body parsing.
+// When NOVU_API_KEY is absent (dev mode), this is a no-op.
+const novuHandler = process.env.NOVU_API_KEY
+  ? serve({ workflows: allWorkflows })
+  : null;
+
+if (novuHandler) {
+  app.use('/api/novu', novuHandler);
+}
+
+// Novu event webhooks (delivery, open, click) — raw body for HMAC verification
+app.post('/webhooks/novu', express.raw({ type: '*/*' }), async (req, res) => {
+  const secret = process.env.NOVU_SECRET_KEY;
+  if (secret) {
+    const sig = req.headers['novu-signature'] as string | undefined;
+    const hash = createHmac('sha256', secret).update(req.body as Buffer).digest('hex');
+    if (sig !== `sha256=${hash}`) { res.status(401).end(); return; }
+  }
+  try {
+    const event = JSON.parse((req.body as Buffer).toString()) as Record<string, unknown>;
+    const eventType = (event.type || event.status) as string | undefined;
+    const workflowId = (event.workflowIdentifier || event.transactionId) as string | undefined;
+    const subscriberId = (event.subscriber as Record<string, unknown> | undefined)?.subscriberId as string | undefined;
+    const channel = event.channel as string | undefined;
+
+    logger.info({ novuEvent: eventType, workflowId, subscriberId }, 'novu:webhook');
+
+    // Persist delivery event for analytics
+    if (eventType && subscriberId) {
+      const VALID_EVENTS = new Set(['sent','delivered','opened','clicked','bounced','failed','unsubscribed']);
+      const normalizedType = VALID_EVENTS.has(eventType) ? eventType : 'sent';
+      await dbQuery(
+        `INSERT INTO notification_delivery_events
+           (novu_message_id, workflow_id, subscriber_id, channel, event_type, metadata)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb)
+         ON CONFLICT DO NOTHING`,
+        [
+          event.messageId as string ?? null,
+          workflowId ?? null,
+          subscriberId,
+          channel ?? null,
+          normalizedType,
+          JSON.stringify({ raw: event }),
+        ]
+      ).catch((err: unknown) => {
+        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'novu:webhook:persist_failed');
+      });
+
+      // On bounce: auto-suppress the email address
+      if (normalizedType === 'bounced') {
+        const email = (event.subscriber as Record<string, unknown> | undefined)?.email as string | undefined;
+        if (email) {
+          // Lazy import to avoid circular deps
+          import('./lib/suppressionList').then(({ addSuppression }) => {
+            addSuppression(
+              'global', // org_id: need to resolve from subscriber_id; for now use a lookup
+              'email',
+              'bounce',
+              'system',
+              { email }
+            ).catch(() => {});
+          }).catch(() => {});
+        }
+      }
+
+      // On unsubscribe: add to suppression list
+      if (normalizedType === 'unsubscribed') {
+        const email = (event.subscriber as Record<string, unknown> | undefined)?.email as string | undefined;
+        if (email) {
+          import('./lib/suppressionList').then(({ addSuppression }) => {
+            addSuppression('global', 'email', 'unsubscribe', 'system', { email }).catch(() => {});
+          }).catch(() => {});
+        }
+      }
+    }
+
+    res.status(200).json({ received: true });
+  } catch {
+    res.status(400).json({ error: 'Invalid payload' });
+  }
+});
 
 app.use(express.json());
 app.use(requestId);  // attach req.id before logging
@@ -113,6 +211,21 @@ app.use('/api/runs',        apiLimiter, runsRouter);
 app.use('/api/experience',  apiLimiter, experienceRouter);
 app.use('/api/notifications', apiLimiter, notificationsRouter);
 app.use('/api/admin',        apiLimiter, adminRouter);
+app.use('/api/crystal-novu', apiLimiter, crystalNovuRouter);
+// Tier 3: Contacts, Segments, Sync, CX Cases, Ownership, Ontology
+// NOTE: /api/contacts/segments and /api/contacts/sync must be mounted BEFORE
+// /api/contacts so Express matches the more-specific paths first.
+app.use('/api/contacts/segments', apiLimiter, contactSegmentsRouter);
+app.use('/api/contacts/sync',     apiLimiter, contactSyncRouter);
+app.use('/api/contacts',          apiLimiter, contactsRouter);
+app.use('/api/cases',             apiLimiter, cxCasesRouter);
+app.use('/api/ownership-routes',  apiLimiter, ownershipRouter);
+app.use('/api/ontology',          apiLimiter, ontologyRouter);
+// NOTE: more-specific /api/outreach/* paths must be mounted BEFORE /api/outreach (more specific first)
+app.use('/api/outreach/suppression',    apiLimiter, suppressionRouter);
+app.use('/api/outreach/analytics',      apiLimiter, outreachAnalyticsRouter);
+app.use('/api/outreach/frequency-caps', apiLimiter, frequencyCapsRouter);
+app.use('/api/outreach',                apiLimiter, outreachRouter);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 app.get('/api/health', async (req, res) => {
@@ -152,8 +265,10 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT ?? 3001;
 const server = app.listen(PORT, () => {
+  const _devMode = !process.env.CLERK_SECRET_KEY;
   logger.info(`API  → http://localhost:${PORT}  (backend: local/postgres)`);
-  logger.info(`Auth → ${process.env.SKIP_AUTH === 'true' ? 'SKIP_AUTH (dev-user/dev-org)' : 'Clerk JWT'}`);
+  logger.info(`Auth → ${_devMode ? 'DEV MODE (no CLERK_SECRET_KEY — all requests as dev-user/dev-org)' : 'Clerk JWT'}`);
+  if (_devMode) logger.warn('Running in DEV MODE — set CLERK_SECRET_KEY to enable real authentication');
   logger.info(`CORS → ${corsOrigin === true ? 'all origins (dev)' : (corsOrigin || 'BLOCKED — set ALLOWED_ORIGIN')}`);
   logger.info(`Agents env → AGENTS_ENV=${process.env.AGENTS_ENV ?? 'dev (default)'}`);
   logger.info(`Metrics → http://localhost:${PORT}/api/metrics`);

@@ -24,10 +24,9 @@ dotenv.load_dotenv(os.path.join(os.path.dirname(__file__), "../../.env"))
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-BACKEND_URL       = os.getenv("VITE_API_URL",       "http://localhost:5001")
-AGENTS_URL        = os.getenv("AGENTS_URL",          "http://localhost:8001")
-AGENTS_INTERNAL_KEY = os.getenv("AGENTS_INTERNAL_KEY", "dev-internal-key-change-in-prod")
-SKIP_AUTH         = os.getenv("SKIP_AUTH",           "true").lower() == "true"
+BACKEND_URL         = os.getenv("VITE_API_URL",          "http://localhost:5001")
+AGENTS_URL          = os.getenv("AGENTS_URL",            "http://localhost:8001")
+AGENTS_INTERNAL_KEY = os.getenv("AGENTS_INTERNAL_KEY",  "dev-internal-key-change-in-prod")
 
 # ── ANSI colors ───────────────────────────────────────────────────────────────
 
@@ -94,10 +93,11 @@ async def _trigger_one(survey_id: str, org_id: str, dry_run: bool) -> dict:
 
     try:
         import uuid
+        import time
         import psycopg
         dsn = os.getenv("AGENTS_DB_DSN", "postgresql://postgres:postgres@localhost:5432/experient")
         run_id = str(uuid.uuid4())
-        thread_id = f"insight:skill:{org_id}:{survey_id}"
+        thread_id = f"insight:scheduled:{org_id}:{survey_id}:{int(time.time())}"
 
         async with await psycopg.AsyncConnection.connect(dsn) as conn:
             async with conn.cursor() as cur:

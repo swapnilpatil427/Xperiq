@@ -137,6 +137,16 @@ async function handleUserUpsert(data: Record<string, unknown>): Promise<void> {
   auditLog({ orgId, actorType: 'clerk_webhook', eventType: 'user.created',
     targetUserId: userId, targetResourceType: 'user', targetResourceId: userId,
     afterState: { email: profile.email, provisioned_by: profile.provisioned_by } });
+
+  // Sync user to Novu subscriber registry (non-blocking)
+  import('../../lib/novu/client').then(({ upsertNovuSubscriber }) => {
+    upsertNovuSubscriber(userId, {
+      email: d.email_addresses?.[0]?.email_address,
+      firstName: d.first_name ?? undefined,
+      lastName: d.last_name ?? undefined,
+      avatar: (d as unknown as { image_url?: string }).image_url ?? undefined,
+    }).catch(() => {}); // non-fatal
+  }).catch(() => {});
 }
 
 function applySamlMapping(profile: UserProfile, samlAttrs: Record<string, string>, mappings: Record<string, string>): void {

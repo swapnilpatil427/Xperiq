@@ -8,6 +8,7 @@
 // Fail closed: any error in evaluation denies access (never fail open).
 
 import type { Request, Response, NextFunction } from 'express';
+import { DEV_MODE } from './auth';
 import * as db from '../lib/db';
 import { getRedisClient } from '../lib/redis';
 
@@ -40,7 +41,7 @@ export function requirePermission(
   const resourceType = action.split(':')[0]; // 'survey' | 'dashboard' | 'users' | ...
 
   return async function permissionMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-    if (process.env.SKIP_AUTH === 'true') return next();
+    if (DEV_MODE) return next();
 
     const { userId, orgId } = req;
     if (!userId || !orgId) {
@@ -96,6 +97,86 @@ export function requirePermission(
   };
 }
 
+/** PII unmask flag from requireContactsPermission (true in DEV_MODE). */
+export function contactsPiiAllowed(req: Request): boolean {
+  if (DEV_MODE) return true;
+  return req.contactsPiiAllowed === true;
+}
+
+/**
+ * requireContactsPermission(action, getResourceId?)
+ *
+ * Evaluates the route action and contacts:pii:read in parallel (one round-trip
+ * each to Redis/DB) and attaches req.contactsPiiAllowed for response masking.
+ */
+export function requireContactsPermission(
+  action: string,
+  getResourceId: ((req: Request) => string) | null = null
+): (req: Request, res: Response, next: NextFunction) => Promise<void> {
+  const resourceType = action.split(':')[0];
+
+  return async function contactsPermissionMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
+    if (DEV_MODE) {
+      req.contactsPiiAllowed = true;
+      return next();
+    }
+
+    const { userId, orgId } = req;
+    if (!userId || !orgId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const resourceId = getResourceId ? getResourceId(req) : 'org';
+
+    try {
+      const [allowed, piiAllowed] = await Promise.all([
+        evaluatePermission(userId, orgId, resourceType, resourceId, action),
+        evaluatePermission(userId, orgId, 'contacts', 'org', 'contacts:pii:read'),
+      ]);
+      req.contactsPiiAllowed = piiAllowed;
+
+      if (!allowed) {
+        auditLog({
+          orgId,
+          actorUserId: userId,
+          actorType: 'user',
+          eventType: 'permission.denied',
+          targetResourceType: resourceType,
+          targetResourceId: resourceId,
+          afterState: { action, result: 'denied' },
+          ipAddress: req.ip,
+          userAgent: req.headers['user-agent'],
+          requestId: req.id || (req.headers['x-request-id'] as string | undefined) || null,
+        });
+
+        res.status(403).json({
+          error: 'Insufficient permissions',
+          required: action,
+          resource: resourceId !== 'org' ? `${resourceType}:${resourceId}` : resourceType,
+        });
+        return;
+      }
+
+      req.permissionAction = action;
+      req.permissionResourceId = resourceId;
+      next();
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        (require('../lib/logger') as { error: (obj: Record<string, unknown>, msg: string) => void }).error(
+          { event: 'permission_check_error', action, err: message },
+          'requireContactsPermission error'
+        );
+      } catch {
+        console.error('requireContactsPermission error:', message);
+      }
+      res.status(403).json({ error: 'Permission check failed' });
+    }
+  };
+}
+
 /**
  * Cached permission evaluation. Returns true (allow) / false (deny).
  */
@@ -107,7 +188,7 @@ export async function evaluatePermission(
   action: string
 ): Promise<boolean> {
   const redis = getRedisClient();
-  const cacheKey = `perm:${userId}:${resourceType}:${resourceId}:${action}`;
+  const cacheKey = `perm:${orgId}:${userId}:${resourceType}:${resourceId}:${action}`;
 
   if (redis && redis.status === 'ready') {
     try {
@@ -243,7 +324,7 @@ export async function checkResourceOwnership(
  * Invalidate cached permissions for a user. Call after any role change,
  * resource-permission grant/revoke, or group membership change.
  */
-export async function invalidatePermissionCache(userId: string, specificKey: string | null = null): Promise<void> {
+export async function invalidatePermissionCache(userId: string, orgId: string | null = null, specificKey: string | null = null): Promise<void> {
   const redis = getRedisClient();
   if (!redis || redis.status !== 'ready') return;
 
@@ -253,7 +334,8 @@ export async function invalidatePermissionCache(userId: string, specificKey: str
       return;
     }
     // Scan rather than KEYS to avoid blocking Redis on large keyspaces.
-    const pattern = `perm:${userId}:*`;
+    // Include orgId in the pattern to match the new cache key format.
+    const pattern = orgId ? `perm:${orgId}:${userId}:*` : `perm:*:${userId}:*`;
     const toDelete: string[] = [];
     let cursor = '0';
     do {
@@ -267,7 +349,7 @@ export async function invalidatePermissionCache(userId: string, specificKey: str
     try {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       (require('../lib/logger') as { warn: (obj: Record<string, unknown>, msg: string) => void }).warn(
-        { event: 'perm_cache_invalidation_failed', userId, err: message },
+        { event: 'perm_cache_invalidation_failed', userId, orgId, err: message },
         'permission cache invalidation error'
       );
     } catch {

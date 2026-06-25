@@ -287,8 +287,8 @@ async def execute_get_verbatims(ctx: CrystalContext, params: dict) -> dict:
         if not survey_id:
             return {"error": "survey_id required"}
 
-        conditions = ["survey_id = %s"]
-        args: list = [survey_id]
+        conditions = ["survey_id = %s", "org_id = %s"]
+        args: list = [survey_id, ctx.org_id]
         if topic_name:
             conditions.append("ai_topics::text ILIKE %s")
             args.append(f"%{topic_name}%")
@@ -1066,11 +1066,9 @@ async def execute_list_relevant_templates(ctx: CrystalContext, params: dict) -> 
             async with conn.cursor() as cur:
                 if survey_type and survey_type != "any":
                     await cur.execute(
-                        """SELECT id, title, description, survey_type_id
-                           FROM templates
-                           WHERE org_id = %s AND (title ILIKE %s OR description ILIKE %s)
-                           ORDER BY created_at DESC LIMIT 5""",
-                        (ctx.org_id, f"%{search_query}%", f"%{search_query}%"),
+                        """SELECT id, name, survey_type_id, question_count FROM survey_templates
+                           WHERE org_id = %s AND survey_type_id = %s ORDER BY usage_count DESC LIMIT 10""",
+                        (ctx.org_id, survey_type),
                     )
                 else:
                     await cur.execute(
@@ -1901,6 +1899,415 @@ async def execute_suggest_new_survey(ctx: CrystalContext, params: dict) -> dict:
         return {"error": str(exc)}
 
 
+async def execute_get_contact_identity(ctx: CrystalContext, params: dict, **kwargs) -> dict:
+    """Fetch contact record linked to a response (requires data:pii permission)."""
+    try:
+        if "data:pii" not in ctx.effective_perms:
+            return {"error": "data:pii permission required", "masked": True}
+        response_id = params.get("response_id")
+        if not response_id:
+            return {"error": "response_id required"}
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT c.id, c.name, c.email, c.account_id, c.account_name,
+                              c.segment_attrs, c.consent_given
+                       FROM contacts c
+                       JOIN responses r ON r.contact_id = c.id
+                       WHERE r.id = %s AND c.org_id = %s AND c.anonymized_at IS NULL""",
+                    (response_id, ctx.org_id),
+                )
+                row = await cur.fetchone()
+                if not row:
+                    return {"contact": None}
+                cols = [d[0] for d in cur.description]
+                contact = dict(zip(cols, row))
+                contact["id"] = str(contact["id"]) if contact.get("id") else None
+        return {"contact": contact}
+    except Exception as exc:
+        logger.error("tool_get_contact_identity_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_propose_assign_owner(ctx: CrystalContext, params: dict, **kwargs) -> dict:
+    """Propose assigning this case/contact to an owner via ownership routing."""
+    # First resolve the owner via the routing rule
+    route_result = await execute_get_ownership_route(ctx, params)
+    if not route_result.get("matched"):
+        return {
+            "proposal_type": "assign_owner",
+            "title": "Assign Owner",
+            "description": "No routing rule matched. Manual assignment required.",
+            "params": params,
+            "requires_confirmation": True,
+            "matched": False,
+        }
+    return {
+        "proposal_type": "assign_owner",
+        "title": f"Assign to {route_result.get('owner_label', 'Owner')}",
+        "description": f"Route this case to {route_result.get('owner_label')} based on the '{route_result.get('rule_match_value', 'matching')}' routing rule.",
+        "params": {
+            "owner_user_id": route_result.get("owner_user_id"),
+            "owner_label": route_result.get("owner_label"),
+            "rule_id": route_result.get("rule_id"),
+            **params,
+        },
+        "requires_confirmation": True,
+        "matched": True,
+    }
+
+
+async def execute_get_ownership_route(ctx: CrystalContext, params: dict, **kwargs) -> dict:
+    """Resolve dimension+value → owner identity (no PII, safe for all roles)."""
+    try:
+        dimension = params.get("dimension", "")
+        value = params.get("match_value", "")
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT id, dimension, match_type, match_value, owner_user_id,
+                              owner_label, role_label, escalation_user_id, priority
+                       FROM ownership_routes
+                       WHERE org_id = %s AND (dimension = %s OR dimension = '')
+                       ORDER BY priority ASC""",
+                    (ctx.org_id, dimension),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        for row in rows:
+            route = dict(zip(cols, row))
+            match_type = route.get("match_type", "exact")
+            mv = route.get("match_value", "") or ""
+
+            matched = False
+            if match_type == "exact":
+                matched = mv == value
+            elif match_type == "prefix":
+                matched = value.startswith(mv)
+            elif match_type == "contains":
+                matched = mv in value
+            elif match_type == "regex":
+                try:
+                    matched = bool(re.search(mv, value, re.IGNORECASE))
+                except re.error:
+                    matched = False
+
+            if matched:
+                return {
+                    "matched": True,
+                    "owner_user_id": route.get("owner_user_id"),
+                    "owner_label": route.get("owner_label"),
+                    "role_label": route.get("role_label"),
+                    "escalation_user_id": route.get("escalation_user_id"),
+                }
+
+        return {
+            "matched": False,
+            "owner_user_id": None,
+            "owner_label": None,
+            "role_label": None,
+            "escalation_user_id": None,
+        }
+    except Exception as exc:
+        logger.error("tool_get_ownership_route_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_ontology_context(ctx: CrystalContext, params: dict, **kwargs) -> dict:
+    """Get ontology nodes and edges relevant to a given topic/signal/concept."""
+    try:
+        concept = params.get("concept")
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT n.id, n.label, n.category, n.description,
+                              n.x_data_ref, n.x_data_range, n.o_data_ref
+                       FROM ontology_nodes n
+                       WHERE (n.org_id = '' OR n.org_id = %s)
+                         AND (%s::text IS NULL
+                              OR n.label ILIKE '%%' || %s || '%%'
+                              OR %s = ANY(n.synonyms))""",
+                    (ctx.org_id, concept, concept, concept),
+                )
+                node_rows = await cur.fetchall()
+                node_cols = [d[0] for d in cur.description]
+                nodes = [dict(zip(node_cols, r)) for r in node_rows]
+                for n in nodes:
+                    n["id"] = str(n["id"]) if n.get("id") else None
+
+                node_ids = [n["id"] for n in nodes if n.get("id")]
+                edges: list[dict] = []
+                mappings: list[dict] = []
+
+                if node_ids:
+                    await cur.execute(
+                        """SELECT e.id, e.source_node_id, e.target_node_id,
+                                  e.relationship_type, n.label AS target_label
+                           FROM ontology_edges e
+                           JOIN ontology_nodes n ON n.id = e.target_node_id
+                           WHERE e.source_node_id = ANY(%s::uuid[])""",
+                        (node_ids,),
+                    )
+                    edge_rows = await cur.fetchall()
+                    edge_cols = [d[0] for d in cur.description]
+                    edges = [dict(zip(edge_cols, r)) for r in edge_rows]
+                    for e in edges:
+                        e["id"] = str(e["id"]) if e.get("id") else None
+
+                    await cur.execute(
+                        """SELECT m.id, m.node_id, m.x_data_type, m.x_data_value_range,
+                                  m.o_data_field, m.mapping_label
+                           FROM ontology_mappings m
+                           WHERE m.node_id = ANY(%s::uuid[])""",
+                        (node_ids,),
+                    )
+                    map_rows = await cur.fetchall()
+                    map_cols = [d[0] for d in cur.description]
+                    mappings = [dict(zip(map_cols, r)) for r in map_rows]
+                    for m in mappings:
+                        m["id"] = str(m["id"]) if m.get("id") else None
+
+        return {"nodes": nodes, "edges": edges, "mappings": mappings}
+    except Exception as exc:
+        logger.error("tool_get_ontology_context_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_xo_context(ctx: CrystalContext, params: dict, **kwargs) -> dict:
+    """Cross X-data signals with O-data ontology mappings to identify convergence risks."""
+    try:
+        segment = params.get("segment")
+        account_id = params.get("account_id")
+        survey_id = params.get("survey_id") or ctx.survey_id
+
+        if not segment and not account_id:
+            return {"error": "segment or account_id required"}
+
+        x_signals: list[dict] = []
+        o_mappings: list[dict] = []
+        convergence_risks: list[dict] = []
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                # Fetch X-data: NPS + sentiment for segment/account
+                conditions = ["r.org_id = %s"]
+                args: list = [ctx.org_id]
+                if survey_id:
+                    conditions.append("r.survey_id = %s")
+                    args.append(survey_id)
+                if account_id:
+                    conditions.append("c.account_id = %s")
+                    args.append(account_id)
+                    await cur.execute(
+                        f"""SELECT r.nps_score, r.ai_sentiment_score, r.ai_sentiment,
+                                   t.name AS topic_name, t.sentiment_score AS topic_sentiment
+                            FROM responses r
+                            LEFT JOIN contacts c ON c.id = r.contact_id
+                            LEFT JOIN survey_topics t ON t.survey_id = r.survey_id
+                              AND t.org_id = r.org_id AND t.time_window = 'all_time'
+                            WHERE {' AND '.join(conditions)}
+                            ORDER BY r.submitted_at DESC LIMIT 50""",
+                        args,
+                    )
+                else:
+                    await cur.execute(
+                        f"""SELECT r.nps_score, r.ai_sentiment_score, r.ai_sentiment,
+                                   t.name AS topic_name, t.sentiment_score AS topic_sentiment
+                            FROM responses r
+                            LEFT JOIN survey_topics t ON t.survey_id = r.survey_id
+                              AND t.org_id = r.org_id AND t.time_window = 'all_time'
+                            WHERE {' AND '.join(conditions)}
+                            ORDER BY r.submitted_at DESC LIMIT 50""",
+                        args,
+                    )
+                x_rows = await cur.fetchall()
+                x_cols = [d[0] for d in cur.description]
+                x_data = [dict(zip(x_cols, r)) for r in x_rows]
+
+                # Compute aggregate X signal
+                nps_scores = [float(r["nps_score"]) for r in x_data if r.get("nps_score") is not None]
+                sentiment_scores = [float(r["ai_sentiment_score"]) for r in x_data if r.get("ai_sentiment_score") is not None]
+                avg_nps = round(sum(nps_scores) / len(nps_scores), 1) if nps_scores else None
+                avg_sentiment = round(sum(sentiment_scores) / len(sentiment_scores), 3) if sentiment_scores else None
+
+                if avg_nps is not None or avg_sentiment is not None:
+                    x_signals.append({
+                        "entity": account_id or segment,
+                        "avg_nps": avg_nps,
+                        "avg_sentiment": avg_sentiment,
+                        "n": len(x_data),
+                    })
+
+                # Fetch O-data ontology mappings for NPS risk range
+                await cur.execute(
+                    """SELECT m.id, m.node_id, m.x_data_type, m.x_data_value_range,
+                              m.o_data_field, m.mapping_label, n.label AS node_label,
+                              n.category AS node_category
+                       FROM ontology_mappings m
+                       JOIN ontology_nodes n ON n.id = m.node_id
+                       WHERE (n.org_id = '' OR n.org_id = %s)
+                         AND m.x_data_type IN ('nps', 'sentiment')""",
+                    (ctx.org_id,),
+                )
+                map_rows = await cur.fetchall()
+                map_cols = [d[0] for d in cur.description]
+                o_mappings = [dict(zip(map_cols, r)) for r in map_rows]
+                for m in o_mappings:
+                    m["id"] = str(m["id"]) if m.get("id") else None
+
+        # Compute convergence risks: where X signal aligns with O mapping risk threshold
+        for signal in x_signals:
+            for mapping in o_mappings:
+                x_range = mapping.get("x_data_value_range") or {}
+                score_field = "avg_nps" if mapping.get("x_data_type") == "nps" else "avg_sentiment"
+                score_val = signal.get(score_field)
+                if score_val is None:
+                    continue
+                threshold_below = x_range.get("below")
+                threshold_above = x_range.get("above")
+                convergence = False
+                convergence_score = 0.0
+                if threshold_below is not None and score_val < float(threshold_below):
+                    convergence = True
+                    convergence_score = round(1.0 - (score_val / float(threshold_below)), 2)
+                elif threshold_above is not None and score_val > float(threshold_above):
+                    convergence = True
+                    convergence_score = round(score_val / float(threshold_above), 2)
+                if convergence:
+                    convergence_risks.append({
+                        "entity": signal["entity"],
+                        "x_signal": signal,
+                        "o_concept": mapping.get("node_label"),
+                        "convergence_score": min(1.0, convergence_score),
+                    })
+
+        return {
+            "x_signals": x_signals,
+            "o_mappings": o_mappings,
+            "convergence_risks": convergence_risks,
+        }
+    except Exception as exc:
+        logger.error("tool_get_xo_context_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_case_history(ctx: CrystalContext, params: dict, **kwargs) -> dict:
+    """Get CX case history for a contact or segment."""
+    try:
+        contact_id = params.get("contact_id")
+        driver = params.get("driver")
+        if not contact_id and not driver:
+            return {"error": "contact_id or driver required"}
+
+        conditions = ["org_id = %s"]
+        args: list = [ctx.org_id]
+        if contact_id:
+            conditions.append("contact_id = %s")
+            args.append(contact_id)
+        if driver:
+            conditions.append("driver_ref = %s")
+            args.append(driver)
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"""SELECT id, title, status, severity, resolved_at, resolution_note
+                        FROM cx_cases
+                        WHERE {' AND '.join(conditions)}
+                        ORDER BY created_at DESC LIMIT 50""",
+                    args,
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        cases = []
+        resolved_count = 0
+        for row in rows:
+            c = dict(zip(cols, row))
+            c["id"] = str(c["id"]) if c.get("id") else None
+            if c.get("resolved_at"):
+                c["resolved_at"] = str(c["resolved_at"])
+                resolved_count += 1
+            cases.append(c)
+
+        return {"cases": cases, "total": len(cases), "resolved_count": resolved_count}
+    except Exception as exc:
+        logger.error("tool_get_case_history_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_propose_create_case(ctx: CrystalContext, params: dict, **kwargs) -> dict:
+    """Propose creating a CX case with real owner resolved."""
+    try:
+        # Resolve owner from driver_ref, account_id, or segment
+        resolved_owner: dict = {
+            "matched": False,
+            "owner_user_id": None,
+            "owner_label": None,
+            "role_label": None,
+            "escalation_user_id": None,
+        }
+        for dim, val in [
+            ("driver", params.get("driver_ref", "")),
+            ("account", params.get("account_id", "")),
+            ("segment", params.get("segment", "")),
+        ]:
+            if val:
+                route_result = await execute_get_ownership_route(
+                    ctx, {"dimension": dim, "match_value": val}
+                )
+                if route_result.get("matched"):
+                    resolved_owner = route_result
+                    break
+
+        return {
+            "proposal_type": "case",
+            "title": params.get("title", "Follow up with detractor"),
+            "description": params.get("description", ""),
+            "priority": params.get("priority", "high"),
+            "business_rationale": params.get("business_rationale", ""),
+            "confidence": params.get("confidence", 0.8),
+            "params": {
+                "contact_id": params.get("contact_id"),
+                "response_id": params.get("response_id"),
+                "survey_id": ctx.survey_id,
+                "title": params.get("title"),
+                "description": params.get("description"),
+                "severity": params.get("severity", "high"),
+                "category": params.get("category", "cx"),
+                "driver_ref": params.get("driver_ref"),
+                "owner_user_id": resolved_owner.get("owner_user_id"),
+                "owner_label": resolved_owner.get("owner_label"),
+                "role_label": resolved_owner.get("role_label"),
+            },
+            "requires_confirmation": True,
+            "cta_label": "Create Case",
+        }
+    except Exception as exc:
+        logger.error("tool_propose_create_case_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_propose_slack_alert(ctx: CrystalContext, params: dict, **kwargs) -> dict:
+    """Propose sending a Slack alert via webhook URL stored in org config or params."""
+    return {
+        "proposal_type": "slack_notify",
+        "title": params.get("title", "Send Slack alert"),
+        "description": params.get("message", ""),
+        "priority": params.get("priority", "medium"),
+        "params": {
+            "webhook_url": params.get("webhook_url"),
+            "message": params.get("message"),
+            "channel": params.get("channel", "#cx-alerts"),
+            "case_id": params.get("case_id"),
+        },
+        "requires_confirmation": True,
+        "cta_label": "Send Alert",
+    }
+
+
 # ── Tool dispatch table ───────────────────────────────────────────────────────
 
 TOOL_EXECUTORS: dict[str, Any] = {
@@ -1943,6 +2350,16 @@ TOOL_EXECUTORS: dict[str, Any] = {
     "analyze_group_coverage": execute_analyze_group_coverage,
     "detect_data_gaps":       execute_detect_data_gaps,
     "suggest_new_survey":     execute_suggest_new_survey,
+    # Tier 3 data tools
+    "get_contact_identity":    execute_get_contact_identity,
+    "get_ownership_route":     execute_get_ownership_route,
+    "get_ontology_context":    execute_get_ontology_context,
+    "get_xo_context":          execute_get_xo_context,
+    "get_case_history":        execute_get_case_history,
+    # Tier 3 action proposal tools
+    "propose_create_case":     execute_propose_create_case,
+    "propose_assign_owner":    execute_propose_assign_owner,
+    "propose_slack_alert":     execute_propose_slack_alert,
 }
 
 

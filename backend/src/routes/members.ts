@@ -1,7 +1,7 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import { serverError } from '../lib/httpError';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, DEV_MODE } from '../middleware/auth';
 import { requireRole } from '../middleware/requireRole';
 import { validate } from '../lib/validate';
 import { inviteMemberSchema, updateRoleSchema } from '../schemas/orgs';
@@ -10,7 +10,7 @@ const router = express.Router();
 
 // GET /api/orgs/me/members
 router.get('/members', requireAuth, async (req: Request, res: Response): Promise<void> => {
-  if (process.env.SKIP_AUTH === 'true') {
+  if (DEV_MODE) {
     res.json({ members: [], total: 0 });
     return;
   }
@@ -41,7 +41,7 @@ router.get('/members', requireAuth, async (req: Request, res: Response): Promise
 
 // POST /api/orgs/me/invitations
 router.post('/invitations', requireAuth, requireRole('admin'), validate(inviteMemberSchema), async (req: Request, res: Response): Promise<void> => {
-  if (process.env.SKIP_AUTH === 'true') {
+  if (DEV_MODE) {
     res.json({ success: true });
     return;
   }
@@ -68,7 +68,7 @@ router.post('/invitations', requireAuth, requireRole('admin'), validate(inviteMe
 
 // DELETE /api/orgs/me/members/:userId
 router.delete('/members/:userId', requireAuth, requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
-  if (process.env.SKIP_AUTH === 'true') {
+  if (DEV_MODE) {
     res.json({ success: true });
     return;
   }
@@ -88,7 +88,7 @@ router.delete('/members/:userId', requireAuth, requireRole('admin'), async (req:
 
 // PUT /api/orgs/me/members/:userId/role
 router.put('/members/:userId/role', requireAuth, requireRole('admin'), validate(updateRoleSchema), async (req: Request, res: Response): Promise<void> => {
-  if (process.env.SKIP_AUTH === 'true') {
+  if (DEV_MODE) {
     res.json({ success: true });
     return;
   }

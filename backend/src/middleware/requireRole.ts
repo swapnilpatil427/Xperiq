@@ -1,5 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
-import { createClerkClient } from '@clerk/backend';
+import { verifyToken } from '@clerk/backend';
+import { DEV_MODE } from './auth';
+import { getOrgClaims } from '../lib/clerkClaims';
 
 // Role hierarchy: viewer < analyst < admin
 const ROLE_RANK: Record<string, number> = {
@@ -12,14 +14,14 @@ const ROLE_RANK: Record<string, number> = {
  * requireRole('analyst') — blocks requests where the caller's org role is below the minimum.
  * Must run after requireAuth (needs req.userId + req.orgId + Authorization header).
  *
- * In SKIP_AUTH mode, all roles are granted (dev-only convenience).
+ * In DEV_MODE (no CLERK_SECRET_KEY), all roles are granted.
  */
 export function requireRole(minRole: string): (req: Request, res: Response, next: NextFunction) => Promise<void> {
   const minRoleKey = `org:${minRole}`;
   const minRank = ROLE_RANK[minRoleKey] ?? 0;
 
   return async function (req: Request, res: Response, next: NextFunction): Promise<void> {
-    if (process.env.SKIP_AUTH === 'true') return next();
+    if (DEV_MODE) return next();
 
     try {
       const token = req.headers.authorization?.slice(7);
@@ -28,10 +30,9 @@ export function requireRole(minRole: string): (req: Request, res: Response, next
         return;
       }
 
-      const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
-      const payload = await clerk.verifyToken(token);
+      const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
 
-      const orgRole = (payload.org_role as string | undefined) ?? null;
+      const { orgRole } = getOrgClaims(payload);
       const rank = orgRole ? (ROLE_RANK[orgRole] ?? 0) : 0;
 
       if (rank < minRank) {

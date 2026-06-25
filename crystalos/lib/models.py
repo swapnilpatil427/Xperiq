@@ -367,7 +367,7 @@ _SKILL_ROUTING: dict[str, dict[str, ModelConfig]] = {
         "predictive-action-advisor": ModelConfig("qwen/qwen3-coder:free",                   max_tokens=800,  temperature=0.0, context_window=1_048_576),
 
         # Strategic advisors (lighter output)
-        "survey-improvement-advisor":ModelConfig("openai/gpt-oss-20b:free",                 max_tokens=800,  temperature=0.1, context_window=128_000),
+        "survey-improvement-advisor":ModelConfig("openai/gpt-oss-20b:free",                 max_tokens=1600, temperature=0.1, context_window=128_000),
         "distribution-strategist":   ModelConfig("openai/gpt-oss-20b:free",                 max_tokens=800,  temperature=0.2, context_window=128_000),
         "benchmark-strategist":      ModelConfig("openai/gpt-oss-20b:free",                 max_tokens=700,  temperature=0.1, context_window=128_000),
         "voc-program-advisor":       ModelConfig("openai/gpt-oss-20b:free",                 max_tokens=700,  temperature=0.1, context_window=128_000),
@@ -416,7 +416,7 @@ _SKILL_ROUTING: dict[str, dict[str, ModelConfig]] = {
         "survey-recommender":        ModelConfig("google/gemini-2.5-flash",                 max_tokens=800,  temperature=0.2, context_window=1_000_000),
 
         # Gemini 2.0 Flash: fast strategic advisors ($0.10/1M in, $0.40/1M out)
-        "survey-improvement-advisor":ModelConfig("google/gemini-2.5-flash",                 max_tokens=800,  temperature=0.1, context_window=1_000_000),
+        "survey-improvement-advisor":ModelConfig("google/gemini-2.5-flash",                 max_tokens=1600, temperature=0.1, context_window=1_000_000),
         "distribution-strategist":   ModelConfig("google/gemini-2.5-flash",                 max_tokens=800,  temperature=0.2, context_window=1_000_000),
         "benchmark-strategist":      ModelConfig("google/gemini-2.5-flash",                 max_tokens=700,  temperature=0.1, context_window=1_000_000),
         "voc-program-advisor":       ModelConfig("google/gemini-2.5-flash",                 max_tokens=700,  temperature=0.1, context_window=1_000_000),
@@ -455,7 +455,7 @@ _SKILL_ROUTING: dict[str, dict[str, ModelConfig]] = {
         "enps-action-advisor":       ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.1, context_window=128_000),
         "close-the-loop-advisor":    ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.0, context_window=128_000),
         "predictive-action-advisor": ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.0, context_window=128_000),
-        "survey-improvement-advisor":ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.1, context_window=128_000),
+        "survey-improvement-advisor":ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=1600, temperature=0.1, context_window=128_000),
         "distribution-strategist":   ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.2, context_window=128_000),
         "benchmark-strategist":      ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=700,  temperature=0.1, context_window=128_000),
         "voc-program-advisor":       ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=700,  temperature=0.1, context_window=128_000),
@@ -498,7 +498,7 @@ _SKILL_ROUTING: dict[str, dict[str, ModelConfig]] = {
         "enps-action-advisor":       ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.1, context_window=128_000),
         "close-the-loop-advisor":    ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.0, context_window=128_000),
         "predictive-action-advisor": ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.0, context_window=128_000),
-        "survey-improvement-advisor":ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.1, context_window=128_000),
+        "survey-improvement-advisor":ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=1600, temperature=0.1, context_window=128_000),
         "distribution-strategist":   ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=800,  temperature=0.2, context_window=128_000),
         "benchmark-strategist":      ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=700,  temperature=0.1, context_window=128_000),
         "voc-program-advisor":       ModelConfig("deepseek/deepseek-v4-flash",              max_tokens=700,  temperature=0.1, context_window=128_000),

@@ -1,7 +1,7 @@
 // Minimal i18n layer — wraps the locale file and provides a t() function.
 //
 // Drop-in compatible with react-i18next:
-//   - Same call signature: t('key'), t('key', { var: value })
+//   - Same call signature: t('nav.surveys'), t('surveys.countDescription', { count: 5, responses: 100 })
 //   - Same hook name: useTranslation()
 //   - To upgrade: replace this file's export with react-i18next's useTranslation
 //     and move locales/en.js into the react-i18next namespace format (JSON).

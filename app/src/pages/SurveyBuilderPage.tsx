@@ -2425,7 +2425,7 @@ export function SurveyBuilderPage() {
         onRefine={handleAiCommand}
         onApplyRecommendation={copilotRunId ? handleApplyRecommendation : undefined}
         recommendations={copilotRecs.length > 0 ? copilotRecs : undefined}
-        initiallyOpen={autoOpenCrystal}
+        initiallyOpen={false}
         initialMessage={autoOpenCrystal
           ? `Survey generated! I've built ${questions.length} question${questions.length !== 1 ? 's' : ''} based on your goal. You can ask me to refine any question, add skip logic, reorder, or make any other changes — just tell me what you need.`
           : undefined

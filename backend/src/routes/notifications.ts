@@ -12,9 +12,9 @@
  */
 import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, DEV_MODE } from '../middleware/auth';
 import { query } from '../lib/db';
-import { getRedisClient } from '../lib/redis';
+import { getRedisBlockingClient } from '../lib/redis';
 import { serverError } from '../lib/httpError';
 import { validate } from '../lib/validate';
 import { serialize, PRIORITIES } from '../lib/notifications';
@@ -28,20 +28,22 @@ interface PgError extends Error {
 }
 
 // Auth for the SSE stream. EventSource can't set headers, so the token may arrive
-// as a ?token= query param. SKIP_AUTH dev mode bypasses to dev-user.
+// as a ?token= query param. Dev mode bypasses to dev-user.
 async function streamAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (process.env.SKIP_AUTH === 'true') { req.userId = 'dev-user'; req.orgId = 'dev-org'; next(); return; }
+  if (DEV_MODE) { req.userId = 'dev-user'; req.orgId = 'dev-org'; next(); return; }
   const token = req.headers.authorization?.startsWith('Bearer ')
     ? req.headers.authorization.slice(7)
     : req.query.token as string | undefined;
   if (!token) { res.status(401).end(); return; }
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { createClerkClient } = require('@clerk/backend');
-    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
-    const payload = await clerk.verifyToken(token);
+    const { verifyToken } = require('@clerk/backend');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getOrgClaims } = require('../lib/clerkClaims');
+    const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY });
+    const { orgId } = getOrgClaims(payload);
     req.userId = payload.sub;
-    req.orgId = payload.org_id || payload.sub;
+    req.orgId = orgId || payload.sub;
     next();
   } catch {
     res.status(401).end();
@@ -61,10 +63,10 @@ router.get('/stream', streamAuth, async (req: Request, res: Response): Promise<v
   res.flushHeaders?.();
   res.write(`event: ready\ndata: {"ok":true}\n\n`);
 
-  const redis = getRedisClient();
-  let sub: ReturnType<typeof redis.duplicate> | null = null;
-  if (redis) {
-    sub = redis.duplicate();
+  const blocking = getRedisBlockingClient();
+  let sub: ReturnType<NonNullable<typeof blocking>['duplicate']> | null = null;
+  if (blocking) {
+    sub = blocking.duplicate();
     const channel = `notifications:live:${req.userId}`;
     sub.on('message', (_ch: string, message: string) => {
       res.write(`event: notification\ndata: ${message}\n\n`);

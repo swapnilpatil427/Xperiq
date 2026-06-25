@@ -1,7 +1,12 @@
 """Tests for crystalos.lib.json_coerce."""
+from datetime import datetime, timezone
+from decimal import Decimal
+from uuid import uuid4
+
 from crystalos.lib.json_coerce import (
     coerce_suggestion_item,
     extract_skill_answer,
+    json_dumps_safe,
     normalize_suggestions,
 )
 from crystalos.schemas.output import CopilotOutput
@@ -54,6 +59,21 @@ def test_extract_skill_answer_nested_report():
 
 def test_extract_skill_answer_too_short_returns_none():
     assert extract_skill_answer({"answer": "Short"}) is None
+
+
+def test_json_dumps_safe_serializes_uuid():
+    uid = uuid4()
+    payload = {"survey_id": uid, "insights": [{"id": uid}]}
+    dumped = json_dumps_safe(payload)
+    assert str(uid) in dumped
+    assert "UUID" not in dumped
+
+
+def test_json_dumps_safe_serializes_datetime_and_decimal():
+    ts = datetime(2026, 6, 25, 12, 0, tzinfo=timezone.utc)
+    dumped = json_dumps_safe({"at": ts, "score": Decimal("4.5")})
+    assert "2026-06-25" in dumped
+    assert "4.5" in dumped
 
 
 def test_copilot_output_coerces_navigation_suggestion_dicts():

@@ -15,13 +15,16 @@ const PROC_PATH  = _require.resolve(resolve(__dirname, '../eventEngine/processor
 let redisClient, dbQuery, createNotificationMock;
 function fakeMod(id, exports) { return { id, filename: id, loaded: true, exports, children: [] }; }
 
+function redisExports() {
+  return { getRedisClient: () => redisClient, getRedisBlockingClient: () => redisClient };
+}
 function loadEvents() {
-  _require.cache[REDIS_PATH] = fakeMod(REDIS_PATH, { getRedisClient: () => redisClient });
+  _require.cache[REDIS_PATH] = fakeMod(REDIS_PATH, redisExports());
   delete _require.cache[EVENTS_PATH];
   return _require(EVENTS_PATH);
 }
 function loadProcessor() {
-  _require.cache[REDIS_PATH] = fakeMod(REDIS_PATH, { getRedisClient: () => redisClient });
+  _require.cache[REDIS_PATH] = fakeMod(REDIS_PATH, redisExports());
   _require.cache[DB_PATH] = fakeMod(DB_PATH, { query: dbQuery, default: { query: dbQuery } });
   _require.cache[NOTIF_PATH] = fakeMod(NOTIF_PATH, { createNotification: createNotificationMock, serialize: (r) => r });
   delete _require.cache[EVENTS_PATH];        // ensure processor uses fresh deps

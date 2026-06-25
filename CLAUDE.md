@@ -20,7 +20,7 @@ Experient is an AI-powered experience intelligence platform. It lets organizatio
 
 ## Key rules
 - All user-visible strings → `locales/en.ts`, accessed via `t('key')` — NEVER hardcode in JSX
-- `SKIP_AUTH=true` is local dev only, never production
+- When `CLERK_SECRET_KEY` is absent the backend runs in dev mode (dev-user/dev-org) — no `SKIP_AUTH` env var needed
 - Never commit `.env` or `.env.*` files
 - Soft-delete surveys (`deleted_at` timestamp), never hard-delete
 - All writes go through the Express API; reads are REST. **No Firestore** — Postgres-only

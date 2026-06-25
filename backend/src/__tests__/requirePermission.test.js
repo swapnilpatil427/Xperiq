@@ -156,12 +156,13 @@ describe('evaluatePermission — Redis caching', () => {
   beforeEach(() => { auditMock = vi.fn(); dbQuery = null; });
 
   it('returns cached decision without hitting the DB', async () => {
+    // Cache key format: perm:${orgId}:${userId}:${resourceType}:${resourceId}:${action}
     redisClient = { status: 'ready', get: vi.fn(async () => '1'), setex: vi.fn() };
     dbQuery = vi.fn(async () => ({ rows: [] }));
     const { evaluatePermission } = loadModule();
     const result = await evaluatePermission('u1', 'o1', 'users', 'org', 'users:manage');
     expect(result).toBe(true);
-    expect(redisClient.get).toHaveBeenCalledWith('perm:u1:users:org:users:manage');
+    expect(redisClient.get).toHaveBeenCalledWith('perm:o1:u1:users:org:users:manage');
     expect(dbQuery).not.toHaveBeenCalled();
   });
 
@@ -170,6 +171,78 @@ describe('evaluatePermission — Redis caching', () => {
     dbQuery = routeQuery({ profile: ALL_ADMIN });
     const { evaluatePermission } = loadModule();
     await evaluatePermission('u1', 'o1', 'users', 'org', 'users:manage');
-    expect(redisClient.setex).toHaveBeenCalledWith('perm:u1:users:org:users:manage', 300, '1');
+    expect(redisClient.setex).toHaveBeenCalledWith('perm:o1:u1:users:org:users:manage', 300, '1');
+  });
+});
+
+describe('evaluatePermission — org-scoped cache keys', () => {
+  beforeEach(() => { auditMock = vi.fn(); dbQuery = null; });
+
+  it('cache key starts with perm:${orgId}:${userId}:', async () => {
+    let writtenKey;
+    redisClient = {
+      status: 'ready',
+      get: vi.fn(async () => null),
+      setex: vi.fn(async (key) => { writtenKey = key; }),
+    };
+    dbQuery = routeQuery({ profile: ALL_ADMIN });
+    const { evaluatePermission } = loadModule();
+    await evaluatePermission('u1', 'org-a', 'users', 'org', 'users:manage');
+    expect(writtenKey).toMatch(/^perm:org-a:u1:/);
+  });
+
+  it('different orgId causes a cache miss (no shared cached result between orgs)', async () => {
+    // Both calls should hit the DB since they have different orgIds
+    const getKeys = [];
+    redisClient = {
+      status: 'ready',
+      get: vi.fn(async (key) => { getKeys.push(key); return null; }),
+      setex: vi.fn(),
+    };
+    dbQuery = routeQuery({ profile: ALL_ADMIN });
+    const { evaluatePermission } = loadModule();
+    await evaluatePermission('u1', 'org-a', 'users', 'org', 'users:manage');
+    await evaluatePermission('u1', 'org-b', 'users', 'org', 'users:manage');
+    // Both keys were looked up — they are different
+    expect(getKeys).toHaveLength(2);
+    expect(getKeys[0]).toContain('org-a');
+    expect(getKeys[1]).toContain('org-b');
+    // DB was called for both since both were cache misses
+    expect(dbQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it('cache hit on same (orgId, userId, action) does NOT call the DB again', async () => {
+    // First call: miss → hits DB. Second call: hit → skips DB.
+    let callCount = 0;
+    redisClient = {
+      status: 'ready',
+      get: vi.fn(async () => {
+        callCount++;
+        return callCount === 1 ? null : '1'; // miss on first, hit on second
+      }),
+      setex: vi.fn(),
+    };
+    dbQuery = routeQuery({ profile: ALL_ADMIN });
+    const { evaluatePermission } = loadModule();
+    await evaluatePermission('u1', 'o1', 'users', 'org', 'users:manage');
+    // DB was called once for the miss
+    const dbCallsAfterFirst = dbQuery.mock.calls.length;
+    await evaluatePermission('u1', 'o1', 'users', 'org', 'users:manage');
+    // DB should NOT have been called again
+    expect(dbQuery.mock.calls.length).toBe(dbCallsAfterFirst);
+  });
+
+  it('gracefully falls back to DB evaluation when Redis throws', async () => {
+    redisClient = {
+      status: 'ready',
+      get: vi.fn(async () => { throw new Error('Redis connection lost'); }),
+      setex: vi.fn(async () => { throw new Error('Redis connection lost'); }),
+    };
+    dbQuery = routeQuery({ profile: ALL_ADMIN });
+    const { evaluatePermission } = loadModule();
+    // Should not throw — falls back to DB
+    const result = await evaluatePermission('u1', 'o1', 'users', 'org', 'users:manage');
+    expect(result).toBe(true);
+    expect(dbQuery).toHaveBeenCalled();
   });
 });

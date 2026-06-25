@@ -3,13 +3,15 @@ import type { Request, Response } from 'express';
 import crypto from 'crypto';
 import { requireAuth } from '../middleware/auth';
 import { requireRole } from '../middleware/requireRole';
+import { requirePermission } from '../middleware/requirePermission';
 import { validate } from '../lib/validate';
 import { createSurveySchema, updateSurveySchema } from '../schemas/surveys';
+import { generateTokensSchema } from '../schemas/contacts';
 import { query, pool } from '../lib/db';
 import { surveysCreated } from '../lib/metrics';
 import logger from '../lib/logger';
 import * as agentsClient from '../lib/agentsClient';
-import { serverError } from '../lib/httpError';
+import { serverError, clientError } from '../lib/httpError';
 import { publishResponseEvent } from '../lib/redisStream';
 import { maybeAutoAnalyze } from '../triggers/autoAnalyze';
 
@@ -785,6 +787,58 @@ router.delete('/:surveyId/tags/:tagId', requireAuth, requireRole('analyst'), asy
     res.json({ success: true });
   } catch (err: unknown) {
     logger.error({ err: (err as Error).message, orgId: req.orgId }, 'surveys:tag_remove:error');
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
+// ── POST /api/surveys/:surveyId/distribution-tokens ───────────────────────────
+
+router.post('/:surveyId/distribution-tokens', requireAuth, requirePermission('outreach:transactional'), validate(generateTokensSchema), async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { surveyId } = req.params;
+    const { contact_ids, channel } = req.body as { contact_ids: string[]; channel: string };
+
+    const { rows: surveys } = await query<{ id: string }>(
+      'SELECT id FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL',
+      [surveyId, req.orgId]
+    );
+    if (!surveys[0]) {
+      clientError(res, 404, 'Survey not found');
+      return;
+    }
+
+    const { rows: contactRows } = await query<{ id: string }>(
+      `SELECT id FROM contacts
+       WHERE id = ANY($1::uuid[]) AND org_id = $2 AND anonymized_at IS NULL`,
+      [contact_ids, req.orgId]
+    );
+    if (contactRows.length !== contact_ids.length) {
+      clientError(res, 400, 'One or more contact IDs are invalid or not accessible');
+      return;
+    }
+
+    const baseUrl = process.env.FRONTEND_URL ?? 'https://app.experient.ai';
+    const tokens: Array<{ contact_id: string; token: string; url: string }> = [];
+
+    for (const contactId of contact_ids) {
+      const token = crypto.randomBytes(24).toString('base64url').slice(0, 32);
+
+      await query(
+        `INSERT INTO survey_distribution_tokens
+           (survey_id, contact_id, token, channel)
+         VALUES ($1, $2, $3, $4)`,
+        [surveyId, contactId, token, channel]
+      );
+
+      tokens.push({
+        contact_id: contactId,
+        token,
+        url: `${baseUrl}/s/${surveyId}?t=${token}`,
+      });
+    }
+
+    res.status(201).json({ tokens });
+  } catch (err: unknown) {
     serverError(res, err instanceof Error ? err : new Error(String(err)));
   }
 });

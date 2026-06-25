@@ -9,7 +9,7 @@
 // Runs either standalone (src/eventEngine/index.js — the deployable event-engine
 // service) or in-process in the backend when ENABLE_EVENT_ENGINE=true (dev).
 import { query as dbQuery } from '../lib/db';
-import { getRedisClient } from '../lib/redis';
+import { getRedisBlockingClient } from '../lib/redis';
 import { createNotification, serialize } from '../lib/notifications';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { dispatchExternalChannels } = require('../lib/channels') as {
@@ -80,7 +80,7 @@ function defaultTitle(event: NotificationEvent): string {
   return event.type.replace(/[._]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-async function ensureGroup(redis: ReturnType<typeof getRedisClient>): Promise<void> {
+async function ensureGroup(redis: NonNullable<ReturnType<typeof getRedisBlockingClient>>): Promise<void> {
   try {
     await redis!.xgroup('CREATE', STREAM_KEY, GROUP, '$', 'MKSTREAM');
   } catch (err: unknown) {
@@ -91,7 +91,7 @@ async function ensureGroup(redis: ReturnType<typeof getRedisClient>): Promise<vo
 
 // Process one batch. Exported for unit testing without the infinite loop.
 export async function processBatch(
-  redis: NonNullable<ReturnType<typeof getRedisClient>>,
+  redis: NonNullable<ReturnType<typeof getRedisBlockingClient>>,
   consumer: string,
   { block = 5000, count = 20 } = {}
 ): Promise<number> {
@@ -118,7 +118,7 @@ export async function processBatch(
 
 // Reclaim messages pending > idleMs from dead consumers (crash recovery).
 export async function reclaimStale(
-  redis: NonNullable<ReturnType<typeof getRedisClient>>,
+  redis: NonNullable<ReturnType<typeof getRedisBlockingClient>>,
   consumer: string,
   idleMs = 30000
 ): Promise<number> {
@@ -138,7 +138,7 @@ export async function reclaimStale(
 }
 
 export async function start({ consumer = `c-${process.pid}` } = {}): Promise<void> {
-  const redis = getRedisClient();
+  const redis = getRedisBlockingClient();
   if (!redis) { log('warn', {}, 'Event Engine: no REDIS_URL — processor disabled'); return; }
   if (_running) return;
   _running = true; _stop = false;

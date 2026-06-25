@@ -454,3 +454,54 @@ export async function isHealthy(): Promise<boolean> {
     return false;
   }
 }
+
+
+// ── Novu Connect (Crystal ACI) ───────────────────────────────────────────────
+
+/**
+ * Send a message to Crystal via Novu Connect channel.
+ * Returns Crystal's reply text.
+ */
+export async function crystalNovuMessage({
+  subscriberId, channel, message, orgId, userId, threadId, metadata,
+}: {
+  subscriberId: string;
+  channel: string;
+  message: string;
+  orgId: string;
+  userId?: string;
+  threadId?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<{ reply: string; thread_id: string | null; delivered: boolean }> {
+  return _fetch('/novu/message', {
+    method: 'POST',
+    body: JSON.stringify({ subscriberId, channel, message, orgId, userId, threadId, metadata }),
+  }) as Promise<{ reply: string; thread_id: string | null; delivered: boolean }>;
+}
+
+/**
+ * Personalize a notification message using Crystal's LLM.
+ * Used by Novu Framework workflows to generate Crystal-written email/SMS content.
+ */
+export async function personalizeNotification({
+  contactId, surveyId, channel, orgId, userId, context,
+}: {
+  contactId: string;
+  surveyId?: string;
+  channel: 'email' | 'sms' | 'push' | 'in_app';
+  orgId: string;
+  userId: string;
+  context?: Record<string, unknown>;
+}): Promise<{ subject?: string; body: string; html?: string }> {
+  return _fetch('/novu/personalize', {
+    method: 'POST',
+    body: JSON.stringify({ contactId, surveyId, channel, orgId, userId, context }),
+  }, LLM_TIMEOUT_MS) as Promise<{ subject?: string; body: string; html?: string }>;
+}
+
+/**
+ * Check whether Crystal Novu Connect is available for this org.
+ */
+export async function checkNovuConnectHealth(): Promise<{ status: string; detail: string }> {
+  return _fetch('/novu/health', {}, DEFAULT_TIMEOUT_MS) as Promise<{ status: string; detail: string }>;
+}

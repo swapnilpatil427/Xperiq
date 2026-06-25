@@ -26,8 +26,9 @@ export const ROUTES = {
   WORKFLOW_BUILD:     '/app/workflows/build',
   WORKFLOW_CANVAS:    '/app/workflows/canvas',
   ALERTS:             '/app/alerts',
+  NOTIFICATION_PREFS:      '/app/settings/notifications',
+  NOTIFICATION_ANALYTICS:  '/app/settings/notification-analytics',
   SETTINGS:           '/app/settings',
-  NOTIFICATION_PREFS: '/app/settings/notifications',
   SETTINGS_USERS:       '/app/settings/users',
   SETTINGS_ROLES:       '/app/settings/users/roles',
   SETTINGS_DEPARTMENTS: '/app/settings/users/departments',
@@ -35,6 +36,7 @@ export const ROUTES = {
   SETTINGS_PROVISIONING: '/app/settings/users/provisioning',
   SETTINGS_SEATS:        '/app/settings/users/seats',
   SETTINGS_AUDIT:        '/app/settings/users/audit',
+  SETTINGS_TAGS:         '/app/settings/tags',
   DATA:               '/app/data',
   EXPERIENCE:                  '/app/experience',
   EXPERIENCE_ORG_TRENDS:       '/app/experience/org/trends',
@@ -45,7 +47,6 @@ export const ROUTES = {
   EXPERIENCE_SURVEY_TRENDS:    '/app/experience/survey/:surveyId/trends',
   GROUP_REPORT:        '/app/groups/:tagId/report/:runId',
   GROUP_REPORT_LATEST: '/app/groups/:tagId/report',
-  SETTINGS_TAGS:       '/app/settings/tags',
 
   // Admin — Crystal
   ADMIN_CRYSTAL:              '/app/admin/crystal',
@@ -55,6 +56,20 @@ export const ROUTES = {
   ADMIN_CRYSTAL_SIGNALS:      '/app/admin/crystal/signals',
   ADMIN_CRYSTAL_GAPS:         '/app/admin/crystal/gaps',
   ADMIN_CRYSTAL_DLQ:          '/app/admin/crystal/dlq',
+
+  // Tier 3 — Closed-Loop Action Platform
+  CONTACTS:              '/app/contacts',
+  CONTACT_DETAIL:        '/app/contacts/:contactId',
+  CONTACT_SEGMENTS:      '/app/contacts/segments',
+  CASES:                 '/app/cases',
+  CASE_DETAIL:           '/app/cases/:caseId',
+  SETTINGS_OWNERSHIP:    '/app/settings/ownership',
+  SETTINGS_ONTOLOGY:     '/app/settings/ontology',
+  SETTINGS_CONNECTIONS:  '/app/settings/connections',
+
+  // Broadcasts (Tier 3 Phase J)
+  BROADCASTS:            '/app/broadcasts',
+  BROADCASTS_APPROVAL:   '/app/broadcasts/approval',
 };
 
 /** Replace :param placeholders with concrete values */

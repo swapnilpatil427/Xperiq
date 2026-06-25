@@ -21,12 +21,12 @@
  *   POST /api/copilot/notifications/read-all                   — Mark all as read
  *   GET  /api/copilot/notifications/unread-count               — Unread badge count
  *
- * All routes require auth (Clerk JWT or SKIP_AUTH=true in dev).
+ * All routes require auth (Clerk JWT or dev mode when CLERK_SECRET_KEY is absent).
  * org_id is extracted from the verified token — never from request body.
  */
 import express from 'express';
 import type { Request, Response } from 'express';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, DEV_MODE } from '../middleware/auth';
 import * as agentsClient from '../lib/agentsClient';
 import { query } from '../lib/db';
 import logger from '../lib/logger';
@@ -40,7 +40,7 @@ router.use(requireAuth);
 // Verifies the run belongs to the requesting user AND org before any mutation.
 // Returns false and writes a 403 response if access is denied.
 async function _requireRunOwnership(req: Request, res: Response): Promise<boolean> {
-  if (process.env.SKIP_AUTH === 'true') return true;
+  if (DEV_MODE) return true;
   const { runId } = req.params;
   try {
     const { rows } = await query(

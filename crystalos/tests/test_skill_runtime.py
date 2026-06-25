@@ -287,6 +287,40 @@ async def test_build_system_includes_examples(tmp_path: Path):
 # ── Execute with mocked LLM ───────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+async def test_execute_serializes_uuid_input(tmp_path: Path):
+    """Postgres UUID objects in skill input must not break json.dumps for the LLM user message."""
+    from uuid import uuid4
+
+    runtime = SkillRuntime()
+    meta = make_skill_meta(tmp_path)
+    uid = uuid4()
+
+    mock_output = MagicMock()
+    mock_output.to_dict.return_value = {"answer": "Analysis complete with enough text for baseline."}
+    mock_credit = make_mock_credit()
+
+    captured_user: dict = {}
+
+    async def capturing_call_agent(*args, **kwargs):
+        captured_user["user"] = kwargs.get("user", args[2] if len(args) > 2 else "")
+        return mock_output, mock_credit
+
+    with patch("crystalos.lib.openrouter.call_agent", capturing_call_agent):
+        with patch("crystalos.lib.models.get_skill_model") as mock_model:
+            from crystalos.lib.models import ModelConfig
+            mock_model.return_value = ModelConfig(model="test/model", max_tokens=500, temperature=0.1)
+            with patch.object(runtime, "_fetch_examples", AsyncMock(return_value=[])):
+                await runtime.execute(
+                    "test-skill",
+                    meta,
+                    {"survey_id": uid, "insights": [{"id": uid}]},
+                    {"org_id": "org1"},
+                )
+
+    assert str(uid) in captured_user["user"]
+
+
+@pytest.mark.asyncio
 async def test_execute_returns_skill_result(tmp_path: Path):
     runtime = SkillRuntime()
     meta = make_skill_meta(tmp_path)
@@ -400,7 +434,9 @@ async def test_execute_passes_model_config_to_call_agent(tmp_path: Path):
                 await runtime.execute("test-skill", meta, {}, {})
 
     assert "model_config" in captured_kwargs, "model_config kwarg must be passed to call_agent"
-    assert captured_kwargs["model_config"] is skill_model
+    passed_cfg = captured_kwargs["model_config"]
+    assert passed_cfg.model == skill_model.model
+    assert passed_cfg.max_tokens == 200  # min(skill max_output_tokens=500, model max_tokens=200)
 
 
 @pytest.mark.asyncio
@@ -442,9 +478,38 @@ async def test_execute_retry_also_passes_model_config(tmp_path: Path):
     assert result.retried is True
     assert call_count == 2
     for i, kwargs in enumerate(all_kwargs):
-        assert kwargs.get("model_config") is skill_model, (
-            f"model_config not passed on call {i + 1}"
-        )
+        cfg = kwargs.get("model_config")
+        assert cfg is not None, f"model_config not passed on call {i + 1}"
+        assert cfg.model == skill_model.model
+        assert cfg.max_tokens == 150
+
+
+@pytest.mark.asyncio
+async def test_execute_applies_skill_max_output_tokens_cap(tmp_path: Path):
+    """SKILL.md max_output_tokens must cap the model config passed to call_agent."""
+    from crystalos.lib.models import ModelConfig
+
+    runtime = SkillRuntime()
+    meta = make_skill_meta(tmp_path)
+    meta["max_output_tokens"] = 500
+
+    skill_model = ModelConfig(model="skill/model:free", max_tokens=2000, temperature=0.2)
+    mock_output = MagicMock()
+    mock_output.to_dict.return_value = {"result": "ok"}
+    mock_credit = make_mock_credit()
+
+    captured_kwargs: dict = {}
+
+    async def capturing_call_agent(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return mock_output, mock_credit
+
+    with patch("crystalos.lib.openrouter.call_agent", capturing_call_agent):
+        with patch("crystalos.lib.models.get_skill_model", return_value=skill_model):
+            with patch.object(runtime, "_fetch_examples", AsyncMock(return_value=[])):
+                await runtime.execute("test-skill", meta, {}, {})
+
+    assert captured_kwargs["model_config"].max_tokens == 500
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,7 @@
  */
 import express from 'express';
 import type { Request, Response } from 'express';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, DEV_MODE } from '../middleware/auth';
 import { query } from '../lib/db';
 import logger from '../lib/logger';
 import fetch from 'node-fetch';
@@ -182,14 +182,14 @@ async function getSurvey(surveyId: string, orgId: string): Promise<Record<string
   );
   if (rows[0]) return rows[0] as Record<string, unknown>;
 
-  // Fallback: in SKIP_AUTH dev mode, accept the survey regardless of org_id mismatch.
-  if (process.env.SKIP_AUTH === 'true') {
+  // Fallback: in dev mode, accept the survey regardless of org_id mismatch.
+  if (DEV_MODE) {
     const { rows: bare } = await query(
       'SELECT id, title, questions, org_id, status FROM surveys WHERE id = $1 AND deleted_at IS NULL',
       [surveyId],
     ).catch(() => ({ rows: [] }));
     if (bare[0]) {
-      logger.warn({ surveyId, req_org: orgId, survey_org: (bare[0] as Record<string, unknown>).org_id }, 'insights:getSurvey:skip_auth_fallback');
+      logger.warn({ surveyId, req_org: orgId, survey_org: (bare[0] as Record<string, unknown>).org_id }, 'insights:getSurvey:dev_mode_fallback');
       return bare[0] as Record<string, unknown>;
     }
   } else {

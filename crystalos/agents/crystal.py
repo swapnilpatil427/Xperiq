@@ -78,7 +78,7 @@ def _format_tool_result(tool_name: str, result: dict, char_limit: int = 2000) ->
                     lines.append(f"  {k}: {score}" + (f" (n={n})" if n else ""))
             elif v is not None and not isinstance(v, (list, dict)):
                 lines.append(f"  {k}: {v}")
-        return ("Metrics:\n" + "\n".join(lines)) if lines else json.dumps(result)[:char_limit]
+        return ("Metrics:\n" + "\n".join(lines)) if lines else json_dumps_safe(result)[:char_limit]
 
     # Verbatims / quotes tool
     if "verbatim" in tool_name or "quote" in tool_name or "response" in tool_name:
@@ -97,7 +97,7 @@ def _format_tool_result(tool_name: str, result: dict, char_limit: int = 2000) ->
         if isinstance(v, list):
             lines.append(f"{k}: [{len(v)} items]")
         elif isinstance(v, dict):
-            lines.append(f"{k}: {json.dumps(v)[:100]}")
+            lines.append(f"{k}: {json_dumps_safe(v)[:100]}")
         elif v is not None:
             lines.append(f"{k}: {v}")
     return "\n".join(lines)[:char_limit]
@@ -145,7 +145,7 @@ class ActionProposal(BaseModel):
     requires_confirmation: bool = True           # always True — safety guarantee
 
 
-from crystalos.lib.json_coerce import extract_skill_answer, normalize_suggestions
+from crystalos.lib.json_coerce import extract_skill_answer, json_dumps_safe, normalize_suggestions
 
 
 class CrystalOutput(BaseModel):
@@ -331,7 +331,7 @@ def _build_insights_context(insights: list[dict]) -> tuple[str, set[str]]:
             if narrative:
                 line += f"\n  {narrative[:200]}"
             if metric is not None:
-                line += f"\n  Metric: {json.dumps(metric)}"
+                line += f"\n  Metric: {json_dumps_safe(metric)}"
             if trust is not None:
                 try:
                     line += f"  (trust: {float(trust):.0f})"
@@ -894,8 +894,11 @@ def _build_tool_observations(tool_results: list[dict]) -> str:
 # Action-tool proposal_type → frontend ActionProposal.type. Most pass through;
 # a few tool-internal names alias to the canonical frontend handler name.
 _PROPOSAL_TYPE_ALIASES = {
-    "workflow": "create_workflow",
-    "alert":    "create_alert",
+    "workflow":      "create_workflow",
+    "alert":         "create_alert",
+    "case":          "create_case",
+    "assign_owner":  "assign_owner",
+    "slack_notify":  "send_slack_alert",
 }
 
 
@@ -1088,6 +1091,18 @@ async def _resolve_crystal_skill_match(
     return None, None
 
 
+def _merged_citation_ids(citations: list | None, insight_refs: list | None) -> list[str]:
+    """Merge citations + insight_refs into deduplicated string IDs for SSE/REST."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for raw in list(citations or []) + list(insight_refs or []):
+        cid = str(raw).strip()
+        if cid and cid not in seen:
+            seen.add(cid)
+            merged.append(cid)
+    return merged
+
+
 def _normalize_skill_output(output: dict, skill_name: str) -> "CrystalOutput | None":
     """Map any skill's output dict to CrystalOutput.
 
@@ -1121,8 +1136,8 @@ def _normalize_skill_output(output: dict, skill_name: str) -> "CrystalOutput | N
     )
     suggestions = normalize_suggestions(raw_suggestions, max_items=3)
 
-    citations = output.get("citations") or []
-    insight_refs = output.get("insight_refs") or []
+    citations = _merged_citation_ids(output.get("citations"), output.get("insight_refs"))
+    insight_refs = [str(r).strip() for r in (output.get("insight_refs") or []) if str(r).strip()]
 
     # action_proposals — normalise (map proposal_type→type, fill id/defaults) so
     # model-emitted proposals validate even when they omit id or use proposal_type.
@@ -1210,7 +1225,7 @@ async def _skill_synthesis(
         skill_input = {
             "message": inp.message,
             "survey_facts": {
-                "survey_id": inp.survey_id,
+                "survey_id": str(inp.survey_id),
                 "response_count": inp.survey_response_count,
                 "survey_type": "custom",
                 "nps_score": nps_score,
@@ -1225,7 +1240,7 @@ async def _skill_synthesis(
             },
             "insights": [
                 {
-                    "id": ins.get("id", ""),
+                    "id": str(ins.get("id", "")),
                     "category": ins.get("category", ""),
                     "headline": ins.get("headline", ""),
                     "layer": ins.get("layer", ""),
@@ -1373,7 +1388,8 @@ async def _run_react_loop_streaming(inp: CrystalInput, db_pool=None, request=Non
         yield _json.dumps({
             "type": "answer",
             "answer": skill_out.answer,
-            "citations": skill_out.citations,
+            "citations": _merged_citation_ids(skill_out.citations, skill_out.insight_refs),
+            "insight_refs": skill_out.insight_refs,
             "suggestions": skill_out.suggestions,
         })
     else:
@@ -1382,7 +1398,8 @@ async def _run_react_loop_streaming(inp: CrystalInput, db_pool=None, request=Non
             yield _json.dumps({
                 "type": "answer",
                 "answer": final.answer,
-                "citations": final.citations,
+                "citations": _merged_citation_ids(final.citations, final.insight_refs),
+                "insight_refs": final.insight_refs,
                 "suggestions": final.suggestions,
             })
         except Exception as exc:
@@ -1676,7 +1693,8 @@ async def _run_skill_stream(
         yield _json.dumps({
             "type": "answer",
             "answer": skill_out.answer,
-            "citations": skill_out.citations,
+            "citations": _merged_citation_ids(skill_out.citations, skill_out.insight_refs),
+            "insight_refs": skill_out.insight_refs,
             "suggestions": skill_out.suggestions,
         })
         _fire_telemetry(inp, ctx, skill_meta_hint, skill_out, tool_results, latency_ms)
@@ -1690,7 +1708,8 @@ async def _run_skill_stream(
         yield _json.dumps({
             "type": "answer",
             "answer": final.answer,
-            "citations": final.citations,
+            "citations": _merged_citation_ids(final.citations, final.insight_refs),
+            "insight_refs": final.insight_refs,
             "suggestions": final.suggestions,
         })
     except Exception as exc:

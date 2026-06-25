@@ -5,7 +5,35 @@ in a suggestions array). These helpers normalize output before Pydantic validati
 """
 from __future__ import annotations
 
+import json
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
+from uuid import UUID
+
 _SKILL_ANSWER_MIN_LEN = 20
+
+
+def json_default_encoder(obj) -> str:
+    """JSON serializer for types commonly returned from Postgres/asyncpg."""
+    if isinstance(obj, UUID):
+        return str(obj)
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, Decimal):
+        return str(obj)
+    if isinstance(obj, Enum):
+        return str(obj.value)
+    if isinstance(obj, set):
+        return str(obj)
+    return str(obj)
+
+
+def json_dumps_safe(obj, **kwargs) -> str:
+    """json.dumps with a default handler for UUID, datetime, Decimal, etc."""
+    kwargs.setdefault("ensure_ascii", False)
+    kwargs.setdefault("default", json_default_encoder)
+    return json.dumps(obj, **kwargs)
 
 
 def coerce_suggestion_item(item) -> str | None:

@@ -3,7 +3,7 @@
 import express from 'express';
 import type { Request, Response } from 'express';
 import { query } from '../lib/db';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, DEV_MODE } from '../middleware/auth';
 import { requirePermission, invalidatePermissionCache } from '../middleware/requirePermission';
 import { validate } from '../lib/validate';
 import { serverError, clientError } from '../lib/httpError';
@@ -135,7 +135,7 @@ router.post('/invite', requireAuth, requirePermission('users:manage'), validate(
 
     // Send the Clerk invitation (skipped in dev-bypass mode).
     let invitedUserId: string | null = null;
-    if (process.env.SKIP_AUTH !== 'true' && process.env.CLERK_SECRET_KEY) {
+    if (!DEV_MODE) {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { createClerkClient } = require('@clerk/backend');
       const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });

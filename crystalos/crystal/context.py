@@ -63,3 +63,7 @@ class CrystalContext:
     brand:           BrandContext | None = None              # None = first-party Experient org
     user_role:       Literal["viewer", "editor", "admin", "brand_admin"] = "viewer"
     effective_perms: frozenset[str] = field(default_factory=frozenset)
+    contact_id:       str | None = None                         # response linked to this contact
+    account_id:       str | None = None                         # account grouping
+    owner_map:        tuple[tuple[str, str], ...] = ()          # pre-resolved ((dim:val, owner_user_id), ...) — tuple keeps frozen dataclass hashable
+    ontology_version: str | None = None                         # for cache invalidation

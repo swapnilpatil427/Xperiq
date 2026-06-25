@@ -50,6 +50,11 @@ if _IS_PROD:
         raise RuntimeError(f"Missing required env vars: {', '.join(_missing)}")
     if os.getenv("AGENTS_INTERNAL_KEY") == "dev-internal-key-change-in-prod":
         raise RuntimeError("AGENTS_INTERNAL_KEY must be changed from the default before deploying to production")
+else:
+    if os.getenv("AGENTS_INTERNAL_KEY", "dev-internal-key-change-in-prod") == "dev-internal-key-change-in-prod":
+        print("⚠  CrystalOS DEV MODE — using default AGENTS_INTERNAL_KEY. Set AGENTS_INTERNAL_KEY before deploying to production.")  # noqa: T201
+    if not os.getenv("OPENROUTER_API_KEY"):
+        print("⚠  CrystalOS DEV MODE — no OPENROUTER_API_KEY. LLM calls will fail.")  # noqa: T201
 
 from crystalos.agents import (
     ACTIVE_AGENTS, ALL_AGENTS,
@@ -198,6 +203,9 @@ app.include_router(_brand_admin_router)
 
 from crystalos.lib.cdx import router as cdx_router
 app.include_router(cdx_router)
+
+from crystalos.routers.novu import router as novu_router
+app.include_router(novu_router)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────

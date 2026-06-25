@@ -4,6 +4,8 @@ import type {
   Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
   CopilotChange, AgenticInsight, InsightRunStatus, SurveyTopic, TopicDriver,
   TopicTheme, TopicDetail, TopicVerbatim, ActionRecommendations,
+  Contact, CxCase, CaseAuditEntry, OwnershipRoute, OntologyNode,
+  ContactSegment, FilterDef, SyncConfig, SyncLog, ActivityItem,
 } from '../types';
 import type { SavedDashboardConfig, WidgetConfig, DashboardFilters } from '../types/dashboard';
 
@@ -1641,6 +1643,316 @@ export function createApiClient(getToken: GetToken) {
       const fellBack = res.headers['x-export-fallback'];
       return { blob: res.data as Blob, format: fellBack ? 'html' : format };
     },
+
+    // ── Contacts (Tier 3) ──────────────────────────────────────────────────────
+    createContact: async (data: Partial<Contact>): Promise<Contact> => {
+      const res = await http.post<{ contact: Contact }>('/api/contacts', data);
+      return res.data.contact;
+    },
+
+    listContacts: async (params?: { search?: string; account_id?: string; page?: number; limit?: number }): Promise<{ contacts: Contact[]; total: number }> => {
+      const qs = new URLSearchParams();
+      if (params?.search)     qs.set('search',     params.search);
+      if (params?.account_id) qs.set('account_id', params.account_id);
+      if (params?.page)       qs.set('page',       String(params.page));
+      if (params?.limit)      qs.set('limit',      String(params.limit));
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get<{ contacts: Contact[]; total: number }>(`/api/contacts${query}`);
+      return res.data;
+    },
+
+    getContact: async (id: string): Promise<Contact> => {
+      const res = await http.get<{ contact: Contact }>(`/api/contacts/${id}`);
+      return res.data.contact;
+    },
+
+    updateContact: async (id: string, data: Partial<Contact>): Promise<Contact> => {
+      const res = await http.put<{ contact: Contact }>(`/api/contacts/${id}`, data);
+      return res.data.contact;
+    },
+
+    anonymizeContact: async (id: string): Promise<void> => {
+      await http.delete(`/api/contacts/${id}`);
+    },
+
+    importContacts: async (contacts: Partial<Contact>[]): Promise<{
+      created: number;
+      updated: number;
+      errors: Array<{ index: number; message: string }>;
+    }> => {
+      const res = await http.post<{
+        created: number;
+        updated: number;
+        errors: Array<{ index: number; message: string }>;
+      }>('/api/contacts/import', { contacts });
+      return res.data;
+    },
+
+    generateDistributionTokens: async (
+      surveyId: string,
+      contactIds: string[],
+      channel: string,
+    ): Promise<{ tokens: { contact_id: string; token: string; url: string }[] }> => {
+      const res = await http.post<{ tokens: { contact_id: string; token: string; url: string }[] }>(
+        `/api/surveys/${surveyId}/distribution-tokens`,
+        { contact_ids: contactIds, channel },
+      );
+      return res.data;
+    },
+
+    // ── CX Cases (Tier 3) ──────────────────────────────────────────────────────
+    createCase: async (data: Partial<CxCase>): Promise<CxCase> => {
+      const res = await http.post<{ case: CxCase }>('/api/cases', data);
+      return res.data.case;
+    },
+
+    listCases: async (params?: {
+      status?: string;
+      severity?: string;
+      owner_user_id?: string;
+      survey_id?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    }): Promise<{ cases: CxCase[]; total: number }> => {
+      const qs = new URLSearchParams();
+      if (params?.status)        qs.set('status',        params.status);
+      if (params?.severity)      qs.set('severity',      params.severity);
+      if (params?.owner_user_id) qs.set('owner_user_id', params.owner_user_id);
+      if (params?.survey_id)     qs.set('survey_id',     params.survey_id);
+      if (params?.search)        qs.set('search',        params.search);
+      if (params?.page)          qs.set('page',          String(params.page));
+      if (params?.limit)         qs.set('limit',         String(params.limit));
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get<{ cases: CxCase[]; total: number }>(`/api/cases${query}`);
+      return res.data;
+    },
+
+    getCase: async (id: string): Promise<CxCase> => {
+      const res = await http.get<{ case: CxCase }>(`/api/cases/${id}`);
+      return res.data.case;
+    },
+
+    updateCase: async (id: string, data: Partial<CxCase>): Promise<CxCase> => {
+      const res = await http.put<{ case: CxCase }>(`/api/cases/${id}`, data);
+      return res.data.case;
+    },
+
+    addCaseEvent: async (id: string, event: { action: string; note?: string }): Promise<CaseAuditEntry[]> => {
+      const res = await http.post<{ audit_log: CaseAuditEntry[] }>(`/api/cases/${id}/events`, event);
+      return res.data.audit_log;
+    },
+
+    getSlaDashboard: async (): Promise<{ open_count: number; at_risk_count: number; breached_count: number; by_severity: Record<string, number> }> => {
+      const res = await http.get<{ open_count: number; at_risk_count: number; breached_count: number; by_severity: Record<string, number> }>('/api/cases/sla-dashboard');
+      return res.data;
+    },
+
+    // ── Ownership Routing (Tier 3) ─────────────────────────────────────────────
+    listOwnershipRoutes: async (dimension?: string): Promise<OwnershipRoute[]> => {
+      const qs = dimension ? `?dimension=${encodeURIComponent(dimension)}` : '';
+      const res = await http.get<{ routes: OwnershipRoute[] }>(`/api/ownership-routes${qs}`);
+      return res.data.routes;
+    },
+
+    createOwnershipRoute: async (data: Partial<OwnershipRoute>): Promise<OwnershipRoute> => {
+      const res = await http.post<{ route: OwnershipRoute }>('/api/ownership-routes', data);
+      return res.data.route;
+    },
+
+    updateOwnershipRoute: async (id: string, data: Partial<OwnershipRoute>): Promise<OwnershipRoute> => {
+      const res = await http.put<{ route: OwnershipRoute }>(`/api/ownership-routes/${id}`, data);
+      return res.data.route;
+    },
+
+    deleteOwnershipRoute: async (id: string): Promise<void> => {
+      await http.delete(`/api/ownership-routes/${id}`);
+    },
+
+    resolveOwnershipRoute: async (dimension: string, value: string): Promise<{ matched: boolean; route: OwnershipRoute | null }> => {
+      const res = await http.post<{ matched: boolean; route: OwnershipRoute | null }>('/api/ownership-routes/resolve', { dimension, value });
+      return res.data;
+    },
+
+    // ── Ontology (Tier 3) ──────────────────────────────────────────────────────
+    listOntologyNodes: async (category?: string): Promise<OntologyNode[]> => {
+      const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+      const res = await http.get<{ nodes: OntologyNode[] }>(`/api/ontology${qs}`);
+      return res.data.nodes;
+    },
+
+    getOntologyNode: async (id: string): Promise<OntologyNode & { edges: unknown[]; mappings: unknown[] }> => {
+      const res = await http.get<OntologyNode & { edges: unknown[]; mappings: unknown[] }>(`/api/ontology/${id}`);
+      return res.data;
+    },
+
+    createOntologyNode: async (data: Partial<OntologyNode>): Promise<OntologyNode> => {
+      const res = await http.post<{ node: OntologyNode }>('/api/ontology', data);
+      return res.data.node;
+    },
+
+    createOntologyEdge: async (data: { from_node_id: string; to_node_id: string; relationship: string; weight?: number }): Promise<unknown> => {
+      const res = await http.post<unknown>('/api/ontology/edges', data);
+      return res.data;
+    },
+
+    createOntologyMapping: async (data: unknown): Promise<unknown> => {
+      const res = await http.post<unknown>('/api/ontology/mappings', data);
+      return res.data;
+    },
+
+    // ── Contact Segments ──────────────────────────────────────────────────────
+    listSegments: async (): Promise<ContactSegment[]> => {
+      const res = await http.get<{ segments: ContactSegment[] }>('/api/contacts/segments');
+      return res.data.segments;
+    },
+    createSegment: async (data: Partial<ContactSegment>): Promise<ContactSegment> => {
+      const res = await http.post<{ segment: ContactSegment }>('/api/contacts/segments', data);
+      return res.data.segment;
+    },
+    updateSegment: async (id: string, data: Partial<ContactSegment>): Promise<ContactSegment> => {
+      const res = await http.put<{ segment: ContactSegment }>(`/api/contacts/segments/${id}`, data);
+      return res.data.segment;
+    },
+    deleteSegment: async (id: string): Promise<void> => {
+      await http.delete(`/api/contacts/segments/${id}`);
+    },
+    previewSegment: async (filterDef: FilterDef): Promise<{ count: number; preview: Contact[] }> => {
+      const res = await http.post<{ count: number; preview: Contact[] }>('/api/contacts/segments/preview', { filter_def: filterDef });
+      return res.data;
+    },
+    refreshSegment: async (id: string): Promise<{ contact_count: number }> => {
+      const res = await http.post<{ contact_count: number }>(`/api/contacts/segments/${id}/refresh`);
+      return res.data;
+    },
+    getSegmentMembers: async (id: string, params?: { page?: number; limit?: number }): Promise<{ members: Contact[]; total: number }> => {
+      const q = new URLSearchParams();
+      if (params?.page) q.set('page', String(params.page));
+      if (params?.limit) q.set('limit', String(params.limit));
+      const res = await http.get<{ members: Contact[]; total: number }>(`/api/contacts/segments/${id}/members?${q}`);
+      return res.data;
+    },
+    addSegmentMember: async (segmentId: string, contactId: string): Promise<void> => {
+      await http.post(`/api/contacts/segments/${segmentId}/members`, { contact_id: contactId });
+    },
+    removeSegmentMember: async (segmentId: string, contactId: string): Promise<void> => {
+      await http.delete(`/api/contacts/segments/${segmentId}/members/${contactId}`);
+    },
+
+    // ── CRM Sync ──────────────────────────────────────────────────────────────
+    listSyncConfigs: async (): Promise<SyncConfig[]> => {
+      const res = await http.get<{ configs: SyncConfig[] }>('/api/contacts/sync/configs');
+      return res.data.configs;
+    },
+    createSyncConfig: async (data: Partial<SyncConfig>): Promise<SyncConfig> => {
+      const res = await http.post<{ config: SyncConfig }>('/api/contacts/sync/configs', data);
+      return res.data.config;
+    },
+    updateSyncConfig: async (id: string, data: Partial<SyncConfig>): Promise<SyncConfig> => {
+      const res = await http.put<{ config: SyncConfig }>(`/api/contacts/sync/configs/${id}`, data);
+      return res.data.config;
+    },
+    deleteSyncConfig: async (id: string): Promise<void> => {
+      await http.delete(`/api/contacts/sync/configs/${id}`);
+    },
+    runSync: async (id: string): Promise<{ log_id: string; status: string }> => {
+      const res = await http.post<{ log_id: string; status: string }>(`/api/contacts/sync/configs/${id}/run`);
+      return res.data;
+    },
+    getSyncLogs: async (id: string): Promise<SyncLog[]> => {
+      const res = await http.get<{ logs: SyncLog[] }>(`/api/contacts/sync/configs/${id}/logs`);
+      return res.data.logs;
+    },
+
+    // ── Response Linking ──────────────────────────────────────────────────────
+    getContactActivity: async (contactId: string): Promise<{ timeline: ActivityItem[]; segments: ContactSegment[] }> => {
+      const res = await http.get<{ timeline: ActivityItem[]; segments: ContactSegment[] }>(`/api/contacts/${contactId}/activity`);
+      return res.data;
+    },
+    backfillResponseLinks: async (limit?: number): Promise<{ processed: number; linked: number; skipped: number }> => {
+      const res = await http.post<{ processed: number; linked: number; skipped: number }>('/api/contacts/link-responses', { limit });
+      return res.data;
+    },
+    linkContactResponse: async (contactId: string, responseId: string): Promise<void> => {
+      await http.post(`/api/contacts/${contactId}/link-response`, { response_id: responseId });
+    },
+
+    // ── Broadcasts (Outreach) ──────────────────────────────────────────────────
+    createBroadcast: async (data: object): Promise<unknown> => {
+      const res = await http.post('/api/outreach/broadcasts', data);
+      return res.data;
+    },
+
+    approveBroadcast: async (id: string): Promise<unknown> => {
+      const res = await http.post(`/api/outreach/broadcasts/${id}/approve`, {});
+      return res.data;
+    },
+
+    rejectBroadcast: async (id: string, reason: string): Promise<unknown> => {
+      const res = await http.post(`/api/outreach/broadcasts/${id}/reject`, { reason });
+      return res.data;
+    },
+
+    sendBroadcast: async (id: string): Promise<unknown> => {
+      const res = await http.post(`/api/outreach/broadcasts/${id}/send`, {});
+      return res.data;
+    },
+
+    getBroadcasts: async (params?: { status?: string; limit?: number }): Promise<unknown> => {
+      const qs = new URLSearchParams();
+      if (params?.status) qs.set('status', params.status);
+      if (params?.limit)  qs.set('limit', String(params.limit));
+      const res = await http.get(`/api/outreach/broadcasts${qs.toString() ? `?${qs}` : ''}`);
+      return res.data;
+    },
+
+    getBroadcastStats: async (): Promise<unknown> => {
+      const res = await http.get('/api/outreach/broadcasts/stats');
+      return res.data;
+    },
+
+    getBroadcastDetail: async (id: string): Promise<unknown> => {
+      const res = await http.get(`/api/outreach/broadcasts/${id}`);
+      return res.data;
+    },
+
+    // ── Notification Analytics ────────────────────────────────────────────────
+    getNotificationSummary: async (period: string): Promise<unknown> => {
+      const res = await http.get(`/api/outreach/analytics/summary?period=${period}`);
+      return res.data;
+    },
+
+    getNotificationChannels: async (period: string): Promise<unknown> => {
+      const res = await http.get(`/api/outreach/analytics/channels?period=${period}`);
+      return res.data;
+    },
+
+    getNotificationWorkflows: async (period: string): Promise<unknown> => {
+      const res = await http.get(`/api/outreach/analytics/workflows?period=${period}`);
+      return res.data;
+    },
+
+    getFrequencyCaps: async (): Promise<unknown> => {
+      const res = await http.get('/api/outreach/frequency-caps');
+      return res.data;
+    },
+
+    upsertFrequencyCap: async (data: object): Promise<unknown> => {
+      const res = await http.post('/api/outreach/frequency-caps', data);
+      return res.data;
+    },
+
+    getNotificationSuppression: async (): Promise<unknown> => {
+      const res = await http.get('/api/outreach/suppression/stats');
+      return res.data;
+    },
+
+    // ── Novu subscriber hash ──────────────────────────────────────────────────
+    getNovuSubscriberHash: async (): Promise<{ hash: string }> => {
+      const res = await http.get<{ hash: string }>('/api/crystal-novu/subscriber-hash');
+      return res.data;
+    },
+
   };
 }
 

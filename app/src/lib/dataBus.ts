@@ -9,12 +9,10 @@
 //   import { invalidate, useInvalidation } from '../lib/dataBus';
 //   invalidate('workflows');                          // after a mutation
 //   useInvalidation('workflows', reload);             // in a data hook
-//
-// Tier 1 of CRYSTAL_ACTION_SYSTEM_REDESIGN.md (bug B2: stale UI after Crystal mutates).
 
 import { useEffect } from 'react';
 
-export type DataResource = 'workflows' | 'alerts' | 'insights' | 'surveys';
+export type DataResource = 'workflows' | 'alerts' | 'insights' | 'surveys' | 'cases' | 'contacts' | 'ontology' | 'broadcasts';
 
 const EVENT = 'crystal:data-changed';
 

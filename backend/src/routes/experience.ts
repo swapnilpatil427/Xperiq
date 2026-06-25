@@ -423,18 +423,47 @@ router.post('/:scope/crystal/stream', requireAuth, async (req: Request, res: Res
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
-  // Build citation map from body insights so we can emit it before [DONE]
-  const citationMap: Record<string, Record<string, unknown>> = {};
-  const bodyInsights = Array.isArray(body.insights) ? (body.insights as Record<string, unknown>[]) : [];
-  bodyInsights.forEach(i => {
-    if (i.id) citationMap[i.id as string] = {
-      headline:     (i.headline as string) || '',
-      survey_title: (i._survey_title as string) || (body.survey_title as string) || '',
-      survey_id:    (i.survey_id as string) || (body.survey_id as string) || '',
-      layer:        (i.layer as string) || '',
-      category:     (i.category as string) || '',
+  const surveyIdForCtx = scope === 'survey' ? String(body.survey_id || '') : '';
+  let citationMap: Record<string, Record<string, unknown>> = {};
+  let agentBody: Record<string, unknown> = { ...body, org_id: orgId, user_id: userId, scope };
+
+  try {
+    const ctx = await loadCrystalContext(surveyIdForCtx, orgId!);
+    citationMap = ctx.citationMap as Record<string, Record<string, unknown>>;
+    const bodyInsights = Array.isArray(body.insights) ? (body.insights as Record<string, unknown>[]) : [];
+    agentBody = {
+      ...body,
+      org_id: orgId,
+      user_id: userId,
+      scope,
+      insights: bodyInsights.length > 0 ? bodyInsights : ctx.insights,
+      topics: Array.isArray(body.topics) && (body.topics as unknown[]).length > 0
+        ? body.topics
+        : ctx.topics,
+      metrics: body.metrics && Object.keys(body.metrics as object).length > 0
+        ? body.metrics
+        : ctx.metrics,
+      survey_title: (body.survey_title as string) || ctx.survey_title || '',
+      survey_response_count: body.survey_response_count ?? ctx.response_count,
     };
-  });
+  } catch (ctxErr: unknown) {
+    logger.warn({ err: (ctxErr as Error).message, orgId }, 'crystal_stream_context_load_failed');
+    const bodyInsights = Array.isArray(body.insights) ? (body.insights as Record<string, unknown>[]) : [];
+    bodyInsights.forEach(i => {
+      if (i.id) citationMap[String(i.id)] = {
+        headline:     (i.headline as string) || '',
+        survey_title: (i._survey_title as string) || (body.survey_title as string) || '',
+        survey_id:    (i.survey_id as string) || (body.survey_id as string) || '',
+        layer:        (i.layer as string) || '',
+        category:     (i.category as string) || '',
+      };
+    });
+  }
+
+  // Emit citation context first so the frontend can enrich sources before/at answer time.
+  if (Object.keys(citationMap).length > 0) {
+    res.write(`data: ${JSON.stringify({ type: 'citation_context', map: citationMap })}\n\n`);
+  }
 
   const controller = new AbortController();
   req.on('close', () => controller.abort());
@@ -446,12 +475,7 @@ router.post('/:scope/crystal/stream', requireAuth, async (req: Request, res: Res
         'Content-Type':   'application/json',
         'X-Internal-Key': AGENTS_INTERNAL_KEY,
       },
-      body: JSON.stringify({
-        ...body,
-        org_id:   orgId,
-        user_id:  userId,
-        scope,
-      }),
+      body: JSON.stringify(agentBody),
       signal: controller.signal,
     });
 
@@ -461,27 +485,10 @@ router.post('/:scope/crystal/stream', requireAuth, async (req: Request, res: Res
       return;
     }
 
-    // Proxy the agents stream, intercepting [DONE] to inject citation_context first
-    let buffer = '';
+    // Proxy the agents stream to the client
     for await (const chunk of agentRes.body) {
       if (res.writableEnded) break;
-      const text = (chunk as Buffer).toString('utf8');
-      buffer += text;
-      // Check if [DONE] is in this chunk — inject citation_context before it
-      if (buffer.includes('data: [DONE]')) {
-        const parts = buffer.split('data: [DONE]');
-        if (parts[0]) res.write(parts[0]);
-        // Emit citation context so frontend can render rich source cards
-        if (Object.keys(citationMap).length > 0) {
-          res.write(`data: ${JSON.stringify({ type: 'citation_context', map: citationMap })}\n\n`);
-        }
-        res.write('data: [DONE]\n\n');
-        if (parts[1]) res.write(parts[1]);
-        buffer = '';
-      } else {
-        res.write(text);
-        buffer = '';
-      }
+      res.write(chunk as Buffer);
     }
   } catch (err: unknown) {
     const e = err as { name?: string; message?: string };

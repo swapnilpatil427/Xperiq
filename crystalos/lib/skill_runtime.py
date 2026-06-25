@@ -12,6 +12,7 @@ Responsibilities:
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import json
 import re
 import time
@@ -21,6 +22,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from crystalos.lib.json_coerce import json_dumps_safe
 from crystalos.lib.logger import logger
 from crystalos.lib.openrouter import _call_with_backoff
 
@@ -86,11 +88,12 @@ class SkillRuntime:
             skill_meta.get("max_output_tokens", model_cfg.max_tokens),
             model_cfg.max_tokens,
         )
+        model_cfg = dataclasses.replace(model_cfg, max_tokens=max_output_tokens)
         max_retries = skill_meta.get("max_retries", 1)
 
         # Build system prompt (SKILL.md body + references + examples)
         system = await self._build_system(skill_meta, input_data)
-        user_msg = json.dumps(input_data, ensure_ascii=False, indent=2)
+        user_msg = json_dumps_safe(input_data, indent=2)
 
         output_raw: dict = {}
         model_used: str = model_cfg.model
@@ -162,7 +165,7 @@ class SkillRuntime:
                     "The issues are listed in failed_criteria. Fix them and respond again."
                 ),
             }
-            retry_user = json.dumps({"input": input_data, "retry_context": retry_ctx}, indent=2)
+            retry_user = json_dumps_safe({"input": input_data, "retry_context": retry_ctx}, indent=2)
             try:
                 result2, credit2 = await asyncio.wait_for(
                     call_agent(
@@ -275,8 +278,8 @@ class SkillRuntime:
             for i, ex in enumerate(examples[:3], 1):
                 ex_block += (
                     f"### Example {i} (quality score: {ex.get('eval_score', 0):.2f})\n"
-                    f"**Input:**\n```json\n{json.dumps(ex['input_json'], indent=2, ensure_ascii=False)}\n```\n"
-                    f"**Output:**\n```json\n{json.dumps(ex['output_json'], indent=2, ensure_ascii=False)}\n```\n\n"
+                    f"**Input:**\n```json\n{json_dumps_safe(ex['input_json'], indent=2)}\n```\n"
+                    f"**Output:**\n```json\n{json_dumps_safe(ex['output_json'], indent=2)}\n```\n\n"
                 )
             parts.append(ex_block)
 
@@ -436,7 +439,7 @@ class SkillRuntime:
             return self._eval_structural(description, output)
 
         # Semantic/quality criterion — use LLM judge
-        output_str = json.dumps(output, ensure_ascii=False)
+        output_str = json_dumps_safe(output)
         prompt = f"""You are an AI quality evaluator. Score this output on one criterion.
 
 Criterion: {description}
@@ -501,7 +504,7 @@ Respond with ONLY a decimal number (e.g. 0.7). No explanation."""
 
         # Contains check
         if "contains" in desc:
-            output_text = json.dumps(output).lower()
+            output_text = json_dumps_safe(output).lower()
             match = re.search(r'contains\s+"([^"]+)"', desc)
             if match:
                 return 1.0 if match.group(1).lower() in output_text else 0.0
@@ -545,7 +548,7 @@ Respond with ONLY a decimal number (e.g. 0.7). No explanation."""
             # Near-duplicate check via embedding cosine similarity
             try:
                 from crystalos.tools.embeddings import embed_text as _embed_text
-                query_text = json.dumps(input_data, ensure_ascii=False)
+                query_text = json_dumps_safe(input_data)
                 emb = await _embed_text(query_text)
                 if emb:
                     import asyncio as _aio
@@ -569,8 +572,8 @@ Respond with ONLY a decimal number (e.g. 0.7). No explanation."""
                     skill_name,
                     skill_version,
                     round(eval_score, 4),
-                    json.dumps(input_data, ensure_ascii=False),
-                    json.dumps(output, ensure_ascii=False),
+                    json_dumps_safe(input_data),
+                    json_dumps_safe(output),
                     org_id,
                 ),
             )

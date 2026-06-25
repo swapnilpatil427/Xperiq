@@ -1,10 +1,14 @@
 import type { Request, Response, NextFunction } from 'express';
-import { createClerkClient } from '@clerk/backend';
+import { verifyToken } from '@clerk/backend';
+import { ensureProvisioned } from '../lib/provisioning';
+import { getOrgClaims } from '../lib/clerkClaims';
 
-// Dev bypass: set SKIP_AUTH=true in .env to skip token verification.
-// req.userId = 'dev-user', req.orgId = 'dev-org'
+// Dev mode: when CLERK_SECRET_KEY is absent the backend runs as dev-user/dev-org.
+// No SKIP_AUTH env var needed — key presence is the signal.
+export const DEV_MODE = !process.env.CLERK_SECRET_KEY;
+
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (process.env.SKIP_AUTH === 'true') {
+  if (DEV_MODE) {
     req.userId = 'dev-user';
     req.orgId  = 'dev-org';
     return next();
@@ -17,10 +21,13 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
     const token = authHeader.slice(7);
-    const clerk = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
-    const payload = await clerk.verifyToken(token);
+    const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
+    const { orgId, orgRole } = getOrgClaims(payload);
     req.userId = payload.sub;
-    req.orgId  = payload.org_id || payload.sub;
+    req.orgId  = orgId || payload.sub;
+    // Auto-provision the org/user into the directory on first request (webhook-free).
+    // Best-effort + cached; never blocks auth on failure.
+    await ensureProvisioned(orgId ?? undefined, payload.sub, orgRole ?? undefined);
     next();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);

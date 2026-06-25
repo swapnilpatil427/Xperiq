@@ -10,6 +10,7 @@
     "start": "ENABLE_EVENT_ENGINE=true tsx src/index.ts",
     "dev": "ENABLE_EVENT_ENGINE=true tsx watch src/index.ts",
     "start:event-engine": "tsx src/eventEngine/index.ts",
+    "sync:clerk": "tsx scripts/sync-clerk.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
     "deploy": "firebase deploy --only functions",
@@ -22,6 +23,8 @@
   },
   "dependencies": {
     "@clerk/backend": "^1.0.0",
+    "@novu/framework": "^2.6.0",
+    "@novu/node": "^2.6.0",
     "@sentry/node": "^10.53.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -39,7 +42,8 @@
     "prom-client": "^15.1.0",
     "undici": "^6.25.0",
     "uuid": "^9.0.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "zod-to-json-schema": "^3.25.2"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

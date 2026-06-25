@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "check:i18n": "tsx scripts/check-i18n.mjs"
   },
   "dependencies": {
     "@clerk/react": "^6.5.0",
@@ -46,7 +47,8 @@
     "reactflow": "^11.11.4",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.6.0",
-    "three": "^0.184.0"
+    "three": "^0.184.0",
+    "@novu/react": "^2.6.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

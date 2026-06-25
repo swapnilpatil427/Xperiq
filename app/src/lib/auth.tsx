@@ -1,4 +1,4 @@
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { useAuth, useClerk } from '@clerk/react';
 import type { GetToken } from './api';
 
@@ -27,6 +27,20 @@ export function useAppAuth() {
 function ClerkAuthBridge({ children }: { children: React.ReactNode }) {
   const { userId, orgId, getToken, isSignedIn, isLoaded } = useAuth();
   const { signOut } = useClerk();
+  // Pre-warm: call getToken() once after Clerk loads so the JWT is cached
+  // before any page makes its first API call. Without this, the first batch
+  // of requests (surveys, orgs/me, org-profile) fires before Clerk has fetched
+  // the JWT from its servers, getToken() returns null, and the backend 401s.
+  const [tokenWarmed, setTokenWarmed] = useState(false);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    if (!isSignedIn) { setTokenWarmed(true); return; } // redirect path — no token needed
+    let active = true;
+    getToken().finally(() => { if (active) setTokenWarmed(true); });
+    return () => { active = false; };
+  }, [isLoaded, isSignedIn, getToken]);
+
   return (
     <AppAuthContext.Provider
       value={{
@@ -34,7 +48,7 @@ function ClerkAuthBridge({ children }: { children: React.ReactNode }) {
         orgId: orgId ?? null,
         getToken,
         isSignedIn: isSignedIn ?? false,
-        isLoaded: isLoaded ?? false,
+        isLoaded: isLoaded && tokenWarmed,
         signOut,
       }}
     >

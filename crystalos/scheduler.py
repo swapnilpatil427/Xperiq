@@ -24,6 +24,7 @@ import asyncio
 import json
 import os
 import time
+from datetime import datetime
 
 import dotenv
 import httpx
@@ -312,6 +313,9 @@ _QUALITY_SLA_INTERVAL_SEC = 86400  # nightly
 
 _gap_cluster_last_run: float = 0.0
 _GAP_CLUSTER_INTERVAL_SEC = 604800  # weekly
+
+_cx_sla_breach_last_run: float = 0.0
+_CX_SLA_BREACH_INTERVAL_SEC = 300  # 5 minutes
 
 
 async def run_org_aggregation() -> None:
@@ -613,10 +617,132 @@ async def _check_sla_breaches() -> None:
         logger.warning("sla_check_failed", error=str(exc))
 
 
+async def _cx_sla_breach_sweep() -> None:
+    """Every 5 minutes: detect SLA breaches on open CX cases and escalate.
+
+    For each case where resolve_due_at < NOW() and not yet breached and not resolved/closed:
+    1. Increment escalation_tier, set sla_breached=true, append to audit_log
+    2. Resolve escalation owner from ownership_routes (escalation_user_id on matched route)
+    3. Reassign case owner to escalation_user_id if found
+    4. Send Slack webhook if external_refs.slack_webhook is set
+    5. Insert into crystal_event_queue: {type: case_sla_breach, payload: {case_id, org_id, escalation_tier}}
+    """
+    try:
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT id, org_id, title, severity, escalation_tier,
+                              owner_user_id, external_refs
+                       FROM cx_cases
+                       WHERE resolve_due_at < NOW()
+                         AND sla_breached = false
+                         AND status NOT IN ('resolved', 'closed')"""
+                )
+                breached_cases = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        for row in breached_cases:
+            case = dict(zip(cols, row))
+            case_id = str(case["id"])
+            org_id = str(case["org_id"])
+            new_tier = int(case.get("escalation_tier") or 0) + 1
+            external_refs = case.get("external_refs") or {}
+            if isinstance(external_refs, str):
+                try:
+                    import json as _json
+                    external_refs = _json.loads(external_refs)
+                except Exception:
+                    external_refs = {}
+
+            # Resolve escalation owner from ownership_routes
+            escalation_owner_id = None
+            try:
+                async with _pool_conn().connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """SELECT escalation_user_id
+                               FROM ownership_routes
+                               WHERE org_id = %s AND escalation_user_id IS NOT NULL
+                               ORDER BY priority ASC LIMIT 1""",
+                            (org_id,),
+                        )
+                        route_row = await cur.fetchone()
+                        if route_row and route_row[0]:
+                            escalation_owner_id = str(route_row[0])
+            except Exception as exc:
+                logger.warning("cx_sla_escalation_route_failed", case_id=case_id, error=str(exc))
+
+            # Update case: mark breached, increment escalation_tier, reassign if escalation owner found
+            try:
+                async with _pool_conn().connection() as conn:
+                    async with conn.cursor() as cur:
+                        update_fields = [
+                            "sla_breached = true",
+                            "escalation_tier = %s",
+                            "audit_log = COALESCE(audit_log, '[]'::jsonb) || %s::jsonb",
+                        ]
+                        audit_entry = json.dumps([{
+                            "event": "sla_breach",
+                            "escalation_tier": new_tier,
+                            "ts": datetime.utcnow().isoformat()
+                        }])
+                        update_args: list = [
+                            new_tier,
+                            audit_entry,
+                        ]
+                        if escalation_owner_id:
+                            update_fields.append("owner_user_id = %s")
+                            update_args.append(escalation_owner_id)
+                        update_args.append(case_id)
+                        await cur.execute(
+                            f"UPDATE cx_cases SET {', '.join(update_fields)} WHERE id = %s",
+                            update_args,
+                        )
+
+                        # Insert into crystal_event_queue
+                        await cur.execute(
+                            """INSERT INTO crystal_event_queue (type, payload, org_id, created_at)
+                               VALUES ('case_sla_breach', %s::jsonb, %s, NOW())""",
+                            (
+                                json.dumps({"case_id": case_id, "org_id": org_id, "escalation_tier": new_tier}),
+                                org_id,
+                            ),
+                        )
+                    await conn.commit()
+
+                logger.warning(
+                    "cx_case_sla_breached",
+                    case_id=case_id,
+                    org_id=org_id,
+                    escalation_tier=new_tier,
+                    escalation_owner_id=escalation_owner_id,
+                )
+            except Exception as exc:
+                logger.error("cx_sla_breach_update_failed", case_id=case_id, error=str(exc))
+                continue
+
+            # Send Slack webhook if configured
+            slack_webhook = external_refs.get("slack_webhook")
+            if slack_webhook:
+                try:
+                    import httpx as _httpx
+                    message = (
+                        f":rotating_light: *SLA Breach* — Case #{case_id[:8]}: {case.get('title', 'Untitled')}\n"
+                        f"Severity: {case.get('severity', 'unknown')} | Escalation tier: {new_tier}"
+                    )
+                    async with _httpx.AsyncClient(timeout=10.0) as client:
+                        await client.post(slack_webhook, json={"text": message})
+                except Exception as exc:
+                    logger.warning("cx_sla_slack_notify_failed", case_id=case_id, error=str(exc))
+
+    except Exception as exc:
+        logger.error("cx_sla_breach_sweep_failed", error=str(exc))
+
+
 async def run_scheduler_once() -> None:
     """Run a single scheduler tick (useful for testing and inline embedding)."""
     global _zombie_sweep_last_run, _org_aggregation_last_run, _sla_check_last_run, _skill_quality_last_run
-    global _feedback_rollup_last_run, _quality_sla_last_run, _gap_cluster_last_run
+    global _feedback_rollup_last_run, _quality_sla_last_run, _gap_cluster_last_run, _cx_sla_breach_last_run
 
     # Always clean up stale runs first so they don't block re-triggering.
     await _recover_stale_runs()
@@ -660,6 +786,11 @@ async def run_scheduler_once() -> None:
     if now - _gap_cluster_last_run >= _GAP_CLUSTER_INTERVAL_SEC:
         await _cluster_capability_gaps()
         _gap_cluster_last_run = now
+
+    # CX case SLA breach sweep runs every 5 minutes
+    if now - _cx_sla_breach_last_run >= _CX_SLA_BREACH_INTERVAL_SEC:
+        await _cx_sla_breach_sweep()
+        _cx_sla_breach_last_run = now
 
     surveys = await _get_surveys_due(INTERVAL_FREE_MIN)
     if surveys:

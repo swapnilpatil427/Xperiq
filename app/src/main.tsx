@@ -15,6 +15,10 @@ loadBrandTheme();
 
 const CLERK_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
+if (!CLERK_KEY) {
+  console.warn('[Experient] No VITE_CLERK_PUBLISHABLE_KEY — running in dev mode. All routes accessible as dev-user/dev-org. Set VITE_CLERK_PUBLISHABLE_KEY for real auth.');
+}
+
 createRoot(document.getElementById('root') as HTMLElement).render(
   <StrictMode>
     <BrowserRouter>

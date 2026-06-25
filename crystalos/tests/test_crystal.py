@@ -856,6 +856,20 @@ class TestNormalizeSkillOutput:
         assert result.suggestions == ["What is the biggest pain point?", "How does this compare last quarter?"]
         assert result.insight_refs == ["ins-001"]
 
+    def test_merges_insight_refs_into_citations(self):
+        from uuid import uuid4
+        uid = uuid4()
+        output = {
+            "answer": "NPS declined due to onboarding friction in recent verbatims.",
+            "citations": [],
+            "insight_refs": [uid],
+            "suggestions": [],
+        }
+        result = _normalize_skill_output(output, "crystal-analyst")
+        assert result is not None
+        assert result.citations == [str(uid)]
+        assert result.insight_refs == [str(uid)]
+
     def test_data_explorer_shape(self):
         """data-explorer output: summary → answer, suggested_lenses → suggestions."""
         output = {
@@ -1201,6 +1215,49 @@ class TestSkillSynthesis:
         assert captured_input["survey_facts"]["survey_id"] == "survey-xyz"
         assert captured_input["survey_facts"]["nps_score"] == 42
         assert "message" in captured_input
+
+    @pytest.mark.asyncio
+    async def test_skill_input_stringifies_uuid_insight_ids(self):
+        """Insight IDs from asyncpg may be UUID objects — skill input must stringify them."""
+        from uuid import uuid4
+
+        skill_meta = self._make_skill_meta()
+        insight_id = uuid4()
+        skill_result = self._make_skill_result({
+            "answer": "Shipping delays are the dominant detractor theme in your latest responses.",
+            "citations": [],
+            "suggestions": [],
+            "insight_refs": [],
+        })
+
+        captured_input = {}
+
+        async def capture_execute(skill_name, meta, input_data, ctx):
+            captured_input.update(input_data)
+            return skill_result
+
+        mock_runtime = AsyncMock()
+        mock_runtime.execute = capture_execute
+
+        mock_registry = MagicMock()
+        mock_registry._initialized = True
+        mock_registry._skills = {"crystal-analyst": skill_meta}
+        mock_registry.find = AsyncMock(return_value=[(skill_meta, 0.85)])
+        mock_registry.find_sync = MagicMock(return_value=None)
+
+        inp = self._make_inp(
+            survey_id=str(uuid4()),
+            insights=[{"id": insight_id, "headline": "Shipping delays", "layer": "diagnostic"}],
+        )
+
+        with (
+            patch("crystalos.lib.skill_registry.get_registry", return_value=mock_registry),
+            patch("crystalos.lib.skill_runtime.SkillRuntime", return_value=mock_runtime),
+        ):
+            await _skill_synthesis(inp, [])
+
+        assert captured_input["insights"][0]["id"] == str(insight_id)
+        assert isinstance(captured_input["survey_facts"]["survey_id"], str)
 
     @pytest.mark.asyncio
     async def test_tool_results_included_in_skill_input(self):

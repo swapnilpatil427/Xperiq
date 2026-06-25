@@ -2,7 +2,7 @@ import express from 'express';
 import type { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, DEV_MODE } from '../middleware/auth';
 import { validate } from '../lib/validate';
 import { createOrgSchema, updateOrgSchema } from '../schemas/orgs';
 import { query } from '../lib/db';
@@ -93,7 +93,7 @@ router.put('/me', requireAuth, validate(updateOrgSchema), async (req: Request, r
     const row = rows[0];
 
     // Sync name to Clerk when not in dev-bypass mode
-    if (process.env.SKIP_AUTH !== 'true' && name && process.env.CLERK_SECRET_KEY) {
+    if (!DEV_MODE && name) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
         const { createClerkClient } = require('@clerk/backend');

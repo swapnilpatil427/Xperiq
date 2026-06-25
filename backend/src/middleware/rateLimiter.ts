@@ -6,7 +6,8 @@
 //   REDIS_URL absent → in-memory Map (local dev only — does NOT share state across pods)
 
 import type { Request, Response, NextFunction } from 'express';
-import Redis from 'ioredis';
+import { DEV_MODE } from './auth';
+import { getRedisClient } from '../lib/redis';
 
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 const MAX_HITS  = 5;
@@ -15,25 +16,15 @@ interface RateStore {
   increment(key: string, windowMs: number): Promise<{ count: number; resetAt: number }>;
 }
 
-// ── Redis store ───────────────────────────────────────────────────────────────
+// ── Redis store (shared singleton from lib/redis.ts) ─────────────────────────
 
-function makeRedisStore(redisUrl: string): RateStore {
-  const client = new Redis(redisUrl, { lazyConnect: true, enableOfflineQueue: false });
-
-  // Register error listener to prevent Node.js "Unhandled error event" process crash.
-  // Log only once — ioredis retries on a backoff schedule and floods the console otherwise.
-  let _warned = false;
-  client.on('error', (err: Error) => {
-    if (!_warned) {
-      console.warn(`[rateLimiter] Redis unavailable (${err.message}) — falling back to in-memory rate limiting (not shared across processes)`);
-      _warned = true;
-    }
-  });
-
-  client.connect().catch(() => {}); // errors surfaced via 'error' listener above
-
+function makeSharedRedisStore(): RateStore {
   return {
     async increment(key: string, windowMs: number): Promise<{ count: number; resetAt: number }> {
+      const client = getRedisClient();
+      if (!client || client.status !== 'ready') {
+        throw new Error('Redis not ready');
+      }
       const now    = Date.now();
       const cutoff = now - windowMs;
       const pipe   = client.pipeline();
@@ -42,9 +33,9 @@ function makeRedisStore(redisUrl: string): RateStore {
       pipe.zcard(key);
       pipe.pexpire(key, windowMs);
       const results = await pipe.exec();
-      const count   = (results![2][1] as number); // zcard result
-      const resetAt = now + windowMs;
-      return { count, resetAt };
+      const zcard     = results?.[2];
+      if (!zcard || zcard[0]) throw zcard?.[0] ?? new Error('Redis pipeline failed');
+      return { count: zcard[1] as number, resetAt: now + windowMs };
     },
   };
 }
@@ -78,7 +69,7 @@ function makeMemoryStore(): RateStore {
 }
 
 const store: RateStore = process.env.REDIS_URL
-  ? makeRedisStore(process.env.REDIS_URL)
+  ? makeSharedRedisStore()
   : makeMemoryStore();
 
 if (!process.env.REDIS_URL) {
@@ -132,11 +123,10 @@ export const responseSubmitLimiter = makeRateLimiter({
 });
 
 // ── Dev bypass ────────────────────────────────────────────────────────────────
-// When SKIP_AUTH=true the whole app is running behind a single dev identity.
-// All requests share one IP (127.0.0.1) so any meaningful rate limit would be
-// exhausted almost immediately during active development.
-// Rate limiting is a production concern — skip it entirely in local dev.
-const _skipRateLimit = process.env.SKIP_AUTH === 'true';
+// In DEV_MODE (no CLERK_SECRET_KEY) all requests share one identity (dev-user).
+// All requests share one IP so meaningful rate limits would exhaust immediately.
+// Rate limiting is a production concern — skip it entirely in dev mode.
+const _skipRateLimit = DEV_MODE;
 
 function _noopMiddleware(_req: Request, _res: Response, next: NextFunction): void { next(); }
 

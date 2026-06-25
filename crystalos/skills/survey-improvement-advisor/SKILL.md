@@ -12,7 +12,7 @@ description: |
   Output: survey design improvements with data quality and coverage improvement estimates.
 evals: EVALS.md
 examples: EXAMPLES.md
-max_output_tokens: 800
+max_output_tokens: 1600
 max_retries: 1
 timeout_seconds: 20
 ---
@@ -104,6 +104,8 @@ Scan for:
 
 ## Instructions
 
-Generate 2-4 improvement recommendations. Always include `improvement_type` and `quality_impact`.
-The params should include actual improved question text (not just advice).
+Generate 2-3 improvement recommendations (never more than 3). Always include `improvement_type` and `quality_impact`.
+The params should include actual improved question text (not just advice), but keep each question under 120 characters.
+Keep `title` under 60 characters and `description` under 200 characters so the full JSON fits in one response.
+Return ONLY complete, valid JSON — do not truncate mid-object.
 Priority: coverage gaps first, then response rate, then question quality.

@@ -54,9 +54,8 @@ src/
 - `REDIS_URL` — Redis connection string (optional, in-memory fallback)
 - `OPENROUTER_API_KEY` — AI API key
 - `AGENTS_INTERNAL_KEY` — Shared secret with the Python agents service (must match). Default `dev-internal-key-change-in-prod` is rejected in production by startup validation in `index.js`.
-- `CLERK_SECRET_KEY` — Clerk JWT verification key
+- `CLERK_SECRET_KEY` — Clerk JWT verification key. When absent, backend runs in dev mode (all requests authenticated as dev-user/dev-org). No SKIP_AUTH env var needed.
 - `ALLOWED_ORIGIN` — CORS allowed origin (frontend URL)
-- `SKIP_AUTH=true` — Bypasses auth for LOCAL DEV ONLY
 
 ## Crystal Intelligence (AI) routes
 `routes/insights.ts` exposes the Crystal/AI endpoints:

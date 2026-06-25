@@ -28,6 +28,8 @@ declare global {
       permissionAction?: string;
       /** Resource ID that was evaluated — set by requirePermission middleware. */
       permissionResourceId?: string;
+      /** contacts:pii:read result — set by requireContactsPermission middleware. */
+      contactsPiiAllowed?: boolean;
     }
   }
 }
@@ -305,7 +307,26 @@ export type PermissionAction =
   | 'alerts:manage'
   | 'workflows:manage'
   | 'users:manage'
-  | 'billing:manage';
+  | 'billing:manage'
+  // Contact data access
+  | 'contacts:read'
+  | 'contacts:pii:read'
+  | 'contacts:write'
+  | 'contacts:import'
+  | 'contacts:export'
+  | 'contacts:anonymize'
+  | 'contacts:segment:manage'
+  // Outreach — customer-facing sends
+  | 'outreach:transactional'
+  | 'outreach:broadcast'
+  | 'outreach:approve'
+  | 'outreach:suppress'
+  | 'outreach:configure'
+  | 'outreach:logs:read'
+  // Crystal AI outreach
+  | 'crystal:propose_outreach'
+  | 'crystal:converse'
+  | 'crystal:auto_trigger';
 
 export type PermissionScope = 'ALL' | 'OWNED' | 'SHARED' | 'OWN' | 'NONE';
 

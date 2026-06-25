@@ -23,6 +23,8 @@ import { useBrand } from '../contexts/brandContext';
 import { PageHeader } from '../components/PageHeader';
 import { usePermissions } from '../lib/permissions';
 import { PermissionDeniedBanner } from '../components/PermissionGate';
+import { TeamPanel } from '../components/settings/TeamPanel';
+import { RolesPanel } from '../components/settings/RolesPanel';
 
 const DEMO_TEAM_MEMBERS = [
   {
@@ -202,8 +204,12 @@ export function BrandSettingsPage() {
   const tabs = [
     { key: 'General',       label: t('settings.tabs.general') },
     { key: 'Organization',  label: 'Organization' },
+    { key: 'Team',          label: t('settings.tabs.team') },
     { key: 'Notifications', label: t('settings.tabs.notifications') },
-    ...(isAdmin ? [{ key: 'API Keys', label: t('settings.tabs.apiKeys') }] : []),
+    ...(isAdmin ? [
+      { key: 'Roles',    label: t('settings.tabs.roles') },
+      { key: 'API Keys', label: t('settings.tabs.apiKeys') },
+    ] : []),
   ];
 
   const quickActions = [
@@ -742,6 +748,18 @@ export function BrandSettingsPage() {
             )}
 
             {/* ── Notifications Tab ── */}
+            {activeTab === 'Team' && (
+              <div className="py-6">
+                <TeamPanel />
+              </div>
+            )}
+
+            {activeTab === 'Roles' && isAdmin && (
+              <div className="py-6">
+                <RolesPanel />
+              </div>
+            )}
+
             {activeTab === 'Notifications' && (
               <div className="mt-8 space-y-6">
                 <Card
