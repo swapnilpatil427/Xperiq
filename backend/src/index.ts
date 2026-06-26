@@ -8,6 +8,7 @@ import * as Sentry from '@sentry/node';
 import express from 'express';
 import cors from 'cors';
 import logger from './lib/logger';
+import { resolveClerkSecretKey } from './lib/clerkKeys';
 import { register } from './lib/metrics';
 import { query as dbQuery } from './lib/db';
 import { getRedisClient } from './lib/redis';
@@ -305,10 +306,17 @@ async function start(): Promise<void> {
   await validateStartupConfig({ connectivity: true });
 
   server = app.listen(PORT, () => {
-    const _devMode = !process.env.CLERK_SECRET_KEY;
+    const clerkKey = resolveClerkSecretKey();
+    const _devMode = !clerkKey;
     logger.info(`API  → http://localhost:${PORT}  (backend: local/postgres)`);
-    logger.info(`Auth → ${_devMode ? 'DEV MODE (no CLERK_SECRET_KEY — all requests as dev-user/dev-org)' : 'Clerk JWT'}`);
-    if (_devMode) logger.warn('Running in DEV MODE — set CLERK_SECRET_KEY to enable real authentication');
+    logger.info(`Auth → ${_devMode ? 'DEV MODE (no valid CLERK_SECRET_KEY — all requests as dev-user/dev-org)' : 'Clerk JWT'}`);
+    if (_devMode) {
+      if (process.env.CLERK_SECRET_KEY?.trim()) {
+        logger.warn('CLERK_SECRET_KEY is set but invalid or a placeholder — running in DEV MODE');
+      } else {
+        logger.warn('Running in DEV MODE — set CLERK_SECRET_KEY to enable real authentication');
+      }
+    }
     logger.info(`CORS → ${corsOrigin === true ? 'all origins (dev)' : (corsOrigin || 'BLOCKED — set ALLOWED_ORIGIN')}`);
     logger.info(`Agents env → AGENTS_ENV=${process.env.AGENTS_ENV ?? 'dev (default)'}`);
     logger.info(`Metrics → http://localhost:${PORT}/api/metrics`);
