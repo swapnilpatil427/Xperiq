@@ -331,7 +331,11 @@ router.get('/', requireAuth, requirePermission('contacts:read'), async (req: Req
       return {
         ...caseData,
         contact: maskContactPii(
-          { email: contact_email, name: contact_name, account_name: contact_account_name },
+          {
+            email:        contact_email as string | null,
+            name:         contact_name as string | null,
+            account_name: contact_account_name as string | null,
+          },
           hasPii
         ),
         sla_status: getSlaStatus({

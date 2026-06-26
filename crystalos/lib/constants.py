@@ -171,6 +171,13 @@ CHECKPOINT_BUCKET = ""                     # OCI bucket name (empty → local fi
 CHECKPOINT_LOCAL_PATH = "/tmp/checkpoints" # local dev checkpoint directory
 CHECKPOINT_BLOB_SCHEMA_VERSION = 1         # current blob schema version
 
+# ── Trigger type validation ───────────────────────────────────────────────────
+# Validates trigger values before INSERT into agent_runs / survey_insight_checkpoints.
+# Any value outside this set causes a DB CHECK violation — validate first.
+VALID_TRIGGER_TYPES: frozenset[str] = frozenset({
+    "stream", "scheduler", "manual", "milestone", "api", "days", "responses"
+})
+
 # ── Zombie run detection ──────────────────────────────────────────────────────
 MAX_RUN_HEARTBEAT_STALE_MINUTES = 5        # heartbeat older than this → zombie candidate
 MAX_RUN_DURATION_MINUTES = 30              # run older than this → zombie regardless of heartbeat

@@ -68,9 +68,16 @@ def compute_delta(
             return round(curr - prev, 1)
         return None
 
-    nps_delta  = _metric_delta("nps") or _metric_delta("nps_at_checkpoint") or _metric_delta("nps_score")
-    csat_delta = _metric_delta("csat") or _metric_delta("csat_at_checkpoint") or _metric_delta("csat_score")
-    ces_delta  = _metric_delta("ces") or _metric_delta("ces_at_checkpoint") or _metric_delta("ces_score")
+    def _first_not_none(*values: float | None) -> float | None:
+        # Use explicit None check — 0.0 is a valid zero-delta, not a fallback signal.
+        for v in values:
+            if v is not None:
+                return v
+        return None
+
+    nps_delta  = _first_not_none(_metric_delta("nps"), _metric_delta("nps_at_checkpoint"), _metric_delta("nps_score"))
+    csat_delta = _first_not_none(_metric_delta("csat"), _metric_delta("csat_at_checkpoint"), _metric_delta("csat_score"))
+    ces_delta  = _first_not_none(_metric_delta("ces"), _metric_delta("ces_at_checkpoint"), _metric_delta("ces_score"))
 
     n_count  = int(checkpoint_n.get("response_count") or checkpoint_n.get("response_count_at_checkpoint") or 0)
     n1_count = int(checkpoint_n1.get("response_count") or checkpoint_n1.get("response_count_at_checkpoint") or 0)
@@ -107,7 +114,7 @@ def compute_delta(
                 return round(curr - prev, 1)
             return None
 
-        prior_nps_delta = _metric_delta_prior("nps") or _metric_delta_prior("nps_at_checkpoint") or _metric_delta_prior("nps_score")
+        prior_nps_delta = _first_not_none(_metric_delta_prior("nps"), _metric_delta_prior("nps_at_checkpoint"), _metric_delta_prior("nps_score"))
 
         if nps_delta is not None and prior_nps_delta is not None:
             nps_acceleration = round(nps_delta - prior_nps_delta, 1)

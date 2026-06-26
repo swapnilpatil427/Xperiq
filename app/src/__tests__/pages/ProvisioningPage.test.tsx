@@ -29,6 +29,6 @@ describe('ProvisioningPage', () => {
     await waitFor(() => expect(screen.getByText('Okta Production')).toBeInTheDocument());
     expect(screen.getByText('https://api.experient.ai/scim/v2')).toBeInTheDocument();
     expect(screen.getByDisplayValue('job_title')).toBeInTheDocument(); // mapping row loaded
-    expect(screen.getByRole('button', { name: /generate token/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create token/i })).toBeInTheDocument();
   });
 });

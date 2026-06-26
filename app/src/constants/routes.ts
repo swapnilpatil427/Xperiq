@@ -29,6 +29,7 @@ export const ROUTES = {
   NOTIFICATION_PREFS:      '/app/settings/notifications',
   NOTIFICATION_ANALYTICS:  '/app/settings/notification-analytics',
   SETTINGS:           '/app/settings',
+  BILLING:            '/app/settings/billing',
   SETTINGS_USERS:       '/app/settings/users',
   SETTINGS_ROLES:       '/app/settings/users/roles',
   SETTINGS_DEPARTMENTS: '/app/settings/users/departments',
@@ -70,6 +71,21 @@ export const ROUTES = {
   // Broadcasts (Tier 3 Phase J)
   BROADCASTS:            '/app/broadcasts',
   BROADCASTS_APPROVAL:   '/app/broadcasts/approval',
+
+  // Support System
+  SUPPORT_ROOT:               '/app/support',
+  SUPPORT_DOCS:               '/app/support/docs',
+  SUPPORT_DOC:                '/app/support/docs/:key',
+  SUPPORT_CHANGELOG:          '/app/support/changelog',
+  SUPPORT_ROADMAP:            '/app/support/roadmap',
+  SUPPORT_STATUS:             '/app/support/status',
+
+  // Admin — Support Pipeline
+  ADMIN_SUPPORT_PIPELINE:     '/app/admin/support/pipeline',
+  ADMIN_SUPPORT_REVIEW:       '/app/admin/support/review/:docId',
+  ADMIN_SUPPORT_EDIT:         '/app/admin/support/edit/:docId',
+  ADMIN_SUPPORT_GAPS:         '/app/admin/support/gaps',
+  ADMIN_SUPPORT_STATS:        '/app/admin/support/stats',
 };
 
 /** Replace :param placeholders with concrete values */

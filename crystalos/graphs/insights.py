@@ -3554,7 +3554,11 @@ async def node_publish(state: dict) -> dict:
     # Write checkpoint blob
     try:
         from crystalos.lib import db as _db
+        from crystalos.lib.checkpoint_store import read_checkpoint_blob
+        from crystalos.tools.delta import compute_delta
+
         checkpoint_number = 1
+        prior_blob_ref = None
         async with _db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -3563,6 +3567,40 @@ async def node_publish(state: dict) -> dict:
                 )
                 row = await cur.fetchone()
                 checkpoint_number = row[0] if row else 1
+
+                # Load prior checkpoint blob ref for delta computation
+                await cur.execute(
+                    """SELECT report_url FROM survey_insight_checkpoints
+                       WHERE survey_id = %s AND org_id = %s AND report_url IS NOT NULL
+                       ORDER BY checkpoint_number DESC LIMIT 1""",
+                    (survey_id, org_id),
+                )
+                prior_row = await cur.fetchone()
+                prior_blob_ref = prior_row[0] if prior_row else None
+
+        # Compute delta from prior checkpoint — this is the core linked-list capability.
+        # Without delta, Crystal cannot narrate "NPS dropped 3 pts since last checkpoint".
+        current_metrics_for_delta = {
+            "nps": metrics.get("nps", {}).get("score"),
+            "csat": metrics.get("csat", {}).get("score"),
+            "ces": metrics.get("ces", {}).get("score"),
+            "response_count": len(responses),
+            "topics": [{"name": t.get("name", ""), "volume": t.get("volume", 0)} for t in state.get("topics", [])[:20]],
+        }
+        prior_delta = None
+        if prior_blob_ref:
+            try:
+                prior_blob = await read_checkpoint_blob(prior_blob_ref)
+                prior_delta = compute_delta(current_metrics_for_delta, prior_blob)
+                logger.info(
+                    "checkpoint_delta_computed",
+                    survey_id=survey_id,
+                    nps_delta=prior_delta.get("nps_delta"),
+                    topics_emerged=len(prior_delta.get("topic_changes", {}).get("emerged", [])),
+                    topics_resolved=len(prior_delta.get("topic_changes", {}).get("resolved", [])),
+                )
+            except Exception as _delta_exc:
+                logger.warning("compute_delta_failed", survey_id=survey_id, error=str(_delta_exc))
 
         report_blob = {
             "schema_version": CHECKPOINT_BLOB_SCHEMA_VERSION,
@@ -3576,7 +3614,7 @@ async def node_publish(state: dict) -> dict:
             "insights": [{"id": str(ins.get("id", "")), "headline": ins.get("headline", ""), "layer": ins.get("layer", "")} for ins in insights[:50]],
             "topics": [{"name": t.get("name", ""), "volume": t.get("volume", 0)} for t in state.get("topics", [])[:20]],
             "metrics": metrics,
-            "delta": None,
+            "delta": prior_delta,
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 

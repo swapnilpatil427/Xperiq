@@ -1,0 +1,90 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --font-manrope: 'Manrope', sans-serif;
+    --font-inter: 'Inter', sans-serif;
+    --font-jetbrains: 'JetBrains Mono', monospace;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-on-background font-body;
+  }
+
+  ::selection {
+    @apply bg-primary-container text-on-primary-container;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-surface-container-high rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-surface-variant; }
+}
+
+@layer components {
+  .glass-panel {
+    background: rgba(245, 247, 249, 0.7);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+  }
+
+  .ghost-border {
+    border: 1px solid rgba(171, 173, 175, 0.15);
+  }
+
+  .btn-gradient {
+    background: linear-gradient(135deg, #2a4bd9, #879aff);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .btn-gradient:hover {
+    transform: perspective(500px) rotateX(5deg);
+    box-shadow: 0 10px 20px -5px rgba(42, 75, 217, 0.2);
+  }
+
+  .btn-gradient:active {
+    transform: scale(0.98);
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, #2a4bd9, #879aff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .interactive-card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .interactive-card:hover {
+    transform: translateY(-4px) rotateX(2deg);
+    box-shadow: 0 30px 50px -12px rgba(44, 47, 49, 0.08);
+  }
+
+  .surface-glow {
+    box-shadow: 0 0 0 1px rgba(42, 75, 217, 0.1), 0 10px 30px -5px rgba(42, 75, 217, 0.15);
+  }
+
+  .tonal-separator {
+    @apply h-px bg-gradient-to-r from-transparent via-outline-variant/20 to-transparent;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  .perspective-500 { perspective: 500px; }
+}

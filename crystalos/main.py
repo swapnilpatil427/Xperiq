@@ -1078,6 +1078,107 @@ async def crystal_chat(request: Request, _: None = Depends(require_internal_key)
     }
 
 
+# ── Crystal Support endpoint ─────────────────────────────────────────────────
+
+@app.post("/insights/crystal-support", summary="Crystal support assistant (crystal-support skill)")
+async def crystal_support_endpoint(request: Request, _: None = Depends(require_internal_key)) -> dict:
+    """Crystal support mode — classifies support intent, searches docs, escalates if needed."""
+    from crystalos.lib.support_classifier import classify_support_intent
+    from crystalos.crystal.context import CrystalContext
+    from crystalos.crystal.tools import dispatch_tool
+
+    body = await request.json()
+    message: str = body.get("message", "").strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="message required")
+
+    org_id: str = body.get("org_id", "")
+    user_id: str = body.get("user_id", "")
+    context_data: dict = body.get("context", {})
+
+    # Fast intent classification (no LLM)
+    classification = await classify_support_intent(message)
+
+    ctx = CrystalContext(
+        org_id=org_id,
+        user_id=user_id,
+        survey_id=None,
+    )
+
+    # Pre-fetch tool results for common intents
+    tool_results: dict = {}
+    try:
+        if classification.intent and classification.intent.value in ("bug_report", "account_issue"):
+            tool_results["known_issues"] = await dispatch_tool("get_known_issues", ctx, {})
+        if classification.intent and classification.intent.value in ("bug_report",):
+            tool_results["system_status"] = await dispatch_tool("get_system_status", ctx, {})
+        if message and len(message) > 3:
+            tool_results["search_results"] = await dispatch_tool(
+                "search_support_docs", ctx, {"query": message, "limit": 5}
+            )
+    except Exception as pre_exc:
+        logger.warning("crystal_support_prefetch_failed", error=str(pre_exc))
+
+    # Route to skill via skill registry
+    skill_reg = None
+    try:
+        from crystalos.lib.skill_registry import get_registry as get_skill_registry
+        skill_reg = get_skill_registry()
+    except Exception:
+        pass
+
+    if skill_reg is not None:
+        try:
+            skill_input = {
+                "message": message,
+                "org_id": org_id,
+                "user_id": user_id,
+                "context": context_data,
+                "tool_results": tool_results,
+                "classification": {
+                    "intent": classification.intent.value if classification.intent else None,
+                    "confidence": classification.confidence,
+                    "is_support": classification.is_support,
+                },
+            }
+            result = await skill_reg.execute("crystal-support", skill_input)
+            if result:
+                return {
+                    "answer": result.get("answer", ""),
+                    "citations": result.get("citations", []),
+                    "suggestions": result.get("suggestions", []),
+                    "intent": result.get("intent", classification.intent.value if classification.intent else None),
+                    "confidence": result.get("confidence", classification.confidence),
+                    "resolved": result.get("resolved", False),
+                    "escalation_package": result.get("escalation_package"),
+                    "action_proposals": result.get("action_proposals", []),
+                }
+        except Exception as skill_exc:
+            logger.warning("crystal_support_skill_failed", error=str(skill_exc))
+
+    # Fallback: return search results directly
+    search_docs = (tool_results.get("search_results") or {}).get("docs", [])
+    answer = (
+        f"I found {len(search_docs)} relevant article(s) for your question."
+        if search_docs
+        else "I couldn't find a specific article. Let me connect you with our support team."
+    )
+    return {
+        "answer": answer,
+        "citations": [d.get("key", "") for d in search_docs],
+        "suggestions": ["Search for a different term", "Check known issues", "Create a support ticket"],
+        "intent": classification.intent.value if classification.intent else "general",
+        "confidence": classification.confidence,
+        "resolved": len(search_docs) > 0,
+        "escalation_package": None if search_docs else {
+            "title": message[:100],
+            "description": "Crystal could not find a resolution. Human review needed.",
+            "severity": "medium",
+        },
+        "action_proposals": [],
+    }
+
+
 # ── Crystal: SSE streaming ReAct endpoint ────────────────────────────────────────
 
 @app.post("/insights/crystal/stream", summary="SSE streaming Crystal skill-first analyst")

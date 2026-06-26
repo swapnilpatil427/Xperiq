@@ -10,6 +10,11 @@ export default defineConfig({
     },
   },
   test: {
+    // Demo auth in tests — no ClerkProvider wrapper required
+    env: {
+      VITE_CLERK_PUBLISHABLE_KEY: '',
+      VITE_CRYSTAL_STREAMING: 'true',
+    },
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     include: ['src/**/*.test.{ts,tsx}'],

@@ -23,7 +23,7 @@ agents/         # Package root
     registry.py   # 13 tool definitions with JSON Schema
     tools.py      # 13 async tool executor functions
   graphs/       # LangGraph pipelines
-    insights.py   # Main insight generation pipeline (12 nodes)
+    insights.py   # Main insight generation pipeline (13 nodes as of Phase 0.5)
     nodes/        # Shared node logic (context, route_specialists)
   lib/          # Shared utilities
     db.py         # Postgres pool + helper functions
@@ -126,7 +126,8 @@ creation graph's revision loop).
 
 ### Insight Pipeline (LangGraph)
 - Entry: `run_insight_generation(survey_id, org_id, run_id, trigger)` in `graphs/insights.py`
-- 12 nodes: ingest → context → route_specialists → embed → metrics → extract_texts → absa → cluster → topics → narrate → verify → evaluate → publish
+- 13 nodes (Phase 0.5+): ingest → context → route_specialists → embed → metrics → extract_texts → absa → cluster → topics → **delta_compute** → narrate → verify → evaluate → publish
+  (`delta_compute` added in Phase 0.5 — loads prior checkpoint summaries, computes `delta_from_prior` and `meaningful_delta` before narrate so LLM receives delta facts)
 - `force_regenerate=True` for `trigger='manual'`, `False` for schedule/stream
 - Heartbeat updates `agent_runs.heartbeat_at` every 30s; zombie sweep reaps runs stale > 15 min
 - Checkpoint blob written to `checkpoint_store` at publish; schema_version=1
@@ -138,6 +139,7 @@ creation graph's revision loop).
 - On threshold hit: calls backend `/api/insights/:id/generate` with `trigger='stream'`
 
 ## Environment variables
+> **Full list:** `docs/ENV_VARS.md` (canonical). **Adding an `os.getenv("X")`? Add it there AND to the root `.env.example` in the same PR.** Advanced tunables live in `lib/constants.py`. Key ones below.
 - `DATABASE_URL` — Postgres connection string (required)
 - `REDIS_URL` — Redis (required in production; optional in dev)
 - `OPENROUTER_API_KEY` — LLM API key (required)

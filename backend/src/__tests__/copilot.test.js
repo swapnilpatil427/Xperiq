@@ -42,6 +42,8 @@ function buildApp({ userId = 'u-owner', orgId = 'org-1', skipAuth = false } = {}
       req.userId = userId;
       next();
     },
+    // The code now keys the dev bypass on DEV_MODE (no CLERK_SECRET_KEY), not SKIP_AUTH.
+    DEV_MODE: skipAuth,
   });
   _require.cache[DB_PATH] = fakeMod(DB_PATH, {
     default: { query: mockQuery },

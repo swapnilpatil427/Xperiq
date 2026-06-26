@@ -2308,6 +2308,250 @@ async def execute_propose_slack_alert(ctx: CrystalContext, params: dict, **kwarg
     }
 
 
+# ── Support tools ─────────────────────────────────────────────────────────────
+# These tools back the crystal-support skill. They query support-specific tables
+# (support_docs, support_known_issues, support_changelog, support_tickets) and
+# the org account state. All are org-scoped via ctx.org_id.
+
+async def execute_search_support_docs(ctx: CrystalContext, params: dict) -> dict:
+    """Search support docs by text query. Returns top matching docs with titles and excerpts."""
+    try:
+        query_text = params.get("query", "").strip()
+        category = params.get("category")
+        limit = min(int(params.get("limit", 5)), 20)
+        if not query_text:
+            return {"error": "query required"}
+        conditions = ["(title ILIKE $1 OR content ILIKE $2)"]
+        args: list = [f"%{query_text}%", f"%{query_text}%"]
+        if category:
+            conditions.append(f"category = ${len(args)+1}")
+            args.append(category)
+        conditions.append(f"(org_id = '__global__' OR org_id = ${len(args)+1})")
+        args.append(ctx.org_id)
+        conditions.append("pipeline_status = 'live' AND deleted_at IS NULL")
+        args.append(limit)
+        rows = await db.fetch(
+            f"""SELECT key, title, category, LEFT(content, 400) AS excerpt
+                FROM support_docs
+                WHERE {' AND '.join(conditions)}
+                ORDER BY CASE WHEN title ILIKE ${len(args)} THEN 0 ELSE 1 END, updated_at DESC
+                LIMIT ${len(args)+1}""",
+            *args, f"%{query_text}%", limit
+        )
+        docs = [dict(r) for r in rows]
+        return {"docs": docs, "total": len(docs)}
+    except Exception as exc:
+        logger.error("tool_search_support_docs_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+async def execute_get_doc_by_key(ctx: CrystalContext, params: dict) -> dict:
+    """Retrieve a specific support doc by its key slug."""
+    try:
+        doc_key = params.get("doc_key", "").strip()
+        if not doc_key:
+            return {"error": "doc_key required"}
+        rows = await db.fetch(
+            """SELECT key, title, category, content, updated_at
+               FROM support_docs
+               WHERE key = $1
+                 AND (org_id = '__global__' OR org_id = $2)
+                 AND pipeline_status = 'live' AND deleted_at IS NULL
+               LIMIT 1""",
+            doc_key, ctx.org_id
+        )
+        if not rows:
+            return {"error": f"doc not found: {doc_key}"}
+        doc = dict(rows[0])
+        if doc.get("updated_at"):
+            doc["updated_at"] = str(doc["updated_at"])
+        return doc
+    except Exception as exc:
+        logger.error("tool_get_doc_by_key_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+async def execute_get_feature_status(ctx: CrystalContext, params: dict) -> dict:
+    """Get status and docs for a specific Experient feature."""
+    try:
+        feature_name = params.get("feature_name", "").strip()
+        if not feature_name:
+            return {"error": "feature_name required"}
+        doc_rows = await db.fetch(
+            """SELECT key, title, category, LEFT(content, 300) AS excerpt
+               FROM support_docs
+               WHERE category = 'feature' AND title ILIKE $1
+                 AND (org_id = '__global__' OR org_id = $2)
+                 AND pipeline_status = 'live' AND deleted_at IS NULL
+               ORDER BY updated_at DESC LIMIT 5""",
+            f"%{feature_name}%", ctx.org_id
+        )
+        docs = [dict(r) for r in doc_rows]
+        issue_rows = await db.fetch(
+            """SELECT id, title, severity, status, workaround
+               FROM support_known_issues
+               WHERE (affected_features @> ARRAY[$1]::text[] OR title ILIKE $2)
+                 AND status != 'resolved'
+               ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+               LIMIT 5""",
+            feature_name.lower(), f"%{feature_name}%"
+        )
+        known_issues = [dict(r) for r in issue_rows]
+        for issue in known_issues:
+            if issue.get("id"):
+                issue["id"] = str(issue["id"])
+        has_critical = any(i.get("severity") == "critical" for i in known_issues)
+        has_high = any(i.get("severity") == "high" for i in known_issues)
+        status = "degraded" if has_critical else "partial" if has_high else "live" if docs else "unknown"
+        return {"feature": feature_name, "status": status, "docs": docs, "known_issues": known_issues}
+    except Exception as exc:
+        logger.error("tool_get_feature_status_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+async def execute_get_account_state(ctx: CrystalContext, params: dict) -> dict:
+    """Get current org account state: credits, plan, active surveys."""
+    try:
+        org_rows = await db.fetch(
+            "SELECT plan_tier, billing_status, trial_ends_at FROM org_profiles WHERE org_id = $1 LIMIT 1",
+            ctx.org_id
+        )
+        org_row = org_rows[0] if org_rows else None
+        plan = (org_row["plan_tier"] if org_row else None) or "unknown"
+        billing_status = (org_row["billing_status"] if org_row else None) or "unknown"
+        trial_ends_at = str(org_row["trial_ends_at"]) if org_row and org_row.get("trial_ends_at") else None
+        credit_rows = await db.fetch(
+            "SELECT balance FROM credit_ledger WHERE org_id = $1 ORDER BY created_at DESC LIMIT 1",
+            ctx.org_id
+        )
+        credits_remaining = int(credit_rows[0]["balance"]) if credit_rows and credit_rows[0].get("balance") is not None else 0
+        count_rows = await db.fetch(
+            "SELECT COUNT(*)::int AS cnt FROM surveys WHERE org_id = $1 AND status = 'active' AND deleted_at IS NULL",
+            ctx.org_id
+        )
+        active_surveys = count_rows[0]["cnt"] if count_rows else 0
+        has_issues = credits_remaining <= 0 or billing_status not in ("active", "trialing", "unknown")
+        return {"plan": plan, "credits_remaining": credits_remaining, "active_surveys": active_surveys,
+                "billing_status": billing_status, "trial_ends_at": trial_ends_at, "has_issues": has_issues}
+    except Exception as exc:
+        logger.error("tool_get_account_state_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+async def execute_get_known_issues(ctx: CrystalContext, params: dict) -> dict:
+    """Get active known issues, optionally filtered by feature."""
+    try:
+        feature = params.get("feature")
+        if feature:
+            rows = await db.fetch(
+                """SELECT id, title, severity, status, workaround, affected_features, created_at
+                   FROM support_known_issues
+                   WHERE status != 'resolved'
+                     AND (affected_features @> ARRAY[$1]::text[] OR title ILIKE $2)
+                   ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+                   LIMIT 20""",
+                feature.lower(), f"%{feature}%"
+            )
+        else:
+            rows = await db.fetch(
+                """SELECT id, title, severity, status, workaround, affected_features, created_at
+                   FROM support_known_issues
+                   WHERE status != 'resolved'
+                   ORDER BY CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+                   LIMIT 20"""
+            )
+        issues = []
+        for row in rows:
+            issue = dict(row)
+            if issue.get("id"):
+                issue["id"] = str(issue["id"])
+            if issue.get("created_at"):
+                issue["created_at"] = str(issue["created_at"])
+            issues.append(issue)
+        return {"issues": issues, "count": len(issues)}
+    except Exception as exc:
+        logger.error("tool_get_known_issues_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+async def execute_get_system_status(ctx: CrystalContext, params: dict) -> dict:
+    """Get current system health status based on active known issue severity."""
+    try:
+        rows = await db.fetch(
+            """SELECT severity, COUNT(*)::int AS issue_count
+               FROM support_known_issues
+               WHERE status != 'resolved' AND severity IN ('critical', 'high')
+               GROUP BY severity"""
+        )
+        counts = {r["severity"]: r["issue_count"] for r in rows}
+        critical_count = counts.get("critical", 0)
+        high_count = counts.get("high", 0)
+        overall_status = "degraded" if critical_count > 0 else "partial" if high_count > 0 else "operational"
+        return {"status": overall_status, "critical_issues": critical_count, "high_issues": high_count}
+    except Exception as exc:
+        logger.error("tool_get_system_status_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+async def execute_create_support_ticket(ctx: CrystalContext, params: dict) -> dict:
+    """Create a support escalation ticket with full Crystal conversation context."""
+    try:
+        import uuid as _uuid
+        title = params.get("title", "").strip()
+        description = params.get("description", "").strip()
+        severity = params.get("severity", "medium")
+        crystal_context_data = params.get("crystal_context") or {}
+        if not title:
+            return {"error": "title required"}
+        if not description:
+            return {"error": "description required"}
+        if severity not in ("low", "medium", "high", "critical"):
+            severity = "medium"
+        ticket_id = str(_uuid.uuid4())
+        await db.execute(
+            """INSERT INTO support_tickets
+                 (id, org_id, user_id, title, description, severity, status, crystal_context, created_at)
+               VALUES ($1,$2,$3,$4,$5,$6,'open',$7::jsonb,NOW())""",
+            ticket_id, ctx.org_id, ctx.user_id or "",
+            title[:255], description[:4000], severity,
+            _json.dumps(crystal_context_data)
+        )
+        sla = {"critical": "within 1 hour", "high": "within 4 hours",
+               "medium": "within 1 business day", "low": "within 2 business days"}
+        return {"ticket_id": ticket_id, "status": "created",
+                "message": f"Ticket created. A support engineer will respond {sla.get(severity, 'shortly')}."}
+    except Exception as exc:
+        logger.error("tool_create_support_ticket_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
+async def execute_get_changelog_recent(ctx: CrystalContext, params: dict) -> dict:
+    """Get recent changelog entries."""
+    try:
+        import json as _json_inner
+        limit = min(int(params.get("limit", 5)), 20)
+        rows = await db.fetch(
+            "SELECT version, released_at, summary, changes FROM support_changelog ORDER BY released_at DESC LIMIT $1",
+            limit
+        )
+        entries = []
+        for row in rows:
+            entry = dict(row)
+            if entry.get("released_at"):
+                entry["released_at"] = str(entry["released_at"])
+            changes = entry.get("changes")
+            if isinstance(changes, str):
+                try:
+                    entry["changes"] = _json_inner.loads(changes)
+                except Exception:
+                    entry["changes"] = [changes]
+            entries.append(entry)
+        return {"entries": entries, "count": len(entries)}
+    except Exception as exc:
+        logger.error("tool_get_changelog_recent_failed", error=str(exc))
+        return {"error": str(exc)}
+
+
 # ── Tool dispatch table ───────────────────────────────────────────────────────
 
 TOOL_EXECUTORS: dict[str, Any] = {
@@ -2360,6 +2604,15 @@ TOOL_EXECUTORS: dict[str, Any] = {
     "propose_create_case":     execute_propose_create_case,
     "propose_assign_owner":    execute_propose_assign_owner,
     "propose_slack_alert":     execute_propose_slack_alert,
+    # Support tools (crystal-support skill)
+    "search_support_docs":     execute_search_support_docs,
+    "get_doc_by_key":          execute_get_doc_by_key,
+    "get_feature_status":      execute_get_feature_status,
+    "get_account_state":       execute_get_account_state,
+    "get_known_issues":        execute_get_known_issues,
+    "get_system_status":       execute_get_system_status,
+    "create_support_ticket":   execute_create_support_ticket,
+    "get_changelog_recent":    execute_get_changelog_recent,
 }
 
 

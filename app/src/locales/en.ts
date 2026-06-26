@@ -17,6 +17,8 @@ const en = {
       terms: 'Terms',
       status: 'Status',
     },
+    helpCenter: 'Help Center',
+    helpCenterAriaLabel: 'Open Help Center',
     poweredBy: 'Powered by',
     poweredByCore: 'Powered by Experient Core Intelligence v4.2',
     aiAware: 'AI-aware',
@@ -49,15 +51,72 @@ const en = {
     contacts: 'Contacts',
     broadcasts: 'Broadcasts',
     notificationAnalytics: 'Notification Analytics',
+    support: 'Support',
   },
 
   credits: {
     remaining: '{n} credits',
     sheetTitle: 'AI Credits',
-    sheetDescription: 'Credits power AI features: survey generation, insight analysis, and smart suggestions.',
-    upgradeButton: 'Upgrade Plan',
-    used: '{used} / {total} used',
+    sheetDescription: 'Credits power the AI: insight runs, Crystal answers, and XO-Fusion. Everyday survey work is included free.',
+    upgradeButton: 'Manage plan & credits',
+    used: '{used} / {total} used this period',
     lowWarning: 'Running low on credits',
+    creditsUnit: 'cr',
+    packBalance: '+{n} top-up credits',
+    cost: {
+      insightRun: 'Insight run',
+      crystalTurn: 'Crystal answer',
+      xoFusion: 'XO-Fusion analysis',
+    },
+  },
+  billing: {
+    title: 'Billing & Credits',
+    subtitle: 'Your plan, credit balance, usage, and spend controls.',
+    nav: 'Billing & Credits',
+    plan: 'Plan',
+    currentPlan: 'Current plan',
+    changePlan: 'Change plan',
+    balance: 'Credit balance',
+    available: 'Available now',
+    allowanceRemaining: 'Monthly allowance left',
+    packBalance: 'Top-up balance',
+    monthlyAllowance: 'Monthly allowance',
+    resetsOn: 'Resets {date}',
+    usageTitle: 'Usage this period',
+    usageEmpty: 'No metered AI usage yet this period.',
+    ledgerTitle: 'Credit ledger',
+    ledgerEmpty: 'No credit activity yet.',
+    spendCapTitle: 'Spend cap',
+    spendCapDesc: 'When your allowance runs out, AI pauses by default — you are never billed beyond your plan. Turn on overage to keep going up to a limit you set.',
+    overageOff: 'Pause AI at my allowance (recommended)',
+    overageOn: 'Allow overage up to a limit',
+    overageCeiling: 'Overage limit (credits)',
+    save: 'Save',
+    saved: 'Saved',
+    packsTitle: 'Buy more credits',
+    packsDesc: 'Top-ups never expire within 12 months and are used after your monthly allowance.',
+    buy: 'Buy',
+    buyingNotConfigured: 'Online checkout isn\'t enabled yet — ask your admin to add credits.',
+    plansTitle: 'Plans',
+    plansDesc: 'Same AI on every paid plan — pick the monthly credit allowance that fits.',
+    perMonth: '/mo',
+    creditsPerMo: '{n} credits / mo',
+    upgrade: 'Upgrade',
+    downgrade: 'Switch',
+    current: 'Current',
+    actionType: {
+      insight_run: 'Insight runs',
+      crystal_turn: 'Crystal answers',
+      xo_fusion: 'XO-Fusion',
+      broadcast_email: 'Broadcast emails',
+      broadcast_sms: 'Broadcast SMS',
+      grant: 'Credits added',
+      allowance_reset: 'Allowance reset',
+      plan_change: 'Plan change',
+      adjustment: 'Adjustment',
+    },
+    marketingHeadline: 'Enterprise-grade AI. A fraction of the price.',
+    marketingSub: 'Crystal reads every response, surfaces every insight, and proposes every action — and our prices only go down as AI gets cheaper.',
   },
 
   common: {
@@ -1553,6 +1612,17 @@ const en = {
       roles: 'Roles & Permissions',
       apiKeys: 'API Keys',
       notifications: 'Notifications',
+      admin: 'Admin',
+    },
+    admin: {
+      heading: 'Platform administration',
+      description: 'Crystal skill management and the support documentation pipeline.',
+      crystalTitle: 'Crystal Admin',
+      crystalDescription: 'Manage skills, quality signals, capability gaps, and the dead-letter queue.',
+      pipelineTitle: 'Support doc pipeline',
+      pipelineDescription: 'Review, approve, and publish AI-generated support documentation.',
+      openCrystal: 'Open Crystal Admin',
+      openPipeline: 'Open doc pipeline',
     },
     roles: {
       heading: 'Roles & Permissions',
@@ -2064,6 +2134,107 @@ const en = {
         attention: 'Needs attention',
         failing: 'Failing',
       },
+    },
+
+    // ── Support doc pipeline (admin review queue) ─────────────────────────────
+    support: {
+      nav: {
+        pipeline: 'Pipeline',
+        gaps: 'Doc gaps',
+        stats: 'Stats',
+      },
+    },
+    docPipeline: {
+      // Page titles
+      title:              'Doc Pipeline',
+      subtitle:           'Review, approve, and manage AI-generated support documentation.',
+      reviewSubtitle:     'Review document diff and approve or reject',
+      editorSubtitle:     'Edit document sections inline',
+      docGaps:            'Doc Gaps',
+      docGapsSubtitle:    'Unanswered queries that need new documentation',
+      pipelineStats:      'Pipeline Stats',
+      statsSubtitle:      'Quality metrics and publishing analytics',
+
+      // Actions
+      approveDoc:              'Approve',
+      rejectDoc:               'Reject',
+      editDoc:                 'Edit',
+      rejectReason:            'Reason for rejection',
+      rejectReasonPlaceholder: 'What needs to change?',
+      saveDraft:               'Save draft',
+      saveAndApprove:          'Save & Approve',
+      unsavedChanges:          'You have unsaved changes',
+      exportCsv:               'Export CSV',
+
+      // Indicators
+      humanEdited:      'Human edited',
+      autoApprovesIn:   'Auto-approves in {time}',
+      qualityScore:     'Quality score',
+      pipelineHistory:  'Pipeline history',
+      metadata:         'Metadata',
+      version:          'Version',
+      status:           'Status',
+      source:           'Source',
+
+      // Gap actions
+      createDocFromGap: 'Create doc',
+      linkExisting:     'Link existing',
+      wontFix:          "Won't fix",
+
+      // Quality criteria
+      criteria: {
+        accuracy:      'Accuracy',
+        completeness:  'Completeness',
+        clarity:       'Clarity',
+        searchability: 'Searchability',
+        actionability: 'Actionability',
+      },
+
+      // Event feed
+      newSinceLastVisit: 'new since your last visit',
+      noActivity:        'No activity yet',
+      loadMore:          'Load more',
+      activityFeed:      'Activity',
+
+      // KPI cards
+      docsLive:             'Docs live',
+      publishedToday:       'Published (24h)',
+      avgQualityScore:      'Avg quality score',
+      docGapsCount:         'Gaps open',
+      statusDistribution:   'Status distribution',
+      qualityDistribution:  'Quality distribution',
+      noStatsData:          'No stats data available',
+
+      // Section diff
+      lockSection:         'Lock this section',
+      unlockSection:       'Unlock',
+      sectionLocked:       'Locked by {name}',
+      noSectionsToReview:  'No sections to review',
+      linesAddedRemoved:   '{added} lines added, {removed} lines removed across {sections} sections',
+
+      // Queue
+      queueEmpty:     'Pipeline is clear',
+      queueEmptyDesc: 'No documents need review right now.',
+      noGaps:         'No gaps in queue',
+      noGapsDesc:     'All support queries have been addressed.',
+
+      // Filter tabs
+      filterNeedsReview:  'Needs Review',
+      filterAutoApproved: 'Auto-Approved',
+      filterRejected:     'Rejected',
+      filterUnresolved:   'Unresolved',
+      filterResolved:     'Resolved',
+
+      // Table columns
+      columnDoc:     'Document',
+      columnScore:   'Score',
+      columnStatus:  'Status',
+      columnDeadline:'Deadline',
+      columnActions: 'Actions',
+
+      // Gap stats
+      unresolvedCount:   '{count} unresolved',
+      resolvedThisWeek:  '{count} resolved this week',
     },
   },
 
@@ -2641,6 +2812,7 @@ const en = {
       surveyChipQuery:   'Give me a quick intelligence summary for {title} — key themes, NPS, and top actions.',
       orAskPortfolio:    'Or ask:',
     },
+
   },
 
   trends: {
@@ -2775,6 +2947,14 @@ const en = {
       get_cross_survey_themes:  'Finding cross-survey themes',
       get_anomaly_events:       'Checking for anomalies',
     },
+    supportMode:        'Support',
+    supportPlaceholder: 'Describe your issue or ask how to do something...',
+    escalationNeeded:   'Escalation recommended',
+    createTicket:       'Create ticket with context',
+    resolved:           'Issue resolved',
+    notResolved:        'Not resolved? Create a ticket',
+    thumbsUp:           'This helped',
+    thumbsDown:         'Not helpful',
   },
 
   topicsAnalysis: {
@@ -2856,6 +3036,34 @@ const en = {
     noThemesTitle: 'No topics discovered yet',
     noThemesDesc: 'Run the insight pipeline on this survey to discover themes and topics.',
     generateInsights: 'Run Pipeline',
+  },
+
+  support: {
+    cmdkPlaceholder:     'Search docs or ask Crystal...',
+    searchPlaceholder:   'Search support...',
+    browseAll:           'Browse all docs',
+    checkStatus:         'Check system status',
+    whatsNew:            "What's new",
+    viewRoadmap:         'View roadmap',
+    noResults:           'No results for',
+    askCrystal:          'Ask Crystal instead →',
+    docNotFound:         'This doc was not found',
+    lastUpdated:         'Last updated',
+    feedbackHelpful:     'Was this helpful?',
+    feedbackThumbsUp:    'Yes, this helped',
+    feedbackThumbsDown:  'No, needs improvement',
+    feedbackThanks:      'Thanks for your feedback!',
+    createTicket:        'Create support ticket',
+    ticketCreated:       'Ticket created',
+    knownIssues:         'Known issues',
+    systemStatus:        'System status',
+    operational:         'All systems operational',
+    degraded:            'Degraded performance',
+    partial:             'Partial outage',
+    changelog:           'Changelog',
+    roadmap:             'Roadmap',
+    comingSoon:          'Coming soon',
+    inFlight:            'In progress',
   },
 
   // ── Tier 3 — Closed-Loop Action Platform ────────────────────────────────────

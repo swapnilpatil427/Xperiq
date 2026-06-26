@@ -15,8 +15,8 @@ export const createTemplateSchema = z.object({
   estimatedMinutes: z.number().int().min(0).optional(),
   questionCount: z.string().optional(),
   questions: z.array(questionSchema).optional(),
-  scoring: z.record(z.unknown()).optional(),
-  intelligence: z.record(z.unknown()).optional(),
+  scoring: z.record(z.string(), z.unknown()).optional(),
+  intelligence: z.record(z.string(), z.unknown()).optional(),
   clonedFromId: z.string().optional(),
 });
 

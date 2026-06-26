@@ -49,6 +49,19 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  alertmanager:
+    <<: *built-platform
+    build:
+      context: .
+      dockerfile: docker/alertmanager/Dockerfile
+    image: experient-alertmanager:local
+    container_name: experient-alertmanager
+    ports:
+      - "9093:9093"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
   loki:
     <<: *built-platform
     build:
@@ -76,6 +89,34 @@ services:
     depends_on:
       - prometheus
       - loki
+    restart: unless-stopped
+
+  # Host machine health — CPU, memory, disk, filesystem, network. Scraped internally by
+  # Prometheus (node-exporter:9100); no host port needed. (On Fly.io, host metrics come from
+  # Fly's built-in Prometheus instead.)
+  #
+  # Mount propagation rslave is recommended on native Linux hosts but fails on Docker Desktop
+  # (macOS/Windows): "path / is mounted on / but it is not a shared or slave mount".
+  node-exporter:
+    image: prom/node-exporter:v1.8.1
+    container_name: experient-node-exporter
+    command:
+      - "--path.rootfs=/host"
+    pid: host
+    volumes:
+      - "/:/host:ro"
+    restart: unless-stopped
+
+  # Per-container resource usage (cpu/mem/io per service). Scraped internally (cadvisor:8080).
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: experient-cadvisor
+    privileged: true
+    volumes:
+      - "/:/rootfs:ro"
+      - "/var/run:/var/run:ro"
+      - "/sys:/sys:ro"
+      - "/var/lib/docker/:/var/lib/docker:ro"
     restart: unless-stopped
 
   redis:
@@ -152,6 +193,37 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    restart: unless-stopped
+
+  scheduler:
+    # Dedicated scheduler service — owns cross-cutting / DB periodic jobs (expire_stale_broadcasts,
+    # future reconciliation / cost-down dividend) and is the scheduler observability hub.
+    # Separately scalable; reuses the backend image + library code (no separate node_modules).
+    #   docker-compose --profile scheduler up -d scheduler
+    #   or locally: npm --prefix backend run start:scheduler
+    <<: *built-platform
+    profiles: ["scheduler", "prod"]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: experient-backend:local
+    container_name: experient-scheduler
+    command: ["node", "src/scheduler/index.js"]
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/experient
+      REDIS_URL: redis://redis:6379
+      SCHEDULER_PORT: "8090"
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8090/health/live || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
 volumes:

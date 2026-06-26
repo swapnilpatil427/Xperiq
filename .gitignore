@@ -12,6 +12,9 @@ node_modules
 # Build outputs
 dist
 dist-ssr
+.next
+support/.next
+*.tsbuildinfo
 # Only ignore a top-level lib/ build artifact — do not ignore app/src/lib or functions/src/lib
 /lib/
 coverage

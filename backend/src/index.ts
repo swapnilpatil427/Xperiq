@@ -10,12 +10,14 @@ import cors from 'cors';
 import logger from './lib/logger';
 import { register } from './lib/metrics';
 import { query as dbQuery } from './lib/db';
+import { getRedisClient } from './lib/redis';
 import requestId from './middleware/requestId';
 import httpLogger from './middleware/httpLogger';
 import { apiLimiter, aiLimiter } from './middleware/rateLimiter';
 
 // Webhooks (raw body — must mount before express.json())
 import clerkWebhookRouter from './routes/webhooks/clerk';
+import stripeWebhookRouter from './routes/webhooks/stripe';
 
 // Novu Framework workflows — served to Novu Cloud for orchestration
 import { serve } from '@novu/framework/express';
@@ -64,16 +66,14 @@ import ontologyRouter from './routes/ontology';
 import outreachRouter from './routes/outreach';
 import outreachAnalyticsRouter, { frequencyCapsRouter } from './routes/outreach-analytics';
 import suppressionRouter from './routes/suppression';
+import billingRouter from './routes/billing';
+import internalMeteringRouter from './routes/internal-metering';
+import supportRouter from './routes/support';
+import adminSupportRouter from './routes/admin-support';
 
-// ── Production validation — fail fast before starting the server ──────────────
-if (process.env.NODE_ENV === 'production') {
-  const missing = ['DATABASE_URL', 'CLERK_SECRET_KEY', 'AGENTS_INTERNAL_KEY', 'ALLOWED_ORIGIN']
-    .filter(k => !process.env[k]);
-  if (missing.length) throw new Error(`Missing required env vars: ${missing.join(', ')}`);
-  if (process.env.AGENTS_INTERNAL_KEY === 'dev-internal-key-change-in-prod') {
-    throw new Error('AGENTS_INTERNAL_KEY must be changed from the default in production');
-  }
-}
+import { validateStartupConfig } from './lib/validateEnv';
+// Startup config validation runs in start() below — presence + format/consistency + live
+// connectivity (Postgres/Redis) — and fails fast before the server accepts traffic.
 
 // ── App setup ─────────────────────────────────────────────────────────────────
 const app = express();
@@ -89,6 +89,8 @@ app.use(cors({ origin: corsOrigin, credentials: true, exposedHeaders: ['X-Export
 // Clerk webhook needs the RAW body for Svix signature verification — mount it
 // BEFORE express.json() so the JSON parser doesn't consume the stream.
 app.use('/webhooks/clerk', express.raw({ type: '*/*' }), clerkWebhookRouter);
+// Stripe webhook — raw body for signature verification, before express.json().
+app.use('/webhooks/stripe', express.raw({ type: '*/*' }), stripeWebhookRouter);
 
 // Novu Framework Bridge — serves workflow definitions to Novu Cloud.
 // Must be mounted before express.json() as it handles its own body parsing.
@@ -198,6 +200,7 @@ app.use('/api/group-insights', apiLimiter, surveyGroupsRouter);
 app.use('/api/scim-tokens', apiLimiter, scimTokensRouter);
 app.use('/api/sso-mappings', apiLimiter, ssoMappingsRouter);
 app.use('/api/seats',       apiLimiter, seatsRouter);
+app.use('/api/billing',     apiLimiter, billingRouter);
 app.use('/api/audit-logs',  apiLimiter, auditLogsRouter);
 app.use('/api/alerts',      apiLimiter, alertsRouter);
 app.use('/api/dashboard',   apiLimiter, dashboardRouter);
@@ -206,6 +209,8 @@ app.use('/api/visual',      apiLimiter, visualRouter);
 app.use('/api/notification-channels', apiLimiter, notificationChannelsRouter);
 // SCIM 2.0 — separate namespace, bearer-token auth (NOT Clerk JWT), no apiLimiter.
 app.use('/scim/v2',         scimRouter);
+// Internal metering API — service-to-service (X-Internal-Key), not Clerk JWT, no apiLimiter.
+app.use('/api/internal/metering', internalMeteringRouter);
 app.use('/api/copilot',     apiLimiter, copilotRouter);
 app.use('/api/runs',        apiLimiter, runsRouter);
 app.use('/api/experience',  apiLimiter, experienceRouter);
@@ -226,18 +231,46 @@ app.use('/api/outreach/suppression',    apiLimiter, suppressionRouter);
 app.use('/api/outreach/analytics',      apiLimiter, outreachAnalyticsRouter);
 app.use('/api/outreach/frequency-caps', apiLimiter, frequencyCapsRouter);
 app.use('/api/outreach',                apiLimiter, outreachRouter);
+// Support system — public docs + Crystal support + admin pipeline
+app.use('/api/support',       apiLimiter, supportRouter);
+app.use('/api/admin-support', apiLimiter, adminSupportRouter);
 
 // ── Observability ─────────────────────────────────────────────────────────────
-app.get('/api/health', async (req, res) => {
+// Readiness: can this instance serve traffic? Postgres is the only hard dependency;
+// Redis is soft (the app fails open without it), so a Redis outage is reported but does
+// not fail the check. Used by load balancers / orchestrators to route traffic.
+async function readiness(): Promise<Record<string, string>> {
   const health: Record<string, string> = { status: 'ok', version: '2.0.0', backend: 'local' };
   try {
     await dbQuery('SELECT 1');
     health.db = 'ok';
   } catch {
     health.db = 'error';
-    health.status = 'degraded';
+    health.status = 'degraded';   // DB down → not ready (503)
   }
+  try {
+    const r = getRedisClient();
+    health.redis = !r ? 'not_configured' : (r.status === 'ready' ? 'ok' : 'unavailable');
+  } catch {
+    health.redis = 'error';       // soft — does not flip overall status
+  }
+  return health;
+}
+
+app.get('/api/health', async (_req, res) => {
+  const health = await readiness();
   res.status(health.status === 'ok' ? 200 : 503).json(health);
+});
+
+// Readiness probe (DB required) — alias for orchestrators that distinguish ready vs live.
+app.get('/api/health/ready', async (_req, res) => {
+  const health = await readiness();
+  res.status(health.status === 'ok' ? 200 : 503).json(health);
+});
+
+// Liveness probe — process is up; never touches dependencies (so a DB blip doesn't trigger a restart loop).
+app.get('/api/health/live', (_req, res) => {
+  res.json({ status: 'ok' });
 });
 
 app.get('/api/metrics', async (req, res) => {
@@ -264,31 +297,46 @@ app.use((err: Error, req: express.Request, res: express.Response, next: express.
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT ?? 3001;
-const server = app.listen(PORT, () => {
-  const _devMode = !process.env.CLERK_SECRET_KEY;
-  logger.info(`API  → http://localhost:${PORT}  (backend: local/postgres)`);
-  logger.info(`Auth → ${_devMode ? 'DEV MODE (no CLERK_SECRET_KEY — all requests as dev-user/dev-org)' : 'Clerk JWT'}`);
-  if (_devMode) logger.warn('Running in DEV MODE — set CLERK_SECRET_KEY to enable real authentication');
-  logger.info(`CORS → ${corsOrigin === true ? 'all origins (dev)' : (corsOrigin || 'BLOCKED — set ALLOWED_ORIGIN')}`);
-  logger.info(`Agents env → AGENTS_ENV=${process.env.AGENTS_ENV ?? 'dev (default)'}`);
-  logger.info(`Metrics → http://localhost:${PORT}/api/metrics`);
+let server: ReturnType<typeof app.listen> | undefined;
 
-  // Dev convenience: run the notification Event Engine in-process. In production
-  // it runs as the separate `event-engine` service (npm run start:event-engine).
-  if (process.env.ENABLE_EVENT_ENGINE === 'true') {
-    import('./eventEngine/processor')
-      .then((mod) => mod.start({ consumer: `inproc-${process.pid}` }))
-      .then(() => logger.info('Event Engine → running in-process (ENABLE_EVENT_ENGINE=true)'))
-      .catch((err: unknown) => {
-        const error = err instanceof Error ? err : new Error(String(err));
-        logger.error({ err: error.message }, 'Event Engine failed to start');
-      });
-  }
+async function start(): Promise<void> {
+  // Fail fast: required keys present + well-formed, and Postgres/Redis actually reachable —
+  // before we accept a single request.
+  await validateStartupConfig({ connectivity: true });
+
+  server = app.listen(PORT, () => {
+    const _devMode = !process.env.CLERK_SECRET_KEY;
+    logger.info(`API  → http://localhost:${PORT}  (backend: local/postgres)`);
+    logger.info(`Auth → ${_devMode ? 'DEV MODE (no CLERK_SECRET_KEY — all requests as dev-user/dev-org)' : 'Clerk JWT'}`);
+    if (_devMode) logger.warn('Running in DEV MODE — set CLERK_SECRET_KEY to enable real authentication');
+    logger.info(`CORS → ${corsOrigin === true ? 'all origins (dev)' : (corsOrigin || 'BLOCKED — set ALLOWED_ORIGIN')}`);
+    logger.info(`Agents env → AGENTS_ENV=${process.env.AGENTS_ENV ?? 'dev (default)'}`);
+    logger.info(`Metrics → http://localhost:${PORT}/api/metrics`);
+
+    // Dev convenience: run the notification Event Engine in-process. In production
+    // it runs as the separate `event-engine` service (npm run start:event-engine).
+    if (process.env.ENABLE_EVENT_ENGINE === 'true') {
+      import('./eventEngine/processor')
+        .then((mod) => mod.start({ consumer: `inproc-${process.pid}` }))
+        .then(() => logger.info('Event Engine → running in-process (ENABLE_EVENT_ENGINE=true)'))
+        .catch((err: unknown) => {
+          const error = err instanceof Error ? err : new Error(String(err));
+          logger.error({ err: error.message }, 'Event Engine failed to start');
+        });
+    }
+  });
+}
+
+start().catch((err: unknown) => {
+  const error = err instanceof Error ? err : new Error(String(err));
+  logger.error({ err: error.message }, 'startup aborted — fix the configuration above and restart');
+  process.exit(1);
 });
 
 // Graceful shutdown — PM2 sends SIGTERM on `pm2 reload`, SIGINT on Ctrl+C
 const shutdown = (sig: string): void => {
   logger.info({ sig }, 'shutdown signal received');
+  if (!server) { process.exit(0); }
   server.close(() => {
     logger.info('HTTP server closed');
     process.exit(0);

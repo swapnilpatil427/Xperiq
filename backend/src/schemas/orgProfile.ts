@@ -12,8 +12,8 @@ export const updateOrgProfileSchema = z.object({
   brand_name: z.string().max(200).optional(),
   product_name: z.string().max(200).optional(),
   region: z.string().max(100).optional(),
-  brand_colors: z.record(z.string()).optional(),
-  brand_fonts: z.record(z.string()).optional(),
+  brand_colors: z.record(z.string(), z.string()).optional(),
+  brand_fonts: z.record(z.string(), z.string()).optional(),
 });
 
 export type UpdateOrgProfileInput = z.infer<typeof updateOrgProfileSchema>;

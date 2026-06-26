@@ -8,7 +8,7 @@
     "start":       "npm run dev",
     "check:models": "node scripts/check-models.mjs",
     "predev":      "node -e \"const [maj,min]=process.versions.node.split('.').map(Number);if(maj<20||(maj===20&&min<19)){console.error('\\n✗ Node '+process.version+' detected. Vite requires Node >=20.19 or >=22.12.\\n  Run: nvm use 22\\n');process.exit(1)}\" && node scripts/check-models.mjs",
-    "dev":         "node scripts/docker-compose.mjs up -d --build && node scripts/migrate.js && (npm --prefix backend run sync:clerk || true) && concurrently --kill-others-on-fail -n \"api,web,crystalos\" -c \"cyan,magenta,green\" \"npm --prefix backend run dev\" \"npm --prefix app run dev\" \"npm --prefix backend run start:agents\"",
+    "dev":         "node scripts/docker-compose.mjs up -d --build && node scripts/migrate.js && (npm --prefix backend run seed:support || true) && (npm --prefix backend run sync:clerk || true) && concurrently --kill-others-on-fail -n \"api,web,crystalos,sched,support\" -c \"cyan,magenta,green,yellow,blue\" \"npm --prefix backend run dev\" \"npm --prefix app run dev\" \"npm --prefix backend run start:agents\" \"npm --prefix backend run start:scheduler\" \"npm --prefix support run dev\"",
     "pretest":     "node -e \"const [maj]=process.versions.node.split('.').map(Number);if(maj<22){console.error('\\n✗ Node '+process.version+' detected. Tests require Node >=22 (vitest needs styleText from node:util).\\n  Run: nvm use 22\\n');process.exit(1)}\"",
     "test":        "npm --prefix backend test && npm --prefix app test",
     "dev:dev-paid": "AGENTS_ENV=dev-paid npm run dev",
@@ -20,7 +20,7 @@
     "infra:logs":  "docker compose logs -f",
     "setup":       "npm run install:all && node scripts/docker-compose.mjs build postgres && node scripts/docker-compose.mjs up -d && node scripts/migrate.js",
     "setup:dev":   "cp -n .env.example .env 2>/dev/null && echo '✓ .env created — fill in OPENROUTER_API_KEY and CLERK_SECRET_KEY before starting' || echo '✓ .env already exists'",
-    "install:all": "npm install && npm --prefix backend install && npm --prefix app install",
+    "install:all": "npm install && npm --prefix backend install && npm --prefix app install && npm --prefix support install",
     "setup:agents": "test -d crystalos/.venv || python3 -m venv crystalos/.venv; crystalos/.venv/bin/pip install -q -r crystalos/requirements.txt",
     "scan-models":  "PYTHONPATH=. crystalos/.venv/bin/python -m crystalos.skills.openrouter_scan"
   },

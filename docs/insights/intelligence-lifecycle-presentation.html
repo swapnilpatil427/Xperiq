@@ -1,0 +1,1120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Experient Intelligence Lifecycle — Visual Guide</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    :root {
+      --indigo: #2a4bd9;
+      --indigo-dark: #1e3a8a;
+      --violet: #6d28d9;
+      --emerald: #059669;
+      --bg: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --text: #0f172a;
+      --muted: #475569;
+      --soft: #64748b;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--text);
+      background: var(--bg);
+    }
+
+    /* ── Layout ── */
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+
+    nav.toc {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 1.25rem 1rem;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+    nav.toc strong {
+      display: block;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--soft);
+      margin-bottom: 0.75rem;
+    }
+    nav.toc a {
+      display: block;
+      padding: 0.35rem 0.5rem;
+      color: var(--muted);
+      text-decoration: none;
+      border-radius: 6px;
+      margin-bottom: 2px;
+    }
+    nav.toc a:hover { background: #f1f5f9; color: var(--indigo-dark); }
+
+    main { padding: 0 2.5rem 4rem; max-width: 920px; }
+
+    /* ── Hero ── */
+    .hero {
+      margin: 0 -2.5rem 2.5rem;
+      padding: 3rem 2.5rem;
+      background: linear-gradient(135deg, #1e3a8a 0%, #4338ca 50%, #6d28d9 100%);
+      color: #fff;
+    }
+    .hero .tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 600;
+      background: rgba(255,255,255,0.15);
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      margin-bottom: 0.75rem;
+    }
+    .hero h1 {
+      margin: 0 0 0.5rem;
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .hero p { margin: 0; opacity: 0.9; max-width: 36rem; }
+
+    /* ── Sections ── */
+    section { margin-bottom: 3rem; scroll-margin-top: 1rem; }
+    section h2 {
+      font-size: 1.45rem;
+      color: var(--indigo-dark);
+      margin: 0 0 0.35rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 2px solid #e0e7ff;
+    }
+    section .lead { color: var(--muted); margin: 0 0 1.25rem; font-size: 0.95rem; }
+
+    h3 { font-size: 1rem; color: var(--muted); margin: 1.5rem 0 0.6rem; }
+
+    /* ── Callout ── */
+    .callout {
+      background: linear-gradient(90deg, #eef2ff, #faf5ff);
+      border-left: 4px solid var(--indigo);
+      padding: 0.85rem 1.1rem;
+      border-radius: 0 10px 10px 0;
+      margin: 1rem 0;
+      font-size: 0.92rem;
+    }
+    .callout strong { color: var(--indigo-dark); }
+
+    /* ── Flow diagram (CSS, no Mermaid) ── */
+    .flow {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin: 1rem 0;
+    }
+    .flow-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+      justify-content: center;
+    }
+    .flow-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.5rem 0.75rem;
+      font-size: 0.8rem;
+      text-align: center;
+      min-width: 100px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .flow-box.primary { border-color: #a5b4fc; background: #eef2ff; font-weight: 600; }
+    .flow-box.store { border-color: #86efac; background: #ecfdf5; }
+    .flow-box.trigger { border-color: #c4b5fd; background: #f5f3ff; }
+    .flow-arrow { color: var(--soft); font-size: 1.1rem; font-weight: bold; }
+    .flow-label {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--soft);
+      text-align: center;
+      margin: 0.5rem 0 0.15rem;
+    }
+
+    /* ── Tier ladder ── */
+    .tiers {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+      margin: 1rem 0;
+    }
+    .tier {
+      flex: 1;
+      min-width: 90px;
+      text-align: center;
+      padding: 0.75rem 0.4rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 0.78rem;
+    }
+    .tier .icon { font-size: 1.4rem; display: block; margin-bottom: 0.2rem; }
+    .tier .name { font-weight: 700; display: block; }
+    .tier .n { color: var(--soft); font-size: 0.85em; }
+    .tier.highlight { border-color: var(--indigo); background: #eef2ff; }
+
+    /* ── Cards grid ── */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    @media (max-width: 700px) { .grid-2 { grid-template-columns: 1fr; } .layout { grid-template-columns: 1fr; } nav.toc { display: none; } }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+    }
+    .card h4 { margin: 0 0 0.5rem; font-size: 0.9rem; color: var(--indigo-dark); }
+    .card ul { margin: 0; padding-left: 1.2rem; font-size: 0.88rem; color: var(--muted); }
+    .card.safe { border-color: #86efac; }
+    .card.warn { border-color: #fcd34d; }
+    .card.gap { border-color: #fca5a5; }
+
+    /* ── Tables ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+      background: var(--surface);
+      border-radius: 10px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      margin: 1rem 0;
+    }
+    th { background: #f1f5f9; text-align: left; padding: 0.6rem 0.75rem; font-weight: 600; }
+    td { padding: 0.55rem 0.75rem; border-top: 1px solid #f1f5f9; vertical-align: top; }
+    code {
+      font-family: ui-monospace, "Cascadia Code", monospace;
+      font-size: 0.85em;
+      background: #f1f5f9;
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+    }
+
+    /* ── ASCII / pre blocks ── */
+    pre.chart {
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.78rem;
+      line-height: 1.4;
+      overflow-x: auto;
+      color: var(--text);
+      margin: 1rem 0;
+    }
+    pre.cheat {
+      background: #1e293b;
+      color: #cbd5e1;
+      border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.8rem;
+      line-height: 1.55;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+
+    .scenario-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--violet);
+      margin-bottom: 0.25rem;
+    }
+
+    .pill {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      background: #e0e7ff;
+      color: var(--indigo-dark);
+      margin-right: 0.35rem;
+    }
+
+    .compare-cols {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    @media (max-width: 600px) { .compare-cols { grid-template-columns: 1fr; } }
+    .compare-cols h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+    .compare-cols ul { margin: 0; padding-left: 1.2rem; font-size: 0.88rem; }
+
+    .stars { color: #d97706; }
+
+    footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--soft);
+    }
+
+    /* ── Engineer sections ── */
+    .tech-banner {
+      background: #1e293b;
+      color: #e2e8f0;
+      margin: 0 -2.5rem 2rem;
+      padding: 0.65rem 2.5rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .warn-box {
+      background: #fff7ed;
+      border: 1px solid #fed7aa;
+      border-radius: 10px;
+      padding: 0.85rem 1.1rem;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+      color: #9a3412;
+    }
+    .warn-box strong { color: #c2410c; }
+    .ok-box {
+      background: #ecfdf5;
+      border: 1px solid #86efac;
+      border-radius: 10px;
+      padding: 0.85rem 1.1rem;
+      margin: 1rem 0;
+      font-size: 0.88rem;
+      color: #065f46;
+    }
+    pre.code-block {
+      background: #1e293b;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.76rem;
+      line-height: 1.5;
+      overflow-x: auto;
+      margin: 1rem 0;
+    }
+    pre.seq {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1.2rem;
+      font-family: ui-monospace, monospace;
+      font-size: 0.72rem;
+      line-height: 1.45;
+      overflow-x: auto;
+      margin: 1rem 0;
+      color: var(--text);
+    }
+    .file-ref {
+      font-size: 0.78rem;
+      color: var(--soft);
+      font-family: ui-monospace, monospace;
+      margin-top: 0.35rem;
+    }
+    section.engineer h2 { border-bottom-color: #312e81; }
+    section.engineer h2::before {
+      content: "⚙ ";
+      font-size: 0.85em;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="toc">
+      <strong>Contents</strong>
+      <a href="#overview">Overview</a>
+      <a href="#big-picture">Big picture</a>
+      <a href="#one-run">One pipeline run</a>
+      <a href="#tiers">UI tiers</a>
+      <a href="#auto-manual">Auto vs manual</a>
+      <a href="#trends">Trends</a>
+      <a href="#anomalies">Anomalies</a>
+      <a href="#scenarios">Scenarios</a>
+      <a href="#matrix">Combination matrix</a>
+      <a href="#crystal">Crystal vs pipeline</a>
+      <a href="#safety">Data safety</a>
+      <a href="#cheatsheet">Cheat sheet</a>
+      <a href="#codemap">Code map</a>
+      <strong style="margin-top:1rem">Engineering deep dive</strong>
+      <a href="#eng-primer">Two histories model</a>
+      <a href="#eng-pipeline">LangGraph pipeline</a>
+      <a href="#eng-checkpoint-create">Checkpoint creation</a>
+      <a href="#eng-manual-checkpoint">Manual + checkpoints</a>
+      <a href="#eng-prior-context">Prior context (anchor)</a>
+      <a href="#eng-insight-calc">How insights are computed</a>
+      <a href="#eng-intended-vs-actual">Intended vs actual</a>
+      <a href="#eng-sequences">Run sequences</a>
+    </nav>
+
+    <main>
+      <header class="hero" id="overview">
+        <span class="tag">Internal guide · June 2026</span>
+        <h1>Experient Intelligence Lifecycle</h1>
+        <p>How surveys become insights, trends, anomalies, snapshots, and checkpoints — based on current codebase behavior.</p>
+      </header>
+
+      <div class="tech-banner">Part A — Product &amp; operations overview</div>
+
+      <!-- BIG PICTURE -->
+      <section id="big-picture">
+        <h2>1. The big picture</h2>
+        <p class="lead">Respondents submit surveys. Triggers kick off the CrystalOS pipeline. Each successful run writes to Postgres (and optional blob storage).</p>
+
+        <div class="flow-label">Inputs</div>
+        <div class="flow-row">
+          <div class="flow-box">Respondents submit surveys</div>
+        </div>
+
+        <div class="flow-arrow" style="text-align:center">↓</div>
+
+        <div class="flow-label">Triggers</div>
+        <div class="flow-row">
+          <div class="flow-box trigger">Stream consumer<br><small>every ~10 new responses</small></div>
+          <span class="flow-arrow">+</span>
+          <div class="flow-box trigger">Scheduler<br><small>hourly backup</small></div>
+          <span class="flow-arrow">+</span>
+          <div class="flow-box trigger">Generate button<br><small>manual, 3/day max</small></div>
+        </div>
+
+        <div class="flow-arrow" style="text-align:center">↓</div>
+
+        <div class="flow-label">CrystalOS pipeline</div>
+        <div class="flow-row">
+          <div class="flow-box">Ingest</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">Topics</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">Narrate</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">Report</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box primary">Publish</div>
+        </div>
+
+        <div class="flow-arrow" style="text-align:center">↓</div>
+
+        <div class="flow-label">Stored artifacts</div>
+        <div class="flow-row">
+          <div class="flow-box store">metric_snapshots<br><small>main trend line</small></div>
+          <div class="flow-box store">insights<br><small>active set</small></div>
+          <div class="flow-box store">survey_topics</div>
+          <div class="flow-box store">checkpoints + JSON blob</div>
+          <div class="flow-box store">agent_runs</div>
+        </div>
+
+        <div class="flow-arrow" style="text-align:center">↓</div>
+
+        <div class="flow-row">
+          <div class="flow-box">Trends and charts</div>
+          <div class="flow-box">Crystal chat reads data</div>
+          <div class="flow-box">Checkpoint history</div>
+        </div>
+
+        <div class="callout">
+          <strong>Key takeaway:</strong> Trends ride on <strong>metric snapshots</strong> (one data point per pipeline run).
+          Checkpoints are <strong>report photos</strong> — useful archive, not the primary trend engine today.
+        </div>
+      </section>
+
+      <!-- ONE RUN -->
+      <section id="one-run">
+        <h2>2. What one pipeline run produces</h2>
+        <p class="lead">Every successful <code>node_publish</code> writes all of the following:</p>
+
+        <div class="flow-row" style="margin-bottom:1rem">
+          <div class="flow-box">1. Supersede old insights</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">2. Update topics</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">3. Append snapshot</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">4. Append checkpoint</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">5. Complete run</div>
+        </div>
+
+        <table>
+          <thead>
+            <tr><th>Artifact</th><th>Grows how?</th><th>Used for</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>insights</code></td><td>Replace (supersede old rows)</td><td>Intelligence page, Crystal citations</td></tr>
+            <tr><td><code>survey_topics</code></td><td>Upsert</td><td>Theme cards, trending badges</td></tr>
+            <tr><td><code>survey_metric_snapshots</code></td><td><strong>Append</strong></td><td><strong>Trends</strong>, alerts, <code>get_metric_history</code></td></tr>
+            <tr><td><code>survey_insight_checkpoints</code></td><td>Append</td><td>History, <code>get_checkpoint_history</code></td></tr>
+            <tr><td>Checkpoint JSON blob</td><td>Append file</td><td>Full report archive (<code>/tmp/checkpoints</code> or OCI)</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- TIERS -->
+      <section id="tiers">
+        <h2>3. UI tier progression</h2>
+        <p class="lead">Response count drives the Survey Intelligence banner (example: Acme Corp).</p>
+
+        <div class="tiers">
+          <div class="tier"><span class="icon">⏳</span><span class="name">Collecting</span><span class="n">0–9</span></div>
+          <div class="tier highlight"><span class="icon">◔</span><span class="name">First voices</span><span class="n">10–39</span></div>
+          <div class="tier"><span class="icon">◑</span><span class="name">Early signals</span><span class="n">40–69</span></div>
+          <div class="tier"><span class="icon">◕</span><span class="name">Growing</span><span class="n">70–99</span></div>
+          <div class="tier"><span class="icon">●</span><span class="name">Full report</span><span class="n">100+</span></div>
+        </div>
+
+        <p><span class="pill">Auto milestones</span> Stream fires extra runs at <strong>10 → 40 → 70 → 100</strong> responses (once each, tracked in Redis).</p>
+        <p>After 100+: updates come from <strong>stream (+10 responses)</strong> and <strong>scheduler</strong> — no new tier badges.</p>
+      </section>
+
+      <!-- AUTO VS MANUAL -->
+      <section id="auto-manual">
+        <h2>4. Automated vs manual</h2>
+
+        <div class="compare-cols">
+          <div class="card">
+            <h4>Automated (stream / scheduler)</h4>
+            <ul>
+              <li>Gate: ~10 new responses (stream)</li>
+              <li>May <strong>cache-hit</strong> if nothing new to process</li>
+              <li>Report regen only if <strong>25+ new</strong> since last report</li>
+              <li>Incremental sample (~50 new for ABSA)</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Manual (Generate button)</h4>
+            <ul>
+              <li>Gate: 10+ new since last run, max <strong>3/day</strong></li>
+              <li><strong>Always</strong> re-narrates and regens report</li>
+              <li>Full bootstrap sample (highest quality)</li>
+              <li><code>force_regenerate = true</code></li>
+            </ul>
+          </div>
+        </div>
+
+        <h3>Automated decision flow</h3>
+        <div class="flow">
+          <div class="flow-row">
+            <div class="flow-box">Stream or scheduler fires</div>
+            <span class="flow-arrow">→</span>
+            <div class="flow-box">New ABSA work?</div>
+          </div>
+          <div class="flow-row" style="padding-left:2rem">
+            <span style="font-size:0.8rem;color:var(--soft)">No →</span>
+            <div class="flow-box">Reuse cached narratives</div>
+            <span style="font-size:0.8rem;color:var(--soft)">Yes →</span>
+            <div class="flow-box">Process ~50 new responses</div>
+          </div>
+          <div class="flow-row" style="padding-left:2rem">
+            <div class="flow-box">25+ new since last report?</div>
+            <span class="flow-arrow">→</span>
+            <span style="font-size:0.8rem">No: keep old report · Yes: regen report</span>
+          </div>
+          <div class="flow-row">
+            <div class="flow-box primary">Publish + snapshot + checkpoint</div>
+          </div>
+        </div>
+
+        <table>
+          <thead><tr><th></th><th>Automated</th><th>Manual</th></tr></thead>
+          <tbody>
+            <tr><td>Corrupts insights?</td><td>No — supersede pattern</td><td>No</td></tr>
+            <tr><td>Noisy checkpoints?</td><td>Can accumulate</td><td>Higher if run often</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- TRENDS -->
+      <section id="trends">
+        <h2>5. How trends are calculated</h2>
+
+        <div class="flow-label">Primary source (use this)</div>
+        <div class="flow-row">
+          <div class="flow-box store">survey_metric_snapshots</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">get_metric_history</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">Crystal / trend-analyst / charts</div>
+        </div>
+
+        <div class="flow-label" style="margin-top:1rem">Within each pipeline run</div>
+        <div class="flow-row">
+          <div class="flow-box">Response sample</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">Volume trend analysis</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">L3 insights (e.g. volume up)</div>
+        </div>
+
+        <div class="flow-label">Secondary (incomplete today)</div>
+        <div class="flow-row">
+          <div class="flow-box">checkpoints</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box" style="opacity:0.7">compute_delta (not wired)</div>
+        </div>
+
+        <pre class="chart">NPS trend example (each point = one metric snapshot row)
+
+ 50 ┤                              ╭──
+ 45 ┤                    ╭─────────╯
+ 40 ┤          ╭─────────╯
+ 35 ┤    ╭─────╯
+    └────┴────┴────┴────┴────┴────┴──► time
+         W1   W2   W3   W4   W5   W6</pre>
+      </section>
+
+      <!-- ANOMALIES -->
+      <section id="anomalies">
+        <h2>6. Anomalies (today)</h2>
+        <p class="lead">Volume spike detection during each pipeline run:</p>
+
+        <div class="flow-row">
+          <div class="flow-box">30-day daily response counts</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">Compare recent vs earlier average</div>
+          <span class="flow-arrow">→</span>
+          <div class="flow-box">Last 3 days avg &gt; 2× overall?</div>
+        </div>
+        <div class="flow-row" style="margin-top:0.5rem">
+          <div class="flow-box store">Yes → anomaly_flag = true on snapshot</div>
+          <div class="flow-box">No → anomaly_flag = false</div>
+        </div>
+
+        <div class="callout">
+          <strong>Not automatic yet:</strong> “NPS dropped 8 points” on every run.
+          Configure <strong>alert rules</strong> to compare snapshots over time for score drops.
+        </div>
+      </section>
+
+      <!-- SCENARIOS -->
+      <section id="scenarios">
+        <h2>7. Business scenarios</h2>
+
+        <div class="scenario-label">A · Happy path — steady growth</div>
+        <h3>Acme Support NPS</h3>
+        <pre class="chart">Responses over weeks:
+ 120 ┤                                    ╭──
+  80 ┤                          ╭─────────╯
+  40 ┤                ╭─────────╯  ← tier: early_signals (40)
+  10 ┤      ╭─────────╯            ← tier: first_voices (10)
+   0 ┼──────┴──────────────────────────────────────►
+
+Stream runs: frequent (every ~10 responses)
+UI: collecting → first voices → early → growing → full report
+Crystal: weak early answers → strong trends once snapshots dense</pre>
+        <p>Banner climbs tiers. Topics populate. Full report appears. Crystal can answer “How is NPS trending?” with real data.</p>
+
+        <div class="scenario-label">B · Low volume — ~3 responses/week</div>
+        <h3>Enterprise onboarding survey</h3>
+        <pre class="chart">Responses over months:
+  15 ┤                              ╭─
+  10 ┤                    ╭────────╯  ← first auto run (hit 10)
+   5 ┤          ╭─────────╯
+   0 ┼──────────┴──────────────────────────►
+
+Stream: mostly idle (below 10-response threshold)
+Snapshots: ~1 point per month
+UI: stuck in Collecting / First voices for weeks</pre>
+        <p>Long “waiting for voices” phase. Analyst uses Generate when 10 new responses accumulate.</p>
+
+        <div class="scenario-label">C · Firehose — ~500 responses/day</div>
+        <div class="grid-2">
+          <div class="card">
+            <h4>What works well</h4>
+            <ul>
+              <li>~50 stream runs/day possible</li>
+              <li>Dense snapshots — excellent charts</li>
+              <li>UI feels live immediately</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Watch for</h4>
+            <ul>
+              <li>Report regen ~every 25 new (not every 10)</li>
+              <li>Volume spike may set anomaly_flag</li>
+              <li>Many similar checkpoints (noisy history)</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="scenario-label">D · Analyst-heavy — launch week</div>
+        <pre class="chart">        Mon      Tue      Wed      Thu      Fri
+Stream  ●●●●     ●●●      ●●●●     ●●       ●●●   (automatic)
+Manual           ★                 ★★              (Sarah clicks Generate)
+Crystal ~~~~ chat ~~~~ chat ~~~~ chat ~~~~         (read-only, no pipeline)
+
+★ = Generate (10+ new responses, max 3/day)</pre>
+        <ul>
+          <li>Insights stay correct — supersede pattern, not corrupted</li>
+          <li>Anchor run prevents narrative drift on repeat clicks</li>
+          <li>Checkpoint list gets dense — noise, not data loss</li>
+        </ul>
+      </section>
+
+      <!-- MATRIX -->
+      <section id="matrix">
+        <h2>8. Combination matrix</h2>
+        <table>
+          <thead>
+            <tr><th>Pattern</th><th>Stream</th><th>Manual</th><th>Trends</th><th>Checkpoint noise</th><th>Best for</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Steady growth</td><td>High</td><td>Low</td><td class="stars">★★★★★</td><td>Low</td><td>Default happy path</td></tr>
+            <tr><td>Low volume</td><td>Rare</td><td>Occasional</td><td class="stars">★☆☆☆☆</td><td>Very low</td><td>Enterprise / niche</td></tr>
+            <tr><td>Firehose</td><td>Very high</td><td>Low</td><td class="stars">★★★★★</td><td>High</td><td>In-app pulses</td></tr>
+            <tr><td>Launch spike then quiet</td><td>Spike</td><td>Post-spike</td><td class="stars">★★★☆☆</td><td>Spike cluster</td><td>Campaigns</td></tr>
+            <tr><td>Analyst-heavy</td><td>Medium</td><td>High</td><td class="stars">★★★★☆</td><td>High</td><td>Exec reviews</td></tr>
+            <tr><td>Firehose + analyst</td><td>Very high</td><td>Daily</td><td class="stars">★★★★★</td><td>Very high</td><td>War room / launch</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- CRYSTAL -->
+      <section id="crystal">
+        <h2>9. Crystal chat vs insight pipeline</h2>
+        <div class="compare-cols">
+          <div class="card">
+            <h4>Pipeline WRITES</h4>
+            <ul>
+              <li>Stream / scheduler / manual Generate</li>
+              <li>Creates insights, snapshots, checkpoints</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h4>Crystal READS</h4>
+            <ul>
+              <li><code>get_metric_history</code></li>
+              <li><code>get_insights_list</code></li>
+              <li><code>get_topic_details</code></li>
+              <li><code>get_checkpoint_history</code></li>
+            </ul>
+          </div>
+        </div>
+        <p><strong>Crystal streaming</strong> = how answers appear in the UI (SSE).<br>
+        <strong>Response stream</strong> = how new survey responses trigger insight generation (Redis).<br>
+        These are different things. Crystal does not write checkpoints.</p>
+      </section>
+
+      <!-- SAFETY -->
+      <section id="safety">
+        <h2>10. Data safety</h2>
+        <div class="grid-2">
+          <div class="card safe">
+            <h4>Safe by design</h4>
+            <ul>
+              <li><code>insights</code>: supersede → one active truth</li>
+              <li><code>responses</code>: never mutated by pipeline</li>
+              <li>Anchor run prevents manual narrative drift</li>
+            </ul>
+          </div>
+          <div class="card warn">
+            <h4>Noisy (not corrupt)</h4>
+            <ul>
+              <li>Checkpoints append every run</li>
+              <li><code>delta_from_prior</code> often null</li>
+              <li>Cache-hit runs still add snapshots</li>
+            </ul>
+          </div>
+          <div class="card gap">
+            <h4>Gaps vs design docs</h4>
+            <ul>
+              <li><code>compute_delta</code> not wired in pipeline</li>
+              <li>200-response checkpoint gate unused</li>
+              <li><code>schedule</code> trigger may fail checkpoint DB constraint</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- CHEAT SHEET -->
+      <section id="cheatsheet">
+        <h2>11. Operator cheat sheet</h2>
+        <pre class="cheat">WHEN WILL INSIGHTS AUTO-UPDATE?
+  • 10 new responses (prod) → stream fires pipeline
+  • Milestones 10 / 40 / 70 / 100 → extra progressive run
+  • Scheduler → backup if no run in last hour
+
+WHEN WILL NARRATIVE REPORT REGEN? (automated only)
+  • Only when 25+ new responses since last report.* insight
+
+WHEN CAN ANALYST FORCE REFRESH?
+  • Generate button: 10+ new since last run, max 3 per day
+  • Always full re-narration + report
+
+WHERE TO LOOK FOR TRENDS
+  • Charts / Crystal → survey_metric_snapshots
+  • NOT primarily checkpoint blobs (today)
+
+ANOMALIES TODAY
+  • Volume spike: 3-day avg &gt; 2x the 30-day average
+  • NPS drop → configure alert rules (if enabled)</pre>
+      </section>
+
+      <!-- CODE MAP -->
+      <section id="codemap">
+        <h2>12. Code map</h2>
+        <table>
+          <thead><tr><th>Concept</th><th>Location</th></tr></thead>
+          <tbody>
+            <tr><td>Stream trigger</td><td><code>crystalos/consumers/response_stream.py</code></td></tr>
+            <tr><td>Scheduler</td><td><code>crystalos/scheduler.py</code></td></tr>
+            <tr><td>Publish node</td><td><code>crystalos/graphs/insights.py</code> → node_publish</td></tr>
+            <tr><td>Metric snapshots table</td><td><code>survey_metric_snapshots</code></td></tr>
+            <tr><td>Checkpoints</td><td><code>survey_insight_checkpoints</code> + checkpoint_store.py</td></tr>
+            <tr><td>Volume anomaly math</td><td><code>crystalos/tools/metrics.py</code></td></tr>
+            <tr><td>Manual trigger API</td><td><code>backend/src/routes/insights.ts</code></td></tr>
+            <tr><td>UI tier banner</td><td><code>app/src/pages/experience/SurveyIntelligencePage.tsx</code></td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="tech-banner">Part B — Engineering deep dive</div>
+
+      <!-- ENGINEER PRIMER -->
+      <section id="eng-primer" class="engineer">
+        <h2>13. Critical model: two parallel histories</h2>
+        <p class="lead">Engineers must separate <strong>live insight state</strong> from <strong>checkpoint archive</strong>. They are written in the same <code>node_publish</code> but consumed differently on the next run.</p>
+
+        <table>
+          <thead>
+            <tr><th>Store</th><th>Written when</th><th>Read by next pipeline run?</th><th>Read by Crystal?</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>insights</code> (active rows)</td>
+              <td>Every publish (supersede + insert)</td>
+              <td><strong>Yes</strong> — via anchor <code>run_id</code></td>
+              <td>Yes — <code>get_insights_list</code></td>
+            </tr>
+            <tr>
+              <td><code>survey_metric_snapshots</code></td>
+              <td>Every publish</td>
+              <td><strong>Yes</strong> — <code>get_prior_metric_snapshots(limit=5)</code> in <code>node_ingest</code></td>
+              <td>Yes — <code>get_metric_history</code></td>
+            </tr>
+            <tr>
+              <td><code>survey_insight_checkpoints</code> + blob</td>
+              <td>Every publish (if INSERT succeeds)</td>
+              <td><strong>No</strong> — not loaded in <code>insights.py</code></td>
+              <td>Yes — <code>get_checkpoint_history</code> (metadata only today)</td>
+            </tr>
+            <tr>
+              <td><code>agent_runs</code> audit fields</td>
+              <td>Every publish</td>
+              <td><strong>Yes</strong> — anchor selection SQL</td>
+              <td>Indirect</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="warn-box">
+          <strong>Implication:</strong> Creating a checkpoint does <em>not</em> directly change how the next insight pipeline narrates.
+          The next run uses <code>insights</code> rows from the <strong>anchor run</strong> and <code>survey_metric_snapshots</code> — not checkpoint JSON blobs.
+          Checkpoints are an append-only audit trail + Crystal/history API surface.
+        </div>
+
+        <div class="ok-box">
+          <strong>What checkpoints indirectly affect:</strong> Crystal answers when the model calls <code>get_checkpoint_history</code>;
+          future work if <code>compute_delta()</code> is wired into <code>node_publish</code> and <code>delta_from_prior</code> is populated.
+        </div>
+      </section>
+
+      <!-- PIPELINE GRAPH -->
+      <section id="eng-pipeline" class="engineer">
+        <h2>14. LangGraph pipeline (<code>build_insight_graph</code>)</h2>
+        <p class="lead">Single linear graph in <code>crystalos/graphs/insights.py</code>. Checkpoints are written only in the final node.</p>
+
+        <pre class="seq">ingest → context → route_specialists → embed → metrics ─┐
+                                              extract_texts ─┘→ absa → cluster → topics
+                                                                                    ↓
+                                                                              narrate
+                                                                                ↓
+                                                                          report_agent
+                                                                                ↓
+                                                                          merge_tracks
+                                                                                ↓
+                                                                             verify → evaluate → publish → END</pre>
+        <p class="file-ref">crystalos/graphs/insights.py — build_insight_graph() ~L4048</p>
+
+        <p>Entry: <code>run_insight_generation(survey_id, org_id, run_id, trigger)</code> sets initial state including:</p>
+        <pre class="code-block">force_regenerate = (trigger == "manual")   # only from trigger string; not from API body flag
+trigger:          "stream" | "schedule" | "manual"
+new_response_ids: set()  # filled in node_ingest from ABSA enrichment status</pre>
+        <p class="file-ref">crystalos/graphs/insights.py — run_insight_generation() ~L4114</p>
+      </section>
+
+      <!-- CHECKPOINT CREATION -->
+      <section id="eng-checkpoint-create" class="engineer">
+        <h2>15. How checkpoints are created (exact code path)</h2>
+        <p class="lead">Runs inside <code>node_publish</code> <strong>after</strong> insights are committed. No gating on response count, cache hit, or trigger type.</p>
+
+        <h3>Algorithm</h3>
+        <pre class="code-block"># node_publish — Phase 2 (after insight transaction committed)
+
+1. checkpoint_number = MAX(checkpoint_number) + 1
+   FROM survey_insight_checkpoints
+   WHERE survey_id = ? AND org_id = ?
+
+2. report_blob = {
+     schema_version: 1,
+     survey_id, org_id, checkpoint_number,
+     response_count: len(state.responses),      # loaded sample size, not necessarily all DB rows
+     nps, csat, ces: from state.metrics,
+     insights: [{id, headline, layer}] × 50,    # truncated summary
+     topics:   [{name, volume}] × 20,
+     metrics:  full metrics dict,
+     delta:    null,                             # compute_delta() NOT called
+     generated_at: UTC ISO timestamp
+   }
+
+3. checkpoint_id = f"ckpt-{run_id}"
+4. blob_ref = await write_checkpoint_blob(report_blob, org_id, survey_id, checkpoint_id)
+   # dev:  /tmp/checkpoints/{org_id}/{survey_id}/ckpt-{run_id}.json
+   # prod: OCI object key checkpoints/{org_id}/{survey_id}/ckpt-{run_id}.json
+
+5. INSERT INTO survey_insight_checkpoints (
+     survey_id, org_id, checkpoint_number, trigger,
+     response_count_at_checkpoint,
+     nps_at_checkpoint, csat_at_checkpoint, ces_at_checkpoint,
+     report_url,    -- stores blob_ref (path or OCI key)
+     schema_version
+   )</pre>
+        <p class="file-ref">crystalos/graphs/insights.py ~L3554–3605 · crystalos/lib/checkpoint_store.py</p>
+
+        <h3>DB row vs blob</h3>
+        <table>
+          <thead><tr><th>survey_insight_checkpoints column</th><th>Source</th><th>Used on next run?</th></tr></thead>
+          <tbody>
+            <tr><td><code>checkpoint_number</code></td><td>monotonic per survey+org</td><td>No</td></tr>
+            <tr><td><code>trigger</code></td><td><code>state.trigger</code> (stream/schedule/manual)</td><td>No</td></tr>
+            <tr><td><code>nps_at_checkpoint</code> etc.</td><td>metrics at publish time</td><td>No (snapshots table used instead)</td></tr>
+            <tr><td><code>report_url</code></td><td>blob ref</td><td>Only via REST/Crystal tools</td></tr>
+            <tr><td><code>delta_from_prior</code></td><td><em>never populated in pipeline</em></td><td>No</td></tr>
+            <tr><td><code>topic_fingerprint</code></td><td><em>never populated in pipeline</em></td><td>No</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Failure modes</h3>
+        <ul>
+          <li>Exception → logged as <code>checkpoint_write_failed</code>; insights remain published (Phase 2 is non-transactional with Phase 1).</li>
+          <li><code>trigger='schedule'</code> may violate DB CHECK constraint <code>(responses|days|manual|stream)</code> — row insert fails silently in try/except.</li>
+          <li><code>CHECKPOINT_FULL_RESPONSE_THRESHOLD=200</code> in constants is <strong>not consulted</strong> before write.</li>
+        </ul>
+      </section>
+
+      <!-- MANUAL CHECKPOINTS -->
+      <section id="eng-manual-checkpoint" class="engineer">
+        <h2>16. Manual runs and checkpoints</h2>
+
+        <h3>Trigger chain</h3>
+        <pre class="seq">POST /api/insights/:surveyId/trigger  (backend)
+  → agentsClient.triggerInsightGeneration({ trigger: "manual", force_regenerate: true })
+  → POST /insights/generate  (CrystalOS main.py)   # force_regenerate in body is IGNORED
+  → run_insight_generation(..., trigger="manual")
+  → force_regenerate = (trigger == "manual")  → true</pre>
+
+        <h3>What manual changes vs automated</h3>
+        <table>
+          <thead><tr><th>Behavior</th><th>stream / schedule</th><th>manual</th></tr></thead>
+          <tbody>
+            <tr><td><code>force_regenerate</code></td><td>false</td><td>true</td></tr>
+            <tr><td><code>node_ingest</code> sample</td><td>INGEST_MAX_RESPONSES_CAP (~incremental)</td><td>INGEST_MAX_RESPONSES_BOOTSTRAP (full)</td></tr>
+            <tr><td><code>node_narrate</code> cache</td><td>May return <code>insights_from_cache=true</code> if no new ABSA work</td><td>Never cache-skips narration</td></tr>
+            <tr><td><code>node_report_agent</code></td><td>Skipped if &lt;25 new since last <code>report.*</code></td><td>Always runs</td></tr>
+            <tr><td><strong>Checkpoint written?</strong></td><td><strong>Yes</strong> — same code path</td><td><strong>Yes</strong> — every successful publish</td></tr>
+            <tr><td>Anchor run advanced?</td><td>Yes (stream/schedule always qualify)</td><td>Only if <code>new_response_count &gt; 0</code> in publish</td></tr>
+          </tbody>
+        </table>
+
+        <div class="warn-box">
+          <strong>Manual checkpoint without new data:</strong> If analyst forces regen but <code>new_response_ids</code> is empty
+          (all responses already ABSA-enriched), publish still writes checkpoint #N+1 with current metrics.
+          Anchor run does <strong>not</strong> advance — next run still uses the same prior context.
+          Repeated manual runs can produce many checkpoints with similar NPS (timeline noise).
+        </div>
+
+        <p>API gates before manual run starts (backend): survey <code>active</code>, ≥10 new responses since last completed run, ≤3 triggers/day per survey.</p>
+        <p class="file-ref">backend/src/routes/insights.ts — POST /:surveyId/trigger ~L1627</p>
+      </section>
+
+      <!-- PRIOR CONTEXT -->
+      <section id="eng-prior-context" class="engineer">
+        <h2>17. What feeds the NEXT run (anchor model — not checkpoints)</h2>
+        <p class="lead">Incremental narration uses <code>prior_insights</code> loaded in <code>node_narrate</code> from the <strong>anchor run</strong> in <code>agent_runs</code> + <code>insights</code>.</p>
+
+        <h3>Anchor run selection SQL</h3>
+        <pre class="code-block">SELECT id FROM agent_runs
+ WHERE survey_id = ? AND org_id = ? AND status = 'completed'
+   AND run_type = 'insight_generation' AND id != current_run_id
+   AND (
+         trigger_type IN ('schedule', 'stream')
+      OR new_response_count > 0
+   )
+ ORDER BY completed_at DESC
+ LIMIT 1</pre>
+
+        <p>Then load all insights where <code>insights.run_id = anchor_run_id</code> (not superseded filter — historical run rows).</p>
+
+        <h3>Prior insight selection</h3>
+        <pre class="code-block">PRIOR_INSIGHT_MIN_TRUST = 65
+PRIOR_INSIGHT_MAX_COUNT = 8
+PRIOR_INSIGHT_LAYERS    = ("prescriptive", "diagnostic")
+
+preferred = anchor insights matching layer + trust >= 65, up to 8
+→ injected into specialist_overlay as "ESTABLISHED FINDINGS" block
+→ passed to narrate_topic_insight, prescriptive, trend experts, etc.</pre>
+        <p class="file-ref">crystalos/graphs/insights.py — node_narrate ~L2599–2728</p>
+
+        <h3>Also loaded in node_ingest (not from checkpoints)</h3>
+        <table>
+          <thead><tr><th>State field</th><th>Source</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>prior_snapshots</code></td><td><code>SELECT … FROM survey_metric_snapshots ORDER BY captured_at DESC LIMIT 5</code></td><td>Longitudinal NPS/CSAT in narration</td></tr>
+            <tr><td><code>last_report_response_count</code></td><td>Latest active <code>report.*</code> insight <code>metric_json.response_count</code></td><td>Skip report regen if &lt;25 new (automated only)</td></tr>
+            <tr><td><code>new_response_ids</code></td><td>Responses missing ABSA or missing <code>ai_topics</code></td><td>Incremental clustering scope; anchor qualification</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Published audit chain (node_publish)</h3>
+        <pre class="code-block">UPDATE agent_runs SET
+  status = 'completed',
+  trigger_type = state.trigger,
+  sampled_response_ids = [...],       -- IDs in loaded sample
+  new_response_count = len(new_response_ids),
+  prior_context_run_id = anchor_run_id   -- which run's insights were used as prior
+WHERE id = current_run_id</pre>
+        <p class="file-ref">crystalos/lib/db.py schema comments ~L182–188</p>
+      </section>
+
+      <!-- INSIGHT CALCULATION -->
+      <section id="eng-insight-calc" class="engineer">
+        <h2>18. How new insights are calculated (per node)</h2>
+        <p class="lead">Fresh insights are computed from <strong>current response sample + topics + metrics</strong>, conditioned on <strong>prior_insights</strong> text — not checkpoint blobs.</p>
+
+        <table>
+          <thead><tr><th>Node</th><th>Inputs</th><th>Outputs / side effects</th></tr></thead>
+          <tbody>
+            <tr><td><code>ingest</code></td><td>DB responses (stratified sample); bootstrap flag</td><td><code>responses</code>, <code>new_response_ids</code>, <code>prior_snapshots</code></td></tr>
+            <tr><td><code>metrics</code></td><td>All loaded responses</td><td>NPS/CSAT/CES, <code>compute_response_trend_analysis()</code> → anomaly flag candidate</td></tr>
+            <tr><td><code>absa</code> → <code>cluster</code> → <code>topics</code></td><td><code>new_response_ids</code> (capped at 50 for incremental)</td><td>Clusters, <code>topic_signals</code>, DB topic upserts</td></tr>
+            <tr><td><code>narrate</code></td><td>Metrics, clusters, <strong>prior_insights from anchor</strong></td><td>L1–L3 insight dicts; or cache hit → reuse active insights</td></tr>
+            <tr><td><code>report_agent</code></td><td><code>topic_signals</code>, <code>prior_insights</code>, <code>_compute_delta_signals()</code></td><td><code>report.*</code> narrative insights (tiered)</td></tr>
+            <tr><td><code>verify</code> / <code>evaluate</code></td><td>Insight set + citations</td><td>Trust scores, drop redundant insights</td></tr>
+            <tr><td><code>publish</code></td><td>Final insight list</td><td>Supersede + INSERT insights; snapshot; <strong>checkpoint</strong>; Redis L3 facts</td></tr>
+          </tbody>
+        </table>
+
+        <h3><code>_compute_delta_signals(state)</code> — report delta (not checkpoint delta)</h3>
+        <p>Deterministic pre-LLM signals in <code>crystalos/agents/tiered_report.py</code>:</p>
+        <ul>
+          <li><strong>new_findings</strong> — topics where ≥15% of response IDs overlap <code>new_response_ids</code></li>
+          <li><strong>divergences</strong> — keyword match prior_insights headlines vs current topic_signals sentiment</li>
+          <li><strong>trends</strong> — compare current metrics vs <code>prior_snapshots</code></li>
+        </ul>
+        <p>Uses <code>state.prior_insights</code> (from anchor run), <strong>not</strong> <code>survey_insight_checkpoints</code>.</p>
+
+        <h3>Cache hit path (automated only)</h3>
+        <pre class="code-block">if not force_regenerate
+   and len(new_response_ids) == 0
+   and current_insight_rows exist:
+     return cached insights (insights_from_cache = true)
+# verify/evaluate skip on cache hit
+# publish STILL runs → still writes snapshot + checkpoint</pre>
+      </section>
+
+      <!-- INTENDED VS ACTUAL -->
+      <section id="eng-intended-vs-actual" class="engineer">
+        <h2>19. Intended vs actual (checkpoints → future insights)</h2>
+
+        <table>
+          <thead><tr><th>Design doc intent</th><th>Current code</th></tr></thead>
+          <tbody>
+            <tr><td>Checkpoint N vs N-1 delta stored in <code>delta_from_prior</code></td><td><code>compute_delta()</code> in <code>tools/delta.py</code> exists but is <strong>never called</strong>; blob <code>delta: null</code></td></tr>
+            <tr><td>Tier-2 checkpoint every 200 responses / 7 days</td><td>Checkpoint written on <strong>every</strong> publish</td></tr>
+            <tr><td><code>insights.checkpoint_id</code> links insight → checkpoint</td><td>Column not written in pipeline</td></tr>
+            <tr><td>Trend from checkpoints</td><td>Trend from <code>survey_metric_snapshots</code></td></tr>
+            <tr><td>Crystal reads checkpoint blobs for delta</td><td><code>get_checkpoint_history</code> reads DB metadata only; blob via separate report endpoint</td></tr>
+          </tbody>
+        </table>
+
+        <h3>To wire checkpoints into future insight runs (not implemented)</h3>
+        <ol>
+          <li>In <code>node_publish</code>: load prior checkpoint row + <code>read_checkpoint_blob(report_url)</code>; call <code>compute_delta()</code>; store in <code>delta_from_prior</code> and blob.</li>
+          <li>In <code>node_ingest</code> or <code>node_narrate</code>: optionally load last checkpoint blob for structured prior metrics (today: snapshots suffice).</li>
+          <li>Gate checkpoint INSERT on meaningful change or <code>CHECKPOINT_FULL_RESPONSE_THRESHOLD</code>.</li>
+          <li>Fix <code>trigger</code> CHECK to allow <code>schedule</code>.</li>
+        </ol>
+      </section>
+
+      <!-- SEQUENCES -->
+      <section id="eng-sequences" class="engineer">
+        <h2>20. Run sequences (stream vs manual)</h2>
+
+        <h3>Automated stream run (+10 new responses)</h3>
+        <pre class="seq">response_stream._trigger_insights
+  INSERT agent_runs (trigger_type set later, intent='insight:stream')
+  POST /insights/generate { trigger: "stream" }
+
+node_ingest     → load sample, new_response_ids = unenriched IDs (may be >0)
+node_narrate    → anchor = last stream/schedule run OR last run with new_response_count>0
+                → prior_insights from anchor.run_id → LLM context
+                → may cache-hit if new_response_ids empty
+node_report     → skip if &lt;25 new since last report.*
+node_publish    → supersede insights, INSERT new rows
+                → INSERT survey_metric_snapshots (anomaly_flag from trend analysis)
+                → write_checkpoint_blob + INSERT survey_insight_checkpoints
+                → UPDATE agent_runs (new_response_count, prior_context_run_id)</pre>
+
+        <h3>Manual run (Generate button)</h3>
+        <pre class="seq">POST /api/insights/:surveyId/trigger
+  INSERT agent_runs (intent='manual_refresh')
+  POST /insights/generate { trigger: "manual" }
+
+node_ingest     → force_regenerate=true → bootstrap sample size
+node_narrate    → never cache-hit; full re-narration
+                → prior_insights still from SAME anchor unless new_response_count>0 at publish
+node_report     → always runs (manual bypasses 25-response gate)
+node_publish    → same checkpoint path as stream
+                → if new_response_ids was empty: anchor unchanged for NEXT run</pre>
+
+        <div class="callout">
+          <strong>Summary for engineers:</strong> Checkpoints are a <em>publish-side artifact</em> synchronized with insights/snapshots.
+          <em>Insight evolution</em> is driven by anchor-run <code>insights</code> rows + <code>survey_metric_snapshots</code> + <code>new_response_ids</code> — not by reading prior checkpoints back into the graph.
+        </div>
+      </section>
+
+      <footer>
+        Source: <code>docs/insights/intelligence-lifecycle-visual-guide.md</code> ·
+        Self-contained HTML (no external JS). Print with Cmd+P / Ctrl+P to save as PDF.
+      </footer>
+    </main>
+  </div>
+</body>
+</html>

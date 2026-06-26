@@ -35,9 +35,13 @@ function ClerkAuthBridge({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoaded) return;
-    if (!isSignedIn) { setTokenWarmed(true); return; } // redirect path — no token needed
+    if (!isSignedIn) { setTokenWarmed(true); return; }
     let active = true;
-    getToken().finally(() => { if (active) setTokenWarmed(true); });
+    (async () => {
+      let token = await getToken();
+      if (!token) token = await getToken({ skipCache: true });
+      if (active) setTokenWarmed(true);
+    })();
     return () => { active = false; };
   }, [isLoaded, isSignedIn, getToken]);
 

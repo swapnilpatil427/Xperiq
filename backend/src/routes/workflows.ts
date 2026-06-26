@@ -148,7 +148,7 @@ router.post('/:id/test', requireAuth, async (req: Request, res: Response): Promi
     );
     if (!wf) { clientError(res, 404, 'Workflow not found'); return; }
     const event = req.body?.event || { type: wf.trigger_type || 'manual', userId: req.userId, nps: 4, sentiment: 'negative', text: 'sample' };
-    const result = await runWorkflow(wf, event, { orgId: req.orgId });
+    const result = await runWorkflow(wf as Parameters<typeof runWorkflow>[0], event, { orgId: req.orgId });
     res.json({ result });
   } catch (err: unknown) {
     serverError(res, err instanceof Error ? err : new Error(String(err)));
@@ -167,7 +167,7 @@ router.post('/executions/:execId/retry', requireAuth, async (req: Request, res: 
       'SELECT * FROM workflows WHERE id = $1 AND org_id = $2', [exec.workflow_id, req.orgId]
     );
     if (!wf) { clientError(res, 404, 'Workflow not found'); return; }
-    const result = await runWorkflow(wf, exec.trigger_payload || {}, { orgId: req.orgId });
+    const result = await runWorkflow(wf as Parameters<typeof runWorkflow>[0], exec.trigger_payload || {}, { orgId: req.orgId });
     res.json({ result });
   } catch (err: unknown) {
     serverError(res, err instanceof Error ? err : new Error(String(err)));

@@ -472,6 +472,107 @@ function createAxiosInstance(getToken: GetToken) {
   return instance;
 }
 
+// ── Admin support pipeline: Postgres snake_case → UI camelCase ───────────────
+
+function mapQueuedDoc(row: Record<string, unknown>): QueuedDoc {
+  return {
+    id:                  String(row.id ?? ''),
+    title:               String(row.title ?? ''),
+    docKey:              String(row.key ?? row.docKey ?? ''),
+    qualityScore:        Number(row.quality_score ?? row.qualityScore ?? 0),
+    status:              String(row.pipeline_status ?? row.status ?? 'queued') as PipelineStatus,
+    autoApproveDeadline: (row.auto_approve_deadline ?? row.autoApproveDeadline ?? null) as string | null,
+    humanEdited:         Boolean(row.human_edited ?? row.humanEdited ?? false),
+    sourceUrl:           (row.source_ref ?? row.sourceUrl ?? null) as string | null,
+    version:             Number(row.version ?? 1),
+    updatedAt:           String(row.updated_at ?? row.updatedAt ?? ''),
+    createdAt:           String(row.created_at ?? row.createdAt ?? ''),
+  };
+}
+
+function mapPipelineEvent(row: Record<string, unknown>): PipelineEvent {
+  return {
+    id:         String(row.id ?? ''),
+    docId:      String(row.doc_id ?? row.docId ?? ''),
+    docTitle:   String(row.doc_title ?? row.docTitle ?? ''),
+    eventType:  String(row.event_type ?? row.eventType ?? ''),
+    actor:      (row.actor_id ?? row.actor ?? null) as string | null,
+    actorType:  String(row.actor_type ?? row.actorType ?? 'system') as PipelineEvent['actorType'],
+    occurredAt: String(row.created_at ?? row.occurredAt ?? ''),
+  };
+}
+
+function qualityBreakdownFromScore(score: number): QualityBreakdown {
+  const s = Math.min(1, Math.max(0, score));
+  return {
+    accuracy:      s,
+    completeness:  s * 0.95,
+    clarity:       s * 0.9,
+    searchability: s * 0.92,
+    actionability: s * 0.88,
+  };
+}
+
+function mapAdminDocDetail(raw: Record<string, unknown>): AdminDocDetail {
+  const docRow = (raw.doc ?? {}) as Record<string, unknown>;
+  const sectionRows = (raw.sections ?? []) as Record<string, unknown>[];
+  const eventRows = (raw.events ?? raw.pipelineHistory ?? []) as Record<string, unknown>[];
+
+  const sections: AdminDocSection[] = sectionRows.map((s) => ({
+    key:     String(s.section_key ?? s.key ?? ''),
+    heading: String(s.heading ?? s.section_key ?? s.key ?? ''),
+    content: String(s.content ?? ''),
+  }));
+
+  const locks = sectionRows
+    .filter((s) => s.human_locked || s.locked)
+    .map((s) => ({
+      sectionKey: String(s.section_key ?? s.key ?? ''),
+      lockedBy:   String(s.locked_by ?? s.lockedBy ?? 'admin'),
+    }));
+
+  const doc = mapQueuedDoc(docRow);
+  const score = doc.qualityScore;
+
+  return {
+    doc,
+    sections,
+    oldSections: (raw.oldSections as AdminDocSection[] | undefined) ?? [],
+    locks,
+    pipelineHistory: eventRows.map(mapPipelineEvent),
+    qualityBreakdown: (raw.qualityBreakdown as QualityBreakdown | undefined)
+      ?? qualityBreakdownFromScore(score > 1 ? score / 100 : score),
+  };
+}
+
+function mapDocGap(row: Record<string, unknown>): DocGap {
+  return {
+    id:              String(row.id ?? ''),
+    query:           String(row.query ?? ''),
+    feedbackType:    String(row.feedback_type ?? row.feedbackType ?? ''),
+    crystalIntent:   (row.crystal_intent ?? row.crystalIntent ?? null) as string | null,
+    occurrenceCount: Number(row.occurrence_count ?? row.occurrenceCount ?? 1),
+    firstSeenAt:     String(row.first_seen_at ?? row.created_at ?? row.firstSeenAt ?? ''),
+    lastSeenAt:      String(row.last_seen_at ?? row.created_at ?? row.lastSeenAt ?? ''),
+    resolvedAt:      (row.resolved_at ?? row.resolvedAt ?? null) as string | null,
+    resolution:      (row.resolution ?? null) as DocGap['resolution'],
+  };
+}
+
+function mapPipelineStats(raw: Record<string, unknown>): PipelineStats {
+  const byStatus = (raw.byStatus ?? raw.statusDistribution ?? {}) as Record<string, number>;
+  return {
+    docsLive:            Number(raw.totalLive ?? raw.docsLive ?? 0),
+    docsLiveDelta:       Number(raw.docsLiveDelta ?? 0),
+    publishedToday:      Number(raw.last24hPublished ?? raw.publishedToday ?? 0),
+    publishedTodayDelta: Number(raw.publishedTodayDelta ?? 0),
+    gapsOpen:            Number(raw.totalGaps ?? raw.gapsOpen ?? 0),
+    avgQualityScore:     Number(raw.avgQualityScore ?? 0),
+    statusDistribution:  byStatus as Record<PipelineStatus, number>,
+    qualityHistogram:    (raw.qualityHistogram as PipelineStats['qualityHistogram']) ?? [],
+  };
+}
+
 export function createApiClient(getToken: GetToken) {
   const http = createAxiosInstance(getToken);
 
@@ -1953,7 +2054,429 @@ export function createApiClient(getToken: GetToken) {
       return res.data;
     },
 
+    // ── Billing & Credits ──────────────────────────────────────────────────────
+    getCredits: async (): Promise<CreditBalance> => {
+      const res = await http.get<CreditBalance>('/api/billing/credits');
+      return res.data;
+    },
+    getCreditConfig: async (): Promise<CreditConfig> => {
+      const res = await http.get<CreditConfig>('/api/billing/config');
+      return res.data;
+    },
+    getCreditUsage: async (days?: number): Promise<CreditUsageResponse> => {
+      const q = days ? `?days=${days}` : '';
+      const res = await http.get<CreditUsageResponse>(`/api/billing/usage${q}`);
+      return res.data;
+    },
+    getCreditLedger: async (limit = 50, offset = 0): Promise<{ entries: CreditLedgerEntry[]; total: number }> => {
+      const res = await http.get<{ entries: CreditLedgerEntry[]; total: number }>(`/api/billing/ledger?limit=${limit}&offset=${offset}`);
+      return res.data;
+    },
+    setSpendCap: async (data: { overage_enabled: boolean; overage_ceiling: number | null }): Promise<CreditBalance> => {
+      const res = await http.put<CreditBalance>('/api/billing/spend-cap', data);
+      return res.data;
+    },
+    setPlan: async (planTier: string): Promise<CreditBalance> => {
+      const res = await http.post<CreditBalance>('/api/billing/plan', { plan_tier: planTier });
+      return res.data;
+    },
+    grantCredits: async (credits: number, note?: string): Promise<CreditBalance> => {
+      const res = await http.post<CreditBalance>('/api/billing/grant', { credits, note });
+      return res.data;
+    },
+    getCreditPacks: async (): Promise<{ packs: CreditPack[]; stripe_enabled: boolean }> => {
+      const res = await http.get<{ packs: CreditPack[]; stripe_enabled: boolean }>('/api/billing/packs');
+      return res.data;
+    },
+    startCheckout: async (packId: string): Promise<{ url: string }> => {
+      const res = await http.post<{ url: string }>('/api/billing/checkout', { pack_id: packId });
+      return res.data;
+    },
+
+    // ── Support System API ─────────────────────────────────────────────────────
+
+    getSupportDocs: async (params?: { q?: string; category?: string; limit?: number }): Promise<{ docs: SupportDoc[]; total: number; page: number; limit: number }> => {
+      const qs = new URLSearchParams();
+      if (params?.q)        qs.set('q',        params.q);
+      if (params?.category) qs.set('category', params.category);
+      if (params?.limit)    qs.set('limit',    String(params.limit));
+      const res = await http.get<{ docs: SupportDoc[]; total: number; page: number; limit: number }>(
+        `/api/support/docs${qs.toString() ? `?${qs}` : ''}`,
+      );
+      return res.data;
+    },
+
+    getSupportDoc: async (key: string): Promise<SupportDoc> => {
+      const res = await http.get<SupportDoc>(`/api/support/docs/${encodeURIComponent(key)}`);
+      return res.data;
+    },
+
+    getSupportChangelog: async (limit?: number): Promise<{ entries: ChangelogEntry[] }> => {
+      const qs = limit ? `?limit=${limit}` : '';
+      const res = await http.get<{ entries: ChangelogEntry[] }>(`/api/support/changelog${qs}`);
+      return res.data;
+    },
+
+    getSupportKnownIssues: async (): Promise<{ issues: KnownIssue[] }> => {
+      const res = await http.get<{ issues: KnownIssue[] }>('/api/support/known-issues');
+      return res.data;
+    },
+
+    getSupportRoadmap: async (): Promise<{ sections: RoadmapSection[] }> => {
+      const res = await http.get<{ sections: RoadmapSection[] }>('/api/support/roadmap');
+      return res.data;
+    },
+
+    getSupportStatus: async (): Promise<SystemStatus> => {
+      const res = await http.get<SystemStatus>('/api/support/status');
+      return res.data;
+    },
+
+    getSupportAccount: async (): Promise<AccountState> => {
+      const res = await http.get<AccountState>('/api/support/account');
+      return res.data;
+    },
+
+    createSupportTicket: async (data: CreateTicketRequest): Promise<SupportTicket> => {
+      const res = await http.post<SupportTicket>('/api/support/tickets', data);
+      return res.data;
+    },
+
+    submitDocFeedback: async (data: DocFeedbackRequest): Promise<{ received: boolean }> => {
+      const res = await http.post<{ received: boolean }>('/api/support/feedback', data);
+      return res.data;
+    },
+
+    crystalSupport: async (message: string, context?: Record<string, unknown>): Promise<CrystalSupportResponse> => {
+      const res = await http.post<CrystalSupportResponse>('/api/admin/crystal-support', { message, context });
+      return res.data;
+    },
+
+    // ── Admin Support Pipeline ─────────────────────────────────────────────────
+
+    adminSupportGetQueue: async (): Promise<{ docs: QueuedDoc[] }> => {
+      const res = await http.get<{ docs?: QueuedDoc[]; queue?: Record<string, unknown>[] }>(
+        '/api/admin-support/queue',
+      );
+      const rows = res.data.queue ?? res.data.docs ?? [];
+      const docs = rows.map((row) =>
+        row && typeof row === 'object' && 'docKey' in row
+          ? (row as unknown as QueuedDoc)
+          : mapQueuedDoc(row as Record<string, unknown>),
+      );
+      return { docs };
+    },
+
+    adminSupportGetFeed: async (): Promise<{ events: PipelineEvent[]; sinceLastVisit: number }> => {
+      const res = await http.get<{
+        events?: Record<string, unknown>[];
+        sinceLastVisit?: number;
+        since?: string;
+      }>('/api/admin-support/feed');
+      const events = (res.data.events ?? []).map((row) =>
+        row && 'eventType' in row
+          ? (row as unknown as PipelineEvent)
+          : mapPipelineEvent(row),
+      );
+      return {
+        events,
+        sinceLastVisit: res.data.sinceLastVisit ?? events.length,
+      };
+    },
+
+    adminSupportGetDoc: async (id: string): Promise<AdminDocDetail> => {
+      const res = await http.get<Record<string, unknown>>(`/api/admin-support/docs/${id}`);
+      return mapAdminDocDetail(res.data);
+    },
+
+    adminSupportApprove: async (docId: string): Promise<{ ok: boolean }> => {
+      const res = await http.post<{ ok?: boolean; approved?: boolean }>(
+        '/api/admin-support/approve',
+        { docId },
+      );
+      return { ok: res.data.ok ?? res.data.approved ?? true };
+    },
+
+    adminSupportReject: async (docId: string, reason: string): Promise<{ ok: boolean }> => {
+      const res = await http.post<{ ok?: boolean; rejected?: boolean }>(
+        '/api/admin-support/reject',
+        { docId, reason },
+      );
+      return { ok: res.data.ok ?? res.data.rejected ?? true };
+    },
+
+    adminSupportEditSections: async (docId: string, sections: SectionEdit[]): Promise<{ ok: boolean }> => {
+      const res = await http.put<{ ok?: boolean; sectionsEdited?: number }>(
+        '/api/admin-support/sections',
+        {
+          docId,
+          sections: sections.map((s) => ({
+            sectionKey: s.sectionKey,
+            content:    s.content,
+            lock:       s.locked,
+          })),
+        },
+      );
+      return { ok: res.data.ok ?? true };
+    },
+
+    adminSupportGetGaps: async (): Promise<{ gaps: DocGap[] }> => {
+      const res = await http.get<{ gaps?: Record<string, unknown>[] }>('/api/admin-support/gaps');
+      return { gaps: (res.data.gaps ?? []).map(mapDocGap) };
+    },
+
+    adminSupportGetStats: async (): Promise<PipelineStats> => {
+      const res = await http.get<Record<string, unknown>>('/api/admin-support/stats');
+      return mapPipelineStats(res.data);
+    },
+
   };
+}
+
+// ── Credit system types ───────────────────────────────────────────────────────
+export interface CreditBalance {
+  plan_tier:           string;
+  monthly_allowance:   number;
+  allowance_remaining: number;
+  pack_balance:        number;
+  available:           number;
+  overage_enabled:     boolean;
+  overage_ceiling:     number | null;
+  overage_used:        number;
+  overage_remaining:   number | null;
+  period_start:        string;
+  period_days:         number;
+}
+export interface CreditConfig {
+  credit_usd:          number;
+  period_days:         number;
+  costs:               Record<string, number>;
+  plan_allowances:     Record<string, number>;
+  plan_prices?:        Record<string, number>;
+  free_lifetime_grant: number;
+}
+export interface CreditUsageRow {
+  action_type:    string;
+  total_credits:  number;
+  event_count:    number;
+  total_cost_usd: number;
+}
+export interface CreditUsageResponse {
+  summary: CreditUsageRow[];
+  balance: CreditBalance;
+  days:    number;
+}
+export interface CreditLedgerEntry {
+  id:            string;
+  action_type:   string;
+  credits:       number;
+  source:        string;
+  action_ref:    string | null;
+  balance_after: number;
+  unit_cost_usd: number | null;
+  note:          string | null;
+  user_id:       string | null;
+  created_at:    string;
+}
+export interface CreditPack {
+  id:        string;
+  label:     string;
+  credits:   number;
+  price_usd: number;
+}
+
+// ── Support System types ───────────────────────────────────────────────────────
+
+export interface SupportDoc {
+  key:          string;
+  title:        string;
+  category:     string;
+  content:      string;
+  excerpt?:     string;
+  tags?:        string[];
+  updated_at:   string;
+  author?:      string;
+}
+
+export interface ChangelogEntry {
+  version:      string;
+  date:         string;
+  title:        string;
+  description:  string;
+  type:         'feature' | 'fix' | 'improvement' | 'deprecation';
+  tags?:        string[];
+}
+
+export interface KnownIssue {
+  id:           string;
+  title:        string;
+  description:  string;
+  status:       'investigating' | 'identified' | 'monitoring' | 'resolved';
+  severity:     'critical' | 'major' | 'minor';
+  affected?:    string[];
+  started_at:   string;
+  resolved_at?: string | null;
+}
+
+export interface RoadmapSection {
+  id:           string;
+  title:        string;
+  status:       'planned' | 'in_progress' | 'completed';
+  eta?:         string;
+  items:        RoadmapItem[];
+}
+
+export interface RoadmapItem {
+  id:           string;
+  title:        string;
+  description?: string;
+  status:       'planned' | 'in_progress' | 'completed';
+  votes?:       number;
+}
+
+export type SystemStatusLevel = 'operational' | 'degraded' | 'partial_outage' | 'major_outage';
+
+export interface SystemStatusComponent {
+  name:         string;
+  status:       SystemStatusLevel;
+  updated_at:   string;
+}
+
+export interface SystemStatus {
+  overall:      SystemStatusLevel;
+  components:   SystemStatusComponent[];
+  updated_at:   string;
+  incident?:    string | null;
+}
+
+export interface AccountState {
+  plan_tier:    string;
+  seats_used:   number;
+  seats_limit:  number | null;
+  features:     string[];
+  billing_email?: string;
+  next_renewal?:  string | null;
+}
+
+export interface CreateTicketRequest {
+  subject:      string;
+  description:  string;
+  priority?:    'low' | 'normal' | 'high' | 'urgent';
+  category?:    string;
+  attachments?: string[];
+}
+
+export interface SupportTicket {
+  id:           string;
+  subject:      string;
+  status:       'open' | 'pending' | 'resolved' | 'closed';
+  priority:     string;
+  created_at:   string;
+  url?:         string;
+}
+
+export interface DocFeedbackRequest {
+  doc_key:      string;
+  helpful:      boolean;
+  query?:       string;
+  comment?:     string;
+}
+
+export interface CrystalSupportResponse {
+  answer:               string;
+  suggestions?:         string[];
+  doc_refs?:            string[];
+  escalation_package?:  EscalationPackage | null;
+  resolved:             boolean;
+}
+
+export interface EscalationPackage {
+  description:  string;
+  priority:     'low' | 'normal' | 'high' | 'urgent';
+  context:      Record<string, unknown>;
+}
+
+// ── Admin Support Pipeline types ──────────────────────────────────────────────
+
+export type PipelineStatus =
+  | 'queued' | 'extracting' | 'drafting' | 'quality_check'
+  | 'auto_approved' | 'pending_review' | 'requires_annotation'
+  | 'rejected' | 'publishing' | 'live' | 'stale';
+
+export interface QueuedDoc {
+  id:                  string;
+  title:               string;
+  docKey:              string;
+  qualityScore:        number;
+  status:              PipelineStatus;
+  autoApproveDeadline: string | null;
+  humanEdited:         boolean;
+  sourceUrl:           string | null;
+  version:             number;
+  updatedAt:           string;
+  createdAt:           string;
+}
+
+export interface AdminDocSection {
+  key:     string;
+  heading: string;
+  content: string;
+}
+
+export interface AdminDocDetail {
+  doc:              QueuedDoc;
+  sections:         AdminDocSection[];
+  oldSections:      AdminDocSection[];
+  locks:            Array<{ sectionKey: string; lockedBy: string }>;
+  pipelineHistory:  PipelineEvent[];
+  qualityBreakdown: QualityBreakdown;
+}
+
+export interface PipelineEvent {
+  id:        string;
+  docId:     string;
+  docTitle:  string;
+  eventType: string;
+  actor:     string | null;
+  actorType: 'system' | 'crystal' | 'admin';
+  occurredAt: string;
+}
+
+export interface DocGap {
+  id:              string;
+  query:           string;
+  feedbackType:    string;
+  crystalIntent:   string | null;
+  occurrenceCount: number;
+  firstSeenAt:     string;
+  lastSeenAt:      string;
+  resolvedAt:      string | null;
+  resolution:      'doc_created' | 'linked' | 'wont_fix' | null;
+}
+
+export interface QualityBreakdown {
+  accuracy:       number;
+  completeness:   number;
+  clarity:        number;
+  searchability:  number;
+  actionability:  number;
+}
+
+export interface PipelineStats {
+  docsLive:            number;
+  docsLiveDelta:       number;
+  publishedToday:      number;
+  publishedTodayDelta: number;
+  gapsOpen:            number;
+  avgQualityScore:     number;
+  statusDistribution:  Record<PipelineStatus, number>;
+  qualityHistogram:    Array<{ bucket: string; count: number }>;
+}
+
+export interface SectionEdit {
+  sectionKey: string;
+  content:    string;
+  locked:     boolean;
 }
 
 // Re-export for consumers that import InsightRunStatus from api.ts

@@ -21,9 +21,16 @@ let dbQuery, invalidateCache, auditMock, upsertMock, getRoleIdMock;
 function fakeMod(id, exports) { return { id, filename: id, loaded: true, exports, children: [] }; }
 
 function buildApp() {
-  _require.cache[AUTH_PATH] = fakeMod(AUTH_PATH, {
+  const authExports = {
     requireAuth: (req, res, next) => { req.orgId = 'test-org'; req.userId = 'test-user'; req.id = 'req-1'; next(); },
+  };
+  // Dev bypass now keys on DEV_MODE (not SKIP_AUTH); expose it as a live getter over the env
+  // these tests toggle.
+  Object.defineProperty(authExports, 'DEV_MODE', {
+    get: () => process.env.SKIP_AUTH === 'true',
+    enumerable: true,
   });
+  _require.cache[AUTH_PATH] = fakeMod(AUTH_PATH, authExports);
   _require.cache[PERM_PATH] = fakeMod(PERM_PATH, {
     requirePermission: () => (req, res, next) => next(),
     invalidatePermissionCache: invalidateCache,

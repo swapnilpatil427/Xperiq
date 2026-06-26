@@ -43,8 +43,20 @@ import { CaseDetailPage } from './pages/CaseDetailPage';
 import { OwnershipRoutingPage } from './pages/OwnershipRoutingPage';
 import { SettingsConnectionsPage } from './pages/SettingsConnectionsPage';
 import { NotificationAnalyticsPage } from './pages/NotificationAnalyticsPage';
+import { BillingPage } from './pages/BillingPage';
 import { BroadcastsPage } from './pages/BroadcastsPage';
 import { BroadcastApprovalPage } from './pages/BroadcastApprovalPage';
+import { DocPipelinePage } from './pages/admin/DocPipelinePage';
+import { DocReviewPage } from './pages/admin/DocReviewPage';
+import { DocEditorPage } from './pages/admin/DocEditorPage';
+import { DocGapsPage } from './pages/admin/DocGapsPage';
+import { PipelineStatsPage } from './pages/admin/PipelineStatsPage';
+import { AdminCrystalSkillsPage } from './pages/admin/AdminCrystalSkillsPage';
+import { AdminCrystalSkillDetailPage } from './pages/admin/AdminCrystalSkillDetailPage';
+import { AdminCrystalQualityPage } from './pages/admin/AdminCrystalQualityPage';
+import { AdminCrystalSignalsPage } from './pages/admin/AdminCrystalSignalsPage';
+import { AdminCrystalGapsPage } from './pages/admin/AdminCrystalGapsPage';
+import { AdminCrystalDlqPage } from './pages/admin/AdminCrystalDlqPage';
 
 function ProtectedRoute() {
   const { isSignedIn, isLoaded, orgId } = useAppAuth();
@@ -123,8 +135,25 @@ export default function App() {
             <Route path={ROUTES.SETTINGS_OWNERSHIP}     element={<ErrorBoundary inline><OwnershipRoutingPage /></ErrorBoundary>} />
             <Route path={ROUTES.SETTINGS_CONNECTIONS}   element={<ErrorBoundary inline><SettingsConnectionsPage /></ErrorBoundary>} />
             <Route path={ROUTES.NOTIFICATION_ANALYTICS} element={<ErrorBoundary inline><NotificationAnalyticsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.BILLING}                element={<ErrorBoundary inline><BillingPage /></ErrorBoundary>} />
             <Route path={ROUTES.BROADCASTS}          element={<ErrorBoundary inline><BroadcastsPage /></ErrorBoundary>} />
             <Route path={ROUTES.BROADCASTS_APPROVAL} element={<ErrorBoundary inline><BroadcastApprovalPage /></ErrorBoundary>} />
+
+            {/* Admin — Crystal */}
+            <Route path={ROUTES.ADMIN_CRYSTAL} element={<Navigate to={ROUTES.ADMIN_CRYSTAL_SKILLS} replace />} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_SKILLS}       element={<ErrorBoundary inline><AdminCrystalSkillsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_SKILL_DETAIL} element={<ErrorBoundary inline><AdminCrystalSkillDetailPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_QUALITY}      element={<ErrorBoundary inline><AdminCrystalQualityPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_SIGNALS}      element={<ErrorBoundary inline><AdminCrystalSignalsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_GAPS}        element={<ErrorBoundary inline><AdminCrystalGapsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_CRYSTAL_DLQ}         element={<ErrorBoundary inline><AdminCrystalDlqPage /></ErrorBoundary>} />
+
+            {/* Admin — Support Pipeline */}
+            <Route path={ROUTES.ADMIN_SUPPORT_PIPELINE} element={<ErrorBoundary inline><DocPipelinePage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_SUPPORT_REVIEW}   element={<ErrorBoundary inline><DocReviewPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_SUPPORT_EDIT}     element={<ErrorBoundary inline><DocEditorPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_SUPPORT_GAPS}     element={<ErrorBoundary inline><DocGapsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.ADMIN_SUPPORT_STATS}    element={<ErrorBoundary inline><PipelineStatsPage /></ErrorBoundary>} />
           </Route>
 
           <Route path="/app" element={<Navigate to={ROUTES.SURVEYS} replace />} />

@@ -734,6 +734,7 @@ export function SurveyFillPage() {
 
   const questions: Question[] = survey?.questions || [];
   const q = questions[currentQ];
+  const qType = q?.type as string | undefined;
   const progress = questions.length > 0 ? ((currentQ) / questions.length) * 100 : 0;
   const isLast = currentQ === questions.length - 1;
   const canContinue = q?.type === 'statement' || !q?.required || answers[q?.id] !== undefined;
@@ -967,10 +968,10 @@ export function SurveyFillPage() {
               {q.type === 'matrix' && <MatrixQuestion question={q as MatrixQuestion} value={(answers[q.id] as Record<string, string | string[]>) || {}} onChange={(v) => setAnswer(q.id, v)} />}
               {q.type === 'date' && <DateQuestion q={q as DateQuestion} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
               {q.type === 'statement' && <StatementBlock q={q as StatementQuestion} />}
-              {q.type === 'emoji_rating' && <EmojiRatingQuestion q={q as unknown as EmojiRatingQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
-              {q.type === 'image_choice' && <ImageChoiceQuestion q={q as unknown as ImageChoiceQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
-              {q.type === 'image_upload' && <ImageUploadQuestion q={q as unknown as ImageUploadQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
-              {q.type === 'annotation' && <AnnotationQuestion q={q as unknown as AnnotationQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
+              {qType === 'emoji_rating' && <EmojiRatingQuestion q={q as unknown as EmojiRatingQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
+              {qType === 'image_choice' && <ImageChoiceQuestion q={q as unknown as ImageChoiceQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
+              {qType === 'image_upload' && <ImageUploadQuestion q={q as unknown as ImageUploadQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
+              {qType === 'annotation' && <AnnotationQuestion q={q as unknown as AnnotationQ} value={answers[q.id]} onChange={(v) => setAnswer(q.id, v)} />}
 
               {/* Navigation */}
               <div className="flex gap-3 mt-8">

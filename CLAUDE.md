@@ -22,6 +22,10 @@ Experient is an AI-powered experience intelligence platform. It lets organizatio
 - All user-visible strings → `locales/en.ts`, accessed via `t('key')` — NEVER hardcode in JSX
 - When `CLERK_SECRET_KEY` is absent the backend runs in dev mode (dev-user/dev-org) — no `SKIP_AUTH` env var needed
 - Never commit `.env` or `.env.*` files
+- **New env var → update `.env.example` + `docs/ENV_VARS.md` in the same PR.** Any new
+  `process.env.X` (backend), `import.meta.env.VITE_X` (app), or `os.getenv("X")` (CrystalOS)
+  must be added to the matching `.env.example` (root / `app/` / `backend/`) and to the canonical
+  list in `docs/ENV_VARS.md`. `docs/ENV_VARS.md` is the source of truth for every key.
 - Soft-delete surveys (`deleted_at` timestamp), never hard-delete
 - All writes go through the Express API; reads are REST. **No Firestore** — Postgres-only
 - Always check `docs/TRACKER.md` before suggesting next steps

@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCrystalPanel } from '../contexts/crystalPanel';
 import { usePermissions } from '../lib/permissions';
+import { supportUrl } from '../lib/supportUrl';
 
 // Map fine-grained permission keys to the minimum role required.
 const PERMISSION_ROLE: Record<string, 'admin' | 'analyst' | 'viewer'> = {
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
 const SETTINGS_ITEM = { key: 'nav.settings', icon: 'settings', path: ROUTES.SETTINGS };
 const SETTINGS_EXTRA_ITEMS = [
   { key: 'nav.notificationAnalytics', icon: 'bar_chart', path: ROUTES.NOTIFICATION_ANALYTICS, requiredPermission: 'outreach:logs:read' },
+  { key: 'billing.nav', icon: 'credit_card', path: ROUTES.BILLING },
 ];
 
 interface SideNavProps {
@@ -180,6 +182,44 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
               </TooltipContent>
             </Tooltip>
           )}
+
+          {/* Experient Support — opens the support docs site */}
+          {(() => {
+            const href = supportUrl('/guides');
+            const label = t('nav.support');
+            if (!isExpanded) {
+              return (
+                <Tooltip key="support">
+                  <TooltipTrigger asChild>
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="sidenav-item-collapsed"
+                      aria-label={label}
+                    >
+                      <Icon name="menu_book" size={20} />
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="font-semibold text-xs">
+                    {label}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="sidenav-item"
+              >
+                <Icon name="menu_book" size={20} />
+                <span className="truncate">{label}</span>
+                <Icon name="open_in_new" size={14} className="ml-auto flex-shrink-0 opacity-50" />
+              </a>
+            );
+          })()}
 
           {/* Divider before Settings */}
           <div className={`my-2 ${isExpanded ? 'mx-2' : 'mx-1'} divider-gradient`} />

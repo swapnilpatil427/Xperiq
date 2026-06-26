@@ -69,6 +69,16 @@ circuit_breaker_state = Gauge(
     registry=registry,
 )
 
+# ── Scheduler heartbeat ─────────────────────────────────────────────────────────
+# Mirrors the backend's scheduler_heartbeat_timestamp metric so the shared
+# SchedulerHeartbeatStale alert covers the CrystalOS scheduler too.
+scheduler_heartbeat = Gauge(
+    "scheduler_heartbeat_timestamp",
+    "Unix timestamp (seconds) of the last scheduler tick, per component",
+    ["component"],
+    registry=registry,
+)
+
 # ── Crystal ReAct metrics ──────────────────────────────────────────────────────
 crystal_tool_calls_total = Counter(
     "crystal_tool_calls_total",

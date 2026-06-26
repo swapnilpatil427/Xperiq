@@ -19,6 +19,8 @@ import { validate } from '../lib/validate';
 import { query } from '../lib/db';
 import { serverError, clientError } from '../lib/httpError';
 import logger from '../lib/logger';
+import { debitCredits } from '../lib/creditLedger';
+import { CREDIT_COSTS } from '../lib/creditPlans';
 import {
   createBroadcast,
   notifyApprovers,
@@ -368,6 +370,24 @@ router.post('/broadcasts/:id/send', requireAuth, requirePermission('outreach:bro
            WHERE id = $2 AND org_id = $3`,
           [subscribers.length, id, orgId]
         );
+
+        // Credit metering — broadcasts are pass-through (cost-plus). Best-effort: an
+        // already-sent broadcast is never clawed back, so a debit shortfall is logged, not thrown.
+        const channels = Array.isArray(broadcast.channels) ? (broadcast.channels as string[]) : [];
+        for (const ch of channels) {
+          if (ch !== 'email' && ch !== 'sms') continue; // in_app/push are bundled
+          const unit = ch === 'email' ? CREDIT_COSTS.broadcast_email : CREDIT_COSTS.broadcast_sms;
+          const total = unit * subscribers.length;
+          if (total > 0) {
+            await debitCredits(orgId, {
+              actionType: ch === 'email' ? 'broadcast_email' : 'broadcast_sms',
+              credits:    total,
+              userId,
+              actionRef:  id,
+              note:       `Broadcast ${ch} ×${subscribers.length}`,
+            }).catch((e: unknown) => logger.warn({ err: (e as Error).message, broadcastId: id }, 'broadcast:debit_failed'));
+          }
+        }
 
         logger.info({ broadcastId: id, recipientCount: subscribers.length }, 'broadcast:sent');
       } catch (err: unknown) {

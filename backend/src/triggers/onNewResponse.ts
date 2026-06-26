@@ -36,7 +36,10 @@ exports.onNewResponse = functions.firestore.onDocumentCreated(
     const responses = snap.docs.map((d: { data: () => unknown }) => d.data());
 
     try {
-      const insights = await analyzeInsights((surveyDoc.data() as { title: string }).title, responses);
+      const insights = await analyzeInsights(
+        (surveyDoc.data() as { title: string }).title,
+        responses as Parameters<typeof analyzeInsights>[1],
+      ) as Record<string, unknown>;
       await db
         .collection('orgs').doc(orgId)
         .collection('surveys').doc(surveyId)

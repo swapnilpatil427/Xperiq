@@ -18,6 +18,10 @@ import fetch from 'node-fetch';
 import { serverError, clientError } from '../lib/httpError';
 import * as agentsClient from '../lib/agentsClient';
 import { getRedisClient } from '../lib/redis';
+import { checkCredits, debitCredits } from '../lib/creditLedger';
+import { CREDIT_COSTS } from '../lib/creditPlans';
+
+const REFRESH_DAILY_LIMIT = parseInt(process.env.REFRESH_DAILY_LIMIT ?? '5', 10);
 
 const AGENTS_URL          = process.env.AGENTS_URL ?? 'http://localhost:8001';
 const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY
@@ -294,11 +298,11 @@ router.get('/:surveyId/list', async (req: Request, res: Response): Promise<void>
     ).catch(() => ({ rows: [] }));
     const crystalOpening = (openingRows[0] as Record<string, unknown> | undefined)?.narrative || null;
 
-    // pipeline_active: check for running run
+    // pipeline_active: check for running run scoped to this org to avoid cross-tenant leakage
     const { rows: runningRows } = await query(
       `SELECT id FROM agent_runs
-       WHERE survey_id = $1 AND status = 'running' LIMIT 1`,
-      [surveyId]
+       WHERE survey_id = $1 AND org_id = $2 AND status = 'running' LIMIT 1`,
+      [surveyId, req.orgId]
     ).catch(() => ({ rows: [] }));
     const pipelineActive = runningRows.length > 0;
 
@@ -359,6 +363,22 @@ router.post('/:surveyId/generate', async (req: Request, res: Response): Promise<
       );
     }
 
+    // Credit metering — only user-initiated runs are charged. System auto-runs
+    // (progressive 'stream' tier, 'schedule') are bundled, so customers are never surprised.
+    const meteredRun = trigger === 'manual' || trigger === 'regenerate';
+    if (meteredRun) {
+      const check = await checkCredits(req.orgId, CREDIT_COSTS.insight_run, 'insight_run');
+      if (!check.ok) {
+        res.status(402).json({
+          error:    'Not enough credits to generate insights.',
+          code:     'INSUFFICIENT_CREDITS',
+          required: check.required,
+          available: check.available,
+        });
+        return;
+      }
+    }
+
     const runId = await createInsightRun(surveyId, req.orgId, req.userId, trigger);
 
     // Fire-and-forget to agents service
@@ -369,6 +389,22 @@ router.post('/:surveyId/generate', async (req: Request, res: Response): Promise<
       logger.error({ err: (err as Error).message, surveyId, runId }, 'insights:generate:agents_error');
       query("UPDATE agent_runs SET status='failed', completed_at=NOW() WHERE id=$1", [runId]).catch(() => {});
     });
+
+    // Debit after the run is committed. Pre-checked above, so this only fails on a rare
+    // concurrent race — in which case the run is already enqueued, so we log and proceed.
+    if (meteredRun) {
+      try {
+        await debitCredits(req.orgId, {
+          actionType: 'insight_run',
+          credits:    CREDIT_COSTS.insight_run,
+          userId:     req.userId,
+          actionRef:  runId,
+          note:       `Insight run (${trigger})`,
+        });
+      } catch (err) {
+        logger.warn({ err: (err as Error).message, surveyId, runId }, 'insights:generate:debit_failed');
+      }
+    }
 
     res.status(202).json({ run_id: runId, status: 'started' });
   } catch (err: unknown) {
@@ -432,6 +468,7 @@ router.get('/:surveyId/stream', async (req: Request, res: Response): Promise<voi
   const poll = async (): Promise<void> => {
     if (pollCount++ >= MAX_POLLS) {
       send({ event: 'timeout' });
+      clearInterval(interval);
       res.end();
       return;
     }
@@ -460,6 +497,7 @@ router.get('/:surveyId/stream', async (req: Request, res: Response): Promise<voi
       }
     } catch (err: unknown) {
       logger.warn({ err: (err as Error).message }, 'insights:stream:poll_error');
+      if (res.writableEnded) clearInterval(interval);
     }
   };
 
@@ -792,6 +830,18 @@ router.post('/:surveyId/crystal', async (req: Request, res: Response): Promise<v
     const survey = await getSurvey(surveyId, req.orgId);
     if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
 
+    // Credit metering — a Crystal conversational turn is a metered AI action.
+    const crystalCheck = await checkCredits(req.orgId, CREDIT_COSTS.crystal_turn, 'crystal_turn');
+    if (!crystalCheck.ok) {
+      res.status(402).json({
+        error:     'Not enough credits to ask Crystal.',
+        code:      'INSUFFICIENT_CREDITS',
+        required:  crystalCheck.required,
+        available: crystalCheck.available,
+      });
+      return;
+    }
+
     // Load current insights — try with time_window filter first, fall back without
     let insights: Record<string, unknown>[] = [];
     try {
@@ -906,6 +956,19 @@ router.post('/:surveyId/crystal', async (req: Request, res: Response): Promise<v
       method: 'POST',
       body:   JSON.stringify(agentPayload),
     }, CRYSTAL_TIMEOUT_MS) as Record<string, unknown>;
+
+    // Debit one Crystal turn now that we have a successful answer (pre-checked above).
+    try {
+      await debitCredits(req.orgId, {
+        actionType: 'crystal_turn',
+        credits:    CREDIT_COSTS.crystal_turn,
+        userId:     req.userId,
+        actionRef:  surveyId,
+        note:       'Crystal conversational turn',
+      });
+    } catch (err) {
+      logger.warn({ err: (err as Error).message, surveyId }, 'insights:crystal:debit_failed');
+    }
 
     // Persist thread — keep last 20 exchanges (40 messages)
     const userMsg      = { role: 'user',      content: (message as string).trim(),  created_at: new Date().toISOString() };
@@ -1067,7 +1130,7 @@ router.get('/:surveyId/topics/hierarchy', async (req: Request, res: Response): P
     const topicsWithSubs = rootTopics.map(t => ({
       ...t,
       subtopics: subtopicsByParent[t.id as string] || [],
-    }));
+    })) as Array<Record<string, unknown>>;
 
     // Group root topics by theme
     const themeMap = new Map<string, { name: string; _volume: number; _sentiment_sum: number; _sentiment_count: number; topics: Record<string, unknown>[] }>();
@@ -1583,16 +1646,38 @@ router.post('/:surveyId/trigger', requireAuth, async (req: Request, res: Respons
       return;
     }
 
-    // Rate limiting
-    const today = new Date().toISOString().split('T')[0];
-    const rateKey = `manual_refresh:${orgId}:${surveyId}:${today}`;
+    // Rate limiting: Redis first; DB count fallback when Redis unavailable.
+    // Use explicit UTC midnight for the window start — avoids Postgres server timezone drift
+    // when casting a date string to TIMESTAMPTZ (e.g. server in PST would shift the window by 8h).
+    const todayUtcDate = new Date().toISOString().split('T')[0];
+    const todayUtcMidnight = `${todayUtcDate}T00:00:00Z`;
+    const rateKey = `manual_refresh:${orgId}:${surveyId}:${todayUtcDate}`;
     if (redis) {
       const count = await redis.incr(rateKey);
       if (count === 1) await redis.expire(rateKey, 86400);
-      if (count > 3) {
-        res.status(429).json({ error: 'daily_limit_reached', limit: 3 });
+      if (count > REFRESH_DAILY_LIMIT) {
+        res.status(429).json({ error: 'daily_limit_reached', limit: REFRESH_DAILY_LIMIT });
         return;
       }
+    } else {
+      const { rows: [{ run_count }] } = await query<{ run_count: number }>(
+        `SELECT COUNT(*)::int AS run_count FROM agent_runs
+         WHERE survey_id = $1 AND org_id = $2 AND run_type = 'insight_generation'
+           AND intent = 'manual_refresh' AND created_at >= $3::timestamptz`,
+        [surveyId, orgId, todayUtcMidnight]
+      );
+      if (run_count >= REFRESH_DAILY_LIMIT) {
+        res.status(429).json({ error: 'daily_limit_reached', limit: REFRESH_DAILY_LIMIT });
+        return;
+      }
+    }
+
+    // Credit pre-flight
+    const creditCost = CREDIT_COSTS.insight_run;
+    const creditCheck = await checkCredits(orgId, creditCost, 'manual_refresh');
+    if (!creditCheck.ok) {
+      res.status(402).json({ error: 'insufficient_credits', required: creditCost, available: creditCheck.available });
+      return;
     }
 
     // Check min new responses
@@ -1605,12 +1690,13 @@ router.post('/:surveyId/trigger', requireAuth, async (req: Request, res: Respons
     );
     const lastCount = ((lastRun[0] as Record<string, unknown> | undefined)?.response_count_at_run as number) || 0;
     const currentCount = surveyRow.response_count || 0;
-    if (currentCount - lastCount < 10) {
-      res.status(400).json({ error: 'min_responses_not_met', required: 10, new_responses: currentCount - lastCount });
+    const minNewResponses = 10;
+    if (currentCount - lastCount < minNewResponses) {
+      res.status(400).json({ error: 'min_responses_not_met', required: minNewResponses, new_responses: currentCount - lastCount });
       return;
     }
 
-    // Create run and trigger
+    // Create run, debit credits, and trigger
     const { rows: runRows } = await query(
       `INSERT INTO agent_runs (org_id, user_id, thread_id, run_type, status, intent, survey_id, response_count_at_run)
        VALUES ($1, $2, $3, 'insight_generation', 'running', 'manual_refresh', $4, $5)
@@ -1619,6 +1705,7 @@ router.post('/:surveyId/trigger', requireAuth, async (req: Request, res: Respons
     );
     const runId = (runRows[0] as { id: string }).id;
 
+    await debitCredits(orgId, { actionType: 'insight_run', credits: creditCost, userId: req.userId, actionRef: runId });
     await agentsClient.triggerInsightGeneration({ surveyId, orgId, runId, trigger: 'manual', force_regenerate: true } as Parameters<typeof agentsClient.triggerInsightGeneration>[0]);
     res.json({ run_id: runId, status: 'triggered' });
   } catch (err: unknown) {

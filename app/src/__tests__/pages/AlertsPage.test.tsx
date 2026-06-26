@@ -44,6 +44,6 @@ describe('AlertsPage', () => {
   it('exposes the new-rule action', async () => {
     render(<MemoryRouter><AlertsPage /></MemoryRouter>);
     await waitFor(() => expect(screen.getByText('NPS dropped 12 points')).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /new alert rule/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create alert rule/i })).toBeInTheDocument();
   });
 });

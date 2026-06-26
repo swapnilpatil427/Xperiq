@@ -4,8 +4,10 @@
 // Wired to the Crystal hero ask bar, ⌘K shortcut, and SideNav Crystal item.
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { invalidate } from '../lib/dataBus';
+import { useTranslation } from '../lib/i18n';
+import type { EscalationPackage } from '../lib/api';
 import { ROUTES, toPath } from '../constants/routes';
 import type { ActionProposal } from '../types';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -21,7 +23,7 @@ import type { Insight, Survey, AgenticInsight, SurveyTopic } from '../types';
 
 // Streaming is always enabled — no env flag needed.
 // Falls back to REST only when the streaming endpoint is unreachable.
-const CRYSTAL_STREAMING = true;
+const CRYSTAL_STREAMING = import.meta.env.VITE_CRYSTAL_STREAMING === 'true';
 
 interface Message {
   id: string;
@@ -76,6 +78,18 @@ interface CrystalPanelProps {
   // but the global panel reads them from context (set by whichever page is active).
   agenticInsights?: AgenticInsight[];
   topics?: SurveyTopic[];
+  initialMode?: 'support' | 'analyst';
+}
+
+function classifyAsSupport(message: string): boolean {
+  const lower = message.toLowerCase();
+  const keywords = [
+    'help', 'error', 'broken', 'issue', 'problem', 'not working', 'bug', 'crash',
+    'how do i', 'how to', 'can i', 'support', 'docs', 'documentation', 'setup',
+    'configure', 'stuck', 'fails', 'failing', "can't", 'cannot', 'wrong',
+    'unexpected', 'missing feature', 'feature request',
+  ];
+  return keywords.some((kw) => lower.includes(kw));
 }
 
 const SINGLE_PROMPTS = [
@@ -96,6 +110,7 @@ export function CrystalPanel({
   scope, surveys, insights = null,
   agenticInsights: propAgentic,
   topics: propTopics,
+  initialMode,
 }: CrystalPanelProps) {
   const {
     isOpen, initialQuery, crystalCtx, setCrystalCtx, closeCrystal,
@@ -137,6 +152,20 @@ export function CrystalPanel({
   const api = useApi();
   const { getToken, userId, orgId } = useAppAuth();
   const { brandName } = useBrand();
+  const { t } = useTranslation();
+  const location = useLocation();
+  const [escalationPackage, setEscalationPackage] = useState<EscalationPackage | null>(null);
+  const [lastSupportResolved, setLastSupportResolved] = useState(false);
+  const [feedbackThanks, setFeedbackThanks] = useState<string | null>(null);
+
+  const isSupportMode = (
+    initialMode === 'support' ||
+    location.pathname.includes('/support') ||
+    new URLSearchParams(location.search).get('mode') === 'support' ||
+    (messages.length > 0 &&
+      messages[messages.length - 1].role === 'user' &&
+      classifyAsSupport(messages[messages.length - 1].content))
+  );
 
   const isAll = scope === 'all';
   const activeSurveys = surveys.filter((s) => s.status === 'active' && !s.deleted_at);
@@ -182,6 +211,34 @@ export function CrystalPanel({
       setStreamError(null);
 
       const activeCtx = overrideCtx ?? crystalCtx;
+
+      // ── Support mode path ─────────────────────────────────────────────────
+      if (isSupportMode) {
+        try {
+          const resp = await api.crystalSupport(query.trim(), {
+            scope,
+            focused_topic: activeCtx.focused_topic,
+          });
+          setEscalationPackage(resp.escalation_package ?? null);
+          setLastSupportResolved(resp.resolved);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: 'crystal',
+              content: resp.answer,
+              timestamp: new Date(),
+              suggestions: resp.suggestions ?? [],
+            },
+          ]);
+        } catch {
+          setStreamError('Support request failed. Please try again.');
+        } finally {
+          setIsThinking(false);
+          setStreamingState(null);
+        }
+        return;
+      }
 
       // ── Streaming path (VITE_CRYSTAL_STREAMING=true) ──────────────────────
       // Handles both survey scope and org ('all') scope. Org scope uses
@@ -263,6 +320,7 @@ export function CrystalPanel({
                   insight_refs?: string[];
                   suggestions?: string[];
                   map?: CitationMap;
+                  proposals?: ActionProposal[];
                 };
                 if (event.type === 'citation_context' && event.map) {
                   const merged = { ...citationMapRef.current, ...event.map };
@@ -304,6 +362,8 @@ export function CrystalPanel({
                       suggestions: event.suggestions ?? [],
                     },
                   ]);
+                } else if (event.type === 'action_proposals' && event.proposals?.length) {
+                  setActionProposals(event.proposals);
                 } else if (event.type === 'error') {
                   answerReceived = true;  // error counts as a response — don't show generic fallback
                   setStreamingState(null);
@@ -398,6 +458,7 @@ export function CrystalPanel({
             }
           }
         } catch (err) {
+          const isOutOfCredits = err instanceof Error && err.message.includes('402');
           const isServiceDown = err instanceof Error && (
             err.message.includes('fetch') || err.message.includes('503') || err.message.includes('502')
           );
@@ -407,7 +468,9 @@ export function CrystalPanel({
             {
               id: crypto.randomUUID(),
               role: 'crystal',
-              content: isServiceDown
+              content: isOutOfCredits
+                ? 'You\'re out of AI credits. Open Billing & Credits (the credits pill, top-right) to upgrade your plan or add a top-up — then ask again.'
+                : isServiceDown
                 ? 'The agents service isn\'t reachable right now. Make sure it\'s running and try again.'
                 : 'Something went wrong. Please try your question again.',
               timestamp: new Date(),
@@ -416,6 +479,7 @@ export function CrystalPanel({
         } finally {
           setIsThinking(false);
           setStreamingState(null);
+          invalidate('credits');  // a turn may have consumed credits — refresh the chip
         }
         return;
       }
@@ -456,6 +520,7 @@ export function CrystalPanel({
           },
         ]);
       } catch (err) {
+        const isOutOfCredits = err instanceof Error && err.message.includes('402');
         const isServiceDown = err instanceof Error && (
           err.message.includes('fetch') || err.message.includes('503') || err.message.includes('502')
         );
@@ -464,7 +529,9 @@ export function CrystalPanel({
           {
             id: crypto.randomUUID(),
             role: 'crystal',
-            content: isServiceDown
+            content: isOutOfCredits
+              ? 'You\'re out of AI credits. Open Billing & Credits (the credits pill, top-right) to upgrade your plan or add a top-up — then ask again.'
+              : isServiceDown
               ? 'The agents service isn\'t reachable right now. Make sure it\'s running on :8001 and try again.'
               : 'Something went wrong. Please try your question again.',
             timestamp: new Date(),
@@ -472,6 +539,7 @@ export function CrystalPanel({
         ]);
       } finally {
         setIsThinking(false);
+        invalidate('credits');  // a turn may have consumed credits — refresh the chip
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -914,6 +982,14 @@ export function CrystalPanel({
                   >
                     Experient Copilot
                   </span>
+                  {isSupportMode && (
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(245,158,11,0.12)', color: '#b45309' }}
+                    >
+                      {t('crystal.supportMode')}
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-on-surface-variant truncate">
                   {isAll
@@ -1067,6 +1143,77 @@ export function CrystalPanel({
                   {streamError && !isThinking && (
                     <div className="text-xs text-red-500 px-2">{streamError}</div>
                   )}
+
+                  {/* ── Support mode: escalation CTA card ─────────────── */}
+                  {isSupportMode && escalationPackage && !lastSupportResolved && !isThinking && (
+                    <div
+                      className="mx-2 my-2 rounded-xl p-3 flex flex-col gap-2"
+                      style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Icon name="support_agent" size={14} style={{ color: '#b45309' }} />
+                        <span className="text-xs font-bold" style={{ color: '#b45309' }}>
+                          {t('crystal.escalationNeeded')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-on-surface-variant">{escalationPackage.description}</p>
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.createSupportTicket({
+                              subject: escalationPackage.description,
+                              priority: escalationPackage.priority,
+                              description: JSON.stringify(escalationPackage.context),
+                            });
+                            setEscalationPackage(null);
+                          } catch { /* silently ignore */ }
+                        }}
+                        className="self-start text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                        style={{ background: 'rgba(245,158,11,0.15)', color: '#92400e' }}
+                      >
+                        {t('crystal.createTicket')}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── Support mode: thumbs feedback ──────────────────── */}
+                  {isSupportMode && messages.length > 0 && !isThinking && (
+                    <div className="mx-2 my-1 flex items-center gap-2">
+                      {feedbackThanks ? (
+                        <span className="text-[10px] text-on-surface-variant">{feedbackThanks}</span>
+                      ) : (
+                        <>
+                          <span className="text-[10px] text-on-surface-variant">{t('support.feedbackHelpful')}</span>
+                          <button
+                            className="p-1 rounded-lg hover:bg-emerald-50 transition-colors"
+                            title={t('crystal.thumbsUp')}
+                            onClick={async () => {
+                              const lastMsg = messages[messages.length - 1];
+                              if (lastMsg.role === 'crystal') {
+                                await api.submitDocFeedback({ doc_key: lastMsg.id, helpful: true }).catch(() => {});
+                                setFeedbackThanks(t('support.feedbackThanks'));
+                              }
+                            }}
+                          >
+                            <Icon name="thumb_up" size={13} />
+                          </button>
+                          <button
+                            className="p-1 rounded-lg hover:bg-red-50 transition-colors"
+                            title={t('crystal.thumbsDown')}
+                            onClick={async () => {
+                              const lastMsg = messages[messages.length - 1];
+                              if (lastMsg.role === 'crystal') {
+                                await api.submitDocFeedback({ doc_key: lastMsg.id, helpful: false }).catch(() => {});
+                                setFeedbackThanks(t('support.feedbackThanks'));
+                              }
+                            }}
+                          >
+                            <Icon name="thumb_down" size={13} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1102,9 +1249,11 @@ export function CrystalPanel({
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder={
-                    isAll
-                      ? 'Ask anything across your surveys…'
-                      : 'Ask anything about this survey…'
+                    isSupportMode
+                      ? t('crystal.supportPlaceholder')
+                      : isAll
+                        ? 'Ask anything across your surveys…'
+                        : 'Ask anything about this survey…'
                   }
                   rows={1}
                   className="flex-1 bg-transparent resize-none focus:outline-none text-sm text-on-surface placeholder:text-on-surface-variant/50 py-1.5 px-1 overflow-y-auto"

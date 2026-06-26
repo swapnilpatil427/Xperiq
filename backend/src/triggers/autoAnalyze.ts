@@ -1,16 +1,36 @@
 // Local-mode equivalent of the Firebase onNewResponse trigger.
 // Called fire-and-forget from routes/local/responses.js after each insert.
+import { z } from 'zod';
 import { query as dbQuery } from '../lib/db';
 import { analyzeInsights } from '../lib/openrouter';
+import { getRedisClient } from '../lib/redis';
+import logger from '../lib/logger';
 
 const THRESHOLDS = [10, 50, 100, 500];
 
+const InsightsResponseSchema = z.object({
+  summary: z.string().optional().nullable(),
+  npsScore: z.number().nullable().optional(),
+  topics: z.array(z.unknown()).optional().nullable(),
+  sentimentBreakdown: z.unknown().optional().nullable(),
+  topPhrases: z.array(z.unknown()).optional().nullable(),
+}).passthrough();
+
 export async function maybeAutoAnalyze(surveyId: string, orgId: string): Promise<void> {
-  const { rows: [{ count }] } = await dbQuery(
+  const { rows: [{ count }] } = await dbQuery<{ count: number }>(
     'SELECT COUNT(*)::int AS count FROM responses WHERE survey_id = $1',
     [surveyId]
   );
-  if (!THRESHOLDS.includes(count as number)) return;
+  if (!THRESHOLDS.includes(count)) return;
+
+  // Distributed lock: prevents duplicate analysis when multiple responses arrive
+  // simultaneously and all pass the same threshold check before any run is created.
+  const redis = getRedisClient();
+  const lockKey = `auto_analyze_lock:${surveyId}:${count}`;
+  if (redis) {
+    const acquired = await redis.set(lockKey, '1', 'EX', 60, 'NX');
+    if (!acquired) return;
+  }
 
   const { rows: [survey] } = await dbQuery(
     'SELECT * FROM surveys WHERE id = $1', [surveyId]
@@ -23,7 +43,13 @@ export async function maybeAutoAnalyze(surveyId: string, orgId: string): Promise
     [surveyId]
   );
 
-  const insights = await analyzeInsights(survey.title as string, responses);
+  const rawInsights = await analyzeInsights(survey.title as string, responses);
+  const parseResult = InsightsResponseSchema.safeParse(rawInsights);
+  if (!parseResult.success) {
+    logger.warn({ surveyId, issues: parseResult.error.issues }, 'auto_analyze:invalid_ai_response');
+    return;
+  }
+  const insights = parseResult.data;
 
   await dbQuery(
     `INSERT INTO insights
@@ -38,5 +64,5 @@ export async function maybeAutoAnalyze(surveyId: string, orgId: string): Promise
     await dbQuery('UPDATE surveys SET nps_score = $1 WHERE id = $2', [insights.npsScore, surveyId]);
   }
 
-  console.log(`[auto-analyze] survey ${surveyId} at ${count} responses`);
+  logger.info({ surveyId, count }, 'auto_analyze:complete');
 }

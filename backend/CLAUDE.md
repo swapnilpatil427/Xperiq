@@ -50,6 +50,7 @@ src/
 - Rate limiting: `REDIS_URL` env var enables Redis store; otherwise in-memory (not suitable for multi-instance)
 
 ## Environment variables
+> **Full list:** `docs/ENV_VARS.md` (canonical). **Adding a `process.env.X`? Add it there AND to the matching `.env.example` in the same PR.** Key ones below.
 - `DATABASE_URL` — Postgres connection string
 - `REDIS_URL` — Redis connection string (optional, in-memory fallback)
 - `OPENROUTER_API_KEY` — AI API key

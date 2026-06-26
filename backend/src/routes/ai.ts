@@ -178,7 +178,7 @@ router.post('/analyze-insights', requireAuth, validate(analyzeInsightsSchema), a
 
 router.post('/refine-survey', requireAuth, validate(refineSurveySchema), async (req: Request, res: Response): Promise<void> => {
   try {
-    const { questions, message, context } = req.body as { questions: unknown; message: string; context?: Record<string, unknown> };
+    const { questions, message, context } = req.body as { questions: unknown[]; message: string; context?: Record<string, unknown> };
 
     const result = await refineSurveyQuestions(questions, message.trim(), context || {});
     res.json(result);

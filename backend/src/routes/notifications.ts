@@ -103,7 +103,7 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
     const params: unknown[] = [orgId, userId];
     let p = 3;
     if (req.query.unread === 'true') conditions.push('read = FALSE');
-    if (req.query.priority && PRIORITIES.includes(req.query.priority as string)) {
+    if (req.query.priority && (PRIORITIES as readonly string[]).includes(req.query.priority as string)) {
       conditions.push(`priority = $${p++}`); params.push(req.query.priority);
     }
     if (req.query.type) { conditions.push(`type = $${p++}`); params.push(req.query.type); }
@@ -118,7 +118,7 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
     ]);
 
     res.json({
-      notifications: rows.map(serialize),
+      notifications: rows.map((r) => serialize(r as Parameters<typeof serialize>[0])),
       pagination: { page, limit, total: count, hasMore: offset + rows.length < count },
     });
   } catch (err: unknown) {

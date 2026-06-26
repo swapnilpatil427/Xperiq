@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Escalation Confirmation</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-tint": "#2a4bd9",
+                    "on-surface-variant": "#595c5e",
+                    "on-tertiary-container": "#4c007d",
+                    "secondary-fixed": "#82deff",
+                    "on-secondary-container": "#004e62",
+                    "tertiary-fixed": "#d299ff",
+                    "on-primary-fixed-variant": "#001e82",
+                    "tertiary-fixed-dim": "#c986ff",
+                    "surface-bright": "#f5f7f9",
+                    "on-primary": "#f2f1ff",
+                    "secondary-fixed-dim": "#57d2f9",
+                    "background": "#f5f7f9",
+                    "surface": "#f5f7f9",
+                    "secondary": "#00647c",
+                    "on-tertiary-fixed-variant": "#580091",
+                    "tertiary-container": "#d299ff",
+                    "on-primary-container": "#00176b",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-container-low": "#eef1f3",
+                    "primary-fixed": "#879aff",
+                    "on-secondary-fixed": "#003a48",
+                    "surface-dim": "#d0d5d8",
+                    "on-background": "#2c2f31",
+                    "primary-dim": "#173dcd",
+                    "error-container": "#f74b6d",
+                    "on-secondary": "#e2f6ff",
+                    "on-error": "#ffefef",
+                    "tertiary-dim": "#7613bb",
+                    "primary": "#2a4bd9",
+                    "on-primary-fixed": "#000000",
+                    "secondary-dim": "#00576c",
+                    "inverse-primary": "#7087ff",
+                    "inverse-surface": "#0b0f10",
+                    "inverse-on-surface": "#9a9d9f",
+                    "surface-container": "#e5e9eb",
+                    "surface-variant": "#d9dde0",
+                    "primary-container": "#879aff",
+                    "on-surface": "#2c2f31",
+                    "outline": "#747779",
+                    "on-secondary-fixed-variant": "#00586e",
+                    "outline-variant": "#abadaf",
+                    "secondary-container": "#82deff",
+                    "surface-container-high": "#dfe3e6",
+                    "surface-container-highest": "#d9dde0",
+                    "primary-fixed-dim": "#748bff",
+                    "on-error-container": "#510017",
+                    "error-dim": "#a70138",
+                    "error": "#b41340",
+                    "on-tertiary": "#fceeff",
+                    "on-tertiary-fixed": "#280046",
+                    "tertiary": "#8329c8"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {},
+            "fontFamily": {
+                    "headline": [
+                            "Manrope"
+                    ],
+                    "display": [
+                            "Manrope"
+                    ],
+                    "body": [
+                            "Inter"
+                    ],
+                    "label": [
+                            "Inter"
+                    ]
+            },
+            "fontSize": {}
+    },
+        },
+      }
+    </script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bg-grid {
+            background-size: 40px 40px;
+            background-image: 
+                linear-gradient(to right, rgba(0, 100, 124, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 100, 124, 0.05) 1px, transparent 1px);
+            transform: perspective(500px) rotateX(60deg) translateY(-100px) translateZ(-200px);
+            animation: gridMove 20s linear infinite;
+        }
+        @keyframes gridMove {
+            0% { transform: perspective(500px) rotateX(60deg) translateY(0) translateZ(-200px); }
+            100% { transform: perspective(500px) rotateX(60deg) translateY(40px) translateZ(-200px); }
+        }
+        .btn-gradient {
+            background: linear-gradient(135deg, #2a4bd9 0%, #879aff 100%);
+        }
+        .btn-gradient:hover {
+            transform: rotateX(5deg) scale(0.98);
+            box-shadow: 0 10px 30px -10px rgba(42, 75, 217, 0.5);
+        }
+        .card-shadow {
+            box-shadow: 0 40px 60px -10px rgba(44, 47, 49, 0.06);
+        }
+        .ghost-border {
+            border: 1px solid rgba(171, 173, 175, 0.15);
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body min-h-screen flex items-center justify-center relative overflow-hidden p-4 md:p-8">
+<!-- Immersive 3D Grid Background -->
+<div class="absolute inset-0 z-0 pointer-events-none overflow-hidden flex items-center justify-center">
+<div class="w-[200vw] h-[2048px] bg-grid absolute bottom-0 origin-bottom opacity-50"></div>
+<!-- Light Source Effect -->
+<div class="absolute top-1/4 left-1/2 -translate-x-1/2 w-96 h-96 bg-primary-container rounded-full blur-[100px] opacity-20"></div>
+</div>
+<!-- Main Container -->
+<main class="relative z-10 w-full max-w-2xl">
+<div class="bg-surface-container-lowest rounded-lg p-8 md:p-12 card-shadow ghost-border relative overflow-hidden backdrop-blur-2xl bg-opacity-90">
+<!-- Header Section -->
+<div class="text-center mb-12">
+<div class="inline-flex items-center justify-center w-20 h-20 rounded-full bg-secondary-container text-on-secondary-container mb-6 shadow-sm">
+<span class="material-symbols-outlined text-4xl" style="font-variation-settings: 'FILL' 1;">support_agent</span>
+</div>
+<h1 class="font-headline text-display font-extrabold tracking-tight text-3xl md:text-5xl text-on-surface mb-4">Escalation Confirmed</h1>
+<p class="text-on-surface-variant text-lg">Your query has been securely transferred to our human intelligence team.</p>
+</div>
+<!-- Context Details (Bento/Layered Style) -->
+<div class="space-y-6 mb-12">
+<!-- SLA Indicator -->
+<div class="bg-surface-container-low rounded-md p-6 flex items-start gap-4">
+<span class="material-symbols-outlined text-tertiary text-2xl mt-1">timer</span>
+<div>
+<h3 class="font-headline font-semibold text-lg text-on-surface mb-1">Estimated Response</h3>
+<p class="text-tertiary-dim font-medium text-xl">Under 2 hours</p>
+<p class="text-on-surface-variant text-sm mt-2">Priority routing based on org configuration.</p>
+</div>
+</div>
+<!-- Session Summary -->
+<div class="bg-surface-variant rounded-md p-6 ghost-border">
+<div class="flex items-center justify-between mb-4 pb-4 border-b border-outline-variant/20">
+<span class="text-sm font-medium text-on-surface-variant uppercase tracking-wider">Session Context Attached</span>
+<span class="material-symbols-outlined text-secondary text-xl">verified</span>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<div>
+<p class="text-xs text-on-surface-variant uppercase tracking-wide mb-1">Organization ID</p>
+<p class="font-mono text-sm text-on-surface bg-surface-container-high px-2 py-1 rounded inline-block">ORG-8X92-KLM</p>
+</div>
+<div>
+<p class="text-xs text-on-surface-variant uppercase tracking-wide mb-1">Query Subject</p>
+<p class="text-sm text-on-surface font-medium truncate">Data integration failure in Q3 analytics pipeline</p>
+</div>
+<div class="md:col-span-2">
+<p class="text-xs text-on-surface-variant uppercase tracking-wide mb-2">Crystal AI Reasoning</p>
+<div class="bg-surface-container-lowest p-4 rounded text-sm text-on-surface-variant font-mono leading-relaxed relative overflow-hidden">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-tertiary"></div>
+                                "Confidence score below 0.6 threshold for structural database modifications. Human validation required for schema update strategy. Attempted self-heal protocols 1 &amp; 2 unsuccesful."
+                            </div>
+</div>
+</div>
+</div>
+</div>
+<!-- Action Area -->
+<div class="flex justify-center">
+<button class="btn-gradient text-on-primary font-semibold text-lg py-4 px-12 rounded-xl transition-all duration-300 ease-out flex items-center gap-3 w-full md:w-auto justify-center">
+                    Return to Dashboard
+                    <span class="material-symbols-outlined">arrow_forward</span>
+</button>
+</div>
+<!-- Decorative Element -->
+<div class="absolute top-0 right-0 -mt-16 -mr-16 w-32 h-32 bg-secondary-container rounded-full blur-3xl opacity-30 pointer-events-none"></div>
+</div>
+</main>
+<!-- Footer Area (Minimal) -->
+<footer class="absolute bottom-6 w-full text-center z-10 pointer-events-none">
+<p class="text-on-surface-variant text-sm font-label opacity-70">Experient Support Engine · Encrypted Transfer</p>
+</footer>
+</body></html>

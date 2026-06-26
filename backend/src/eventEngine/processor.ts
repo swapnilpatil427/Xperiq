@@ -10,6 +10,7 @@
 // service) or in-process in the backend when ENABLE_EVENT_ENGINE=true (dev).
 import { query as dbQuery } from '../lib/db';
 import { getRedisBlockingClient } from '../lib/redis';
+import { touchHeartbeat } from '../lib/metrics';
 import { createNotification, serialize } from '../lib/notifications';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { dispatchExternalChannels } = require('../lib/channels') as {
@@ -44,7 +45,7 @@ async function resolveRecipients(event: NotificationEvent): Promise<string[]> {
           AND (r.default_permissions->>'users:manage') = 'ALL'`,
       [event.orgId]
     );
-    return rows.map((r: { user_id: string }) => r.user_id);
+    return rows.map((r) => (r as { user_id: string }).user_id);
   } catch {
     return [];
   }
@@ -172,6 +173,7 @@ export async function start({ consumer = `c-${process.pid}` } = {}): Promise<voi
   let ticks = 0;
   while (!_stop) {
     try {
+      touchHeartbeat('event_engine');   // liveness signal for SchedulerHeartbeatStale alert
       await processBatch(redis, consumer);
       if (++ticks % 6 === 0) await reclaimStale(redis, consumer);
     } catch (err: unknown) {

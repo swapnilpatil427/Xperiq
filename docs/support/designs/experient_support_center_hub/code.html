@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Experient - Support Hub</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@400;600;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface-tint": "#2a4bd9",
+                      "on-surface-variant": "#595c5e",
+                      "on-tertiary-container": "#4c007d",
+                      "secondary-fixed": "#82deff",
+                      "on-secondary-container": "#004e62",
+                      "tertiary-fixed": "#d299ff",
+                      "on-primary-fixed-variant": "#001e82",
+                      "tertiary-fixed-dim": "#c986ff",
+                      "surface-bright": "#f5f7f9",
+                      "on-primary": "#f2f1ff",
+                      "secondary-fixed-dim": "#57d2f9",
+                      "background": "#f5f7f9",
+                      "surface": "#f5f7f9",
+                      "secondary": "#00647c",
+                      "on-tertiary-fixed-variant": "#580091",
+                      "tertiary-container": "#d299ff",
+                      "on-primary-container": "#00176b",
+                      "surface-container-lowest": "#ffffff",
+                      "surface-container-low": "#eef1f3",
+                      "primary-fixed": "#879aff",
+                      "on-secondary-fixed": "#003a48",
+                      "surface-dim": "#d0d5d8",
+                      "on-background": "#2c2f31",
+                      "primary-dim": "#173dcd",
+                      "error-container": "#f74b6d",
+                      "on-secondary": "#e2f6ff",
+                      "on-error": "#ffefef",
+                      "tertiary-dim": "#7613bb",
+                      "primary": "#2a4bd9",
+                      "on-primary-fixed": "#000000",
+                      "secondary-dim": "#00576c",
+                      "inverse-primary": "#7087ff",
+                      "inverse-surface": "#0b0f10",
+                      "inverse-on-surface": "#9a9d9f",
+                      "surface-container": "#e5e9eb",
+                      "surface-variant": "#d9dde0",
+                      "primary-container": "#879aff",
+                      "on-surface": "#2c2f31",
+                      "outline": "#747779",
+                      "on-secondary-fixed-variant": "#00586e",
+                      "outline-variant": "#abadaf",
+                      "secondary-container": "#82deff",
+                      "surface-container-high": "#dfe3e6",
+                      "surface-container-highest": "#d9dde0",
+                      "primary-fixed-dim": "#748bff",
+                      "on-error-container": "#510017",
+                      "error-dim": "#a70138",
+                      "error": "#b41340",
+                      "on-tertiary": "#fceeff",
+                      "on-tertiary-fixed": "#280046",
+                      "tertiary": "#8329c8"
+              },
+              "borderRadius": {
+                      "DEFAULT": "1rem",
+                      "lg": "2rem",
+                      "xl": "3rem",
+                      "full": "9999px"
+              },
+              "fontFamily": {
+                      "headline": ["Manrope", "sans-serif"],
+                      "display": ["Manrope", "sans-serif"],
+                      "body": ["Inter", "sans-serif"],
+                      "label": ["Inter", "sans-serif"]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        /* Base styles */
+        body { background-color: theme('colors.background'); color: theme('colors.on-background'); }
+        
+        /* Custom Shadows for "Atmospheric Layering" */
+        .shadow-ambient {
+            box-shadow: 0 40px 60px -10px rgba(44, 47, 49, 0.06);
+        }
+        .shadow-glow {
+            box-shadow: 0 20px 40px -10px rgba(42, 75, 217, 0.15);
+        }
+        
+        /* Smooth interactions */
+        .glass-panel {
+            background-color: rgba(245, 247, 249, 0.7); /* surface color with opacity */
+            backdrop-filter: blur(24px);
+        }
+        
+        .interactive-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .interactive-card:hover {
+            transform: translateY(-4px) rotateX(2deg);
+            box-shadow: 0 30px 50px -12px rgba(44, 47, 49, 0.08);
+        }
+        
+        /* Ghost Border */
+        .border-ghost {
+            border: 1px solid rgba(171, 173, 175, 0.15); /* outline-variant at 15% */
+        }
+    </style>
+</head>
+<body class="font-body antialiased flex h-screen w-full overflow-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- JSON Component: SideNavBar (Desktop Shell) -->
+<!-- Active State Logic: 'Help Center' is active based on context -->
+<nav aria-label="Main Navigation" class="hidden md:flex flex-col flex-shrink-0 z-40 bg-slate-100 dark:bg-slate-900 h-screen w-64 border-r-0 py-6">
+<!-- Header -->
+<div class="px-6 mb-8 flex items-center gap-3">
+<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-container flex items-center justify-center shadow-glow">
+<span class="material-symbols-outlined text-on-primary text-xl" style="font-variation-settings: 'FILL' 1;">dataset</span>
+</div>
+<div>
+<h1 class="font-manrope font-extrabold text-indigo-900 dark:text-white text-lg tracking-tight">Experient</h1>
+<p class="font-inter text-xs text-slate-500 font-medium">The AI-aware layer</p>
+</div>
+</div>
+<!-- Main Tabs -->
+<div class="space-y-1 px-3 flex-1">
+<!-- Surveys -->
+<a class="flex items-center gap-3 px-3 py-2.5 font-inter text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">poll</span>
+                Surveys
+            </a>
+<!-- Insights -->
+<a class="flex items-center gap-3 px-3 py-2.5 font-inter text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">insights</span>
+                Insights
+            </a>
+<!-- Respondents -->
+<a class="flex items-center gap-3 px-3 py-2.5 font-inter text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">group</span>
+                Respondents
+            </a>
+<!-- Workflows -->
+<a class="flex items-center gap-3 px-3 py-2.5 font-inter text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">account_tree</span>
+                Workflows
+            </a>
+<!-- Settings -->
+<a class="flex items-center gap-3 px-3 py-2.5 font-inter text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">settings</span>
+                Settings
+            </a>
+</div>
+<!-- CTA -->
+<div class="px-6 mb-6">
+<button class="w-full py-2.5 rounded-lg bg-gradient-to-br from-primary to-primary-container text-on-primary font-inter text-sm font-medium shadow-glow hover:scale-[0.98] transition-transform flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                New Intelligence
+            </button>
+</div>
+<!-- Footer Tabs -->
+<div class="space-y-1 px-3">
+<!-- Help Center (ACTIVE) -->
+<a class="flex items-center gap-3 px-3 py-2.5 font-inter text-sm font-medium bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-sm rounded-lg cursor-pointer tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">help</span>
+                Help Center
+            </a>
+<!-- Support -->
+<a class="flex items-center gap-3 px-3 py-2.5 font-inter text-sm font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent group" href="#">
+<span class="material-symbols-outlined text-[20px] group-hover:text-primary transition-colors">contact_support</span>
+                Support
+            </a>
+</div>
+<!-- User Profile minimal -->
+<div class="mt-4 px-6 pt-4 border-t border-slate-200 dark:border-slate-800/50 flex items-center gap-3">
+<img class="w-8 h-8 rounded-full object-cover" data-alt="A small, professional avatar portrait of a user in a clean, modern studio setting with soft lighting, matching a high-end enterprise platform aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCQcoTfM2pOPl4sBpDurx5pxKDtshgcjw5iG8LMhPtV03J5kb3bDZOhFfAk5Sm4sDZYPEtVyC7L2VktRmolnWSMFxckzjQb3WlkhTfT0vKhC15Bo39mFYC7MMAHV6zJtNAVp6Ua3a6qvEK-R-vJbi0aBKLVLjAo6JwTe_gk2rEupc0pLc7ZOkn54e4O-shBVB33ckRzlTxKGIfxs6mCiMn68Xtz_UkHrXG18oro3tIXMnlscUUjXL1Ao99Ici6yOVuvG-RenlSbMZ4"/>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-medium text-slate-700 truncate">Alex Researcher</p>
+</div>
+</div>
+</nav>
+<!-- Main Canvas -->
+<main class="flex-1 relative overflow-y-auto overflow-x-hidden bg-surface-bright flex flex-col">
+<!-- Atmospheric Background Glows -->
+<div class="absolute top-0 left-1/4 w-[600px] h-[400px] bg-primary/10 rounded-full blur-[120px] pointer-events-none mix-blend-multiply"></div>
+<div class="absolute top-1/3 right-0 w-[500px] h-[500px] bg-tertiary/5 rounded-full blur-[100px] pointer-events-none mix-blend-multiply"></div>
+<!-- Header / Hero Section -->
+<header class="w-full max-w-5xl mx-auto pt-24 pb-16 px-8 relative z-10">
+<div class="text-center mb-12">
+<h2 class="font-display text-[3.5rem] leading-none tracking-[-0.02em] font-extrabold text-on-background mb-4">
+                    Support Intelligence
+                </h2>
+<p class="font-body text-on-surface-variant text-lg max-w-2xl mx-auto">
+                    Ask the AI anything about your Experient workflows, data analysis, or platform capabilities.
+                </p>
+</div>
+<!-- The 'Crystal' Input Field -->
+<div class="relative w-full max-w-3xl mx-auto group z-20">
+<!-- Plinth/Base shadow layer -->
+<div class="absolute inset-0 bg-gradient-to-r from-primary-container/20 to-tertiary-container/20 rounded-full blur-xl group-focus-within:opacity-100 opacity-0 transition-opacity duration-500"></div>
+<div class="relative flex items-center bg-surface-container-lowest rounded-full h-20 px-8 shadow-ambient border-ghost transition-all duration-300 group-focus-within:shadow-glow group-focus-within:scale-[1.01]">
+<span class="material-symbols-outlined text-primary text-3xl mr-4" style="font-variation-settings: 'FILL' 1;">magic_button</span>
+<input class="w-full bg-transparent border-none outline-none text-xl font-body text-on-background placeholder:text-outline/70 focus:ring-0" placeholder="How can we help?" type="text"/>
+<button class="ml-4 w-12 h-12 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-on-surface">mic</span>
+</button>
+<button class="ml-2 w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary-container text-on-primary flex items-center justify-center shadow-sm hover:scale-105 transition-transform">
+<span class="material-symbols-outlined">arrow_forward</span>
+</button>
+</div>
+<!-- Quick suggestions -->
+<div class="mt-6 flex justify-center gap-3 flex-wrap">
+<span class="px-4 py-1.5 rounded-full bg-surface-container text-sm font-medium text-on-surface-variant cursor-pointer hover:bg-surface-container-high transition-colors">"Troubleshoot API key"</span>
+<span class="px-4 py-1.5 rounded-full bg-surface-container text-sm font-medium text-on-surface-variant cursor-pointer hover:bg-surface-container-high transition-colors">"How to export respondent data"</span>
+<span class="px-4 py-1.5 rounded-full bg-surface-container text-sm font-medium text-on-surface-variant cursor-pointer hover:bg-surface-container-high transition-colors">"Setup NPS workflow"</span>
+</div>
+</div>
+</header>
+<!-- Content Area -->
+<div class="w-full max-w-6xl mx-auto px-8 pb-24 relative z-10 flex flex-col gap-16">
+<!-- Recent Intelligent Insights -->
+<section>
+<div class="flex items-center gap-2 mb-6">
+<span class="material-symbols-outlined text-primary">tips_and_updates</span>
+<h3 class="font-headline text-xl font-bold text-on-background">Recent Intelligent Insights</h3>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+<!-- Insight Card 1 (Extruded look) -->
+<div class="p-6 rounded-2xl bg-surface-container border-ghost relative group interactive-card">
+<div class="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent rounded-2xl pointer-events-none"></div>
+<div class="relative bg-surface-container-lowest p-5 rounded-[1rem] shadow-sm mb-4">
+<div class="flex justify-between items-start mb-2">
+<span class="text-xs font-bold uppercase tracking-wider text-secondary">Data Formatting</span>
+<span class="material-symbols-outlined text-outline text-sm">auto_awesome</span>
+</div>
+<p class="font-body text-on-background text-sm leading-relaxed">
+                                AI detected an anomaly in your recent "Q3 Satisfaction Survey" imports. Dates in column D should follow ISO 8601 to enable timeline visualization.
+                            </p>
+</div>
+<div class="flex items-center justify-between mt-2 px-2">
+<span class="text-xs text-on-surface-variant font-medium">Generated 2 hrs ago</span>
+<button class="text-primary text-sm font-semibold flex items-center gap-1 hover:text-primary-dim transition-colors">
+                                View Fix <span class="material-symbols-outlined text-[16px]">arrow_right_alt</span>
+</button>
+</div>
+</div>
+<!-- Insight Card 2 -->
+<div class="p-6 rounded-2xl bg-surface-container border-ghost relative group interactive-card">
+<div class="absolute inset-0 bg-gradient-to-br from-white/50 to-transparent rounded-2xl pointer-events-none"></div>
+<div class="relative bg-surface-container-lowest p-5 rounded-[1rem] shadow-sm mb-4">
+<div class="flex justify-between items-start mb-2">
+<span class="text-xs font-bold uppercase tracking-wider text-tertiary">Workflow Optimization</span>
+<span class="material-symbols-outlined text-outline text-sm">bolt</span>
+</div>
+<p class="font-body text-on-background text-sm leading-relaxed">
+                                You frequently run manual NPS reports. We recommend enabling the "Automated Pulse" template to save approximately 4 hours per week.
+                            </p>
+</div>
+<div class="flex items-center justify-between mt-2 px-2">
+<span class="text-xs text-on-surface-variant font-medium">Generated Yesterday</span>
+<button class="text-primary text-sm font-semibold flex items-center gap-1 hover:text-primary-dim transition-colors">
+                                Apply Template <span class="material-symbols-outlined text-[16px]">arrow_right_alt</span>
+</button>
+</div>
+</div>
+</div>
+</section>
+<!-- Top Knowledge Areas (Bento Grid) -->
+<section>
+<h3 class="font-headline text-xl font-bold text-on-background mb-6">Top Knowledge Areas</h3>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 auto-rows-[180px]">
+<!-- Bento Item 1: Large -->
+<div class="md:col-span-2 rounded-2xl bg-surface-container-lowest p-6 border-ghost shadow-ambient interactive-card flex flex-col justify-between overflow-hidden relative group">
+<div class="absolute right-0 bottom-0 w-32 h-32 bg-primary/5 rounded-tl-[100px] transition-transform group-hover:scale-110"></div>
+<div>
+<div class="w-10 h-10 rounded-full bg-secondary-container flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-on-secondary-container">model_training</span>
+</div>
+<h4 class="font-headline text-lg font-semibold text-on-background">AI Analysis Engine</h4>
+<p class="text-sm text-on-surface-variant mt-2 max-w-sm">Learn how to configure sentiment models and extract deep qualitative insights from open-text responses.</p>
+</div>
+<div class="flex items-center gap-4 text-xs font-medium text-outline">
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">article</span> 12 Articles</span>
+<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">play_circle</span> 3 Videos</span>
+</div>
+</div>
+<!-- Bento Item 2 -->
+<div class="rounded-2xl bg-surface-container-lowest p-6 border-ghost shadow-ambient interactive-card flex flex-col justify-between group">
+<div>
+<div class="w-10 h-10 rounded-full bg-tertiary-container flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-on-tertiary-container">speed</span>
+</div>
+<h4 class="font-headline text-lg font-semibold text-on-background">NPS Automation</h4>
+<p class="text-sm text-on-surface-variant mt-2">Trigger logic and benchmarking.</p>
+</div>
+<a class="text-sm font-semibold text-primary group-hover:underline" href="#">Explore guides</a>
+</div>
+<!-- Bento Item 3 -->
+<div class="rounded-2xl bg-surface-container-lowest p-6 border-ghost shadow-ambient interactive-card flex flex-col justify-between group">
+<div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-on-surface">api</span>
+</div>
+<h4 class="font-headline text-lg font-semibold text-on-background">API &amp; Integrations</h4>
+<p class="text-sm text-on-surface-variant mt-2">Connect Experient to your stack.</p>
+</div>
+<a class="text-sm font-semibold text-primary group-hover:underline" href="#">View docs</a>
+</div>
+<!-- Bento Item 4 -->
+<div class="rounded-2xl bg-surface-container-lowest p-6 border-ghost shadow-ambient interactive-card flex flex-col justify-between group">
+<div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-on-surface">security</span>
+</div>
+<h4 class="font-headline text-lg font-semibold text-on-background">Data Privacy</h4>
+<p class="text-sm text-on-surface-variant mt-2">Compliance and access controls.</p>
+</div>
+<a class="text-sm font-semibold text-primary group-hover:underline" href="#">Read policies</a>
+</div>
+<!-- Bento Item 5 -->
+<div class="rounded-2xl bg-primary text-on-primary p-6 shadow-glow interactive-card flex flex-col justify-between relative overflow-hidden group cursor-pointer">
+<div class="absolute inset-0 bg-[linear-gradient(135deg,rgba(255,255,255,0.1),transparent)]"></div>
+<div class="relative z-10">
+<span class="material-symbols-outlined text-3xl mb-2" style="font-variation-settings: 'FILL' 1;">support_agent</span>
+<h4 class="font-headline text-lg font-semibold mt-2">Still need help?</h4>
+<p class="text-sm opacity-90 mt-1">Connect with an enterprise specialist.</p>
+</div>
+<div class="relative z-10 flex items-center justify-between">
+<span class="text-sm font-semibold">Open a ticket</span>
+<span class="material-symbols-outlined">arrow_forward</span>
+</div>
+</div>
+</div>
+</section>
+</div>
+<!-- JSON Component: Footer -->
+<footer class="w-full border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 mt-auto">
+<div class="flex flex-col md:flex-row justify-between items-center px-8 py-12 gap-4 max-w-screen-2xl mx-auto">
+<!-- Links -->
+<div class="flex items-center gap-6">
+<a class="font-inter text-xs tracking-wide uppercase text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors" href="#">Privacy</a>
+<a class="font-inter text-xs tracking-wide uppercase text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors" href="#">Terms</a>
+<a class="font-inter text-xs tracking-wide uppercase text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors" href="#">API Docs</a>
+</div>
+<!-- Copyright -->
+<div>
+<span class="font-inter text-xs tracking-wide text-slate-400 dark:text-slate-600">© 2024 Experient. The experience layer that learns.</span>
+</div>
+</div>
+</footer>
+</main>
+</body></html>

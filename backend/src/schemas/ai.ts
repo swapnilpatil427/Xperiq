@@ -10,9 +10,9 @@ export const analyzeInsightsSchema = z.object({
 });
 
 export const refineSurveySchema = z.object({
-  questions: z.array(z.record(z.unknown())).min(1, 'questions array is required'),
+  questions: z.array(z.record(z.string(), z.unknown())).min(1, 'questions array is required'),
   message: z.string().min(1, 'message is required').max(2000),
-  context: z.record(z.unknown()).optional(),
+  context: z.record(z.string(), z.unknown()).optional(),
 });
 
 export type GenerateSurveyInput = z.infer<typeof generateSurveySchema>;

@@ -7,10 +7,7 @@
 // in-process from index.js via ENABLE_EVENT_ENGINE=true for local dev.
 'use strict';
 
-import path from 'path';
-import * as dotenv from 'dotenv';
-dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
-dotenv.config();
+import '../env';
 
 import * as processor from './processor';
 

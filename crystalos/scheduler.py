@@ -853,6 +853,13 @@ async def run_scheduler() -> None:
 
     try:
         while True:
+            # Liveness signal for the shared SchedulerHeartbeatStale alert.
+            try:
+                from crystalos.lib.metrics import scheduler_heartbeat
+                scheduler_heartbeat.labels(component="crystalos_scheduler").set(time.time())
+            except Exception:
+                pass
+
             try:
                 await run_scheduler_once()
             except Exception as exc:

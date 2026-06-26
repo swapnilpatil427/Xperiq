@@ -92,7 +92,7 @@ router.get('/Users', async (req: Request, res: Response): Promise<void> => {
       totalResults: total,
       startIndex,
       itemsPerPage: rows.length,
-      Resources: rows.map((r: Record<string, unknown>) => profileToScim(r, { baseUrl: baseUrl(req) })),
+      Resources: rows.map((r: Record<string, unknown>) => profileToScim(r as Parameters<typeof profileToScim>[0], { baseUrl: baseUrl(req) })),
     });
   } catch (err: unknown) {
     scimError(res, 500, err instanceof Error ? err.message : String(err));
@@ -105,7 +105,7 @@ router.get('/Users/:id', async (req: Request, res: Response): Promise<void> => {
       'SELECT * FROM user_profiles WHERE user_id = $1 AND org_id = $2', [req.params.id, req.scimOrgId]
     );
     if (!row) { scimError(res, 404, 'User not found'); return; }
-    res.json(profileToScim(row, { baseUrl: baseUrl(req) }));
+    res.json(profileToScim(row as Parameters<typeof profileToScim>[0], { baseUrl: baseUrl(req) }));
   } catch (err: unknown) { scimError(res, 500, err instanceof Error ? err.message : String(err)); }
 });
 
@@ -144,7 +144,7 @@ router.post('/Users', async (req: Request, res: Response): Promise<void> => {
       targetUserId: userId, targetResourceType: 'user', targetResourceId: userId,
       afterState: { email: p.email } });
 
-    res.status(201).json(profileToScim(row, { baseUrl: baseUrl(req) }));
+    res.status(201).json(profileToScim(row as Parameters<typeof profileToScim>[0], { baseUrl: baseUrl(req) }));
   } catch (err: unknown) { scimError(res, 500, err instanceof Error ? err.message : String(err)); }
 });
 
@@ -161,7 +161,7 @@ router.put('/Users/:id', async (req: Request, res: Response): Promise<void> => {
     if (!row) { scimError(res, 404, 'User not found'); return; }
     auditLog({ orgId: req.scimOrgId!, actorType: 'scim', eventType: 'scim.user_updated',
       targetUserId: req.params.id, targetResourceType: 'user', targetResourceId: req.params.id });
-    res.json(profileToScim(row, { baseUrl: baseUrl(req) }));
+    res.json(profileToScim(row as Parameters<typeof profileToScim>[0], { baseUrl: baseUrl(req) }));
   } catch (err: unknown) { scimError(res, 500, err instanceof Error ? err.message : String(err)); }
 });
 
@@ -190,7 +190,7 @@ router.patch('/Users/:id', async (req: Request, res: Response): Promise<void> =>
     const event = ('isActive' in upd && !upd.isActive) ? 'scim.user_deprovisioned' : 'scim.user_updated';
     auditLog({ orgId: req.scimOrgId!, actorType: 'scim', eventType: event,
       targetUserId: req.params.id, targetResourceType: 'user', targetResourceId: req.params.id });
-    res.json(profileToScim(row, { baseUrl: baseUrl(req) }));
+    res.json(profileToScim(row as Parameters<typeof profileToScim>[0], { baseUrl: baseUrl(req) }));
   } catch (err: unknown) { scimError(res, 500, err instanceof Error ? err.message : String(err)); }
 });
 

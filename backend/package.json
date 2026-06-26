@@ -10,6 +10,7 @@
     "start": "ENABLE_EVENT_ENGINE=true tsx src/index.ts",
     "dev": "ENABLE_EVENT_ENGINE=true tsx watch src/index.ts",
     "start:event-engine": "tsx src/eventEngine/index.ts",
+    "start:scheduler": "tsx src/scheduler/index.ts",
     "sync:clerk": "tsx scripts/sync-clerk.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc",
@@ -19,7 +20,8 @@
     "start:agents": "cd .. && PYTHONPATH=. AGENTS_ENV=${AGENTS_ENV:-dev} REDIS_URL=redis://localhost:6379 ENABLE_STREAM_CONSUMER=true crystalos/.venv/bin/python -m uvicorn crystalos.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio",
     "start:agents:dev-paid": "cd .. && PYTHONPATH=. AGENTS_ENV=dev-paid REDIS_URL=redis://localhost:6379 ENABLE_STREAM_CONSUMER=true crystalos/.venv/bin/python -m uvicorn crystalos.main:app --host 0.0.0.0 --port 8001 --reload --loop asyncio",
     "start:full": "concurrently --names 'backend,crystalos' --prefix-colors 'blue,green' 'npm run start' 'npm run start:agents'",
-    "start:full:dev-paid": "concurrently --names 'backend,crystalos' --prefix-colors 'blue,green' 'npm run start' 'npm run start:agents:dev-paid'"
+    "start:full:dev-paid": "concurrently --names 'backend,crystalos' --prefix-colors 'blue,green' 'npm run start' 'npm run start:agents:dev-paid'",
+    "seed:support": "tsx src/data/seed-support-docs.ts"
   },
   "dependencies": {
     "@clerk/backend": "^1.0.0",

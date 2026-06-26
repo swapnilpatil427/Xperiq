@@ -160,7 +160,7 @@ export async function executeAction(node: WorkflowNode, ctx: ExecutionContext): 
           priority: config.priority as string | undefined || 'info',
           actionUrl: ctx.event.actionUrl as string | undefined || null,
         });
-        return { status: r.delivered ? 'completed' : 'skipped', output: r as Record<string, unknown> };
+        return { status: r.delivered ? 'completed' : 'skipped', output: r as unknown as Record<string, unknown> };
       }
       case 'notify.email': {
         const r = await sendEmail(ctx.orgId, (config.userId as string | undefined) || ctx.event.userId || '', {
@@ -170,7 +170,7 @@ export async function executeAction(node: WorkflowNode, ctx: ExecutionContext): 
           body: render(config.body as string | undefined || '', ctx),
           actionUrl: ctx.event.actionUrl as string | undefined || null,
         });
-        return { status: r.delivered ? 'completed' : 'skipped', output: r as Record<string, unknown> };
+        return { status: r.delivered ? 'completed' : 'skipped', output: r as unknown as Record<string, unknown> };
       }
       case 'notify.webhook': {
         if (!config.url) return { status: 'skipped', output: { reason: 'no_url' } };

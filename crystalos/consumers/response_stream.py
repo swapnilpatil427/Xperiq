@@ -229,6 +229,24 @@ async def _trigger_insights(survey_id: str, org_id: str) -> None:
     # so those mid-flight events still count toward the next threshold.
     triggered_count = _batches[survey_id]["count"]
 
+    # Distributed lock: prevents race between multiple CrystalOS replicas both
+    # passing the _pending_triggers check and inserting duplicate pipeline runs.
+    # Uses Redis SET NX EX so only one replica proceeds per survey per window.
+    # Fails-open (no lock available → trust DB duplicate-run check below).
+    redis = await _get_redis()
+    lock_key = f"insight:trigger_lock:{survey_id}"
+    lock_token = run_id
+    if redis is not None:
+        try:
+            acquired = await redis.set(lock_key, run_id, nx=True, ex=120)
+            if not acquired:
+                logger.info("trigger_lock_not_acquired", survey_id=survey_id)
+                _pending_triggers.discard(survey_id)
+                return
+        except Exception as lock_exc:
+            logger.warning("trigger_lock_error", survey_id=survey_id, error=str(lock_exc))
+            lock_token = None  # proceed without Redis lock; DB check below still protects
+
     try:
         async with await psycopg.AsyncConnection.connect(_DB_DSN) as conn:
             async with conn.cursor() as cur:
@@ -308,6 +326,20 @@ async def _trigger_insights(survey_id: str, org_id: str) -> None:
             error=str(exc),
         )
     finally:
+        # Release distributed lock atomically via Lua compare-and-delete.
+        # A simple GET+DELETE has a race: if our TTL expires between the GET and DELETE,
+        # we could delete a lock that a different replica has already re-acquired.
+        # The Lua script executes atomically inside Redis, eliminating that window.
+        if redis is not None and lock_token is not None:
+            _RELEASE_LOCK_LUA = (
+                "if redis.call('get', KEYS[1]) == ARGV[1] then "
+                "  return redis.call('del', KEYS[1]) "
+                "else return 0 end"
+            )
+            try:
+                await redis.eval(_RELEASE_LOCK_LUA, 1, lock_key, lock_token)
+            except Exception:
+                pass
         _pending_triggers.discard(survey_id)
 
 

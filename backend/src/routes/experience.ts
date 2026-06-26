@@ -16,6 +16,8 @@ import { requireAuth } from '../middleware/auth';
 import { query } from '../lib/db';
 import logger from '../lib/logger';
 import { serverError, clientError } from '../lib/httpError';
+import { checkCredits, debitCredits } from '../lib/creditLedger';
+import { CREDIT_COSTS } from '../lib/creditPlans';
 
 const AGENTS_URL = process.env.AGENTS_URL ?? 'http://localhost:8001';
 const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY
@@ -249,6 +251,31 @@ async function crystalHandler(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  // Credit metering — a Crystal turn is metered.
+  const crystalCheck = await checkCredits(orgId, CREDIT_COSTS.crystal_turn, 'crystal_turn');
+  if (!crystalCheck.ok) {
+    res.status(402).json({
+      error:     'Not enough credits to ask Crystal.',
+      code:      'INSUFFICIENT_CREDITS',
+      required:  crystalCheck.required,
+      available: crystalCheck.available,
+    });
+    return;
+  }
+  const chargeCrystalTurn = async (): Promise<void> => {
+    try {
+      await debitCredits(orgId, {
+        actionType: 'crystal_turn',
+        credits:    CREDIT_COSTS.crystal_turn,
+        userId,
+        actionRef:  (survey_id as string) || 'org',
+        note:       'Crystal conversational turn',
+      });
+    } catch (e) {
+      logger.warn({ err: (e as Error).message, orgId }, 'experience:crystal:debit_failed');
+    }
+  };
+
   try {
     const ctx = await loadCrystalContext((survey_id as string) || '', orgId);
 
@@ -327,6 +354,7 @@ async function crystalHandler(req: Request, res: Response): Promise<void> {
           }
         }
         if (answer) {
+          await chargeCrystalTurn();
           // Pass citations as both insight_refs AND citations so the frontend
           // can find IDs regardless of which field it reads from.
           res.json({ answer, suggestions, insight_refs: citations, citations, citation_map: ctx.citationMap });
@@ -345,6 +373,7 @@ async function crystalHandler(req: Request, res: Response): Promise<void> {
     });
     if (!directRes.ok) { res.status(502).json({ error: 'Agents service error' }); return; }
     const data = await directRes.json() as Record<string, unknown>;
+    await chargeCrystalTurn();
     res.json({
       answer:       (data.answer as string) ?? '',
       suggestions:  (data.suggestions as unknown[]) ?? [],
@@ -417,6 +446,19 @@ router.post('/:scope/crystal/stream', requireAuth, async (req: Request, res: Res
     return;
   }
 
+  // Credit metering — a Crystal turn is metered. Check BEFORE switching to SSE so we can
+  // still return a normal 402 JSON when the org is out of credits (and the spend cap is on).
+  const crystalCheck = await checkCredits(orgId, CREDIT_COSTS.crystal_turn, 'crystal_turn');
+  if (!crystalCheck.ok) {
+    res.status(402).json({
+      error:     'Not enough credits to ask Crystal.',
+      code:      'INSUFFICIENT_CREDITS',
+      required:  crystalCheck.required,
+      available: crystalCheck.available,
+    });
+    return;
+  }
+
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -429,7 +471,7 @@ router.post('/:scope/crystal/stream', requireAuth, async (req: Request, res: Res
 
   try {
     const ctx = await loadCrystalContext(surveyIdForCtx, orgId!);
-    citationMap = ctx.citationMap as Record<string, Record<string, unknown>>;
+    citationMap = ctx.citationMap as unknown as Record<string, Record<string, unknown>>;
     const bodyInsights = Array.isArray(body.insights) ? (body.insights as Record<string, unknown>[]) : [];
     agentBody = {
       ...body,
@@ -483,6 +525,20 @@ router.post('/:scope/crystal/stream', requireAuth, async (req: Request, res: Res
       res.write(`data: ${JSON.stringify({ type: 'error', message: 'Agent service error' })}\n\n`);
       res.end();
       return;
+    }
+
+    // Upstream accepted and is producing output — the compute is now spent, so debit one
+    // Crystal turn even if the client disconnects mid-stream.
+    try {
+      await debitCredits(orgId, {
+        actionType: 'crystal_turn',
+        credits:    CREDIT_COSTS.crystal_turn,
+        userId,
+        actionRef:  surveyIdForCtx || 'org',
+        note:       'Crystal conversational turn (stream)',
+      });
+    } catch (debitErr) {
+      logger.warn({ err: (debitErr as Error).message, orgId }, 'crystal_stream_debit_failed');
     }
 
     // Proxy the agents stream to the client

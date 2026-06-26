@@ -2,10 +2,10 @@ import type { Request, Response, NextFunction } from 'express';
 import { verifyToken } from '@clerk/backend';
 import { ensureProvisioned } from '../lib/provisioning';
 import { getOrgClaims } from '../lib/clerkClaims';
+import { resolveClerkSecretKey } from '../lib/clerkKeys';
 
-// Dev mode: when CLERK_SECRET_KEY is absent the backend runs as dev-user/dev-org.
-// No SKIP_AUTH env var needed — key presence is the signal.
-export const DEV_MODE = !process.env.CLERK_SECRET_KEY;
+// Dev mode: when no valid CLERK_SECRET_KEY the backend runs as dev-user/dev-org.
+export const DEV_MODE = !resolveClerkSecretKey();
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   if (DEV_MODE) {
@@ -21,7 +21,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       return;
     }
     const token = authHeader.slice(7);
-    const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
+    const secretKey = resolveClerkSecretKey()!;
+    const payload = await verifyToken(token, { secretKey });
     const { orgId, orgRole } = getOrgClaims(payload);
     req.userId = payload.sub;
     req.orgId  = orgId || payload.sub;

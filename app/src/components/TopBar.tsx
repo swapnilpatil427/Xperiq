@@ -13,18 +13,20 @@ import {
   SheetDescription,
 } from '@/components/ui/sheet';
 import { useNotifications } from '../hooks/useNotifications';
-import type { Notification } from '../lib/api';
-
-const CREDITS_TOTAL = 1000;
-const CREDITS_REMAINING = 680;
+import { useCredits } from '../hooks/useCredits';
+import type { Notification, CreditBalance, CreditConfig } from '../lib/api';
+import { supportUrl } from '../lib/supportUrl';
 
 interface CreditsChipProps {
   onClick: () => void;
+  balance: CreditBalance | null;
 }
 
-function CreditsChip({ onClick }: CreditsChipProps) {
+function CreditsChip({ onClick, balance }: CreditsChipProps) {
   const { t } = useTranslation();
-  const pct = (CREDITS_REMAINING / CREDITS_TOTAL) * 100;
+  const available = balance?.available ?? 0;
+  const capacity  = balance ? balance.monthly_allowance + balance.pack_balance : 0;
+  const pct = capacity > 0 ? (available / capacity) * 100 : (available > 0 ? 100 : 0);
   const chipClass = pct > 30 ? 'credits-chip' : pct > 10 ? 'credits-chip warn' : 'credits-chip critical';
   return (
     <button className={chipClass} onClick={onClick} aria-label={t('credits.sheetTitle')}>
@@ -34,7 +36,7 @@ function CreditsChip({ onClick }: CreditsChipProps) {
       >
         auto_awesome
       </span>
-      {t('credits.remaining', { n: CREDITS_REMAINING })}
+      {t('credits.remaining', { n: available })}
     </button>
   );
 }
@@ -95,6 +97,8 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
   const [creditsOpen, setCreditsOpen]  = useState(false);
   const [notifOpen,   setNotifOpen]    = useState(false);
   const { unreadCount, notifications, loading, loadNotifications, markRead, markAllRead } = useNotifications();
+  const { balance, config } = useCredits();
+  const navigate = useNavigate();
 
   function handleNotifOpen(open: boolean) {
     setNotifOpen(open);
@@ -119,7 +123,7 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
 
         {/* Right: global controls */}
         <div className="flex items-center gap-2 md:gap-3">
-          <CreditsChip onClick={() => setCreditsOpen(true)} />
+          <CreditsChip onClick={() => setCreditsOpen(true)} balance={balance} />
           <button
             onClick={() => handleNotifOpen(true)}
             className="relative w-9 h-9 rounded-xl flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-colors"
@@ -132,9 +136,16 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
               </span>
             )}
           </button>
-          <Button variant="ghost" size="icon" className="w-9 h-9 rounded-xl text-on-surface-variant">
+          <a
+            href={supportUrl('/guides')}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={t('brand.helpCenterAriaLabel')}
+            title={t('brand.helpCenter')}
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-on-surface-variant hover:text-primary hover:bg-primary/5 transition-colors"
+          >
             <Icon name="help" size={20} />
-          </Button>
+          </a>
           {clerkKey ? (
             <UserButton
               appearance={{ elements: { avatarBox: 'w-9 h-9' } }}
@@ -163,32 +174,46 @@ export function TopBar({ onMenuToggle }: TopBarProps) {
           <div className="mt-6 space-y-5">
             <div>
               <div className="flex justify-between text-sm font-semibold mb-2">
-                <span className="text-on-surface">{t('credits.remaining', { n: CREDITS_REMAINING })}</span>
-                <span className="text-on-surface-variant text-xs">
-                  {t('credits.used', { used: CREDITS_TOTAL - CREDITS_REMAINING, total: CREDITS_TOTAL })}
-                </span>
+                <span className="text-on-surface">{t('credits.remaining', { n: balance?.available ?? 0 })}</span>
+                {balance && balance.monthly_allowance > 0 && (
+                  <span className="text-on-surface-variant text-xs">
+                    {t('credits.used', { used: balance.monthly_allowance - balance.allowance_remaining, total: balance.monthly_allowance })}
+                  </span>
+                )}
               </div>
-              <Progress value={(CREDITS_REMAINING / CREDITS_TOTAL) * 100} className="h-2" />
+              <Progress
+                value={balance && balance.monthly_allowance > 0
+                  ? (balance.allowance_remaining / balance.monthly_allowance) * 100
+                  : (balance && balance.available > 0 ? 100 : 0)}
+                className="h-2"
+              />
+              {balance && balance.pack_balance > 0 && (
+                <p className="text-[11px] text-on-surface-variant mt-1.5">
+                  {t('credits.packBalance', { n: balance.pack_balance })}
+                </p>
+              )}
             </div>
             <div
               className="rounded-xl p-4 text-sm space-y-2"
               style={{ background: 'color-mix(in srgb, var(--color-primary) 4%, transparent)', border: '1px solid color-mix(in srgb, var(--color-primary) 10%, transparent)' }}
             >
-              {[
-                ['Survey generation', '~10 credits'],
-                ['Insights analysis', '~25 credits'],
-                ['Smart suggestions', '~2 credits'],
-              ].map(([feat, cost]) => (
-                <div key={feat} className="flex justify-between">
-                  <span className="text-on-surface-variant">{feat}</span>
-                  <span className="font-semibold text-primary">{cost}</span>
-                </div>
-              ))}
+              <div className="flex justify-between">
+                <span className="text-on-surface-variant">{t('credits.cost.insightRun')}</span>
+                <span className="font-semibold text-primary">{config?.costs.insight_run ?? 50} {t('credits.creditsUnit')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-on-surface-variant">{t('credits.cost.crystalTurn')}</span>
+                <span className="font-semibold text-primary">{config?.costs.crystal_turn ?? 15} {t('credits.creditsUnit')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-on-surface-variant">{t('credits.cost.xoFusion')}</span>
+                <span className="font-semibold text-primary">{config?.costs.xo_fusion ?? 200} {t('credits.creditsUnit')}</span>
+              </div>
             </div>
             <Button
               variant="gradient"
               className="w-full font-bold rounded-xl py-3"
-              onClick={() => setCreditsOpen(false)}
+              onClick={() => { setCreditsOpen(false); navigate(ROUTES.BILLING); }}
             >
               {t('credits.upgradeButton')}
             </Button>

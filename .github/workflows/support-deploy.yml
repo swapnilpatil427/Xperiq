@@ -1,0 +1,112 @@
+name: Support Site — Build & Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'support/**'
+      - '.github/workflows/support-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      force_revalidate:
+        description: 'Force revalidate all ISR pages'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: support-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & Type Check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: support
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: support/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_SITE_URL: https://support.experient.ai
+          NEXT_PUBLIC_CRYSTAL_ENABLED: 'true'
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+        run: npm run build
+
+      - name: Check bundle size
+        run: |
+          BUILD_SIZE=$(du -sh .next | cut -f1)
+          echo "Build size: $BUILD_SIZE"
+
+  deploy:
+    name: Deploy to Fly.io
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: support
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Fly CLI
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_SUPPORT }}
+        run: flyctl deploy --remote-only --app experient-support
+
+      - name: Ping IndexNow
+        if: success()
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          curl -X POST "https://support.experient.ai/api/indexnow" \
+            -H "Authorization: Bearer $REVALIDATE_SECRET" \
+            -H "Content-Type: application/json" \
+            --fail --silent || echo "IndexNow ping failed (non-critical)"
+
+      - name: Revalidate ISR (if forced)
+        if: github.event.inputs.force_revalidate == 'true'
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          curl -X POST "https://support.experient.ai/api/revalidate" \
+            -H "x-revalidate-secret: $REVALIDATE_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"revalidate_all"}' \
+            --fail --silent || echo "Revalidation failed (non-critical)"
+
+  notify-slack:
+    name: Notify on Failure
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    if: failure()
+    steps:
+      - name: Post failure
+        run: |
+          echo "Support site deployment failed for ${{ github.sha }}"
+          # Add Slack webhook notification here when configured
