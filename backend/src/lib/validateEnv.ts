@@ -13,6 +13,7 @@
 import { query } from './db';
 import { getRedisClient } from './redis';
 import logger from './logger';
+import { resolveClerkSecretKey } from './clerkKeys';
 
 const isProd = (): boolean => process.env.NODE_ENV === 'production';
 
@@ -49,8 +50,12 @@ export async function validateStartupConfig(opts: ValidateOptions = {}): Promise
   if (isProd() && process.env.AGENTS_INTERNAL_KEY === 'dev-internal-key-change-in-prod') {
     errors.push('AGENTS_INTERNAL_KEY must be changed from the default in production');
   }
-  if (!isProd() && !process.env.CLERK_SECRET_KEY) {
-    warns.push('CLERK_SECRET_KEY not set — running in DEV MODE (all requests as dev-user/dev-org)');
+  if (!isProd() && !resolveClerkSecretKey()) {
+    if (process.env.CLERK_SECRET_KEY?.trim()) {
+      warns.push('CLERK_SECRET_KEY is set but invalid or a placeholder — running in DEV MODE (all requests as dev-user/dev-org)');
+    } else {
+      warns.push('CLERK_SECRET_KEY not set — running in DEV MODE (all requests as dev-user/dev-org)');
+    }
   }
 
   // Stripe (optional integration) — validate only when configured.
