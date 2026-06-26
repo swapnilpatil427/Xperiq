@@ -1,0 +1,23 @@
+#!/bin/sh
+# Experient pre-push — runs local CI (mirrors .github/workflows/ci.yml).
+# Skip:  SKIP_CI=1 git push
+# Bypass: git push --no-verify
+
+if [ "$SKIP_CI" = "1" ]; then
+  echo "SKIP_CI=1 — skipping pre-push CI"
+  exit 0
+fi
+
+ROOT="$(git rev-parse --show-toplevel)" || exit 1
+cd "$ROOT" || exit 1
+
+echo "Running pre-push CI (npm run ci)..."
+npm run ci || {
+  echo ""
+  echo "✗ Pre-push CI failed. Fix errors above before pushing."
+  echo "  Bypass this hook once: git push --no-verify"
+  echo "  Skip via env:         SKIP_CI=1 git push"
+  exit 1
+}
+
+exit 0
