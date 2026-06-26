@@ -18,10 +18,10 @@
 | Phase 5 — Integrations | 16 | 0 | 0 | 0% |
 | Phase 6 — Scale | 21 | 0 | 0 | 0% |
 | Phase 7 — Go-to-Market | 20 | 0 | 0 | 0% |
-| Phase 2A — Agentic Skills Foundation | 16 | 0 | 0 | 0% |
+| Phase 2A — Agentic Skills Foundation | 17 | 0 | 0 | 0% |
 | Phase 5A — MCP & Skill Publishing | 12 | 0 | 0 | 0% |
 | Phase OCI — Production Migration | 18 | 0 | 0 | 0% |
-| **Total** | **246** | **35** | **0** | **14%** |
+| **Total** | **247** | **35** | **0** | **14%** |
 
 ---
 
@@ -348,6 +348,7 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 | 7A-14 | Frontend: Skill result cards — each skill returns a typed response rendered as an action card (e.g. new survey card, distribution status card) | ⬜ | Not raw text — structured, actionable UI |
 | 7A-15 | Frontend: Skill attribution line on every AI-generated action ("Created by Survey Skill · 10 credits") | ⬜ | Transparency + credit awareness |
 | 7A-16 | Tests: each skill executor unit tested against PM spec (every action, error path, credit deduction) | ⬜ | |
+| 7A-17 | **Proactive insights — unprompted delivery:** wire the `proactive-insights` skill into `scheduler.py` (daily/weekly digest) + `consumers/response_stream.py` (run on response thresholds), dedup via card fingerprints, deliver through `lib/notification_bridge.py`. Skill is built + callable on request today; this makes it fire without being asked. Ship in shadow-mode first (log candidate digests, send nothing) to calibrate the noise threshold before enabling delivery. | ⬜ | Solves detection-lag / blank-dashboard problem. Risk: alert fatigue — validate in shadow mode first. |
 
 ---
 

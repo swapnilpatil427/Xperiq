@@ -128,10 +128,13 @@ export function SurveyIntelligencePage() {
   }, [api, insightFeedback]);
 
   // ── Pipeline state ───────────────────────────────────────────────────────
-  const [generating, setGenerating] = useState(false);
-  const [nodesDone,  setNodesDone]  = useState<string[]>([]);
-  const [genError,   setGenError]   = useState<string | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [generating,   setGenerating]   = useState(false);
+  const [nodesDone,    setNodesDone]    = useState<string[]>([]);
+  const [genError,     setGenError]     = useState<string | null>(null);
+  const [genBackground,setGenBackground]= useState(false);
+  const [genToast,     setGenToast]     = useState<string | null>(null);
+  const pollRef   = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bgPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Legacy insights (NPS/CSAT from before the pipeline ran)
   const { insights, generating: legacyGenerating } = useInsights(surveyId);
@@ -166,8 +169,30 @@ export function SurveyIntelligencePage() {
 
   useEffect(() => {
     loadAgentic();
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => {
+      if (pollRef.current)   clearInterval(pollRef.current);
+      if (bgPollRef.current) clearInterval(bgPollRef.current);
+    };
   }, [loadAgentic]);
+
+  const startBackgroundPoll = useCallback((sid: string) => {
+    if (bgPollRef.current) clearInterval(bgPollRef.current);
+    bgPollRef.current = setInterval(async () => {
+      try {
+        const { status } = await api.getInsightRunStatus(sid);
+        if (status === 'completed') {
+          clearInterval(bgPollRef.current!);
+          await loadAgentic();
+          setGenBackground(false);
+          setGenToast(t('experience.intelligence.generate.readyToast'));
+        } else if (status === 'failed') {
+          clearInterval(bgPollRef.current!);
+          setGenBackground(false);
+          setGenError(t('experience.intelligence.generate.errorFailed'));
+        }
+      } catch { /* keep polling */ }
+    }, 10_000);
+  }, [api, loadAgentic, t]);
 
   // Load topics for anomaly detection + Crystal context
   useEffect(() => {
@@ -190,6 +215,9 @@ export function SurveyIntelligencePage() {
     setGenerating(true);
     setNodesDone([]);
     setGenError(null);
+    setGenBackground(false);
+    setGenToast(null);
+    if (bgPollRef.current) clearInterval(bgPollRef.current);
     try {
       await api.triggerInsightGeneration(surveyId);
     } catch {
@@ -210,22 +238,27 @@ export function SurveyIntelligencePage() {
           clearInterval(pollRef.current!);
           setGenError(t('experience.intelligence.generate.errorFailed'));
           setGenerating(false);
-        } else if (status === 'completed') {
+          return;
+        }
+        if (status === 'completed') {
           clearInterval(pollRef.current!);
           setNodesDone(PIPELINE_NODES.map((n) => n.id));
           await new Promise((r) => setTimeout(r, 700));
           await loadAgentic();
           setGenerating(false);
           setNodesDone([]);
+          return;
         }
       } catch { /* keep polling */ }
       if (elapsed >= 120) {
         clearInterval(pollRef.current!);
-        setGenError(t('experience.intelligence.generate.errorTimeout'));
         setGenerating(false);
+        setNodesDone([]);
+        setGenBackground(true);
+        startBackgroundPoll(surveyId);
       }
     }, 3000);
-  }, [api, surveyId, generating, loadAgentic]);
+  }, [api, surveyId, generating, loadAgentic, startBackgroundPoll, t]);
 
   // ── Derived values ────────────────────────────────────────────────────────
   const isActive  = survey?.status === 'active';
@@ -428,7 +461,7 @@ export function SurveyIntelligencePage() {
         {/* Survey status badge */}
         {survey && survey.status !== 'active' && <SurveyStatusBadge status={survey.status} />}
 
-        {/* Persistent error banner — shown any time generation has failed, even after generating stops */}
+        {/* Persistent error banner */}
         {genError && !generating && (
           <div className="flex items-start gap-3 px-4 py-3 rounded-xl border text-sm"
             style={{ background: '#fff1f2', borderColor: '#fecdd3', color: '#b41340' }}>
@@ -443,6 +476,45 @@ export function SurveyIntelligencePage() {
             </button>
           </div>
         )}
+
+        {/* Background-generation banner — overlay dismissed, pipeline still running */}
+        <AnimatePresence>
+          {genBackground && (
+            <motion.div
+              key="intel-bg-banner"
+              initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25 }}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm"
+              style={{ background: '#eff2ff', border: '1px solid rgba(42,75,217,0.25)', color: '#1e40af' }}
+            >
+              <span className="w-2 h-2 rounded-full flex-shrink-0"
+                style={{ background: '#2a4bd9', animation: 'pulse-glow 2s ease-in-out infinite' }} />
+              <span className="flex-1 font-medium">{t('experience.intelligence.generate.backgroundBanner')}</span>
+              <span className="text-xs opacity-60">{t('experience.intelligence.generate.readyToastBody')}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Completion toast */}
+        <AnimatePresence>
+          {genToast && (
+            <motion.div
+              key="intel-ready-toast"
+              initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium"
+              style={{ background: '#d1fae5', border: '1px solid #059669', color: '#065f46' }}
+            >
+              <Icon name="check_circle" size={18} style={{ color: '#059669', flexShrink: 0 }} />
+              <span className="flex-1">{genToast}</span>
+              <button onClick={() => setGenToast(null)}
+                className="ml-auto hover:opacity-70 transition-opacity"
+                aria-label={t('experience.intelligence.generate.dismiss')}>
+                <Icon name="close" size={16} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* ══════════════════════════════════════════════════════════════════
             § 2  TIER PROGRESSION BANNER

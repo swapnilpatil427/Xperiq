@@ -7,6 +7,14 @@ import { useTranslation } from '../lib/i18n';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCrystalPanel } from '../contexts/crystalPanel';
+import { usePermissions } from '../lib/permissions';
+import { supportUrl } from '../lib/supportUrl';
+
+// Map fine-grained permission keys to the minimum role required.
+const PERMISSION_ROLE: Record<string, 'admin' | 'analyst' | 'viewer'> = {
+  'outreach:broadcast':  'analyst',
+  'outreach:logs:read':  'analyst',
+};
 
 const NAV_ITEMS = [
   { key: 'nav.surveys',     icon: 'poll',         path: ROUTES.SURVEYS },
@@ -15,9 +23,16 @@ const NAV_ITEMS = [
   { key: 'nav.experience',  icon: 'spa',          path: ROUTES.EXPERIENCE },
   { key: 'nav.respondents', icon: 'groups',       path: ROUTES.RESPONDENTS },
   { key: 'nav.workflows',   icon: 'account_tree', path: ROUTES.WORKFLOWS },
+  { key: 'nav.cases',       icon: 'work',         path: ROUTES.CASES },
+  { key: 'nav.contacts',    icon: 'contacts',     path: ROUTES.CONTACTS },
+  { key: 'nav.broadcasts',  icon: 'send',         path: ROUTES.BROADCASTS, requiredPermission: 'outreach:broadcast' },
   { key: 'nav.templates',   icon: 'auto_awesome',  path: ROUTES.TEMPLATES },
 ];
 const SETTINGS_ITEM = { key: 'nav.settings', icon: 'settings', path: ROUTES.SETTINGS };
+const SETTINGS_EXTRA_ITEMS = [
+  { key: 'nav.notificationAnalytics', icon: 'bar_chart', path: ROUTES.NOTIFICATION_ANALYTICS, requiredPermission: 'outreach:logs:read' },
+  { key: 'billing.nav', icon: 'credit_card', path: ROUTES.BILLING },
+];
 
 interface SideNavProps {
   isExpanded: boolean;
@@ -30,12 +45,25 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
   const location = useLocation();
   const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
   const { openCrystal, isOpen: crystalOpen } = useCrystalPanel();
+  const permissions = usePermissions();
+  const roleLabels = t('settings.team.roles') as unknown as Record<string, string>;
+  const roleLabel = permissions.role
+    ? (roleLabels?.[permissions.role] || permissions.role.replace('org:', '').replace(/_/g, ' '))
+    : '';
 
   function isActive(path: string) {
     return location.pathname === path || location.pathname.startsWith(path + '/');
   }
 
-  const allItems = [...NAV_ITEMS, SETTINGS_ITEM];
+  function canSeeItem(requiredPermission?: string): boolean {
+    if (!requiredPermission) return true;
+    const minRole = PERMISSION_ROLE[requiredPermission];
+    if (!minRole) return true; // unknown permission — default to visible
+    return permissions.can(minRole);
+  }
+
+  const visibleNavItems = NAV_ITEMS.filter((item) => canSeeItem(item.requiredPermission));
+  const visibleExtraItems = SETTINGS_EXTRA_ITEMS.filter((item) => canSeeItem(item.requiredPermission));
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -68,7 +96,7 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
 
         {/* Nav items */}
         <nav className="flex-1 px-2 space-y-0.5 overflow-y-auto overflow-x-hidden py-2">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const active = isActive(item.path);
             if (!isExpanded) {
               return (
@@ -155,8 +183,83 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
             </Tooltip>
           )}
 
+          {/* Experient Support — opens the support docs site */}
+          {(() => {
+            const href = supportUrl('/guides');
+            const label = t('nav.support');
+            if (!isExpanded) {
+              return (
+                <Tooltip key="support">
+                  <TooltipTrigger asChild>
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="sidenav-item-collapsed"
+                      aria-label={label}
+                    >
+                      <Icon name="menu_book" size={20} />
+                    </a>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="font-semibold text-xs">
+                    {label}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="sidenav-item"
+              >
+                <Icon name="menu_book" size={20} />
+                <span className="truncate">{label}</span>
+                <Icon name="open_in_new" size={14} className="ml-auto flex-shrink-0 opacity-50" />
+              </a>
+            );
+          })()}
+
           {/* Divider before Settings */}
           <div className={`my-2 ${isExpanded ? 'mx-2' : 'mx-1'} divider-gradient`} />
+
+          {/* Settings extra items (e.g. Notification Analytics) */}
+          {visibleExtraItems.map((item) => {
+            const active = isActive(item.path);
+            if (!isExpanded) {
+              return (
+                <Tooltip key={item.path}>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => navigate(item.path)}
+                      className={`sidenav-item-collapsed${active ? ' active' : ''}`}
+                      aria-label={t(item.key)}
+                    >
+                      <Icon name={item.icon} fill={active ? 1 : 0} size={20} />
+                      {active && (
+                        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-3/5 rounded-r-full bg-gradient-to-b from-primary to-tertiary" />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" className="font-semibold text-xs">
+                    {t(item.key)}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            }
+            return (
+              <button
+                key={item.path}
+                onClick={() => navigate(item.path)}
+                className={`sidenav-item${active ? ' active active-bar' : ''}`}
+              >
+                <Icon name={item.icon} fill={active ? 1 : 0} size={20} />
+                <span className="truncate">{t(item.key)}</span>
+                {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-primary flex-shrink-0" />}
+              </button>
+            );
+          })}
 
           {/* Settings */}
           {(() => {
@@ -198,6 +301,21 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
 
         {/* Bottom section */}
         <div className={`flex-shrink-0 px-2 pb-4 space-y-2 ${!isExpanded && 'flex flex-col items-center'}`}>
+          {/* Role badge — at-a-glance identity awareness */}
+          {clerkKey && isExpanded && roleLabel && (
+            <div className="px-3">
+              <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-on-surface-variant">
+                <Icon
+                  name={permissions.isAdmin ? 'verified_user' : 'badge'}
+                  size={14}
+                  fill={permissions.isAdmin ? 1 : 0}
+                  className="text-primary"
+                />
+                <span className="capitalize">{roleLabel}</span>
+              </span>
+            </div>
+          )}
+
           {/* Org switcher */}
           {clerkKey && isExpanded && (
             <div className="px-1">

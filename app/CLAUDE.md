@@ -175,6 +175,7 @@ The `Button` component has these variants (defined in `src/components/ui/button.
 | `destructive` | Delete/danger actions |
 | `secondary` | Neutral background |
 | `success` | Confirmation states |
+| `link` | Text link — underline on hover |
 
 ```tsx
 <Button variant="gradient" size="lg">Generate Insights</Button>
@@ -434,7 +435,7 @@ For most UI contexts, use the CSS-only Crystal orb instead of Three.js — it's 
 - **Builder mode**: when `pathname` matches `/surveys/:id/build`, gutters/footer/BottomNav are suppressed and the page owns its full viewport
 
 ```
-App (BrandProvider > CrystalPanelProvider > AppShell)
+App (BrandProvider > AppShell)   // AppShell internally provides CrystalPanelProvider + mounts CrystalPanel once
   ├── SideNav   (desktop ≥768px; collapsed 3.5rem or expanded 16rem)
   ├── TopBar    (fixed 4rem height)
   ├── <main>    (marginLeft = sidebarWidth, paddingTop = 4rem)
@@ -492,7 +493,26 @@ setCrystalData(loadedInsights, loadedTopics);
 openCrystal('Why did NPS drop?', { focused_topic: 'Wait Time' });
 ```
 
-`VITE_CRYSTAL_STREAMING=true` enables SSE streaming; default is REST.
+Crystal SSE streaming is **always on** (`const CRYSTAL_STREAMING = true` in
+`CrystalPanel.tsx`); it falls back to REST only when the stream endpoint is
+unreachable. There is no `VITE_CRYSTAL_STREAMING` flag anymore.
+
+### Crystal action proposals (Crystal proposes, the app executes)
+Crystal never mutates data on its own. The stream may emit an `action_proposals`
+event rendered as confirmation cards (`ActionProposalCard`). On **Apply**,
+`executeAction` (in `CrystalPanel.tsx`) dispatches by `proposal.type`:
+- write actions (`create_workflow`, `create_alert`, `schedule_rerun`) call the API
+  then `invalidate(...)` the DataBus so open pages refresh;
+- builder actions (`create_survey`, `edit_survey`, `distribute`) `navigate(toPath(ROUTES.BUILDER, …))`
+  with router state — never `window.location.href`.
+Every interaction records `api.recordProposalOutcome(...)` (`accepted → succeeded | failed`, `dismissed`).
+Types: `ActionProposal` / `ActionProposalType` in `types/index.ts`.
+
+### DataBus invalidation (`lib/dataBus.ts`)
+No shared query cache exists — each page hook owns its data. When Crystal mutates
+data from the global panel, call `invalidate('workflows'|'alerts'|'insights'|'surveys')`;
+data hooks subscribe with `useInvalidation(resource, reload)` to re-fetch. Any new
+data hook for a Crystal-mutable resource MUST subscribe.
 
 ---
 
@@ -567,6 +587,25 @@ afterEach(cleanup);
 
 Test files live in `src/__tests__/` mirroring `src/` structure. Setup at `src/test/setup.ts` extends Vitest with `@testing-library/jest-dom` matchers.
 
+### Testing rules
+
+Every code change requires a corresponding test change:
+- **New component or hook** → add tests in `src/__tests__/` mirroring the source path
+- **Modified component behavior** → update existing tests; delete tests for removed behavior
+- **Bug fix** → add a regression test
+
+Run the relevant test file before submitting:
+```bash
+nvm use 20 && npx vitest run src/__tests__/pages/experience/SurveyReportPage.test.tsx
+```
+
+Mock checklist for page tests:
+- `vi.mock('../../lib/i18n', ...)` — always mock `useTranslation`
+- `vi.mock('framer-motion', ...)` — replace motion components with plain HTML
+- `vi.mock('../../hooks/useApi', ...)` + `vi.mock('../../hooks/useSurveys', ...)` — mock all data hooks
+- `global.URL.createObjectURL` / `URL.revokeObjectURL` — mock in `beforeEach` if the component downloads files
+- Wrap `render()` in `MemoryRouter` when component uses router hooks
+
 ---
 
 ## Environment Variables
@@ -575,7 +614,6 @@ Test files live in `src/__tests__/` mirroring `src/` structure. Setup at `src/te
 |---|---|---|
 | `VITE_API_URL` | Yes | Backend base URL (default `http://localhost:3001`) |
 | `VITE_CLERK_PUBLISHABLE_KEY` | No | Enables Clerk auth; omit for demo/dev mode |
-| `VITE_CRYSTAL_STREAMING` | No | Set `true` to enable SSE streaming for Crystal |
 
 When `VITE_CLERK_PUBLISHABLE_KEY` is absent, all routes are accessible and `useAppAuth()` returns `{ isSignedIn: true, userId: 'dev-user', orgId: 'dev-org' }`.
 

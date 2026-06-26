@@ -34,13 +34,20 @@ function fakeMod(id, exports) {
 }
 
 function setupAndBuildApp() {
-  _require.cache[AUTH_PATH] = fakeMod(AUTH_PATH, {
+  const authExports = {
     requireAuth: (req, res, next) => {
       req.orgId = 'test-org';
       req.userId = 'test-user';
       next();
     },
+  };
+  // The dev bypass now keys on DEV_MODE (no CLERK_SECRET_KEY), not SKIP_AUTH. These tests
+  // toggle process.env.SKIP_AUTH per-test, so expose DEV_MODE as a live getter over it.
+  Object.defineProperty(authExports, 'DEV_MODE', {
+    get: () => process.env.SKIP_AUTH === 'true',
+    enumerable: true,
   });
+  _require.cache[AUTH_PATH] = fakeMod(AUTH_PATH, authExports);
   // requireRole is tested separately — bypass it in member route tests
   _require.cache[REQUIRE_ROLE_PATH] = fakeMod(REQUIRE_ROLE_PATH, {
     requireRole: () => (req, res, next) => next(),
@@ -65,7 +72,7 @@ function setupAndBuildApp() {
 
   const app = express();
   app.use(express.json());
-  app.use('/api/orgs/me', router);
+  app.use('/api/orgs/me', router.default || router);
   // eslint-disable-next-line no-unused-vars
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }));
   return app;

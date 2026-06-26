@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useOrganizationList, useUser, CreateOrganization } from '@clerk/react';
 import type { OrganizationMembershipResource } from '@clerk/shared/types';
@@ -29,6 +29,21 @@ function ClerkOnboarding() {
     userMemberships: { infinite: true },
   });
   const [showCreate, setShowCreate] = useState(false);
+
+  // Auto-activate when the user belongs to exactly one org, so they never have to
+  // manually pick it. setActive scopes the session token (adds org_id/org_role),
+  // which is what unblocks write actions gated by requireRole.
+  const autoActivatedRef = useRef(false);
+  useEffect(() => {
+    if (autoActivatedRef.current || !orgsLoaded || !setActive) return;
+    const memberships = userMemberships?.data ?? [];
+    if (memberships.length === 1) {
+      autoActivatedRef.current = true;
+      setActive({ organization: memberships[0].organization.id })
+        .then(() => navigate(ROUTES.SURVEYS))
+        .catch(() => { autoActivatedRef.current = false; });
+    }
+  }, [orgsLoaded, userMemberships, setActive, navigate]);
 
   // While Clerk resolves
   if (!isLoaded) {

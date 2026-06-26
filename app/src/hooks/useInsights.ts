@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { Insight } from '../types';
 import { useApi } from './useApi';
+import { useInvalidation } from '../lib/dataBus';
 
 export type PageState = 'collecting' | 'generating' | 'ready' | 'stale' | 'error';
 
@@ -43,6 +44,9 @@ export function useInsights(surveyId?: string) {
 
   useEffect(() => { load(); }, [load]);
 
+  // Re-fetch when Crystal triggers an insight re-run in the background.
+  useInvalidation('insights', load);
+
   const regenerate = useCallback(async () => {
     if (!surveyId) return;
     setGenerating(true);
@@ -54,5 +58,5 @@ export function useInsights(surveyId?: string) {
     }
   }, [surveyId, api]);
 
-  return { insights, loading, generating, regenerate };
+  return { insights, loading, generating, regenerate, reload: load };
 }

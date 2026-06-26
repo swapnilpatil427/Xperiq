@@ -39,6 +39,24 @@ const FINGERPRINTS = {
      WHERE table_name='surveys' AND column_name='insight_schedule_enabled' LIMIT 1`,
   '20240518000000_insights_v2':
     `SELECT to_regclass('public.survey_topics') AS exists`,
+
+  // Enterprise CrystalOS redesign — tables that may have been created manually
+  '20260623000001_enterprise_brand_context':
+    `SELECT to_regclass('public.brands') AS exists`,
+  '20260623000002_crystal_telemetry':
+    `SELECT to_regclass('public.crystal_turn_events') AS exists`,
+  '20260623000003_product_signals':
+    `SELECT to_regclass('public.crystal_product_signals') AS exists`,
+  '20260623000004_skill_quality':
+    `SELECT to_regclass('public.skill_examples') AS exists`,
+  '20260623000005_bug_tracking':
+    `SELECT to_regclass('public.crystal_event_queue') AS exists`,
+  '20260623000006_feedback_scale':
+    `SELECT to_regclass('public.feedback_hourly_rollups') AS exists`,
+  '20260623000007_skill_variants':
+    `SELECT to_regclass('public.skill_example_refreshes') AS exists`,
+  '20260623000008_gap_clusters':
+    `SELECT to_regclass('public.capability_gap_clusters') AS exists`,
 };
 
 async function connectWithRetry(retries = 15, delayMs = 2000) {

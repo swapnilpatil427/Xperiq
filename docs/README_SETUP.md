@@ -64,7 +64,7 @@ cd agents && python -m venv .venv && .venv/bin/pip install -r requirements.txt &
 ## Step 4 — Start Local Infrastructure
 
 ```bash
-docker-compose up -d   # Postgres on :5432, Redis on :6379, Grafana on :3000, Prometheus on :9090
+docker-compose up -d   # Postgres on :5432, Redis on :6379, Grafana on :3030, Prometheus on :9090
 ```
 
 Run the Postgres migrations:
@@ -248,7 +248,7 @@ Crystal Intelligence checkpoints are written to GCS in production.
 
 ## Local Monitoring
 
-- **Grafana**: http://localhost:3000 (admin/admin) — dashboards for request rates, error rates, AI latency
+- **Grafana**: http://localhost:3030 (admin/admin) — dashboards for request rates, error rates, AI latency
 - **Prometheus**: http://localhost:9090 — raw metrics scrape
 - **Loki**: structured logs from backend + agents (via Grafana Explore)
 

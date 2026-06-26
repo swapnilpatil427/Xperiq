@@ -4,6 +4,12 @@
 // Wired to the Crystal hero ask bar, ⌘K shortcut, and SideNav Crystal item.
 
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { invalidate } from '../lib/dataBus';
+import { useTranslation } from '../lib/i18n';
+import type { EscalationPackage } from '../lib/api';
+import { ROUTES, toPath } from '../constants/routes';
+import type { ActionProposal } from '../types';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Icon } from './Icon';
 import { Button } from '@/components/ui/button';
@@ -11,12 +17,13 @@ import { useCrystalPanel, type CrystalCtx } from '../contexts/crystalPanel';
 import { GlassCard, CitationChip, ConfidenceChip, SENTIMENT_BORDER } from '../pages/insights/shared';
 import { useApi } from '../hooks/useApi';
 import { useAppAuth } from '../lib/auth';
+import { useBrand } from '../contexts/brandContext';
 import type { SurveyScope } from './SurveyScopePicker';
 import type { Insight, Survey, AgenticInsight, SurveyTopic } from '../types';
 
 // Streaming is always enabled — no env flag needed.
 // Falls back to REST only when the streaming endpoint is unreachable.
-const CRYSTAL_STREAMING = true;
+const CRYSTAL_STREAMING = import.meta.env.VITE_CRYSTAL_STREAMING === 'true';
 
 interface Message {
   id: string;
@@ -71,6 +78,18 @@ interface CrystalPanelProps {
   // but the global panel reads them from context (set by whichever page is active).
   agenticInsights?: AgenticInsight[];
   topics?: SurveyTopic[];
+  initialMode?: 'support' | 'analyst';
+}
+
+function classifyAsSupport(message: string): boolean {
+  const lower = message.toLowerCase();
+  const keywords = [
+    'help', 'error', 'broken', 'issue', 'problem', 'not working', 'bug', 'crash',
+    'how do i', 'how to', 'can i', 'support', 'docs', 'documentation', 'setup',
+    'configure', 'stuck', 'fails', 'failing', "can't", 'cannot', 'wrong',
+    'unexpected', 'missing feature', 'feature request',
+  ];
+  return keywords.some((kw) => lower.includes(kw));
 }
 
 const SINGLE_PROMPTS = [
@@ -91,6 +110,7 @@ export function CrystalPanel({
   scope, surveys, insights = null,
   agenticInsights: propAgentic,
   topics: propTopics,
+  initialMode,
 }: CrystalPanelProps) {
   const {
     isOpen, initialQuery, crystalCtx, setCrystalCtx, closeCrystal,
@@ -130,7 +150,22 @@ export function CrystalPanel({
   const scopeRef = useRef(scope);
   useEffect(() => { scopeRef.current = scope; }, [scope]);
   const api = useApi();
-  const { getToken } = useAppAuth();
+  const { getToken, userId, orgId } = useAppAuth();
+  const { brandName } = useBrand();
+  const { t } = useTranslation();
+  const location = useLocation();
+  const [escalationPackage, setEscalationPackage] = useState<EscalationPackage | null>(null);
+  const [lastSupportResolved, setLastSupportResolved] = useState(false);
+  const [feedbackThanks, setFeedbackThanks] = useState<string | null>(null);
+
+  const isSupportMode = (
+    initialMode === 'support' ||
+    location.pathname.includes('/support') ||
+    new URLSearchParams(location.search).get('mode') === 'support' ||
+    (messages.length > 0 &&
+      messages[messages.length - 1].role === 'user' &&
+      classifyAsSupport(messages[messages.length - 1].content))
+  );
 
   const isAll = scope === 'all';
   const activeSurveys = surveys.filter((s) => s.status === 'active' && !s.deleted_at);
@@ -176,6 +211,34 @@ export function CrystalPanel({
       setStreamError(null);
 
       const activeCtx = overrideCtx ?? crystalCtx;
+
+      // ── Support mode path ─────────────────────────────────────────────────
+      if (isSupportMode) {
+        try {
+          const resp = await api.crystalSupport(query.trim(), {
+            scope,
+            focused_topic: activeCtx.focused_topic,
+          });
+          setEscalationPackage(resp.escalation_package ?? null);
+          setLastSupportResolved(resp.resolved);
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: 'crystal',
+              content: resp.answer,
+              timestamp: new Date(),
+              suggestions: resp.suggestions ?? [],
+            },
+          ]);
+        } catch {
+          setStreamError('Support request failed. Please try again.');
+        } finally {
+          setIsThinking(false);
+          setStreamingState(null);
+        }
+        return;
+      }
 
       // ── Streaming path (VITE_CRYSTAL_STREAMING=true) ──────────────────────
       // Handles both survey scope and org ('all') scope. Org scope uses
@@ -254,13 +317,24 @@ export function CrystalPanel({
                   summary?: string;
                   answer?: string;
                   citations?: Array<{ id: string; quote?: string; sentiment?: 'positive' | 'negative' | 'neutral' }>;
+                  insight_refs?: string[];
                   suggestions?: string[];
                   map?: CitationMap;
+                  proposals?: ActionProposal[];
                 };
                 if (event.type === 'citation_context' && event.map) {
-                  // Merge into citationMap — arrives before [DONE], before answer in most cases
-                  setCitationMap((prev) => ({ ...prev, ...event.map }));
-                  citationMapRef.current = { ...citationMapRef.current, ...event.map };
+                  const merged = { ...citationMapRef.current, ...event.map };
+                  setCitationMap(merged);
+                  citationMapRef.current = merged;
+                  setMessages((prev) => {
+                    if (!prev.length) return prev;
+                    const last = prev[prev.length - 1];
+                    if (last.role !== 'crystal' || !last.citations?.length) return prev;
+                    return [
+                      ...prev.slice(0, -1),
+                      { ...last, citations: enrichCitationsFromMap(last.citations, merged) },
+                    ];
+                  });
                 } else if (event.type === 'thinking') {
                   setStreamingState({ phase: 'thinking', tool: event.tool, message: event.message });
                 } else if (event.type === 'observation') {
@@ -270,34 +344,13 @@ export function CrystalPanel({
                 } else if (event.type === 'answer') {
                   answerReceived = true;
                   setStreamingState(null);
-                  // Normalise citations and enrich from citationMapRef.
-                  // Crystal sometimes returns short 8-char IDs; resolveId maps them to full UUIDs.
-                  const rawCitations: unknown[] = event.citations ?? [];
-                  const normCitations: CrystalCitation[] = rawCitations.map((c) => {
-                    const base = typeof c === 'string' ? { id: c } : (c as CrystalCitation);
-                    const resolvedId = resolveId(base.id, citationMapRef.current);
-                    const meta = citationMapRef.current[resolvedId];
-                    return meta ? { ...base, id: resolvedId, ...meta } : { ...base, id: resolvedId };
-                  });
-
-                  // Also scan the answer text for inline [uuid] or [8chars] refs.
-                  // Multi-ID blocks are stripped; single refs are left for CitedText to render.
-                  const { text: cleanedAnswer, extraIds } = parseInlineCitations(event.answer ?? '');
-
-                  // Additionally find ALL citation IDs still in the cleaned text
-                  // (single refs) so they appear in SourcesFooter even if not in citations[].
-                  const inlineRefs = (cleanedAnswer.match(/\[[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\]/gi) ?? [])
-                    .map((m) => m.slice(1, -1).toLowerCase());
-
-                  const existingIds = new Set(normCitations.map((c) => c.id.toLowerCase()));
-                  [...extraIds, ...inlineRefs].forEach((rawId) => {
-                    const id = resolveId(rawId, citationMapRef.current);
-                    if (!existingIds.has(id)) {
-                      const meta = citationMapRef.current[id];
-                      normCitations.push(meta ? { id, ...meta } : { id });
-                      existingIds.add(id);
-                    }
-                  });
+                  const normCitations = buildCitationsFromAnswer(
+                    event.citations ?? [],
+                    event.insight_refs,
+                    event.answer ?? '',
+                    citationMapRef.current,
+                  );
+                  const { text: cleanedAnswer } = parseInlineCitations(event.answer ?? '');
                   setMessages((prev) => [
                     ...prev,
                     {
@@ -309,6 +362,8 @@ export function CrystalPanel({
                       suggestions: event.suggestions ?? [],
                     },
                   ]);
+                } else if (event.type === 'action_proposals' && event.proposals?.length) {
+                  setActionProposals(event.proposals);
                 } else if (event.type === 'error') {
                   answerReceived = true;  // error counts as a response — don't show generic fallback
                   setStreamingState(null);
@@ -403,6 +458,7 @@ export function CrystalPanel({
             }
           }
         } catch (err) {
+          const isOutOfCredits = err instanceof Error && err.message.includes('402');
           const isServiceDown = err instanceof Error && (
             err.message.includes('fetch') || err.message.includes('503') || err.message.includes('502')
           );
@@ -412,7 +468,9 @@ export function CrystalPanel({
             {
               id: crypto.randomUUID(),
               role: 'crystal',
-              content: isServiceDown
+              content: isOutOfCredits
+                ? 'You\'re out of AI credits. Open Billing & Credits (the credits pill, top-right) to upgrade your plan or add a top-up — then ask again.'
+                : isServiceDown
                 ? 'The agents service isn\'t reachable right now. Make sure it\'s running and try again.'
                 : 'Something went wrong. Please try your question again.',
               timestamp: new Date(),
@@ -421,6 +479,7 @@ export function CrystalPanel({
         } finally {
           setIsThinking(false);
           setStreamingState(null);
+          invalidate('credits');  // a turn may have consumed credits — refresh the chip
         }
         return;
       }
@@ -461,6 +520,7 @@ export function CrystalPanel({
           },
         ]);
       } catch (err) {
+        const isOutOfCredits = err instanceof Error && err.message.includes('402');
         const isServiceDown = err instanceof Error && (
           err.message.includes('fetch') || err.message.includes('503') || err.message.includes('502')
         );
@@ -469,7 +529,9 @@ export function CrystalPanel({
           {
             id: crypto.randomUUID(),
             role: 'crystal',
-            content: isServiceDown
+            content: isOutOfCredits
+              ? 'You\'re out of AI credits. Open Billing & Credits (the credits pill, top-right) to upgrade your plan or add a top-up — then ask again.'
+              : isServiceDown
               ? 'The agents service isn\'t reachable right now. Make sure it\'s running on :8001 and try again.'
               : 'Something went wrong. Please try your question again.',
             timestamp: new Date(),
@@ -477,6 +539,7 @@ export function CrystalPanel({
         ]);
       } finally {
         setIsThinking(false);
+        invalidate('credits');  // a turn may have consumed credits — refresh the chip
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -574,6 +637,263 @@ export function CrystalPanel({
     }));
   }, [api, isAll]);
 
+  // ── Action Proposals ─────────────────────────────────────────────────────────
+  const navigate = useNavigate();
+  const [actionProposals, setActionProposals] = useState<ActionProposal[]>([]);
+  const [executingAction, setExecutingAction] = useState<string | null>(null);
+
+  const note = useCallback((content: string) => {
+    setMessages(prev => [...prev, {
+      id: crypto.randomUUID(), role: 'crystal' as const, content, timestamp: new Date(),
+    }]);
+  }, []);
+
+  const executeAction = useCallback(async (proposal: ActionProposal) => {
+    if (executingAction) return;
+    setExecutingAction(proposal.id);
+    const surveyId = focusSurvey?.id;
+
+    const track = (status: 'accepted' | 'succeeded' | 'failed', outcomeRef?: string, errorDetail?: string) => {
+      if (!api.recordProposalOutcome) return;
+      api.recordProposalOutcome(surveyId ?? 'global', {
+        proposalKey:       proposal.id,
+        type:              proposal.type,
+        params:            proposal.params,
+        priority:          proposal.priority,
+        businessRationale: proposal.business_rationale,
+        confidence:        proposal.confidence,
+        status,
+        outcomeRef,
+        errorDetail,
+      }).catch(() => {});
+    };
+
+    track('accepted');
+    try {
+      switch (proposal.type) {
+        case 'create_followup_survey':
+        case 'create_survey': {
+          const intent = (proposal.params.intent as string) || proposal.description;
+          const typeId  = (proposal.params.survey_type as string) || undefined;
+          const result  = await api.startRun({ intent, surveyTypeId: typeId });
+          track('succeeded', result.run_id);
+          navigate(toPath(ROUTES.BUILDER, { surveyId: 'new' }), {
+            state: { intent, surveyTypeId: typeId, runId: result.run_id, openCrystal: true },
+          });
+          break;
+        }
+        case 'edit_survey_questions':
+        case 'edit_survey': {
+          if (!surveyId) { track('failed', undefined, 'no survey in scope'); break; }
+          const msg = (proposal.params.message as string) || proposal.description;
+          const runStatus = await api.getInsightRunStatus(surveyId);
+          const currentRun = runStatus.run_id;
+          if (!currentRun) { track('failed', undefined, 'no run for survey'); break; }
+          const refined = await api.copilotRefine(currentRun, { message: msg, questions: [] });
+          track('succeeded', currentRun);
+          navigate(toPath(ROUTES.BUILDER, { surveyId }), {
+            state: { id: surveyId, runId: currentRun, questions: refined.questions ?? [], openCrystal: true },
+          });
+          break;
+        }
+        case 'distribute_to_segment':
+        case 'distribute': {
+          if (!surveyId) { track('failed', undefined, 'no survey in scope'); break; }
+          track('succeeded', surveyId);
+          navigate(toPath(ROUTES.BUILDER, { surveyId }), { state: { openTab: 'distribute' } });
+          break;
+        }
+        case 'create_workflow': {
+          if (!surveyId) { track('failed', undefined, 'no survey in scope'); break; }
+          const wf = {
+            name:          (proposal.params.name as string) || proposal.title,
+            trigger:       (proposal.params.trigger as string) || proposal.params.trigger_event as string,
+            action_type:   (proposal.params.action_type as string) || 'notify',
+            action_config: (proposal.params.action_config as Record<string, unknown>) || {},
+            survey_id:     surveyId,
+            enabled:       true,
+          };
+          const created = await api.createWorkflow(wf);
+          invalidate('workflows');
+          track('succeeded', (created as { id?: string })?.id);
+          note(`Workflow created: "${proposal.title}". Open Workflows to manage it.`);
+          break;
+        }
+        case 'create_alert': {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const createAlertFn = (api as Record<string, any>).createAlertRule;
+          if (createAlertFn) {
+            const created = await createAlertFn({
+              alertType:       (proposal.params.alert_type as string) || 'S-03',
+              name:            (proposal.params.name as string) || proposal.title,
+              description:     proposal.description,
+              surveyId:        surveyId ?? null,
+              severity:        (proposal.params.severity as string) || 'warning',
+              thresholdConfig: (proposal.params.threshold_config as Record<string, unknown>) || {},
+            });
+            invalidate('alerts');
+            track('succeeded', (created as { rule?: { id?: string } })?.rule?.id);
+          } else {
+            track('succeeded');
+          }
+          note(`Alert created: "${proposal.title}". Open Alerts to manage it.`);
+          break;
+        }
+        case 'schedule_rerun': {
+          if (!surveyId) { track('failed', undefined, 'no survey in scope'); break; }
+          await api.triggerInsightGeneration(surveyId, { trigger: 'manual' });
+          invalidate('insights');
+          track('succeeded', surveyId);
+          note('Insight regeneration triggered. The insights view will refresh when it completes.');
+          break;
+        }
+        case 'view_template': {
+          track('succeeded');
+          navigate(ROUTES.TEMPLATES);
+          break;
+        }
+
+        // ── Tier 3 — Closed-Loop Action Platform ──────────────────────────────
+        case 'create_case': {
+          try {
+            const caseData = await api.createCase({
+              contact_id:    proposal.params.contact_id as string | undefined,
+              response_id:   proposal.params.response_id as string | undefined,
+              survey_id:     proposal.params.survey_id as string | undefined,
+              insight_id:    proposal.params.insight_id as string | undefined,
+              title:         proposal.params.title as string,
+              description:   proposal.params.description as string | undefined,
+              severity:      proposal.params.severity as string,
+              category:      proposal.params.category as string,
+              driver_ref:    proposal.params.driver_ref as string | undefined,
+              owner_user_id: proposal.params.owner_user_id as string | undefined,
+              owner_label:   proposal.params.owner_label as string | undefined,
+            } as Parameters<typeof api.createCase>[0]);
+            invalidate('cases');
+            track('succeeded', caseData.id);
+            note(`Case created: "${caseData.title}". Open Cases to track it.`);
+          } catch (err) {
+            track('failed', undefined, String(err));
+            throw err;
+          }
+          break;
+        }
+        case 'assign_owner': {
+          try {
+            await api.updateCase(proposal.params.case_id as string, {
+              owner_user_id: proposal.params.owner_user_id as string,
+              owner_label:   proposal.params.owner_label as string | undefined,
+            } as Parameters<typeof api.updateCase>[1]);
+            invalidate('cases');
+            track('succeeded', proposal.params.case_id as string);
+          } catch (err) {
+            track('failed', undefined, String(err));
+            throw err;
+          }
+          break;
+        }
+        case 'send_slack_alert': {
+          // Actual sending happens server-side when the case is created.
+          track('succeeded');
+          break;
+        }
+
+        default:
+          track('failed', undefined, `unhandled proposal type: ${proposal.type}`);
+          submitQuery(`Help me with: ${proposal.title}`);
+      }
+      setActionProposals(prev => prev.filter(p => p.id !== proposal.id));
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      track('failed', undefined, detail);
+      note(`Couldn't complete "${proposal.title}": ${detail}`);
+    } finally {
+      setExecutingAction(null);
+    }
+  }, [api, executingAction, focusSurvey, navigate, submitQuery, note]);
+
+  // "Ticket" button on a Crystal answer → create a CX case (ticket) from the insight.
+  // The click is itself the confirmation gesture, so we run the wired create_case path directly.
+  // We capture full diagnostic provenance so the case can be traced back to the exact insight,
+  // survey, run, user, and brand that produced it. Only the must-have, queryable refs
+  // (survey_id, insight_id) become structured columns; everything else lives in the description,
+  // which is persisted in the DB too.
+  const handleCreateTicket = useCallback((message: Message) => {
+    // Matches the backend's strict RFC-4122 zod .uuid() so a structured ref never 400s the
+    // whole case creation. Synthetic citation ids (e.g. "metric.nps") fall through to the
+    // description only.
+    const isUuid = (v?: string | null): v is string =>
+      !!v && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+
+    const body = (message.content || '').trim();
+    const firstLine = body.split('\n').map((s) => s.trim()).find(Boolean) || '';
+    const title = (crystalCtx.focused_topic
+      ? `Follow-up: ${crystalCtx.focused_topic}`
+      : firstLine || 'Crystal follow-up'
+    ).slice(0, 120);
+
+    // Citation ids map to insight_id. Some are synthetic (e.g. "metric.nps"), so keep the full
+    // list for the audit trail but only a real UUID can populate the structured insight_id column.
+    const citationIds = (message.citations ?? []).map((c) => c.id).filter(Boolean);
+    const surveyId  = isUuid(focusSurvey?.id) ? focusSurvey?.id
+      : (message.citations ?? []).map((c) => c.survey_id).find(isUuid);
+    const insightId = citationIds.find(isUuid);
+
+    const diag = [
+      '',
+      '———  Diagnostic context (auto-captured)  ———',
+      'Source: Crystal insight → Ticket button',
+      `Survey: ${focusSurvey?.title ?? '—'}${surveyId ? ` (${surveyId})` : ''}`,
+      `Scope: ${scope}`,
+      `Topic: ${crystalCtx.focused_topic ?? '—'}`,
+      `Insight ID(s): ${citationIds.length ? citationIds.join(', ') : '—'}`,
+      `Crystal message ID: ${message.id}`,
+      `Confidence: ${message.confidence != null ? message.confidence : '—'}`,
+      `Brand: ${brandName ?? '—'}`,
+      `Org ID: ${orgId ?? '—'}`,
+      `Created by (user ID): ${userId ?? '—'}`,
+      `Captured at: ${new Date().toISOString()}`,
+      'Run trace: derive run_id from the insight ID via the insights / agent_runs tables.',
+    ].join('\n');
+
+    // Preserve the full diagnostic block; truncate the insight body if needed (DB cap 5000).
+    const maxBody = Math.max(0, 4998 - diag.length);
+    const description = `${body.slice(0, maxBody)}\n${diag}`.slice(0, 5000);
+
+    const proposal: ActionProposal = {
+      id:                    `ticket-${message.id}`,
+      type:                  'create_case',
+      priority:              'medium',
+      title,
+      description,
+      params: {
+        title,
+        description,
+        survey_id:  surveyId,
+        insight_id: insightId,
+        driver_ref: crystalCtx.focused_topic,
+      },
+      business_rationale:    'Created from a Crystal insight.',
+      confidence:            message.confidence,
+      requires_confirmation: true,
+    };
+    void executeAction(proposal);
+  }, [crystalCtx.focused_topic, focusSurvey, scope, brandName, orgId, userId, executeAction]);
+
+  const dismissAction = useCallback((actionId: string) => {
+    const proposal = actionProposals.find(p => p.id === actionId);
+    setActionProposals(prev => prev.filter(p => p.id !== actionId));
+    if (proposal && api.recordProposalOutcome) {
+      api.recordProposalOutcome(focusSurvey?.id ?? 'global', {
+        proposalKey: proposal.id,
+        type:        proposal.type,
+        params:      proposal.params,
+        priority:    proposal.priority,
+        status:      'dismissed',
+      }).catch(() => {});
+    }
+  }, [api, focusSurvey, actionProposals]);
+
   const handleSubmit = () => {
     if (input.trim()) {
       submitQuery(input.trim());
@@ -662,6 +982,14 @@ export function CrystalPanel({
                   >
                     Experient Copilot
                   </span>
+                  {isSupportMode && (
+                    <span
+                      className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ background: 'rgba(245,158,11,0.12)', color: '#b45309' }}
+                    >
+                      {t('crystal.supportMode')}
+                    </span>
+                  )}
                 </div>
                 <div className="text-[10px] text-on-surface-variant truncate">
                   {isAll
@@ -805,6 +1133,7 @@ export function CrystalPanel({
                         onPin={handlePin}
                         onThumbsUp={handleThumbsUp}
                         onThumbsDown={handleThumbsDown}
+                        onCreateTicket={handleCreateTicket}
                       />
                     ),
                   )}
@@ -813,6 +1142,77 @@ export function CrystalPanel({
                   )}
                   {streamError && !isThinking && (
                     <div className="text-xs text-red-500 px-2">{streamError}</div>
+                  )}
+
+                  {/* ── Support mode: escalation CTA card ─────────────── */}
+                  {isSupportMode && escalationPackage && !lastSupportResolved && !isThinking && (
+                    <div
+                      className="mx-2 my-2 rounded-xl p-3 flex flex-col gap-2"
+                      style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)' }}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <Icon name="support_agent" size={14} style={{ color: '#b45309' }} />
+                        <span className="text-xs font-bold" style={{ color: '#b45309' }}>
+                          {t('crystal.escalationNeeded')}
+                        </span>
+                      </div>
+                      <p className="text-xs text-on-surface-variant">{escalationPackage.description}</p>
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.createSupportTicket({
+                              subject: escalationPackage.description,
+                              priority: escalationPackage.priority,
+                              description: JSON.stringify(escalationPackage.context),
+                            });
+                            setEscalationPackage(null);
+                          } catch { /* silently ignore */ }
+                        }}
+                        className="self-start text-xs font-bold px-3 py-1.5 rounded-lg transition-colors"
+                        style={{ background: 'rgba(245,158,11,0.15)', color: '#92400e' }}
+                      >
+                        {t('crystal.createTicket')}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* ── Support mode: thumbs feedback ──────────────────── */}
+                  {isSupportMode && messages.length > 0 && !isThinking && (
+                    <div className="mx-2 my-1 flex items-center gap-2">
+                      {feedbackThanks ? (
+                        <span className="text-[10px] text-on-surface-variant">{feedbackThanks}</span>
+                      ) : (
+                        <>
+                          <span className="text-[10px] text-on-surface-variant">{t('support.feedbackHelpful')}</span>
+                          <button
+                            className="p-1 rounded-lg hover:bg-emerald-50 transition-colors"
+                            title={t('crystal.thumbsUp')}
+                            onClick={async () => {
+                              const lastMsg = messages[messages.length - 1];
+                              if (lastMsg.role === 'crystal') {
+                                await api.submitDocFeedback({ doc_key: lastMsg.id, helpful: true }).catch(() => {});
+                                setFeedbackThanks(t('support.feedbackThanks'));
+                              }
+                            }}
+                          >
+                            <Icon name="thumb_up" size={13} />
+                          </button>
+                          <button
+                            className="p-1 rounded-lg hover:bg-red-50 transition-colors"
+                            title={t('crystal.thumbsDown')}
+                            onClick={async () => {
+                              const lastMsg = messages[messages.length - 1];
+                              if (lastMsg.role === 'crystal') {
+                                await api.submitDocFeedback({ doc_key: lastMsg.id, helpful: false }).catch(() => {});
+                                setFeedbackThanks(t('support.feedbackThanks'));
+                              }
+                            }}
+                          >
+                            <Icon name="thumb_down" size={13} />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
@@ -849,9 +1249,11 @@ export function CrystalPanel({
                   }}
                   onKeyDown={handleKeyDown}
                   placeholder={
-                    isAll
-                      ? 'Ask anything across your surveys…'
-                      : 'Ask anything about this survey…'
+                    isSupportMode
+                      ? t('crystal.supportPlaceholder')
+                      : isAll
+                        ? 'Ask anything across your surveys…'
+                        : 'Ask anything about this survey…'
                   }
                   rows={1}
                   className="flex-1 bg-transparent resize-none focus:outline-none text-sm text-on-surface placeholder:text-on-surface-variant/50 py-1.5 px-1 overflow-y-auto"
@@ -1012,6 +1414,49 @@ function resolveId(id: string, map: CitationMap): string {
   return match ?? id;                                  // prefix match or original
 }
 
+/** Enrich citation objects with headline / verbatims from the citation map. */
+function enrichCitationsFromMap(citations: CrystalCitation[], map: CitationMap): CrystalCitation[] {
+  return citations.map((c) => {
+    const resolvedId = resolveId(c.id, map);
+    const meta = map[resolvedId];
+    return meta ? { ...c, id: resolvedId, ...meta } : { ...c, id: resolvedId };
+  });
+}
+
+/** Build normalised citations from SSE/REST answer payload + citation map. */
+function buildCitationsFromAnswer(
+  rawCitations: unknown[],
+  insightRefs: unknown[] | undefined,
+  answerText: string,
+  map: CitationMap,
+): CrystalCitation[] {
+  const normCitations: CrystalCitation[] = rawCitations.map((c) => {
+    const base = typeof c === 'string' ? { id: c } : (c as CrystalCitation);
+    const resolvedId = resolveId(base.id, map);
+    const meta = map[resolvedId];
+    return meta ? { ...base, id: resolvedId, ...meta } : { ...base, id: resolvedId };
+  });
+
+  const { text: cleanedAnswer, extraIds } = parseInlineCitations(answerText);
+  const inlineRefs = (cleanedAnswer.match(/\[[0-9a-f]{8}(?:-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})?\]/gi) ?? [])
+    .map((m) => m.slice(1, -1).toLowerCase());
+
+  const existingIds = new Set(normCitations.map((c) => c.id.toLowerCase()));
+  const addId = (rawId: string) => {
+    const id = resolveId(rawId, map);
+    if (existingIds.has(id.toLowerCase())) return;
+    const meta = map[id];
+    normCitations.push(meta ? { id, ...meta } : { id });
+    existingIds.add(id.toLowerCase());
+  };
+
+  [...(insightRefs ?? []), ...extraIds, ...inlineRefs]
+    .filter((id): id is string => typeof id === 'string' && !!id)
+    .forEach((id) => addId(id));
+
+  return normCitations;
+}
+
 /**
  * Extracts citation IDs from Crystal's answer text.
  * - Multi-ID blocks "[uuid, uuid, ...]" → strip from text, collect IDs
@@ -1031,7 +1476,6 @@ function parseInlineCitations(text: string): { text: string; extraIds: string[] 
 
 // ── Citation helpers ─────────────────────────────────────────────────────────
 import { Link } from 'react-router-dom';
-import { ROUTES, toPath } from '../constants/routes';
 
 const LAYER_COLORS: Record<string, string> = {
   prescriptive: '#059669',
@@ -1374,6 +1818,7 @@ function CrystalBubble({
   onPin,
   onThumbsUp,
   onThumbsDown,
+  onCreateTicket,
 }: {
   message: Message;
   isAll: boolean;
@@ -1381,6 +1826,7 @@ function CrystalBubble({
   onPin: (id: string) => void;
   onThumbsUp: (id: string) => void;
   onThumbsDown: (id: string) => void;
+  onCreateTicket: (message: Message) => void;
 }) {
   return (
     <div className="flex gap-3">
@@ -1448,8 +1894,8 @@ function CrystalBubble({
             size="sm"
             variant="outline"
             className="text-xs"
-            title="Ticketing integration coming soon"
-            onClick={() => {/* Ticketing integration — not yet connected */}}
+            title="Create a case from this insight"
+            onClick={() => onCreateTicket(message)}
           >
             <Icon name="flag" size={13} /> Ticket
           </Button>
@@ -1835,4 +2281,220 @@ function CrystalThinkingBubble({
 // Removed: MiniNPSChart (was hardcoded fake data tied to buildDemoResponse)
 // Removed: buildDemoResponse (was returning identical hardcoded text for any unrecognized query)
 // Crystal now calls the real /api/insights/:surveyId/crystal endpoint.
+
+// ── ActionProposalCard ─────────────────────────────────────────────────────────
+// Renders a single action proposal from Crystal as a confirmation card.
+// User must click "Apply" to execute — Crystal never acts autonomously.
+
+const ACTION_TYPE_ICONS: Record<string, string> = {
+  create_survey:          'add_circle',
+  create_followup_survey: 'add_circle',
+  edit_survey:            'edit',
+  edit_survey_questions:  'edit',
+  distribute:             'send',
+  distribute_to_segment:  'send',
+  workflow:               'settings_automation',
+  create_workflow:        'settings_automation',
+  create_alert:           'notifications_active',
+  schedule_rerun:         'refresh',
+  export_insights:        'download',
+  view_template:          'library_books',
+  template:               'library_books',
+  // Tier 3
+  create_case:            'work',
+  assign_owner:           'person_check',
+  send_slack_alert:       'chat',
+};
+
+const PRIORITY_COLORS: Record<string, string> = {
+  critical: '#dc2626',
+  high:     '#d97706',
+  medium:   '#2a4bd9',
+  low:      '#6b7280',
+};
+
+const PARAM_LABELS: Record<string, string> = {
+  alert_type: 'Alert type', threshold_config: 'Threshold', severity: 'Severity',
+  metric: 'Metric', condition: 'Trigger', name: 'Name', trigger: 'Trigger',
+  action_type: 'Action', intent: 'Goal', survey_type: 'Survey type',
+  audience: 'Audience', channel: 'Channel', message: 'Change',
+  title: 'Title', category: 'Category', owner_label: 'Assigned to',
+  driver_ref: 'Driver', evidence_count: 'Supporting verbatims',
+};
+
+function humanizeParams(params: Record<string, unknown>): Array<{ label: string; value: string }> {
+  const out: Array<{ label: string; value: string }> = [];
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v == null || v === '' || k === 'survey_id' || k === 'contact_id' || k === 'response_id') continue;
+    let value: string;
+    if (typeof v === 'object') {
+      const entries = Object.entries(v as Record<string, unknown>);
+      if (entries.length === 0) continue;
+      value = entries.map(([kk, vv]) => `${kk}: ${vv}`).join(', ');
+    } else {
+      value = String(v);
+    }
+    const label = PARAM_LABELS[k] ?? k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+    out.push({ label, value: value.slice(0, 120) });
+  }
+  return out;
+}
+
+export function ActionProposalCard({
+  proposal,
+  isExecuting,
+  onApply,
+  onDismiss,
+}: {
+  proposal: ActionProposal;
+  isExecuting: boolean;
+  onApply: () => void;
+  onDismiss: () => void;
+}) {
+  const iconName    = ACTION_TYPE_ICONS[proposal.type] ?? 'auto_fix_high';
+  const priorityClr = PRIORITY_COLORS[proposal.priority] ?? '#2a4bd9';
+  const ctaLabel    = proposal.cta_label ?? (proposal.type === 'create_case' ? 'Create Case' : 'Apply');
+  const willDo      = humanizeParams(proposal.params || {});
+  const [showDetails, setShowDetails] = useState(false);
+
+  return (
+    <div
+      style={{
+        background:   'rgba(42,75,217,0.04)',
+        border:       `1px solid ${priorityClr}30`,
+        borderRadius: '0.75rem',
+        padding:      '0.75rem',
+        position:     'relative',
+      }}
+    >
+      {/* Priority badge */}
+      {proposal.priority !== 'medium' && (
+        <span
+          style={{
+            position:      'absolute',
+            top:           '0.5rem',
+            right:         '0.5rem',
+            fontSize:      '0.6rem',
+            fontWeight:    700,
+            color:         priorityClr,
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+          }}
+        >
+          {proposal.priority}
+        </span>
+      )}
+
+      <div className="flex items-start gap-3">
+        {/* Icon */}
+        <div
+          style={{
+            width:           32,
+            height:          32,
+            borderRadius:    '0.5rem',
+            background:      `${priorityClr}15`,
+            display:         'flex',
+            alignItems:      'center',
+            justifyContent:  'center',
+            flexShrink:      0,
+          }}
+        >
+          <span className="material-symbols-outlined" style={{ fontSize: 16, color: priorityClr }}>
+            {iconName}
+          </span>
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <p style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-on-surface, #1a1a2e)', marginBottom: '0.2rem' }}>
+            {proposal.title}
+          </p>
+          <p style={{ fontSize: '0.75rem', color: 'var(--color-on-surface-variant, #666)', lineHeight: 1.4 }}>
+            {proposal.description}
+          </p>
+
+          {/* create_case specifics */}
+          {proposal.type === 'create_case' && (
+            <div style={{ marginTop: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+              {!!proposal.params.severity && (
+                <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: 99, background: `${priorityClr}15`, color: priorityClr }}>
+                  {String(proposal.params.severity).toUpperCase()}
+                </span>
+              )}
+              {!!proposal.params.owner_label && (
+                <span style={{ fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.5rem', borderRadius: 99, background: 'rgba(0,100,124,0.1)', color: '#00647c' }}>
+                  → {String(proposal.params.owner_label)}
+                </span>
+              )}
+              {!!proposal.params.driver_ref && (
+                <span style={{ fontSize: '0.65rem', padding: '0.15rem 0.5rem', borderRadius: 99, background: 'rgba(131,41,200,0.1)', color: '#8329c8' }}>
+                  {String(proposal.params.driver_ref)}
+                </span>
+              )}
+              {!!proposal.params.evidence_count && (
+                <span style={{ fontSize: '0.65rem', padding: '0.15rem 0.5rem', borderRadius: 99, background: 'rgba(107,114,128,0.08)', color: '#6b7280' }}>
+                  {Number(proposal.params.evidence_count)} verbatims
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Details toggle */}
+          {willDo.length > 0 && (
+            <button
+              onClick={() => setShowDetails(!showDetails)}
+              style={{ marginTop: '0.4rem', fontSize: '0.7rem', color: priorityClr, textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              {showDetails ? 'Hide details' : 'What will happen'}
+            </button>
+          )}
+
+          {showDetails && (
+            <div style={{ marginTop: '0.4rem', padding: '0.5rem', background: `${priorityClr}08`, borderRadius: '0.5rem' }}>
+              {willDo.map(({ label, value }) => (
+                <div key={label} style={{ fontSize: '0.7rem', display: 'flex', gap: '0.3rem', marginBottom: '0.15rem' }}>
+                  <span style={{ color: 'var(--color-on-surface-variant, #888)', flexShrink: 0 }}>{label}:</span>
+                  <span style={{ color: 'var(--color-on-surface, #111)', fontWeight: 500 }}>{value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.6rem' }}>
+            <button
+              onClick={onApply}
+              disabled={isExecuting}
+              style={{
+                fontSize:       '0.7rem',
+                fontWeight:     700,
+                padding:        '0.35rem 0.8rem',
+                borderRadius:   '0.5rem',
+                background:     isExecuting ? '#dfe3e6' : priorityClr,
+                color:          '#fff',
+                border:         'none',
+                cursor:         isExecuting ? 'not-allowed' : 'pointer',
+                display:        'flex',
+                alignItems:     'center',
+                gap:            '0.3rem',
+                transition:     'opacity 0.15s',
+              }}
+            >
+              {isExecuting ? (
+                <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.4)', borderTopColor: '#fff', display: 'inline-block', animation: 'crystal-spin 0.8s linear infinite' }} />
+              ) : null}
+              {ctaLabel}
+            </button>
+            <button
+              onClick={onDismiss}
+              style={{ fontSize: '0.7rem', color: 'var(--color-on-surface-variant, #888)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.35rem 0.4rem' }}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 

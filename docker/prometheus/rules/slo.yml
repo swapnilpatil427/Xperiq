@@ -1,0 +1,163 @@
+groups:
+  # ── Availability ─────────────────────────────────────────────────────────────
+  - name: availability
+    interval: 30s
+    rules:
+      - alert: BackendDown
+        expr: up{job="experient-api"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Backend API is down"
+          description: "Prometheus cannot scrape experient-api (:3001) for >1m."
+
+      - alert: CrystalOSDown
+        expr: up{job="crystalos"} == 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "CrystalOS (agents) is down"
+          description: "Prometheus cannot scrape crystalos (:8001) for >2m — AI features degraded."
+
+      - alert: SchedulerDown
+        expr: up{job="scheduler"} == 0
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Scheduler service is down"
+          description: "Prometheus cannot scrape the scheduler (:8090) for >2m — background jobs (broadcast expiry, etc.) are not running."
+
+  # ── Scheduler liveness (the "we forgot a cron" safety net) ──────────────────
+  - name: schedulers
+    interval: 30s
+    rules:
+      # Fast-loop schedulers (event_engine ~seconds, standalone scheduler 30s).
+      - alert: SchedulerHeartbeatStale
+        expr: time() - scheduler_heartbeat_timestamp{component=~"event_engine|scheduler"} > 600
+        for: 2m
+        labels: { severity: critical }
+        annotations:
+          summary: "Scheduler '{{ $labels.component }}' heartbeat is stale"
+          description: "No tick from {{ $labels.component }} for >10m — its background jobs have silently stopped (or the flag/container is missing)."
+
+      # CrystalOS scheduler polls slowly (prod default 1h), so allow >2 cycles.
+      - alert: CrystalSchedulerHeartbeatStale
+        expr: time() - scheduler_heartbeat_timestamp{component="crystalos_scheduler"} > 7800
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "CrystalOS scheduler heartbeat is stale"
+          description: "No CrystalOS scheduler tick for >2h — auto insight generation, SLA sweeps, and survey auto-close have stopped (check ENABLE_SCHEDULER)."
+
+      # Scheduler replicas are alive but none holds the leader lock → jobs aren't running.
+      - alert: SchedulerNoLeader
+        expr: max(scheduler_is_leader) < 1
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Scheduler has no leader"
+          description: "Scheduler replicas are up but none holds the leader lock for >5m — background jobs are not executing (stuck advisory lock?)."
+
+  # ── Latency & errors (speed / SLO) ──────────────────────────────────────────
+  - name: slo
+    interval: 30s
+    rules:
+      - alert: HighHTTPErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            / clamp_min(sum(rate(http_requests_total[5m])), 1) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Backend 5xx error rate >5%"
+          description: "More than 5% of requests are failing over the last 5m."
+
+      - alert: HighRequestLatencyP95
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 request latency >1s"
+          description: "95th-percentile API latency has exceeded 1s for 5m."
+
+  # ── Credit system ───────────────────────────────────────────────────────────
+  - name: credits
+    interval: 1m
+    rules:
+      - alert: CreditDenialSpike
+        expr: sum(rate(credit_decisions_total{result="denied"}[10m])) > 0.2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Customers are hitting credit walls"
+          description: "Sustained rate of denied metered actions (>0.2/s) — possible under-provisioned plans or a metering bug."
+
+      - alert: StripeWebhookErrors
+        expr: increase(credit_webhook_total{result="error"}[15m]) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Stripe webhook handler errors"
+          description: "One or more Stripe webhooks failed to process in the last 15m — purchases may not be fulfilled."
+
+      - alert: CreditInvariantViolation
+        expr: credit_invariant_violations > 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "Credit ledger integrity violation"
+          description: "The reconciliation job found credit_accounts rows breaking balance invariants (negative or over-allowance) — a debit/grant bug. Investigate immediately."
+
+  # ── Credential health (key validity / expiry) ───────────────────────────────
+  - name: credentials
+    interval: 1m
+    rules:
+      - alert: CredentialInvalid
+        expr: credential_valid == 0
+        for: 15m
+        labels: { severity: critical }
+        annotations:
+          summary: "Integration key '{{ $labels.integration }}' is invalid"
+          description: "The {{ $labels.integration }} API key no longer authenticates (revoked / expired / rotated) — that integration is broken. Rotate or fix the key."
+
+      - alert: CredentialExpiringSoon
+        expr: credential_days_to_expiry < 14
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "Integration key '{{ $labels.integration }}' expires in <14 days"
+          description: "{{ $labels.integration }} credential has {{ $value | printf \"%.0f\" }} days until expiry — rotate it before it lapses."
+
+  # ── Host / machine health (node-exporter) ───────────────────────────────────
+  - name: host
+    interval: 30s
+    rules:
+      - alert: HostHighCPU
+        expr: |
+          1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Host CPU >90%"
+          description: "Sustained CPU saturation on {{ $labels.instance }} for 10m."
+
+      - alert: HostLowMemory
+        expr: |
+          node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Host memory <10% available"
+          description: "Available memory on {{ $labels.instance }} is below 10%."
+
+      - alert: HostDiskFillingUp
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} < 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Host disk <10% free"
+          description: "Filesystem {{ $labels.mountpoint }} on {{ $labels.instance }} is over 90% full."

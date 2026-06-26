@@ -1,4 +1,5 @@
 import { useOrganization } from '@clerk/react';
+import { isValidClerkPublishableKey } from './clerkConfig';
 
 export type OrgRole = 'org:admin' | 'org:analyst' | 'org:viewer' | null;
 
@@ -47,6 +48,7 @@ function usePermissionsDemo(): Permissions {
 
 // Branch at module evaluation time (Vite replaces import.meta.env at build time).
 // React sees the same stable function reference on every render, so hooks rules are satisfied.
-export const usePermissions: () => Permissions = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY
+const clerkKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY?.trim() ?? '';
+export const usePermissions: () => Permissions = isValidClerkPublishableKey(clerkKey)
   ? usePermissionsWithClerk
   : usePermissionsDemo;

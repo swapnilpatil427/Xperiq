@@ -5,8 +5,36 @@ global:
 rule_files:
   - /etc/prometheus/rules/*.yml
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   - job_name: "experient-api"
     static_configs:
       - targets: ["host.docker.internal:3001"]
     metrics_path: /api/metrics
+
+  # CrystalOS (Python agents service) — LLM cost/tokens, tool calls, pipeline metrics.
+  - job_name: "crystalos"
+    static_configs:
+      - targets: ["host.docker.internal:8001"]
+    metrics_path: /metrics
+
+  # Host machine health (CPU, memory, disk, network).
+  - job_name: "node-exporter"
+    static_configs:
+      - targets: ["node-exporter:9100"]
+
+  # Per-container resource usage (cpu/mem/io per service).
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # Scheduler service — heartbeat + per-job metrics. (host.docker.internal for local/host
+  # runs; in full-docker/prod use the compose service name "scheduler:8090".)
+  - job_name: "scheduler"
+    static_configs:
+      - targets: ["host.docker.internal:8090"]
+    metrics_path: /metrics

@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '../components/LoadingStates';
+import { ReportExportMenu } from '../components/ReportExportMenu';
 import type { Survey, SurveyTopic } from '../types';
 
 type DayPoint = { day: string; count: number };
@@ -132,6 +133,7 @@ export function ResponseDashboardPage() {
         crumbs={crumbs}
         title={t('responseDashboard.pageTitle')}
         subtitle={t('responseDashboard.dateFilter')}
+        actions={surveyId ? <ReportExportMenu surveyId={surveyId} surveyTitle={survey?.title} /> : undefined}
       />
 
       {/* Top Metrics */}

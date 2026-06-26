@@ -42,6 +42,8 @@ function buildApp({ userId = 'u-owner', orgId = 'org-1', skipAuth = false } = {}
       req.userId = userId;
       next();
     },
+    // The code now keys the dev bypass on DEV_MODE (no CLERK_SECRET_KEY), not SKIP_AUTH.
+    DEV_MODE: skipAuth,
   });
   _require.cache[DB_PATH] = fakeMod(DB_PATH, {
     default: { query: mockQuery },
@@ -66,7 +68,7 @@ function buildApp({ userId = 'u-owner', orgId = 'org-1', skipAuth = false } = {}
 
   const app = express();
   app.use(express.json());
-  app.use('/api/copilot', router);
+  app.use('/api/copilot', router.default || router);
   app.use((err, req, res, next) => res.status(err.status || 500).json({ error: err.message }));
   return app;
 }

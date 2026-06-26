@@ -1,0 +1,32 @@
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_optional = true
+check_untyped_defs = true
+disallow_untyped_defs = true
+disallow_any_generics = false
+explicit_package_bases = true
+exclude = [
+    ".venv",
+    "__pycache__",
+    "tests/",
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "langgraph.*",
+    "langchain.*",
+    "anthropic.*",
+    "prom_client.*",
+    "redis.*",
+    "psycopg2.*",
+    "psycopg.*",
+    "psycopg_pool.*",
+    "structlog.*",
+    "uvicorn.*",
+]
+ignore_missing_imports = true

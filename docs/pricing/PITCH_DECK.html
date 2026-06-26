@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Experient — Pricing Strategy</title>
+<style>
+  :root{
+    --bg:#0a0e1a; --bg2:#111726; --ink:#eef2ff; --mut:#8b96b3;
+    --acc:#6ea8fe; --acc2:#7af0c5; --warn:#ffb86b; --bad:#ff7a8a;
+    --line:#22304d; --card:#141c30;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+    overflow:hidden;
+  }
+  .deck{height:100vh;width:100vw;position:relative}
+  .slide{
+    position:absolute;inset:0;display:none;flex-direction:column;
+    padding:6vh 7vw;animation:fade .35s ease;
+    background:radial-gradient(1200px 600px at 80% -10%,rgba(110,168,254,.10),transparent 60%),
+               radial-gradient(900px 500px at -10% 110%,rgba(122,240,197,.08),transparent 55%);
+  }
+  .slide.active{display:flex}
+  @keyframes fade{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .kicker{color:var(--acc);font-weight:700;letter-spacing:.18em;text-transform:uppercase;font-size:.82rem;margin-bottom:1.2rem}
+  h1{font-size:4.2rem;line-height:1.04;letter-spacing:-.02em;font-weight:800;margin-bottom:1.2rem}
+  h2{font-size:2.9rem;line-height:1.08;letter-spacing:-.01em;font-weight:800;margin-bottom:1.6rem}
+  h2 .em{color:var(--acc2)}
+  h1 .em{color:var(--acc)}
+  .lead{font-size:1.5rem;color:var(--mut);max-width:54ch;line-height:1.5}
+  .big{font-size:7rem;font-weight:850;letter-spacing:-.03em;line-height:1;
+       background:linear-gradient(120deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  ul{list-style:none;margin-top:.6rem}
+  li{font-size:1.5rem;line-height:1.55;padding:.5rem 0 .5rem 2.2rem;position:relative;color:#dbe3f7}
+  li::before{content:"";position:absolute;left:0;top:1.25rem;width:.7rem;height:.7rem;border-radius:50%;
+             background:linear-gradient(120deg,var(--acc),var(--acc2))}
+  li small{display:block;color:var(--mut);font-size:1.05rem;padding-top:.15rem}
+  .grid{display:grid;gap:1.1rem;margin-top:.4rem}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:1rem;margin-top:1rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:1.4rem}
+  .card h3{font-size:1.15rem;color:var(--acc);margin-bottom:.5rem;letter-spacing:.02em}
+  .card .price{font-size:2.1rem;font-weight:800;margin:.2rem 0 .6rem}
+  .card p{color:var(--mut);font-size:1rem;line-height:1.45}
+  table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:1.18rem}
+  th,td{text-align:left;padding:.7rem .8rem;border-bottom:1px solid var(--line)}
+  th{color:var(--acc);font-weight:700;font-size:.95rem;letter-spacing:.06em;text-transform:uppercase}
+  td.good{color:var(--acc2);font-weight:700}
+  td.bad{color:var(--bad);font-weight:700}
+  td.num{font-variant-numeric:tabular-nums;font-weight:700}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:2.4rem;align-items:start}
+  .pill{display:inline-block;background:rgba(122,240,197,.12);color:var(--acc2);border:1px solid rgba(122,240,197,.3);
+        padding:.3rem .8rem;border-radius:999px;font-size:.95rem;font-weight:600;margin-bottom:1rem}
+  .foot{position:absolute;bottom:3vh;left:7vw;right:7vw;display:flex;justify-content:space-between;
+        color:#566080;font-size:.85rem;letter-spacing:.04em}
+  .nav{position:absolute;bottom:3vh;right:7vw;color:#566080;font-size:.85rem}
+  .quote{font-size:2rem;line-height:1.4;font-weight:600;max-width:40ch}
+  .quote .em{color:var(--acc2)}
+  .src{color:#566080;font-size:.95rem;margin-top:1.4rem}
+  .center{justify-content:center}
+  .progress{position:fixed;top:0;left:0;height:3px;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:width .3s;z-index:10}
+  @media print{
+    body{overflow:visible}
+    .slide{display:flex!important;position:relative;height:100vh;page-break-after:always;inset:auto}
+    .foot,.nav,.progress{position:absolute}
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="bar"></div>
+<div class="deck" id="deck">
+
+  <!-- 1 TITLE -->
+  <section class="slide active center">
+    <div class="kicker">Pricing & Monetization Strategy · June 2026</div>
+    <h1>The XM platform that<br>pays for itself at<br><span class="em">customer #30.</span></h1>
+    <p class="lead">Experient — AI-native experience management. Conservative, profitable, self-funded. No funding round required.</p>
+    <div class="foot"><span>Experient · Confidential</span><span>Credit-based pricing · v2 conservative</span></div>
+  </section>
+
+  <!-- 2 THE GAP -->
+  <section class="slide">
+    <div class="kicker">The market gap</div>
+    <h2>The mid-market is <span class="em">stranded.</span></h2>
+    <div class="two">
+      <ul>
+        <li>Qualtrics &amp; Medallia: smart but punishing<small>$323K–$521K avg ACV · 6-month deploy · 3 meters running (seats + responses + AI add-ons)</small></li>
+        <li>SurveyMonkey &amp; Typeform: cheap but dumb<small>$1K–$39K · data collection only · zero intelligence layer</small></li>
+        <li>The $10K–$75K segment has no AI-grade option<small>10,000+ companies with budget and no product built for them</small></li>
+      </ul>
+      <div class="card">
+        <h3>The opening</h3>
+        <p style="font-size:1.25rem;color:#dbe3f7;line-height:1.5">Medallia was transferred to its creditors in April 2026 — $5.1B equity wiped. InMoment is being absorbed into Qualtrics. Enterprise accounts are actively shopping.</p>
+        <p style="margin-top:1rem"><span class="pill">12–18 month displacement window</span></p>
+      </div>
+    </div>
+    <div class="nav">2</div>
+  </section>
+
+  <!-- 3 THESIS -->
+  <section class="slide center">
+    <div class="kicker">The thesis in one number</div>
+    <div class="big">30</div>
+    <h2 style="margin-top:1.4rem">paying customers to profitability —<br><span class="em">salary included.</span></h2>
+    <p class="lead">Not 3,000. Not a Series A. Thirty. Everything after that is profit you keep.</p>
+    <div class="nav">3</div>
+  </section>
+
+  <!-- 4 PRICING -->
+  <section class="slide">
+    <div class="kicker">The model · flat plan + bundled AI allowance</div>
+    <h2>Four tiers. <span class="em">One transparent meter.</span></h2>
+    <div class="cards">
+      <div class="card"><h3>FREE</h3><div class="price">$0</div><p>3 surveys · 100 responses/mo · 3 insight runs + 5 Crystal turns (lifetime). The funnel.</p></div>
+      <div class="card"><h3>STARTER</h3><div class="price">$49<span style="font-size:1rem;color:var(--mut)">/mo</span></div><p>2,000 responses · 1,500 AI credits · 3 seats. Surveys + reporting + light AI.</p></div>
+      <div class="card" style="border-color:var(--acc)"><h3>GROWTH ★</h3><div class="price">$299<span style="font-size:1rem;color:var(--mut)">/mo</span></div><p>20K responses · 12K AI credits · 10 seats. Crystal, Cases, Broadcasts. <b style="color:var(--acc2)">The profit engine.</b></p></div>
+      <div class="card"><h3>ENTERPRISE</h3><div class="price">$1,499<span style="font-size:1rem;color:var(--mut)">/mo+</span></div><p>Unlimited responses · 80K credits · XO-Fusion · dept pools · RBAC · SLA.</p></div>
+    </div>
+    <p class="src">1 credit = $0.01. AI credits are consumed only by insight runs (50), Crystal turns (15), XO-Fusion (200). Core usage is bundled — no meter.</p>
+    <div class="nav">4</div>
+  </section>
+
+  <!-- 5 THE CREDIT INSIGHT -->
+  <section class="slide">
+    <div class="kicker">What we learned from AI's best (and worst)</div>
+    <h2>Meter the <span class="em">expensive AI</span> — never the everyday.</h2>
+    <table>
+      <tr><th>Company</th><th>Pattern</th><th>Verdict</th></tr>
+      <tr><td>GitHub Copilot</td><td>Seat includes matching credit pool · caps ON by default</td><td class="good">Trusted ✓</td></tr>
+      <tr><td>Hex</td><td>Seat + bundled AI credits · predictable worst-case bill</td><td class="good">Trusted ✓</td></tr>
+      <tr><td>Notion AI</td><td>Re-bundled AI into the seat · no meter</td><td class="good">Trusted ✓</td></tr>
+      <tr><td>Intercom Fin</td><td>Bills "assumed resolutions" — even when nothing happened</td><td class="bad">Backlash ✗</td></tr>
+      <tr><td>Jasper (history)</td><td>Word-credits "caused confusion, inhibited use" → reverted</td><td class="bad">Failed ✗</td></tr>
+      <tr><td><b>Experient</b></td><td><b>Bundled allowance · meter only insight/Crystal/XO-Fusion · caps default ON</b></td><td class="good">By design ✓</td></tr>
+    </table>
+    <p class="src">Trusted models bundle a generous allowance so the meter is invisible at normal use. We adopted the GitHub/Hex pattern, not the Intercom Fin pattern.</p>
+    <div class="nav">5</div>
+  </section>
+
+  <!-- 6 VS INCUMBENTS -->
+  <section class="slide">
+    <div class="kicker">Same intelligence · fraction of the cost</div>
+    <h2>Full AI feature set: <span class="em">$3,588/yr vs $75,000/yr.</span></h2>
+    <table>
+      <tr><th>Capability</th><th>Qualtrics</th><th>Medallia</th><th>Experient</th></tr>
+      <tr><td>Survey + collection</td><td>Included</td><td>Included</td><td class="good">Free</td></tr>
+      <tr><td>AI text analytics / insights</td><td>+$50–200K/yr</td><td>Module add-on</td><td class="good">In Growth</td></tr>
+      <tr><td>Conversational AI</td><td>XM Discover +$200K</td><td>Athena add-on</td><td class="good">In Growth</td></tr>
+      <tr><td>Closed-loop case mgmt</td><td>Prof. services</td><td>Prof. services</td><td class="good">In Growth</td></tr>
+      <tr><td>Entry cost, full set</td><td class="num">$75,000+/yr</td><td class="num">$100,000+/yr</td><td class="num good">$3,588/yr</td></tr>
+      <tr><td>Time to first insight</td><td>6+ months</td><td>6–12 months</td><td class="good">30 minutes</td></tr>
+      <tr><td>Implementation fee</td><td>$5–20K</td><td>$50–200K</td><td class="good">$0</td></tr>
+    </table>
+    <div class="nav">6</div>
+  </section>
+
+  <!-- 7 UNIT ECONOMICS -->
+  <section class="slide">
+    <div class="kicker">Profitable on every line</div>
+    <h2>70–94% gross margin — <span class="em">no subsidy.</span></h2>
+    <table>
+      <tr><th>Tier</th><th>Price/mo</th><th>True cost</th><th>Contribution</th><th>Gross margin</th></tr>
+      <tr><td>Starter</td><td class="num">$49</td><td class="num">$8.01</td><td class="num">$41</td><td class="num good">83.7%</td></tr>
+      <tr><td>Growth ★</td><td class="num">$299</td><td class="num">$25.05</td><td class="num">$274</td><td class="num good">91.6%</td></tr>
+      <tr><td>Enterprise</td><td class="num">$1,499</td><td class="num">$200.26</td><td class="num">$1,299</td><td class="num good">86.6%</td></tr>
+    </table>
+    <p class="src">Costs at 100 customers (AI + allocated infra). Blended ~70% at 100 customers, ~78% at 1,000. Model routing (Haiku/Sonnet) lifts Growth toward 94%.</p>
+    <div class="nav">7</div>
+  </section>
+
+  <!-- 8 BREAK-EVEN -->
+  <section class="slide">
+    <div class="kicker">Break-even, with a founder salary</div>
+    <h2>The whole business runs on <span class="em">~30 customers.</span></h2>
+    <div class="two">
+      <table>
+        <tr><th>Path</th><th>Customers to break-even</th></tr>
+        <tr><td>Pure Growth</td><td class="num good">30</td></tr>
+        <tr><td>Realistic mix (20 Growth + 2 Ent)</td><td class="num good">~25</td></tr>
+        <tr><td>Pure Enterprise</td><td class="num good">7</td></tr>
+      </table>
+      <div class="card">
+        <h3>The monthly nut</h3>
+        <p style="font-size:1.2rem;color:#dbe3f7;line-height:1.6">
+        Lean infra <b>~$325/mo</b> (free tiers for monitoring, Novu, Sentry)<br>
+        + Founder salary <b>$8,000/mo</b><br>
+        = <b style="color:var(--acc2)">$8,325/mo to cover.</b></p>
+        <p style="margin-top:1rem;color:var(--mut)">Each Growth customer contributes $274. Thirty of them clear the nut. #31 onward is profit.</p>
+      </div>
+    </div>
+    <div class="nav">8</div>
+  </section>
+
+  <!-- 9 GTM -->
+  <section class="slide">
+    <div class="kicker">Go-to-market · product-led, not sales-led</div>
+    <h2>Grow on <span class="em">cash flow</span>, not runway.</h2>
+    <ul>
+      <li>Growth tier is the engine — 92% margin, &lt;$400 CAC, 2.5-month payback, fully self-serve<small>Free → Starter → Growth via in-app prompts at AI feature gates. No AE required.</small></li>
+      <li>Enterprise is inbound-only until cash allows<small>Take Medallia-displacement inbound; do NOT fund a $15K-CAC sales org from money you don't have.</small></li>
+      <li>Annual prepay funds itself<small>A $3,588 upfront Growth contract is interest-free working capital — it pays for its own COGS and then some.</small></li>
+      <li>No acquisition cost we can't recover in 6 months<small>Conservative means every dollar in comes back fast.</small></li>
+    </ul>
+    <div class="nav">9</div>
+  </section>
+
+  <!-- 10 MARGIN DEFENSE -->
+  <section class="slide">
+    <div class="kicker">Protecting the margin</div>
+    <h2>AI cost control is <span class="em">non-negotiable, and early.</span></h2>
+    <table>
+      <tr><th>Lever</th><th>Savings</th><th>When</th></tr>
+      <tr><td>Model routing — Haiku for simple, Sonnet for complex Crystal turns</td><td class="num good">~40%</td><td>before 50 customers</td></tr>
+      <tr><td>Insight pipeline on Gemini 2.0 Flash</td><td class="num good">30× vs Sonnet</td><td>done</td></tr>
+      <tr><td>Semantic response cache</td><td class="num good">10–15%</td><td>by 100 customers</td></tr>
+      <tr><td>Spend caps ON by default</td><td class="num good">caps the floor</td><td>at launch</td></tr>
+    </table>
+    <p class="src">Without VC subsidy, every dollar of AI cost comes out of margin. Routing + caching cut blended AI cost ~45% and stop a single power user from blowing up COGS.</p>
+    <div class="nav">10</div>
+  </section>
+
+  <!-- 11 DIFFERENTIATION -->
+  <section class="slide">
+    <div class="kicker">Why we win, beyond price</div>
+    <h2>The loop is the product.</h2>
+    <div class="two">
+      <ul>
+        <li>Crystal proposes — humans confirm — outcomes are measured<small>30–40% of incumbent insights lead to zero action. We close the loop by design.</small></li>
+        <li>XO-Fusion: X-data meets O-data<small>NPS fused with revenue, churn, SLA. No direct analog in Qualtrics or Medallia.</small></li>
+        <li>One transparent meter, generous floor, hard caps<small>Incumbents run three opaque meters. We run one, only on expensive AI.</small></li>
+      </ul>
+      <div class="card center" style="text-align:center">
+        <p class="quote">"Same insight as an enterprise XM team. <span class="em">A fraction of the cost.</span> Running in 30 minutes."</p>
+      </div>
+    </div>
+    <div class="nav">11</div>
+  </section>
+
+  <!-- 12 CLOSE -->
+  <section class="slide center">
+    <div class="kicker">The plan</div>
+    <h2>30 customers. <span class="em">Profitable. In control.</span></h2>
+    <ul style="margin-top:.5rem">
+      <li>Profitable at ~30 customers — no funding, no valuation games</li>
+      <li>70–94% gross margin on the most trusted pricing model in AI software</li>
+      <li>Growth on cash flow; the unicorn path stays available as optional upside</li>
+    </ul>
+    <p class="lead" style="margin-top:1.6rem">Help customers measure their customers' experience — and build a durable, profitable business doing it.</p>
+    <div class="foot"><span>Experient · Confidential</span><span>See: PRICING_PROPOSAL.md · CREDIT_SYSTEM.md · FINANCIAL_MODEL.md</span></div>
+  </section>
+
+</div>
+
+<script>
+  const slides=[...document.querySelectorAll('.slide')];
+  let i=0;
+  const bar=document.getElementById('bar');
+  function show(n){
+    i=Math.max(0,Math.min(slides.length-1,n));
+    slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+    bar.style.width=((i)/(slides.length-1)*100)+'%';
+  }
+  document.addEventListener('keydown',e=>{
+    if(['ArrowRight','ArrowDown','PageDown',' '].includes(e.key)){e.preventDefault();show(i+1);}
+    if(['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){e.preventDefault();show(i-1);}
+    if(e.key==='Home')show(0); if(e.key==='End')show(slides.length-1);
+  });
+  document.addEventListener('click',e=>{ if(e.clientX > window.innerWidth*0.5) show(i+1); else show(i-1); });
+  show(0);
+</script>
+</body>
+</html>

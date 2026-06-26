@@ -35,6 +35,8 @@ We are not building "ChatGPT for surveys." We are building an **insight engine w
 
 | File | What it covers | Primary audience |
 |---|---|---|
+| **[new_design/](./new_design/README.md)** | **v2 redesign** — automated vs manual, checkpoint linked list, Expert/Quick modes, Trail UX, Crystal docs | All — start here for pipeline evolution |
+| [INTELLIGENCE_LIFECYCLE_README.md](INTELLIGENCE_LIFECYCLE_README.md) | **As-built lifecycle guide** — checkpoints, snapshots, trends, auto vs manual, anchor model ([HTML](intelligence-lifecycle-presentation.html)) | Engineering, PM, CX ops |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The scalable, distributed, global insight pipeline: ingestion, embeddings, vector store, LangGraph DAG, streaming, model routing, caching, multi-region, cost model | Engineering |
 | [ENGINE_DECISIONS.md](ENGINE_DECISIONS.md) | **The opinionated choices.** Eight architectural refusals that produce simplicity. The "no" budget — what we will not build and why | All |
 | [OPERATIONS_ECONOMICS.md](OPERATIONS_ECONOMICS.md) | The cheap + scalable + manageable claim defended with concrete numbers. Cost per insight at four scale points, ops headcount projection, why Qualtrics structurally cannot match | Engineering, finance, exec |

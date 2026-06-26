@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Experient - Active Support</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "surface-tint": "#2a4bd9",
+                        "on-surface-variant": "#595c5e",
+                        "on-tertiary-container": "#4c007d",
+                        "secondary-fixed": "#82deff",
+                        "on-secondary-container": "#004e62",
+                        "tertiary-fixed": "#d299ff",
+                        "on-primary-fixed-variant": "#001e82",
+                        "tertiary-fixed-dim": "#c986ff",
+                        "surface-bright": "#f5f7f9",
+                        "on-primary": "#f2f1ff",
+                        "secondary-fixed-dim": "#57d2f9",
+                        "background": "#f5f7f9",
+                        "surface": "#f5f7f9",
+                        "secondary": "#00647c",
+                        "on-tertiary-fixed-variant": "#580091",
+                        "tertiary-container": "#d299ff",
+                        "on-primary-container": "#00176b",
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#eef1f3",
+                        "primary-fixed": "#879aff",
+                        "on-secondary-fixed": "#003a48",
+                        "surface-dim": "#d0d5d8",
+                        "on-background": "#2c2f31",
+                        "primary-dim": "#173dcd",
+                        "error-container": "#f74b6d",
+                        "on-secondary": "#e2f6ff",
+                        "on-error": "#ffefef",
+                        "tertiary-dim": "#7613bb",
+                        "primary": "#2a4bd9",
+                        "on-primary-fixed": "#000000",
+                        "secondary-dim": "#00576c",
+                        "inverse-primary": "#7087ff",
+                        "inverse-surface": "#0b0f10",
+                        "inverse-on-surface": "#9a9d9f",
+                        "surface-container": "#e5e9eb",
+                        "surface-variant": "#d9dde0",
+                        "primary-container": "#879aff",
+                        "on-surface": "#2c2f31",
+                        "outline": "#747779",
+                        "on-secondary-fixed-variant": "#00586e",
+                        "outline-variant": "#abadaf",
+                        "secondary-container": "#82deff",
+                        "surface-container-high": "#dfe3e6",
+                        "surface-container-highest": "#d9dde0",
+                        "primary-fixed-dim": "#748bff",
+                        "on-error-container": "#510017",
+                        "error-dim": "#a70138",
+                        "error": "#b41340",
+                        "on-tertiary": "#fceeff",
+                        "on-tertiary-fixed": "#280046",
+                        "tertiary": "#8329c8"
+                    },
+                    borderRadius: {
+                        "DEFAULT": "1rem",
+                        "lg": "2rem",
+                        "xl": "3rem",
+                        "full": "9999px"
+                    },
+                    fontFamily: {
+                        headline: ["Manrope", "sans-serif"],
+                        display: ["Manrope", "sans-serif"],
+                        body: ["Inter", "sans-serif"],
+                        label: ["Inter", "sans-serif"]
+                    },
+                    boxShadow: {
+                        'ambient': '0 40px 60px -10px rgba(44, 47, 49, 0.06)',
+                        'glow': '0 10px 20px -5px rgba(42, 75, 217, 0.2)'
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-panel {
+            background-color: rgba(245, 247, 249, 0.7);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+        }
+        .btn-primary-gradient {
+            background: linear-gradient(135deg, #2a4bd9, #879aff);
+        }
+        .btn-primary-gradient:hover {
+            transform: perspective(500px) rotateX(5deg);
+            box-shadow: 0 10px 20px -5px rgba(42, 75, 217, 0.2);
+        }
+        .btn-primary-gradient:active {
+            transform: scale(0.98);
+        }
+        .tonal-shift-bg {
+            transition: background-color 0.3s ease;
+        }
+        /* Custom scrollbar for conversational area */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #d9dde0;
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #abadaf;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface font-body antialiased flex flex-col min-h-screen overflow-hidden">
+<!-- TopNavBar (Applies style_ shell layout commands) -->
+<nav class="fixed top-0 w-full z-50 bg-slate-50/70 dark:bg-slate-950/70 backdrop-blur-xl shadow-sm border-b-0 h-[64px]" id="top-nav">
+<div class="flex justify-between items-center w-full px-6 py-3 max-w-screen-2xl mx-auto h-full">
+<div class="flex items-center gap-6">
+<span class="text-xl font-bold tracking-tighter text-indigo-900 dark:text-indigo-50 font-manrope antialiased tracking-tight">Experient</span>
+<div class="hidden md:flex space-x-6 h-full items-center">
+<a class="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg py-2 px-3" href="#">Surveys</a>
+<a class="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg py-2 px-3" href="#">Insights</a>
+<a class="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg py-2 px-3" href="#">Respondents</a>
+<a class="text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg py-2 px-3" href="#">Workflows</a>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg transition-all active:scale-95 duration-200 ease-in-out text-slate-600">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800/50 rounded-lg transition-all active:scale-95 duration-200 ease-in-out text-slate-600">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="w-8 h-8 rounded-full bg-surface-container overflow-hidden ring-2 ring-transparent hover:ring-primary-container transition-all">
+<img alt="User profile avatar" class="w-full h-full object-cover" data-alt="A small, professional portrait photo of a user avatar, featuring a friendly individual looking slightly off-camera against a soft, bright studio background, styled for a modern SaaS web interface. The color palette is cool and neutral, matching a high-end editorial light mode design." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD86JXLeczuDtY_2RmUwJUoMfjIFCzN082bNFibNMBztxiCmj3gNuvGRlnXJz68D4gYfnj7m8nEs1oF8Ij-OZL5XbYddTXcB7c-prmqxQpvWBWHsszqklOTo3LWvOVtypfKC8VKd0VmfaMD52aZeFn8i36CLF18JnmGCnLF1ns5GbN7BvfR9_g3FqyYp4Ij7XQbE-T50HXCoEaIBl36bpUG_TMCudSC2ZZYRB6Hv0PpYYJXlr-xTQ59zoQ7uEG8QnoFsRYqBoPgsEo"/>
+</div>
+</div>
+</div>
+<div class="bg-slate-200/50 dark:bg-slate-800/50 h-[1px] w-full absolute bottom-0 left-0"></div>
+</nav>
+<!-- Main Layout: Navigation Suppressed for Support Flow Context -->
+<!-- The user is in a focused support conversation. The global side nav is hidden to prioritize the canvas. -->
+<main class="flex-1 flex flex-col md:flex-row mt-[64px] h-[calc(100vh-64px)] overflow-hidden">
+<!-- Conversation Canvas -->
+<section class="flex-1 flex flex-col relative bg-surface-bright">
+<!-- Conversation Header -->
+<header class="px-8 py-6 flex items-center justify-between border-b border-outline-variant/15">
+<div>
+<h1 class="font-headline text-[1.5rem] font-bold text-on-surface tracking-tight flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">support_agent</span>
+                        Support Session
+                    </h1>
+<p class="font-label text-sm text-on-surface-variant mt-1">Ticket #XT-8492 • Active</p>
+</div>
+<button class="flex items-center gap-2 px-4 py-2 bg-surface-container-low hover:bg-surface-container text-on-surface text-sm font-medium rounded-DEFAULT transition-colors">
+<span class="material-symbols-outlined text-[18px]">close</span> End Session
+                </button>
+</header>
+<!-- Chat Area -->
+<div class="flex-1 overflow-y-auto p-8 space-y-8 pb-32">
+<!-- User Message -->
+<div class="flex flex-col items-end w-full max-w-4xl mx-auto">
+<div class="bg-surface-container-low rounded-lg rounded-tr-sm px-6 py-4 max-w-[80%] shadow-ambient ring-1 ring-outline-variant/15">
+<p class="font-body text-base text-on-surface">Why did my NPS drop this week?</p>
+</div>
+<span class="font-label text-xs text-on-surface-variant mt-2 mr-2">10:42 AM</span>
+</div>
+<!-- AI Agent (Crystal) Reasoning Trace -->
+<div class="w-full max-w-4xl mx-auto flex items-start gap-4">
+<div class="w-10 h-10 rounded-full bg-gradient-to-br from-tertiary-container to-primary-container flex items-center justify-center shrink-0 shadow-sm">
+<span class="material-symbols-outlined text-on-primary-container text-lg" style="font-variation-settings: 'FILL' 1;">psychology</span>
+</div>
+<div class="flex-1 pt-1">
+<!-- Progress / Status Bar -->
+<div class="bg-surface-container-low rounded-lg p-4 ring-1 ring-outline-variant/15 relative overflow-hidden group mb-4">
+<!-- Animated gradient background for active processing feel -->
+<div class="absolute inset-0 bg-gradient-to-r from-transparent via-surface-container/50 to-transparent -translate-x-full group-hover:animate-[shimmer_2s_infinite]"></div>
+<div class="flex items-center gap-3 mb-3">
+<span class="material-symbols-outlined text-primary text-sm animate-spin">sync</span>
+<span class="font-label text-sm font-medium text-primary">Crystal is analyzing your data...</span>
+</div>
+<div class="space-y-3 pl-7">
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-tertiary">check_circle</span>
+<span class="font-body text-sm">Querying last 7 days of NPS responses</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] text-tertiary">check_circle</span>
+<span class="font-body text-sm">Running sentiment analysis on verbatims</span>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="material-symbols-outlined text-[16px] animate-pulse text-secondary">radio_button_unchecked</span>
+<span class="font-body text-sm text-on-surface font-medium">Correlating with product release logs...</span>
+</div>
+</div>
+<!-- Progress Bar -->
+<div class="h-1.5 w-full bg-surface-container rounded-full mt-4 overflow-hidden">
+<div class="h-full bg-primary rounded-full transition-all duration-1000 ease-out" style="width: 75%;"></div>
+</div>
+</div>
+<!-- Synthesized Answer (Pre-rendered for demo purposes, assume transition completes) -->
+<div class="bg-surface-container-lowest rounded-lg p-6 shadow-ambient ring-1 ring-outline-variant/15 relative">
+<!-- Subtle decorative gradient -->
+<div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-tertiary to-primary rounded-t-lg opacity-80"></div>
+<h3 class="font-headline text-lg font-semibold text-on-surface mb-4">Analysis Complete</h3>
+<div class="font-body text-base text-on-surface space-y-4 leading-relaxed">
+<p>Your NPS score dropped by <strong class="text-error">12 points</strong> (from 48 to 36) primarily due to issues introduced in the recent v2.4 mobile app update.</p>
+<div class="bg-surface-variant p-4 rounded-DEFAULT my-4 ring-1 ring-outline-variant/10">
+<h4 class="font-label text-sm font-semibold text-on-surface-variant uppercase tracking-wide mb-2">Key Drivers:</h4>
+<ul class="space-y-2 font-body text-sm">
+<li class="flex items-start gap-2">
+<span class="material-symbols-outlined text-error text-[18px] mt-0.5">trending_down</span>
+<span><strong>Authentication Failures:</strong> 45% of detractors specifically mentioned "login errors" or "being logged out repeatedly" since Tuesday.</span>
+</li>
+<li class="flex items-start gap-2">
+<span class="material-symbols-outlined text-error text-[18px] mt-0.5">speed</span>
+<span><strong>Dashboard Latency:</strong> Mentions of "slow loading times" increased by 300% compared to the previous week.</span>
+</li>
+</ul>
+</div>
+<p>Positive sentiment around customer support remained stable, indicating the drop is strongly tied to product stability rather than service.</p>
+</div>
+<!-- Provenance / Sources -->
+<div class="mt-6 pt-4 border-t border-outline-variant/15">
+<h4 class="font-label text-xs font-semibold text-on-surface-variant uppercase tracking-wider mb-3">Sources &amp; Evidence</h4>
+<div class="flex flex-wrap gap-2">
+<button class="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high rounded-full font-label text-xs text-secondary-dim transition-colors border border-outline-variant/20">
+<span class="material-symbols-outlined text-[14px]">dataset</span> Verbatim Export (Nov 12-19)
+                                    </button>
+<button class="flex items-center gap-1.5 px-3 py-1.5 bg-surface-container hover:bg-surface-container-high rounded-full font-label text-xs text-secondary-dim transition-colors border border-outline-variant/20">
+<span class="material-symbols-outlined text-[14px]">commit</span> Engineering Log: v2.4 Release
+                                    </button>
+</div>
+</div>
+</div>
+<span class="font-label text-xs text-on-surface-variant mt-2 ml-2 block">10:45 AM</span>
+</div>
+</div>
+</div>
+<!-- Input Area (Fixed Bottom) -->
+<div class="absolute bottom-0 left-0 w-full p-6 glass-panel border-t border-outline-variant/10">
+<div class="max-w-4xl mx-auto flex gap-3 relative">
+<input class="w-full bg-surface-container-lowest border border-outline-variant/30 rounded-full py-4 pl-6 pr-14 font-body text-base focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent shadow-sm" placeholder="Ask a follow-up question..." type="text"/>
+<button class="absolute right-2 top-2 p-2 rounded-full bg-surface hover:bg-surface-container text-primary transition-colors flex items-center justify-center">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+</div>
+</section>
+<!-- Contextual Sidebar: Documentation & Help -->
+<!-- Placed on a surface-container-low to show it sits slightly lower in hierarchy than the main canvas -->
+<aside class="w-80 bg-surface-container-low border-l border-outline-variant/15 flex flex-col hidden lg:flex h-full">
+<div class="p-6 border-b border-outline-variant/15">
+<h2 class="font-headline text-base font-semibold text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-secondary">library_books</span>
+                    Suggested Resources
+                </h2>
+</div>
+<div class="flex-1 overflow-y-auto p-6 space-y-4">
+<!-- Doc Card 1 -->
+<a class="block bg-surface-container-lowest p-4 rounded-lg shadow-sm hover:shadow-glow transition-all ring-1 ring-outline-variant/10 group" href="#">
+<h3 class="font-label text-sm font-medium text-on-surface group-hover:text-primary transition-colors mb-1">Analyzing NPS Trends</h3>
+<p class="font-body text-xs text-on-surface-variant line-clamp-2">Learn how to read automated sentiment tags and correlate them with product events.</p>
+</a>
+<!-- Doc Card 2 -->
+<a class="block bg-surface-container-lowest p-4 rounded-lg shadow-sm hover:shadow-glow transition-all ring-1 ring-outline-variant/10 group" href="#">
+<h3 class="font-label text-sm font-medium text-on-surface group-hover:text-primary transition-colors mb-1">Exporting Verbatims</h3>
+<p class="font-body text-xs text-on-surface-variant line-clamp-2">Step-by-step guide to pulling raw response data for deeper manual analysis.</p>
+</a>
+</div>
+<!-- Escalation Footer -->
+<div class="p-6 border-t border-outline-variant/15 bg-surface-container">
+<p class="font-label text-xs text-on-surface-variant mb-3 text-center">Need more help?</p>
+<button class="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-transparent hover:bg-surface-container-high border border-outline-variant/30 rounded-DEFAULT font-label text-sm font-medium text-on-surface transition-colors">
+<span class="material-symbols-outlined text-[18px]">support</span> Talk to a Human
+                </button>
+</div>
+</aside>
+</main>
+<!-- Footer component suppressed as this is a focused, full-screen application view -->
+</body></html>

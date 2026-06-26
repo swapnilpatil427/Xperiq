@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Topic Extraction - Experient Documentation</title>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "surface-tint": "#2a4bd9",
+                    "on-surface-variant": "#595c5e",
+                    "on-tertiary-container": "#4c007d",
+                    "secondary-fixed": "#82deff",
+                    "on-secondary-container": "#004e62",
+                    "tertiary-fixed": "#d299ff",
+                    "on-primary-fixed-variant": "#001e82",
+                    "tertiary-fixed-dim": "#c986ff",
+                    "surface-bright": "#f5f7f9",
+                    "on-primary": "#f2f1ff",
+                    "secondary-fixed-dim": "#57d2f9",
+                    "background": "#f5f7f9",
+                    "surface": "#f5f7f9",
+                    "secondary": "#00647c",
+                    "on-tertiary-fixed-variant": "#580091",
+                    "tertiary-container": "#d299ff",
+                    "on-primary-container": "#00176b",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-container-low": "#eef1f3",
+                    "primary-fixed": "#879aff",
+                    "on-secondary-fixed": "#003a48",
+                    "surface-dim": "#d0d5d8",
+                    "on-background": "#2c2f31",
+                    "primary-dim": "#173dcd",
+                    "error-container": "#f74b6d",
+                    "on-secondary": "#e2f6ff",
+                    "on-error": "#ffefef",
+                    "tertiary-dim": "#7613bb",
+                    "primary": "#2a4bd9",
+                    "on-primary-fixed": "#000000",
+                    "secondary-dim": "#00576c",
+                    "inverse-primary": "#7087ff",
+                    "inverse-surface": "#0b0f10",
+                    "inverse-on-surface": "#9a9d9f",
+                    "surface-container": "#e5e9eb",
+                    "surface-variant": "#d9dde0",
+                    "primary-container": "#879aff",
+                    "on-surface": "#2c2f31",
+                    "outline": "#747779",
+                    "on-secondary-fixed-variant": "#00586e",
+                    "outline-variant": "#abadaf",
+                    "secondary-container": "#82deff",
+                    "surface-container-high": "#dfe3e6",
+                    "surface-container-highest": "#d9dde0",
+                    "primary-fixed-dim": "#748bff",
+                    "on-error-container": "#510017",
+                    "error-dim": "#a70138",
+                    "error": "#b41340",
+                    "on-tertiary": "#fceeff",
+                    "on-tertiary-fixed": "#280046",
+                    "tertiary": "#8329c8"
+            },
+            "borderRadius": {
+                    "DEFAULT": "1rem",
+                    "lg": "2rem",
+                    "xl": "3rem",
+                    "full": "9999px"
+            },
+            "spacing": {},
+            "fontFamily": {
+                    "headline": [
+                            "Manrope"
+                    ],
+                    "display": [
+                            "Manrope"
+                    ],
+                    "body": [
+                            "Inter"
+                    ],
+                    "label": [
+                            "Inter"
+                    ]
+            },
+            "fontSize": {}
+    },
+        },
+      }
+    </script>
+<style>
+        body { background-color: #f5f7f9; color: #2c2f31; }
+        .glass-panel { background: rgba(245, 247, 249, 0.7); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); }
+        .gradient-text { background: linear-gradient(135deg, #2a4bd9, #879aff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .shadow-ambient { box-shadow: 0 20px 40px -10px rgba(44, 47, 49, 0.06); }
+    </style>
+</head>
+<body class="font-body antialiased min-h-screen flex flex-col">
+<!-- TopNavBar (Hidden on MD+, visible on mobile for responsive pivot, though instruction says use SideNav for docs. Given "floating navigation menu on the left", we prioritize SideNav. But including TopNav for mobile per JSON rules). -->
+<nav class="md:hidden fixed top-0 w-full z-50 bg-slate-50/70 dark:bg-slate-950/70 backdrop-blur-xl shadow-sm">
+<div class="flex justify-between items-center w-full px-6 py-3 max-w-screen-2xl mx-auto">
+<div class="text-xl font-bold tracking-tighter text-indigo-900 dark:text-indigo-50 font-headline">Experient</div>
+<div class="flex gap-4">
+<span class="material-symbols-outlined text-slate-600">menu</span>
+</div>
+</div>
+<div class="bg-slate-200/50 dark:bg-slate-800/50 h-[1px] w-full"></div>
+</nav>
+<div class="flex flex-1 pt-16 md:pt-0">
+<!-- Floating Navigation Menu (SideNav) -->
+<aside class="hidden md:flex flex-col h-screen w-64 border-r-0 bg-slate-100 dark:bg-slate-900 py-6 fixed left-0 top-0 z-40">
+<div class="px-6 mb-8">
+<h1 class="font-manrope font-extrabold text-indigo-900 dark:text-white text-2xl tracking-tighter">Experient</h1>
+<p class="text-xs text-slate-500 font-label mt-1">The AI-aware layer</p>
+</div>
+<nav class="flex-1 space-y-1 px-3 font-inter text-sm font-medium">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">poll</span>
+                    Surveys
+                </a>
+<a class="flex items-center gap-3 px-3 py-2 bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 shadow-sm rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">insights</span>
+                    Insights
+                </a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">group</span>
+                    Respondents
+                </a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">account_tree</span>
+                    Workflows
+                </a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg hover:translate-x-1 transition-transform duration-200 cursor-pointer tap-highlight-transparent" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span>
+                    Settings
+                </a>
+</nav>
+<div class="px-6 mt-auto">
+<button class="w-full bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-xl py-3 font-semibold shadow-ambient hover:scale-95 transition-transform">
+                    New Intelligence
+                </button>
+</div>
+<div class="mt-6 space-y-1 px-3 font-inter text-sm font-medium">
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg cursor-pointer" href="#">
+<span class="material-symbols-outlined text-sm">help</span>
+                    Help Center
+                </a>
+<a class="flex items-center gap-3 px-3 py-2 text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-800/30 rounded-lg cursor-pointer" href="#">
+<span class="material-symbols-outlined text-sm">contact_support</span>
+                    Support
+                </a>
+</div>
+</aside>
+<!-- Main Content Area -->
+<main class="flex-1 md:ml-64 bg-surface p-6 md:p-12 lg:p-16 max-w-5xl mx-auto w-full">
+<!-- Documentation Header -->
+<header class="mb-12 relative z-10">
+<div class="flex items-center gap-4 mb-4">
+<span class="px-3 py-1 bg-tertiary-container text-on-tertiary-container text-xs font-bold rounded-full uppercase tracking-wider">Beta</span>
+<span class="text-sm text-outline-variant font-label">Last Updated: Oct 24, 2024</span>
+</div>
+<h1 class="text-5xl md:text-6xl font-headline font-extrabold tracking-tight text-on-surface mb-6">AI Topic Extraction</h1>
+<p class="text-lg md:text-xl text-on-surface-variant font-body leading-relaxed max-w-3xl">
+                    Automatically synthesize large volumes of unstructured qualitative data into actionable themes. Our engine uses dimensional intelligence to find nuanced sentiment layers beyond simple keywords.
+                </p>
+</header>
+<!-- 3D Insight Card / Bento Setup -->
+<section class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-16">
+<!-- Main Narrative -->
+<article class="lg:col-span-2 bg-surface-container-lowest rounded-lg p-8 shadow-ambient relative z-10 border border-outline-variant/15">
+<h2 class="text-2xl font-headline font-bold text-on-surface mb-6">How It Works</h2>
+<div class="prose prose-slate max-w-none font-body text-on-surface-variant space-y-6">
+<p>The extraction process operates as a background volume analysis rather than a linear scan. When raw text is ingested, it is mapped into a high-dimensional vector space.</p>
+<div class="bg-surface-variant rounded-md p-6 my-8 font-mono text-sm text-on-surface overflow-x-auto shadow-inner">
+<pre><code>// Example Initialization Payload
+{
+  "source": "survey_batch_9A",
+  "model": "experient-deep-v2",
+  "parameters": {
+    "granularity": "high",
+    "sentiment_overlay": true
+  }
+}</code></pre>
+</div>
+<p>Topics emerge as dense clusters within this space. The API returns not just the label, but a confidence score and a dimensional coordinate representing its relationship to other extracted themes.</p>
+</div>
+</article>
+<!-- Sidebar Metadata -->
+<aside class="space-y-8">
+<div class="bg-surface-container-lowest rounded-md p-6 shadow-ambient border border-outline-variant/15">
+<h3 class="text-sm font-headline font-bold text-secondary mb-4 uppercase tracking-wide">Endpoint Details</h3>
+<ul class="space-y-4 font-label text-sm">
+<li class="flex flex-col">
+<span class="text-outline">Method</span>
+<span class="font-mono text-on-surface bg-surface-container-low px-2 py-1 rounded inline-block w-max mt-1">POST</span>
+</li>
+<li class="flex flex-col">
+<span class="text-outline">Path</span>
+<span class="font-mono text-on-surface break-all mt-1">/v1/intelligence/extract</span>
+</li>
+<li class="flex flex-col">
+<span class="text-outline">Rate Limit</span>
+<span class="text-on-surface mt-1">100 req / min</span>
+</li>
+</ul>
+</div>
+<!-- Visual abstraction of data -->
+<div class="bg-surface-container-lowest rounded-md h-48 shadow-ambient border border-outline-variant/15 overflow-hidden relative group">
+<div class="bg-cover bg-center w-full h-full opacity-80 group-hover:opacity-100 transition-opacity duration-500" data-alt="A sophisticated abstract 3D visualization of data clustering. Glowing spheres in deep blues and vibrant purples map connections against a clean, light-mode background. The aesthetic is high-tech, precise, and ethereal, resembling a neural network floating in a studio lit environment." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB8jerx7bhvXAZ2S__KPA8qnXPiqVDCUfl_j5qocZ6jkXmdQ9ehanNaWNYlGekvYe-CTrg2E0KbYHK-7W5Nqk7A0g-gD3EUbBZGaOO2jwCGO9WLqgWRYHrsd0xJxqG_fCdCye1xv9Xuu0cJ8Fph4hEobelGwdEFWIf7wkyBpCRcxxkWJwDwFHskGg1j7Jaq8tXmkAsbeGD0OMwNhLHHjKUKXjzp-B1h6NgLDz9OvwL2uLeLqwuHDz4yyazHSCkI3rmjFC5APD3y-X8')"></div>
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-lowest via-transparent to-transparent"></div>
+<div class="absolute bottom-4 left-4">
+<span class="text-xs font-bold text-on-surface">Dimensional Clustering Model</span>
+</div>
+</div>
+</aside>
+</section>
+</main>
+</div>
+<!-- Footer -->
+<footer class="w-full border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-col md:flex-row justify-between items-center px-8 py-12 gap-4 md:ml-64 relative z-20">
+<div class="font-inter text-xs tracking-wide uppercase text-slate-400 dark:text-slate-600">
+            © 2024 Experient. The experience layer that learns.
+        </div>
+<div class="flex gap-6 font-inter text-xs tracking-wide uppercase">
+<a class="text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors" href="#">Privacy</a>
+<a class="text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors" href="#">Terms</a>
+<a class="text-slate-400 dark:text-slate-600 hover:text-indigo-500 transition-colors" href="#">API Docs</a>
+</div>
+</footer>
+</body></html>

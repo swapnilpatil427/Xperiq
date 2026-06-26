@@ -23,6 +23,8 @@ import { useBrand } from '../contexts/brandContext';
 import { PageHeader } from '../components/PageHeader';
 import { usePermissions } from '../lib/permissions';
 import { PermissionDeniedBanner } from '../components/PermissionGate';
+import { TeamPanel } from '../components/settings/TeamPanel';
+import { RolesPanel } from '../components/settings/RolesPanel';
 
 const DEMO_TEAM_MEMBERS = [
   {
@@ -202,8 +204,13 @@ export function BrandSettingsPage() {
   const tabs = [
     { key: 'General',       label: t('settings.tabs.general') },
     { key: 'Organization',  label: 'Organization' },
+    { key: 'Team',          label: t('settings.tabs.team') },
     { key: 'Notifications', label: t('settings.tabs.notifications') },
-    ...(isAdmin ? [{ key: 'API Keys', label: t('settings.tabs.apiKeys') }] : []),
+    ...(isAdmin ? [
+      { key: 'Admin',       label: t('settings.tabs.admin') },
+      { key: 'Roles',    label: t('settings.tabs.roles') },
+      { key: 'API Keys', label: t('settings.tabs.apiKeys') },
+    ] : []),
   ];
 
   const quickActions = [
@@ -742,6 +749,18 @@ export function BrandSettingsPage() {
             )}
 
             {/* ── Notifications Tab ── */}
+            {activeTab === 'Team' && (
+              <div className="py-6">
+                <TeamPanel />
+              </div>
+            )}
+
+            {activeTab === 'Roles' && isAdmin && (
+              <div className="py-6">
+                <RolesPanel />
+              </div>
+            )}
+
             {activeTab === 'Notifications' && (
               <div className="mt-8 space-y-6">
                 <Card
@@ -804,6 +823,48 @@ export function BrandSettingsPage() {
                       );
                     })}
                   </div>
+                </Card>
+              </div>
+            )}
+
+            {/* ── Admin Tab ── */}
+            {activeTab === 'Admin' && !isAdmin && (
+              <div className="mt-8"><PermissionDeniedBanner /></div>
+            )}
+            {activeTab === 'Admin' && isAdmin && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+                <Card
+                  className="p-6 bg-white rounded-2xl border-0 flex flex-col"
+                  style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white font-bold text-sm"
+                      style={{ background: 'linear-gradient(135deg, var(--color-primary), var(--color-tertiary))' }}>
+                      ◆
+                    </div>
+                    <h3 className="text-lg font-bold font-headline text-on-surface">{t('settings.admin.crystalTitle')}</h3>
+                  </div>
+                  <p className="text-sm text-on-surface-variant flex-1 mb-6">{t('settings.admin.crystalDescription')}</p>
+                  <Button onClick={() => navigate(ROUTES.ADMIN_CRYSTAL_SKILLS)}>
+                    <Icon name="arrow_forward" size={16} className="mr-1.5" />
+                    {t('settings.admin.openCrystal')}
+                  </Button>
+                </Card>
+                <Card
+                  className="p-6 bg-white rounded-2xl border-0 flex flex-col"
+                  style={{ boxShadow: '0 40px 60px -10px rgba(44,47,49,0.06)' }}
+                >
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                      <Icon name="queue" size={22} className="text-primary" />
+                    </div>
+                    <h3 className="text-lg font-bold font-headline text-on-surface">{t('settings.admin.pipelineTitle')}</h3>
+                  </div>
+                  <p className="text-sm text-on-surface-variant flex-1 mb-6">{t('settings.admin.pipelineDescription')}</p>
+                  <Button onClick={() => navigate(ROUTES.ADMIN_SUPPORT_PIPELINE)}>
+                    <Icon name="arrow_forward" size={16} className="mr-1.5" />
+                    {t('settings.admin.openPipeline')}
+                  </Button>
                 </Card>
               </div>
             )}

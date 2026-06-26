@@ -1,0 +1,91 @@
+name: Doc Refresh
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/src/routes/**'
+      - 'backend/src/schemas/**'
+      - 'crystalos/skills/**'
+      - 'docs/TRACKER.md'
+      - 'docs/PRODUCT_PLAN.md'
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6am UTC
+  workflow_dispatch:      # Manual trigger
+
+jobs:
+  extract-and-refresh:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need previous commit for changelog diff
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend deps
+        run: cd backend && npm ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: crystalos/requirements.txt
+
+      - name: Install crystalos deps
+        run: cd crystalos && pip install -r requirements.txt
+
+      - name: Extract routes and schemas
+        run: npx tsx scripts/extract-routes.ts
+        # Outputs: /tmp/doc-artifacts/routes/*.json
+
+      - name: Extract skills
+        run: python crystalos/scripts/extract-skills.py
+        # Outputs: /tmp/doc-artifacts/skills/*.json
+
+      - name: Parse tracker
+        run: python scripts/parse-tracker.py
+        # Outputs: /tmp/doc-artifacts/tracker.json
+
+      - name: Extract changelog
+        run: npx tsx scripts/extract-changelog.ts
+        # Outputs: /tmp/doc-artifacts/changelog.json
+
+      - name: Call doc-writer for each artifact
+        run: python scripts/call-doc-writer.py
+        env:
+          CRYSTALOS_URL: ${{ vars.CRYSTALOS_URL }}
+          AGENTS_INTERNAL_KEY: ${{ secrets.AGENTS_INTERNAL_KEY }}
+        # Reads /tmp/doc-artifacts/**, calls CrystalOS doc-writer, saves to /tmp/doc-outputs/*.json
+
+      - name: Ingest docs into backend
+        run: python scripts/ingest-docs.py
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          AGENTS_INTERNAL_KEY: ${{ secrets.AGENTS_INTERNAL_KEY }}
+        # Posts each doc to /api/internal/support/refresh-doc
+
+      - name: Ingest changelog
+        run: python scripts/ingest-changelog.py
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+          AGENTS_INTERNAL_KEY: ${{ secrets.AGENTS_INTERNAL_KEY }}
+        # Posts changelog entries to /api/internal/support/ingest-changelog
+
+      - name: Revalidate support site ISR
+        if: success()
+        env:
+          REVALIDATE_SECRET: ${{ secrets.REVALIDATE_SECRET }}
+        run: |
+          curl -X POST "https://support.experient.ai/api/revalidate" \
+            -H "x-revalidate-secret: $REVALIDATE_SECRET" \
+            -H "Content-Type: application/json" \
+            -d '{"action":"revalidate_all"}' \
+            --fail --silent || echo "Support site ISR revalidation failed (non-critical)"

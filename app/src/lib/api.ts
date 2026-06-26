@@ -3,8 +3,11 @@ import type {
   ListSurveysParams, ListSurveysResult, Survey, SurveyResponse,
   Template, Workflow, Insight, OrgProfile, Question, Org, OrgMember,
   CopilotChange, AgenticInsight, InsightRunStatus, SurveyTopic, TopicDriver,
-  TopicTheme, TopicDetail, TopicVerbatim,
+  TopicTheme, TopicDetail, TopicVerbatim, ActionRecommendations,
+  Contact, CxCase, CaseAuditEntry, OwnershipRoute, OntologyNode,
+  ContactSegment, FilterDef, SyncConfig, SyncLog, ActivityItem,
 } from '../types';
+import type { SavedDashboardConfig, WidgetConfig, DashboardFilters } from '../types/dashboard';
 
 // ── Copilot types ──────────────────────────────────────────────────────────────
 export interface OrgContext {
@@ -58,10 +61,11 @@ export interface CopilotRefineResult {
 }
 
 export interface QuestionsResult {
-  questions:       Question[];
-  message:         string;
-  changes:         Record<string, unknown>[];
+  questions:        Question[];
+  message:          string;
+  changes:          Record<string, unknown>[];
   recommendations?: Recommendation[];
+  compliance_risk?: string;  // "low" | "medium" | "high" — set by check_compliance action
 }
 
 export interface Notification {
@@ -73,6 +77,278 @@ export interface Notification {
   run_id?:    string;
   read:       boolean;
   created_at: string;
+  // v2 additions (optional so existing consumers keep working)
+  priority?:   'critical' | 'warning' | 'info' | 'success' | 'digest';
+  actionUrl?:  string | null;
+  entityType?: string | null;
+}
+
+export interface NotificationPreference {
+  notificationType: string;
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  slackEnabled: boolean;
+  thresholdConfig?: Record<string, unknown>;
+}
+
+// ── User Directory types ─────────────────────────────────────────────────────
+
+export type PermissionScope = 'ALL' | 'OWNED' | 'SHARED' | 'OWN' | 'NONE';
+export type UserStatus = 'active' | 'pending' | 'deactivated';
+
+export interface DirectoryUser {
+  userId: string;
+  orgId: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  displayName: string | null;
+  avatarUrl: string | null;
+  phone: string | null;
+  employeeId: string | null;
+  jobTitle: string | null;
+  departmentId: string | null;
+  departmentName: string | null;
+  managerUserId: string | null;
+  costCenter: string | null;
+  location: string | null;
+  timezone: string | null;
+  locale: string | null;
+  roleId: string | null;
+  roleKey: string | null;
+  roleName: string | null;
+  seatWeight: number | null;
+  isActive: boolean;
+  status: UserStatus;
+  lastSeenAt: string | null;
+  customAttributes: Record<string, unknown>;
+  surveySegments: string[];
+  provisionedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deprovisionedAt: string | null;
+}
+
+export interface DirectoryRole {
+  id: string;
+  orgId: string;
+  name: string;
+  description: string | null;
+  isBuiltin: boolean;
+  builtinKey: string | null;
+  permissions: Record<string, PermissionScope>;
+  seatWeight: number | null;
+  color: string | null;
+  assignedCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListUsersParams {
+  search?: string;
+  roleId?: string;
+  roleKey?: string;
+  departmentId?: string;
+  status?: 'active' | 'inactive';
+  limit?: number;
+  offset?: number;
+}
+
+export interface UpdateUserPayload {
+  firstName?: string | null;
+  lastName?: string | null;
+  displayName?: string | null;
+  jobTitle?: string | null;
+  employeeId?: string | null;
+  phone?: string | null;
+  costCenter?: string | null;
+  location?: string | null;
+  departmentId?: string | null;
+  managerUserId?: string | null;
+  roleId?: string | null;
+  isActive?: boolean;
+}
+
+export interface WorkflowTemplate {
+  slug: string; name: string; description: string; category: string | null;
+  trigger_type: string | null; nodes: unknown[]; edges: unknown[]; is_featured: boolean;
+}
+export interface WorkflowExecution {
+  id: string; trigger_type: string; status: string; triggered_at: string;
+  completed_at: string | null; duration_ms: number | null; error_message: string | null; step_count: number;
+}
+
+export interface ChartSpec {
+  chartType: 'bar' | 'line' | 'area' | 'pie' | 'scatter';
+  x: string;
+  y: string;
+  aggregate: 'avg' | 'count';
+  title: string;
+  rationale: string;
+  encoding: Record<string, unknown>;
+}
+
+export interface DashboardKpis {
+  nps: number | null; npsDelta: number | null;
+  csat: number | null; csatDelta: number | null;
+  responses: number; responsesDelta: number;
+  activeSurveys: number;
+}
+export interface DashboardForecast {
+  slope: number; intercept: number; points: number[]; direction: 'up' | 'down' | 'flat'; r2: number;
+}
+export interface ChartAnomaly { index: number; value: number; z: number; direction: 'up' | 'down' }
+export interface DashboardSummary {
+  kpis: DashboardKpis;
+  topMover: { title: string; npsDelta: number } | null;
+  narrative: { headline: string; paragraphs: string[]; sentiment: 'positive' | 'negative' | 'neutral' };
+  forecast: DashboardForecast | null;
+  anomalies: ChartAnomaly[];
+}
+export interface DashboardInsights {
+  actionItems: Array<{ id: string; alertType: string; severity: string; title: string; description: string; triggeredAt: string }>;
+  recentActivity: Array<{ id: string; type: string; priority: string; title: string; createdAt: string }>;
+  discoveryCount: number;
+}
+export interface DashboardOperations {
+  surveys: Array<{
+    id: string; title: string; status: string; responseCount: number;
+    lastResponseAt: string | null; nps: number | null; csat: number | null;
+    metricsAt: string | null; freshness: 'fresh' | 'stale' | 'none';
+  }>;
+  anomalies: Array<{ id: string; alertType: string; severity: string; title: string; triggeredAt: string }>;
+}
+
+export type AlertSeverity = 'critical' | 'warning' | 'info' | 'success';
+export type AlertStatus = 'active' | 'acknowledged' | 'snoozed' | 'resolved';
+
+export interface AlertTypeDef {
+  code: string;
+  name: string;
+  severity: AlertSeverity;
+  evaluator: boolean | 'crystal';
+  category: string;
+  categoryName: string;
+  thresholds: Record<string, unknown>;
+}
+
+export interface AlertSubscription {
+  alertType: string;
+  inAppEnabled: boolean;
+  emailEnabled: boolean;
+  slackEnabled: boolean;
+}
+
+export interface AlertRule {
+  id: string;
+  orgId: string;
+  surveyId: string | null;
+  alertType: string;
+  name: string;
+  description: string | null;
+  isActive: boolean;
+  isSystem: boolean;
+  severity: AlertSeverity;
+  thresholdConfig: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface AlertEvent {
+  id: string;
+  ruleId: string;
+  surveyId: string | null;
+  alertType: string;
+  severity: AlertSeverity;
+  title: string;
+  description: string;
+  crystalNarration: string | null;
+  crystalAction: string | null;
+  metricValue: number | null;
+  metricBaseline: number | null;
+  metricChange: number | null;
+  status: AlertStatus;
+  triggeredAt: string;
+  snoozedUntil: string | null;
+}
+
+export interface SeatBreakdown {
+  planTier: 'starter' | 'growth' | 'enterprise';
+  seatLimit: number | null;
+  billableSeats: number;
+  available: number | null;
+  gracePeriodEnd: string | null;
+  byRole: Array<{ roleName: string; builtinKey: string | null; seatWeight: number; activeUsers: number; billable: number }>;
+}
+
+export interface AuditEvent {
+  id: string;
+  eventType: string;
+  actorUserId: string | null;
+  actorName: string | null;
+  actorEmail: string | null;
+  actorType: string;
+  targetUserId: string | null;
+  targetName: string | null;
+  targetResourceType: string | null;
+  targetResourceId: string | null;
+  ipAddress: string | null;
+  occurredAt: string;
+}
+
+export interface ScimToken {
+  id: string;
+  name: string;
+  tokenPrefix: string;
+  provider: string | null;
+  lastUsedAt: string | null;
+  lastSyncAt: string | null;
+  syncStats: Record<string, unknown> | null;
+  isActive: boolean;
+  createdAt: string;
+  revokedAt: string | null;
+}
+
+export type GroupType = 'static' | 'dynamic' | 'scim_synced';
+
+export interface DepartmentNode {
+  id: string;
+  name: string;
+  description: string | null;
+  parentDepartmentId: string | null;
+  headUserId: string | null;
+  headDisplayName: string | null;
+  headAvatarUrl: string | null;
+  depth: number;
+  path: string[] | null;
+  color: string | null;
+  sortOrder: number;
+  directMemberCount: number;
+  totalMemberCount?: number;
+  children?: DepartmentNode[];
+}
+
+export interface DynamicRule { field: string; op: string; value: unknown }
+export interface DynamicRuleSet { operator: 'AND' | 'OR'; rules: DynamicRule[] }
+
+export interface UserGroup {
+  id: string;
+  name: string;
+  description: string | null;
+  groupType: GroupType;
+  dynamicRules: DynamicRuleSet | null;
+  scimExternalId: string | null;
+  memberCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GroupMember {
+  userId: string;
+  displayName: string | null;
+  email: string | null;
+  avatarUrl: string | null;
+  jobTitle: string | null;
+  addedAt: string;
 }
 
 // ── Time-series types ──────────────────────────────────────────────────────────
@@ -127,6 +403,44 @@ export interface TopicTrend {
   windows:    TopicWindow[];
 }
 
+// ── Survey Tag types ──────────────────────────────────────────────────────────
+
+export interface SurveyTag {
+  id: string;
+  name: string;
+  slug: string;
+  color: string;
+  description?: string;
+  program_config?: Record<string, unknown>;
+  survey_count?: number;
+  created_at: string;
+}
+
+export interface GroupInsightRun {
+  id: string;
+  org_id: string;
+  tag_ids: string[];
+  survey_ids: string[];
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  stream_events: Array<{ event: string; data: Record<string, unknown> }>;
+  result_json?: Record<string, unknown>;
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface GroupInsight {
+  id: string;
+  layer: 'descriptive' | 'diagnostic' | 'predictive' | 'prescriptive';
+  category: string;
+  headline: string;
+  narrative: string;
+  trust_score?: number;
+  priority?: number;
+  data_gap_signals?: unknown[];
+  suggested_survey_types?: string[];
+  suggested_survey_json?: Record<string, unknown>;
+}
+
 const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 export type GetToken = () => Promise<string | null>;
@@ -156,6 +470,107 @@ function createAxiosInstance(getToken: GetToken) {
   );
 
   return instance;
+}
+
+// ── Admin support pipeline: Postgres snake_case → UI camelCase ───────────────
+
+function mapQueuedDoc(row: Record<string, unknown>): QueuedDoc {
+  return {
+    id:                  String(row.id ?? ''),
+    title:               String(row.title ?? ''),
+    docKey:              String(row.key ?? row.docKey ?? ''),
+    qualityScore:        Number(row.quality_score ?? row.qualityScore ?? 0),
+    status:              String(row.pipeline_status ?? row.status ?? 'queued') as PipelineStatus,
+    autoApproveDeadline: (row.auto_approve_deadline ?? row.autoApproveDeadline ?? null) as string | null,
+    humanEdited:         Boolean(row.human_edited ?? row.humanEdited ?? false),
+    sourceUrl:           (row.source_ref ?? row.sourceUrl ?? null) as string | null,
+    version:             Number(row.version ?? 1),
+    updatedAt:           String(row.updated_at ?? row.updatedAt ?? ''),
+    createdAt:           String(row.created_at ?? row.createdAt ?? ''),
+  };
+}
+
+function mapPipelineEvent(row: Record<string, unknown>): PipelineEvent {
+  return {
+    id:         String(row.id ?? ''),
+    docId:      String(row.doc_id ?? row.docId ?? ''),
+    docTitle:   String(row.doc_title ?? row.docTitle ?? ''),
+    eventType:  String(row.event_type ?? row.eventType ?? ''),
+    actor:      (row.actor_id ?? row.actor ?? null) as string | null,
+    actorType:  String(row.actor_type ?? row.actorType ?? 'system') as PipelineEvent['actorType'],
+    occurredAt: String(row.created_at ?? row.occurredAt ?? ''),
+  };
+}
+
+function qualityBreakdownFromScore(score: number): QualityBreakdown {
+  const s = Math.min(1, Math.max(0, score));
+  return {
+    accuracy:      s,
+    completeness:  s * 0.95,
+    clarity:       s * 0.9,
+    searchability: s * 0.92,
+    actionability: s * 0.88,
+  };
+}
+
+function mapAdminDocDetail(raw: Record<string, unknown>): AdminDocDetail {
+  const docRow = (raw.doc ?? {}) as Record<string, unknown>;
+  const sectionRows = (raw.sections ?? []) as Record<string, unknown>[];
+  const eventRows = (raw.events ?? raw.pipelineHistory ?? []) as Record<string, unknown>[];
+
+  const sections: AdminDocSection[] = sectionRows.map((s) => ({
+    key:     String(s.section_key ?? s.key ?? ''),
+    heading: String(s.heading ?? s.section_key ?? s.key ?? ''),
+    content: String(s.content ?? ''),
+  }));
+
+  const locks = sectionRows
+    .filter((s) => s.human_locked || s.locked)
+    .map((s) => ({
+      sectionKey: String(s.section_key ?? s.key ?? ''),
+      lockedBy:   String(s.locked_by ?? s.lockedBy ?? 'admin'),
+    }));
+
+  const doc = mapQueuedDoc(docRow);
+  const score = doc.qualityScore;
+
+  return {
+    doc,
+    sections,
+    oldSections: (raw.oldSections as AdminDocSection[] | undefined) ?? [],
+    locks,
+    pipelineHistory: eventRows.map(mapPipelineEvent),
+    qualityBreakdown: (raw.qualityBreakdown as QualityBreakdown | undefined)
+      ?? qualityBreakdownFromScore(score > 1 ? score / 100 : score),
+  };
+}
+
+function mapDocGap(row: Record<string, unknown>): DocGap {
+  return {
+    id:              String(row.id ?? ''),
+    query:           String(row.query ?? ''),
+    feedbackType:    String(row.feedback_type ?? row.feedbackType ?? ''),
+    crystalIntent:   (row.crystal_intent ?? row.crystalIntent ?? null) as string | null,
+    occurrenceCount: Number(row.occurrence_count ?? row.occurrenceCount ?? 1),
+    firstSeenAt:     String(row.first_seen_at ?? row.created_at ?? row.firstSeenAt ?? ''),
+    lastSeenAt:      String(row.last_seen_at ?? row.created_at ?? row.lastSeenAt ?? ''),
+    resolvedAt:      (row.resolved_at ?? row.resolvedAt ?? null) as string | null,
+    resolution:      (row.resolution ?? null) as DocGap['resolution'],
+  };
+}
+
+function mapPipelineStats(raw: Record<string, unknown>): PipelineStats {
+  const byStatus = (raw.byStatus ?? raw.statusDistribution ?? {}) as Record<string, number>;
+  return {
+    docsLive:            Number(raw.totalLive ?? raw.docsLive ?? 0),
+    docsLiveDelta:       Number(raw.docsLiveDelta ?? 0),
+    publishedToday:      Number(raw.last24hPublished ?? raw.publishedToday ?? 0),
+    publishedTodayDelta: Number(raw.publishedTodayDelta ?? 0),
+    gapsOpen:            Number(raw.totalGaps ?? raw.gapsOpen ?? 0),
+    avgQualityScore:     Number(raw.avgQualityScore ?? 0),
+    statusDistribution:  byStatus as Record<PipelineStatus, number>,
+    qualityHistogram:    (raw.qualityHistogram as PipelineStats['qualityHistogram']) ?? [],
+  };
 }
 
 export function createApiClient(getToken: GetToken) {
@@ -392,25 +807,164 @@ export function createApiClient(getToken: GetToken) {
     // ── Notifications ──────────────────────────────────────────────────────────
 
     getNotifications: async (): Promise<Notification[]> => {
-      const res = await http.get<Notification[]>('/api/copilot/notifications');
-      return res.data;
+      const res = await http.get<{ notifications: Array<Record<string, unknown>> }>('/api/notifications?limit=50');
+      // Map the v2 (camelCase) payload back to the Notification shape the UI uses.
+      return (res.data.notifications || []).map((n) => ({
+        id: n.id as string,
+        type: n.type as string,
+        title: n.title as string,
+        body: (n.body as string) ?? '',
+        payload: (n.payload as Record<string, unknown>) ?? {},
+        run_id: (n.runId as string) ?? undefined,
+        read: !!n.read,
+        created_at: n.createdAt as string,
+        priority: n.priority as Notification['priority'],
+        actionUrl: (n.actionUrl as string) ?? null,
+        entityType: (n.entityType as string) ?? null,
+      }));
     },
 
     getUnreadCount: async (): Promise<number> => {
-      const res = await http.get<{ count: number }>('/api/copilot/notifications/unread-count');
-      return res.data.count;
+      const res = await http.get<{ unread: number; critical: number }>('/api/notifications/count');
+      return res.data.unread;
+    },
+
+    getNotificationCount: async (): Promise<{ unread: number; critical: number }> => {
+      const res = await http.get<{ unread: number; critical: number }>('/api/notifications/count');
+      return res.data;
     },
 
     markNotificationRead: async (id: string): Promise<void> => {
-      await http.post(`/api/copilot/notifications/${id}/read`, {});
+      await http.post(`/api/notifications/${id}/read`, {});
     },
 
     markAllNotificationsRead: async (): Promise<void> => {
-      await http.post('/api/copilot/notifications/read-all', {});
+      await http.post('/api/notifications/read-all', {});
+    },
+
+    dismissNotification: async (id: string): Promise<void> => {
+      await http.delete(`/api/notifications/${id}`);
+    },
+
+    // ── Visual AI ────────────────────────────────────────────────────────────--
+    generateChartSpec: async (request: string): Promise<{ spec: ChartSpec }> => {
+      const res = await http.post('/api/visual/chart-spec', { request });
+      return res.data;
+    },
+
+    // ── Dashboard ──────────────────────────────────────────────────────────────
+    getDashboardSummary: async (
+      days = 30,
+      opts: { surveyId?: string | null; tagId?: string | null; npsSegment?: string } = {},
+    ): Promise<DashboardSummary> => {
+      const params: Record<string, string> = { days: String(days) };
+      if (opts.surveyId) params.surveyId = opts.surveyId;
+      if (opts.tagId) params.tagId = opts.tagId;
+      if (opts.npsSegment && opts.npsSegment !== 'all') params.npsSegment = opts.npsSegment;
+      const res = await http.get('/api/dashboard/summary', { params });
+      return res.data;
+    },
+    getDashboardOperations: async (): Promise<DashboardOperations> => {
+      const res = await http.get('/api/dashboard/operations');
+      return res.data;
+    },
+    getDashboardInsights: async (): Promise<DashboardInsights> => {
+      const res = await http.get('/api/dashboard/insights');
+      return res.data;
+    },
+    getDashboardConfig: async (): Promise<SavedDashboardConfig | null> => {
+      const res = await http.get<{ config: SavedDashboardConfig | null }>('/api/dashboard-configs');
+      return res.data.config;
+    },
+    saveDashboardConfig: async (config: {
+      name: string;
+      widgets: WidgetConfig[];
+      filters: DashboardFilters;
+    }): Promise<SavedDashboardConfig> => {
+      const res = await http.put<{ config: SavedDashboardConfig }>('/api/dashboard-configs', config);
+      return res.data.config;
+    },
+
+    // ── Alerts ───────────────────────────────────────────────────────────────--
+    listAlertTypes: async (): Promise<{ types: AlertTypeDef[] }> => {
+      const res = await http.get('/api/alerts/types');
+      return res.data;
+    },
+    getAlertSubscriptions: async (): Promise<{ subscriptions: AlertSubscription[] }> => {
+      const res = await http.get('/api/alerts/subscriptions');
+      return res.data;
+    },
+    updateAlertSubscription: async (data: {
+      alertType: string; inAppEnabled?: boolean; emailEnabled?: boolean; slackEnabled?: boolean;
+    }): Promise<{ success: boolean }> => {
+      const res = await http.put('/api/alerts/subscriptions', data);
+      return res.data;
+    },
+    listAlertRules: async (): Promise<{ rules: AlertRule[] }> => {
+      const res = await http.get('/api/alerts');
+      return res.data;
+    },
+    createAlertRule: async (data: {
+      alertType: string; name: string; description?: string; surveyId?: string | null;
+      severity?: AlertSeverity; thresholdConfig?: Record<string, unknown>;
+    }): Promise<{ rule: AlertRule }> => {
+      const res = await http.post('/api/alerts', data);
+      return res.data;
+    },
+    updateAlertRule: async (id: string, data: Record<string, unknown>): Promise<{ rule: AlertRule }> => {
+      const res = await http.patch(`/api/alerts/rules/${id}`, data);
+      return res.data;
+    },
+    deleteAlertRule: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/alerts/rules/${id}`);
+      return res.data;
+    },
+    listAlertEvents: async (params: { status?: string; severity?: string } = {}): Promise<{ events: AlertEvent[] }> => {
+      const qs = new URLSearchParams();
+      if (params.status) qs.set('status', params.status);
+      if (params.severity) qs.set('severity', params.severity);
+      const res = await http.get(`/api/alerts/events${qs.toString() ? `?${qs}` : ''}`);
+      return res.data;
+    },
+    acknowledgeAlert: async (id: string): Promise<{ event: AlertEvent }> => {
+      const res = await http.post(`/api/alerts/events/${id}/acknowledge`, {});
+      return res.data;
+    },
+    resolveAlert: async (id: string): Promise<{ event: AlertEvent }> => {
+      const res = await http.post(`/api/alerts/events/${id}/resolve`, {});
+      return res.data;
+    },
+    snoozeAlert: async (id: string, hours: number): Promise<{ event: AlertEvent }> => {
+      const res = await http.post(`/api/alerts/events/${id}/snooze`, { hours });
+      return res.data;
+    },
+
+    getNotificationDigest: async (period: 'day' | 'week' = 'day'): Promise<{
+      period: string; total: number; byPriority: Record<string, number>;
+      byType: Array<{ type: string; count: number }>; topItems: Notification[];
+    }> => {
+      const res = await http.get(`/api/notifications/digest?period=${period}`);
+      return res.data;
+    },
+
+    getNotificationPreferences: async (): Promise<{ preferences: NotificationPreference[] }> => {
+      const res = await http.get<{ preferences: NotificationPreference[] }>('/api/notifications/preferences');
+      return res.data;
+    },
+
+    updateNotificationPreferences: async (preferences: NotificationPreference[]): Promise<{ updated: number }> => {
+      const res = await http.put<{ updated: number }>('/api/notifications/preferences', { preferences });
+      return res.data;
     },
 
     getAgentRegistry: async () => {
-      const res = await http.get<unknown[]>('/api/copilot/agents/registry');
+      // Returns { agents: LegacyAgent[], skills: XosSkill[], total: number }
+      // agents = legacy BaseAgent subclasses; skills = XOS SKILL.md-based capabilities
+      const res = await http.get<{
+        agents: unknown[];
+        skills: Array<{ name: string; version: string; description: string; shared: boolean; allowed_tools: string[]; timeout_seconds: number; max_output_tokens: number }>;
+        total: number;
+      }>('/api/copilot/agents/registry');
       return res.data;
     },
 
@@ -507,6 +1061,47 @@ export function createApiClient(getToken: GetToken) {
       const res = await http.post<{ status: string }>(`/api/workflows/${id}/toggle`, {});
       return res.data;
     },
+    getWorkflowRegistry: async () => {
+      const res = await http.get<{ triggers: unknown[]; conditionFields: unknown[]; conditionOperators: string[]; actions: unknown[] }>('/api/workflows/registry');
+      return res.data;
+    },
+    listWorkflowTemplates: async (): Promise<{ templates: WorkflowTemplate[] }> => {
+      const res = await http.get('/api/workflows/templates');
+      return res.data;
+    },
+    createGraphWorkflow: async (data: {
+      name: string; description?: string; triggerType: string; nodes: unknown[]; edges: unknown[]; status?: string;
+    }) => {
+      const res = await http.post('/api/workflows', data);
+      return res.data;
+    },
+    createWorkflowFromTemplate: async (tpl: WorkflowTemplate) => {
+      const res = await http.post('/api/workflows', {
+        name: tpl.name, description: tpl.description, triggerType: tpl.trigger_type,
+        nodes: tpl.nodes, edges: tpl.edges, status: 'draft',
+      });
+      return res.data;
+    },
+    testWorkflow: async (id: string, event?: Record<string, unknown>) => {
+      const res = await http.post(`/api/workflows/${id}/test`, event ? { event } : {});
+      return res.data;
+    },
+    getWorkflowExecutions: async (id: string): Promise<{ executions: WorkflowExecution[] }> => {
+      const res = await http.get(`/api/workflows/${id}/executions`);
+      return res.data;
+    },
+    listWorkflowApprovals: async (): Promise<{ approvals: Array<{ id: string; execution_id: string; workflow_id: string; node_id: string; requested_at: string; workflow_name: string }> }> => {
+      const res = await http.get('/api/workflows/approvals');
+      return res.data;
+    },
+    decideApproval: async (executionId: string, decision: 'approve' | 'reject') => {
+      const res = await http.post(`/api/workflows/approvals/${executionId}`, { decision });
+      return res.data;
+    },
+    retryWorkflowExecution: async (executionId: string) => {
+      const res = await http.post(`/api/workflows/executions/${executionId}/retry`, {});
+      return res.data;
+    },
 
     // ── Survey Insights (v2 — agentic) ────────────────────────────────────────
 
@@ -546,6 +1141,37 @@ export function createApiClient(getToken: GetToken) {
 
     updateInsightFeedback: async (insightId: string, feedback: { thumbs?: 'up' | 'down' | null; pinned?: boolean; dismissed?: boolean }): Promise<void> => {
       await http.post(`/api/insights/${insightId}/feedback`, feedback);
+    },
+
+    // ── Action Recommendations ─────────────────────────────────────────────────
+
+    /** Fetch AI-generated recommended next actions for a survey. */
+    getActionRecommendations: async (surveyId: string): Promise<ActionRecommendations> => {
+      const res = await http.get<ActionRecommendations>(`/api/insights/${surveyId}/actions`);
+      return res.data;
+    },
+
+    /** Dismiss an action so it no longer appears. */
+    dismissAction: async (surveyId: string, actionId: string): Promise<void> => {
+      await http.post(`/api/insights/${surveyId}/actions/${actionId}/dismiss`, {});
+    },
+
+    /** Record the outcome of a Crystal action proposal (idempotent upsert keyed on proposalKey). */
+    recordProposalOutcome: async (
+      surveyId: string,
+      data: {
+        proposalKey: string;
+        type: string;
+        params?: Record<string, unknown>;
+        priority?: string;
+        businessRationale?: string;
+        confidence?: number;
+        status: 'emitted' | 'accepted' | 'dismissed' | 'succeeded' | 'failed';
+        outcomeRef?: string;
+        errorDetail?: string;
+      },
+    ): Promise<void> => {
+      await http.post(`/api/insights/${surveyId}/crystal/proposals`, data);
     },
 
     askInsights: async (surveyId: string, question: string): Promise<{ answer: string; citations: AgenticInsight[] }> => {
@@ -881,7 +1507,976 @@ export function createApiClient(getToken: GetToken) {
       );
       return res.data;
     },
+
+    // ── User Directory ─────────────────────────────────────────────────────────
+
+    listUsers: async (params: ListUsersParams = {}): Promise<{
+      users: DirectoryUser[]; total: number; limit: number; offset: number; hasMore: boolean;
+    }> => {
+      const qs = new URLSearchParams();
+      if (params.search)       qs.set('search', params.search);
+      if (params.roleId)       qs.set('roleId', params.roleId);
+      if (params.roleKey)      qs.set('roleKey', params.roleKey);
+      if (params.departmentId) qs.set('departmentId', params.departmentId);
+      if (params.status)       qs.set('status', params.status);
+      if (params.limit != null)  qs.set('limit', String(params.limit));
+      if (params.offset != null) qs.set('offset', String(params.offset));
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get(`/api/users${query}`);
+      return res.data;
+    },
+    getUser: async (userId: string): Promise<{ user: DirectoryUser }> => {
+      const res = await http.get(`/api/users/${userId}`);
+      return res.data;
+    },
+    inviteUser: async (payload: { email: string; roleId?: string; jobTitle?: string; departmentId?: string }): Promise<{ success: boolean; user: DirectoryUser }> => {
+      const res = await http.post('/api/users/invite', payload);
+      return res.data;
+    },
+    updateUser: async (userId: string, data: UpdateUserPayload): Promise<{ user: DirectoryUser }> => {
+      const res = await http.patch(`/api/users/${userId}`, data);
+      return res.data;
+    },
+    deleteUser: async (userId: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/users/${userId}`);
+      return res.data;
+    },
+
+    // ── Roles ──────────────────────────────────────────────────────────────────
+
+    listRoles: async (): Promise<{ roles: DirectoryRole[] }> => {
+      const res = await http.get('/api/roles');
+      return res.data;
+    },
+    createRole: async (data: {
+      name: string; description?: string; permissions: Record<string, PermissionScope>;
+      seatWeight?: number; color?: string;
+    }): Promise<{ role: DirectoryRole }> => {
+      const res = await http.post('/api/roles', data);
+      return res.data;
+    },
+    updateRole: async (id: string, data: {
+      name?: string; description?: string | null; permissions?: Record<string, PermissionScope>;
+      seatWeight?: number; color?: string | null;
+    }): Promise<{ role: DirectoryRole }> => {
+      const res = await http.patch(`/api/roles/${id}`, data);
+      return res.data;
+    },
+    deleteRole: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/roles/${id}`);
+      return res.data;
+    },
+
+    // ── Departments ────────────────────────────────────────────────────────────
+
+    listDepartments: async (): Promise<{ tree: DepartmentNode[]; flat: DepartmentNode[] }> => {
+      const res = await http.get('/api/departments');
+      return res.data;
+    },
+    createDepartment: async (data: {
+      name: string; description?: string | null; parentDepartmentId?: string | null;
+      headUserId?: string | null; color?: string | null; sortOrder?: number;
+    }): Promise<{ department: DepartmentNode }> => {
+      const res = await http.post('/api/departments', data);
+      return res.data;
+    },
+    updateDepartment: async (id: string, data: Record<string, unknown>): Promise<{ department: DepartmentNode }> => {
+      const res = await http.patch(`/api/departments/${id}`, data);
+      return res.data;
+    },
+    deleteDepartment: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/departments/${id}`);
+      return res.data;
+    },
+
+    // ── Groups ─────────────────────────────────────────────────────────────────
+
+    listGroups: async (): Promise<{ groups: UserGroup[] }> => {
+      const res = await http.get('/api/groups');
+      return res.data;
+    },
+    createGroup: async (data: {
+      name: string; description?: string | null; groupType: GroupType; dynamicRules?: DynamicRuleSet;
+    }): Promise<{ group: UserGroup }> => {
+      const res = await http.post('/api/groups', data);
+      return res.data;
+    },
+    updateGroup: async (id: string, data: Record<string, unknown>): Promise<{ group: UserGroup }> => {
+      const res = await http.patch(`/api/groups/${id}`, data);
+      return res.data;
+    },
+    deleteGroup: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/groups/${id}`);
+      return res.data;
+    },
+    getGroupMembers: async (id: string): Promise<{ members: GroupMember[] }> => {
+      const res = await http.get(`/api/groups/${id}/members`);
+      return res.data;
+    },
+    addGroupMember: async (id: string, userId: string): Promise<{ success: boolean }> => {
+      const res = await http.post(`/api/groups/${id}/members`, { userId });
+      return res.data;
+    },
+    removeGroupMember: async (id: string, userId: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/groups/${id}/members/${userId}`);
+      return res.data;
+    },
+
+    // ── SCIM provisioning tokens ─────────────────────────────────────────────────
+
+    listScimTokens: async (): Promise<{ tokens: ScimToken[]; scimBaseUrl: string }> => {
+      const res = await http.get('/api/scim-tokens');
+      return res.data;
+    },
+    createScimToken: async (data: { name: string; provider?: string }): Promise<{ token: string } & ScimToken> => {
+      const res = await http.post('/api/scim-tokens', data);
+      return res.data;
+    },
+    revokeScimToken: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete(`/api/scim-tokens/${id}`);
+      return res.data;
+    },
+
+    // ── SSO attribute mapping ────────────────────────────────────────────────────
+
+    getSsoMappings: async (): Promise<{ mappings: Record<string, string> }> => {
+      const res = await http.get('/api/sso-mappings');
+      return res.data;
+    },
+    updateSsoMappings: async (mappings: Record<string, string>): Promise<{ mappings: Record<string, string> }> => {
+      const res = await http.put('/api/sso-mappings', { mappings });
+      return res.data;
+    },
+
+    // ── Seats + Audit ────────────────────────────────────────────────────────────
+
+    getSeatBreakdown: async (): Promise<SeatBreakdown> => {
+      const res = await http.get('/api/seats/breakdown');
+      return res.data;
+    },
+    listAuditLogs: async (params: {
+      page?: number; limit?: number; event_type?: string; actor_user_id?: string; target_user_id?: string;
+    } = {}): Promise<{ events: AuditEvent[]; total: number; page: number; limit: number; pages: number }> => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => { if (v != null) qs.set(k, String(v)); });
+      const res = await http.get(`/api/audit-logs${qs.toString() ? `?${qs}` : ''}`);
+      return res.data;
+    },
+    exportAuditLogsCsv: async (): Promise<string> => {
+      const res = await http.get('/api/audit-logs', { params: { format: 'csv' }, responseType: 'text' });
+      return res.data as string;
+    },
+    // ── Survey Tags ────────────────────────────────────────────────────────────
+
+    // ── Survey Tags ────────────────────────────────────────────────────────────
+
+    listTags: async (params: { q?: string } = {}): Promise<{ tags: SurveyTag[] }> => {
+      const qs = new URLSearchParams();
+      if (params.q) qs.set('q', params.q);
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get<{ tags: SurveyTag[] }>(`/api/survey-tags${query}`);
+      return res.data;
+    },
+
+    createTag: async (data: { name: string; color?: string; description?: string }): Promise<{ tag: SurveyTag }> => {
+      const res = await http.post<{ tag: SurveyTag }>('/api/survey-tags', data);
+      return res.data;
+    },
+
+    updateTag: async (id: string, data: Partial<SurveyTag>): Promise<{ tag: SurveyTag }> => {
+      const res = await http.patch<{ tag: SurveyTag }>(`/api/survey-tags/${id}`, data);
+      return res.data;
+    },
+
+    deleteTag: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete<{ success: boolean }>(`/api/survey-tags/${id}`);
+      return res.data;
+    },
+
+    getTagSurveys: async (tagId: string): Promise<{ surveys: Survey[]; tag: SurveyTag }> => {
+      const res = await http.get<{ surveys: Survey[]; tag: SurveyTag }>(`/api/survey-tags/${tagId}/surveys`);
+      return res.data;
+    },
+
+    // Survey-tag mappings live under /api/surveys/:id/tags in surveys.js
+    addTagsToSurvey: async (surveyId: string, tagIds: string[]): Promise<{ success: boolean }> => {
+      const res = await http.post<{ success: boolean }>(`/api/surveys/${surveyId}/tags`, { tag_ids: tagIds });
+      return res.data;
+    },
+
+    removeTagFromSurvey: async (surveyId: string, tagId: string): Promise<{ success: boolean }> => {
+      const res = await http.delete<{ success: boolean }>(`/api/surveys/${surveyId}/tags/${tagId}`);
+      return res.data;
+    },
+
+    // ── Group Insights ─────────────────────────────────────────────────────────
+
+    generateGroupInsights: async (data: { tag_ids: string[]; survey_ids?: string[] }): Promise<{ run_id: string }> => {
+      const res = await http.post<{ run_id: string }>('/api/group-insights/generate', data);
+      return res.data;
+    },
+
+    getGroupInsightRunStatus: async (runId: string): Promise<GroupInsightRun> => {
+      const res = await http.get<GroupInsightRun>(`/api/group-insights/${runId}/status`);
+      return res.data;
+    },
+
+    getGroupInsightRun: async (runId: string): Promise<{ run: GroupInsightRun; insights: GroupInsight[] }> => {
+      const res = await http.get<{ run: GroupInsightRun; insights: GroupInsight[] }>(`/api/group-insights/${runId}`);
+      return res.data;
+    },
+
+    getLatestGroupReport: async (tagId: string): Promise<{ run: GroupInsightRun } | null> => {
+      try {
+        const res = await http.get<{ run: GroupInsightRun }>(`/api/survey-tags/${tagId}/latest-report`);
+        return res.data;
+      } catch {
+        return null;
+      }
+    },
+
+    // Download a survey insight report. 'pdf'/'pptx' return native files (when the
+    // server has puppeteer/pptxgenjs); otherwise the server falls back to HTML.
+    // Returns the actual format delivered so the caller can name the file correctly.
+    downloadReport: async (surveyId: string, format: 'pdf' | 'pptx' | 'html'): Promise<{ blob: Blob; format: string }> => {
+      const res = await http.get(`/api/visual/report/${surveyId}`, { params: { format }, responseType: 'blob' });
+      // If the server fell back to HTML it signals it via this header.
+      const fellBack = res.headers['x-export-fallback'];
+      return { blob: res.data as Blob, format: fellBack ? 'html' : format };
+    },
+
+    // ── Contacts (Tier 3) ──────────────────────────────────────────────────────
+    createContact: async (data: Partial<Contact>): Promise<Contact> => {
+      const res = await http.post<{ contact: Contact }>('/api/contacts', data);
+      return res.data.contact;
+    },
+
+    listContacts: async (params?: { search?: string; account_id?: string; page?: number; limit?: number }): Promise<{ contacts: Contact[]; total: number }> => {
+      const qs = new URLSearchParams();
+      if (params?.search)     qs.set('search',     params.search);
+      if (params?.account_id) qs.set('account_id', params.account_id);
+      if (params?.page)       qs.set('page',       String(params.page));
+      if (params?.limit)      qs.set('limit',      String(params.limit));
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get<{ contacts: Contact[]; total: number }>(`/api/contacts${query}`);
+      return res.data;
+    },
+
+    getContact: async (id: string): Promise<Contact> => {
+      const res = await http.get<{ contact: Contact }>(`/api/contacts/${id}`);
+      return res.data.contact;
+    },
+
+    updateContact: async (id: string, data: Partial<Contact>): Promise<Contact> => {
+      const res = await http.put<{ contact: Contact }>(`/api/contacts/${id}`, data);
+      return res.data.contact;
+    },
+
+    anonymizeContact: async (id: string): Promise<void> => {
+      await http.delete(`/api/contacts/${id}`);
+    },
+
+    importContacts: async (contacts: Partial<Contact>[]): Promise<{
+      created: number;
+      updated: number;
+      errors: Array<{ index: number; message: string }>;
+    }> => {
+      const res = await http.post<{
+        created: number;
+        updated: number;
+        errors: Array<{ index: number; message: string }>;
+      }>('/api/contacts/import', { contacts });
+      return res.data;
+    },
+
+    generateDistributionTokens: async (
+      surveyId: string,
+      contactIds: string[],
+      channel: string,
+    ): Promise<{ tokens: { contact_id: string; token: string; url: string }[] }> => {
+      const res = await http.post<{ tokens: { contact_id: string; token: string; url: string }[] }>(
+        `/api/surveys/${surveyId}/distribution-tokens`,
+        { contact_ids: contactIds, channel },
+      );
+      return res.data;
+    },
+
+    // ── CX Cases (Tier 3) ──────────────────────────────────────────────────────
+    createCase: async (data: Partial<CxCase>): Promise<CxCase> => {
+      const res = await http.post<{ case: CxCase }>('/api/cases', data);
+      return res.data.case;
+    },
+
+    listCases: async (params?: {
+      status?: string;
+      severity?: string;
+      owner_user_id?: string;
+      survey_id?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    }): Promise<{ cases: CxCase[]; total: number }> => {
+      const qs = new URLSearchParams();
+      if (params?.status)        qs.set('status',        params.status);
+      if (params?.severity)      qs.set('severity',      params.severity);
+      if (params?.owner_user_id) qs.set('owner_user_id', params.owner_user_id);
+      if (params?.survey_id)     qs.set('survey_id',     params.survey_id);
+      if (params?.search)        qs.set('search',        params.search);
+      if (params?.page)          qs.set('page',          String(params.page));
+      if (params?.limit)         qs.set('limit',         String(params.limit));
+      const query = qs.toString() ? `?${qs}` : '';
+      const res = await http.get<{ cases: CxCase[]; total: number }>(`/api/cases${query}`);
+      return res.data;
+    },
+
+    getCase: async (id: string): Promise<CxCase> => {
+      const res = await http.get<{ case: CxCase }>(`/api/cases/${id}`);
+      return res.data.case;
+    },
+
+    updateCase: async (id: string, data: Partial<CxCase>): Promise<CxCase> => {
+      const res = await http.put<{ case: CxCase }>(`/api/cases/${id}`, data);
+      return res.data.case;
+    },
+
+    addCaseEvent: async (id: string, event: { action: string; note?: string }): Promise<CaseAuditEntry[]> => {
+      const res = await http.post<{ audit_log: CaseAuditEntry[] }>(`/api/cases/${id}/events`, event);
+      return res.data.audit_log;
+    },
+
+    getSlaDashboard: async (): Promise<{ open_count: number; at_risk_count: number; breached_count: number; by_severity: Record<string, number> }> => {
+      const res = await http.get<{ open_count: number; at_risk_count: number; breached_count: number; by_severity: Record<string, number> }>('/api/cases/sla-dashboard');
+      return res.data;
+    },
+
+    // ── Ownership Routing (Tier 3) ─────────────────────────────────────────────
+    listOwnershipRoutes: async (dimension?: string): Promise<OwnershipRoute[]> => {
+      const qs = dimension ? `?dimension=${encodeURIComponent(dimension)}` : '';
+      const res = await http.get<{ routes: OwnershipRoute[] }>(`/api/ownership-routes${qs}`);
+      return res.data.routes;
+    },
+
+    createOwnershipRoute: async (data: Partial<OwnershipRoute>): Promise<OwnershipRoute> => {
+      const res = await http.post<{ route: OwnershipRoute }>('/api/ownership-routes', data);
+      return res.data.route;
+    },
+
+    updateOwnershipRoute: async (id: string, data: Partial<OwnershipRoute>): Promise<OwnershipRoute> => {
+      const res = await http.put<{ route: OwnershipRoute }>(`/api/ownership-routes/${id}`, data);
+      return res.data.route;
+    },
+
+    deleteOwnershipRoute: async (id: string): Promise<void> => {
+      await http.delete(`/api/ownership-routes/${id}`);
+    },
+
+    resolveOwnershipRoute: async (dimension: string, value: string): Promise<{ matched: boolean; route: OwnershipRoute | null }> => {
+      const res = await http.post<{ matched: boolean; route: OwnershipRoute | null }>('/api/ownership-routes/resolve', { dimension, value });
+      return res.data;
+    },
+
+    // ── Ontology (Tier 3) ──────────────────────────────────────────────────────
+    listOntologyNodes: async (category?: string): Promise<OntologyNode[]> => {
+      const qs = category ? `?category=${encodeURIComponent(category)}` : '';
+      const res = await http.get<{ nodes: OntologyNode[] }>(`/api/ontology${qs}`);
+      return res.data.nodes;
+    },
+
+    getOntologyNode: async (id: string): Promise<OntologyNode & { edges: unknown[]; mappings: unknown[] }> => {
+      const res = await http.get<OntologyNode & { edges: unknown[]; mappings: unknown[] }>(`/api/ontology/${id}`);
+      return res.data;
+    },
+
+    createOntologyNode: async (data: Partial<OntologyNode>): Promise<OntologyNode> => {
+      const res = await http.post<{ node: OntologyNode }>('/api/ontology', data);
+      return res.data.node;
+    },
+
+    createOntologyEdge: async (data: { from_node_id: string; to_node_id: string; relationship: string; weight?: number }): Promise<unknown> => {
+      const res = await http.post<unknown>('/api/ontology/edges', data);
+      return res.data;
+    },
+
+    createOntologyMapping: async (data: unknown): Promise<unknown> => {
+      const res = await http.post<unknown>('/api/ontology/mappings', data);
+      return res.data;
+    },
+
+    // ── Contact Segments ──────────────────────────────────────────────────────
+    listSegments: async (): Promise<ContactSegment[]> => {
+      const res = await http.get<{ segments: ContactSegment[] }>('/api/contacts/segments');
+      return res.data.segments;
+    },
+    createSegment: async (data: Partial<ContactSegment>): Promise<ContactSegment> => {
+      const res = await http.post<{ segment: ContactSegment }>('/api/contacts/segments', data);
+      return res.data.segment;
+    },
+    updateSegment: async (id: string, data: Partial<ContactSegment>): Promise<ContactSegment> => {
+      const res = await http.put<{ segment: ContactSegment }>(`/api/contacts/segments/${id}`, data);
+      return res.data.segment;
+    },
+    deleteSegment: async (id: string): Promise<void> => {
+      await http.delete(`/api/contacts/segments/${id}`);
+    },
+    previewSegment: async (filterDef: FilterDef): Promise<{ count: number; preview: Contact[] }> => {
+      const res = await http.post<{ count: number; preview: Contact[] }>('/api/contacts/segments/preview', { filter_def: filterDef });
+      return res.data;
+    },
+    refreshSegment: async (id: string): Promise<{ contact_count: number }> => {
+      const res = await http.post<{ contact_count: number }>(`/api/contacts/segments/${id}/refresh`);
+      return res.data;
+    },
+    getSegmentMembers: async (id: string, params?: { page?: number; limit?: number }): Promise<{ members: Contact[]; total: number }> => {
+      const q = new URLSearchParams();
+      if (params?.page) q.set('page', String(params.page));
+      if (params?.limit) q.set('limit', String(params.limit));
+      const res = await http.get<{ members: Contact[]; total: number }>(`/api/contacts/segments/${id}/members?${q}`);
+      return res.data;
+    },
+    addSegmentMember: async (segmentId: string, contactId: string): Promise<void> => {
+      await http.post(`/api/contacts/segments/${segmentId}/members`, { contact_id: contactId });
+    },
+    removeSegmentMember: async (segmentId: string, contactId: string): Promise<void> => {
+      await http.delete(`/api/contacts/segments/${segmentId}/members/${contactId}`);
+    },
+
+    // ── CRM Sync ──────────────────────────────────────────────────────────────
+    listSyncConfigs: async (): Promise<SyncConfig[]> => {
+      const res = await http.get<{ configs: SyncConfig[] }>('/api/contacts/sync/configs');
+      return res.data.configs;
+    },
+    createSyncConfig: async (data: Partial<SyncConfig>): Promise<SyncConfig> => {
+      const res = await http.post<{ config: SyncConfig }>('/api/contacts/sync/configs', data);
+      return res.data.config;
+    },
+    updateSyncConfig: async (id: string, data: Partial<SyncConfig>): Promise<SyncConfig> => {
+      const res = await http.put<{ config: SyncConfig }>(`/api/contacts/sync/configs/${id}`, data);
+      return res.data.config;
+    },
+    deleteSyncConfig: async (id: string): Promise<void> => {
+      await http.delete(`/api/contacts/sync/configs/${id}`);
+    },
+    runSync: async (id: string): Promise<{ log_id: string; status: string }> => {
+      const res = await http.post<{ log_id: string; status: string }>(`/api/contacts/sync/configs/${id}/run`);
+      return res.data;
+    },
+    getSyncLogs: async (id: string): Promise<SyncLog[]> => {
+      const res = await http.get<{ logs: SyncLog[] }>(`/api/contacts/sync/configs/${id}/logs`);
+      return res.data.logs;
+    },
+
+    // ── Response Linking ──────────────────────────────────────────────────────
+    getContactActivity: async (contactId: string): Promise<{ timeline: ActivityItem[]; segments: ContactSegment[] }> => {
+      const res = await http.get<{ timeline: ActivityItem[]; segments: ContactSegment[] }>(`/api/contacts/${contactId}/activity`);
+      return res.data;
+    },
+    backfillResponseLinks: async (limit?: number): Promise<{ processed: number; linked: number; skipped: number }> => {
+      const res = await http.post<{ processed: number; linked: number; skipped: number }>('/api/contacts/link-responses', { limit });
+      return res.data;
+    },
+    linkContactResponse: async (contactId: string, responseId: string): Promise<void> => {
+      await http.post(`/api/contacts/${contactId}/link-response`, { response_id: responseId });
+    },
+
+    // ── Broadcasts (Outreach) ──────────────────────────────────────────────────
+    createBroadcast: async (data: object): Promise<unknown> => {
+      const res = await http.post('/api/outreach/broadcasts', data);
+      return res.data;
+    },
+
+    approveBroadcast: async (id: string): Promise<unknown> => {
+      const res = await http.post(`/api/outreach/broadcasts/${id}/approve`, {});
+      return res.data;
+    },
+
+    rejectBroadcast: async (id: string, reason: string): Promise<unknown> => {
+      const res = await http.post(`/api/outreach/broadcasts/${id}/reject`, { reason });
+      return res.data;
+    },
+
+    sendBroadcast: async (id: string): Promise<unknown> => {
+      const res = await http.post(`/api/outreach/broadcasts/${id}/send`, {});
+      return res.data;
+    },
+
+    getBroadcasts: async (params?: { status?: string; limit?: number }): Promise<unknown> => {
+      const qs = new URLSearchParams();
+      if (params?.status) qs.set('status', params.status);
+      if (params?.limit)  qs.set('limit', String(params.limit));
+      const res = await http.get(`/api/outreach/broadcasts${qs.toString() ? `?${qs}` : ''}`);
+      return res.data;
+    },
+
+    getBroadcastStats: async (): Promise<unknown> => {
+      const res = await http.get('/api/outreach/broadcasts/stats');
+      return res.data;
+    },
+
+    getBroadcastDetail: async (id: string): Promise<unknown> => {
+      const res = await http.get(`/api/outreach/broadcasts/${id}`);
+      return res.data;
+    },
+
+    // ── Notification Analytics ────────────────────────────────────────────────
+    getNotificationSummary: async (period: string): Promise<unknown> => {
+      const res = await http.get(`/api/outreach/analytics/summary?period=${period}`);
+      return res.data;
+    },
+
+    getNotificationChannels: async (period: string): Promise<unknown> => {
+      const res = await http.get(`/api/outreach/analytics/channels?period=${period}`);
+      return res.data;
+    },
+
+    getNotificationWorkflows: async (period: string): Promise<unknown> => {
+      const res = await http.get(`/api/outreach/analytics/workflows?period=${period}`);
+      return res.data;
+    },
+
+    getFrequencyCaps: async (): Promise<unknown> => {
+      const res = await http.get('/api/outreach/frequency-caps');
+      return res.data;
+    },
+
+    upsertFrequencyCap: async (data: object): Promise<unknown> => {
+      const res = await http.post('/api/outreach/frequency-caps', data);
+      return res.data;
+    },
+
+    getNotificationSuppression: async (): Promise<unknown> => {
+      const res = await http.get('/api/outreach/suppression/stats');
+      return res.data;
+    },
+
+    // ── Novu subscriber hash ──────────────────────────────────────────────────
+    getNovuSubscriberHash: async (): Promise<{ hash: string }> => {
+      const res = await http.get<{ hash: string }>('/api/crystal-novu/subscriber-hash');
+      return res.data;
+    },
+
+    // ── Billing & Credits ──────────────────────────────────────────────────────
+    getCredits: async (): Promise<CreditBalance> => {
+      const res = await http.get<CreditBalance>('/api/billing/credits');
+      return res.data;
+    },
+    getCreditConfig: async (): Promise<CreditConfig> => {
+      const res = await http.get<CreditConfig>('/api/billing/config');
+      return res.data;
+    },
+    getCreditUsage: async (days?: number): Promise<CreditUsageResponse> => {
+      const q = days ? `?days=${days}` : '';
+      const res = await http.get<CreditUsageResponse>(`/api/billing/usage${q}`);
+      return res.data;
+    },
+    getCreditLedger: async (limit = 50, offset = 0): Promise<{ entries: CreditLedgerEntry[]; total: number }> => {
+      const res = await http.get<{ entries: CreditLedgerEntry[]; total: number }>(`/api/billing/ledger?limit=${limit}&offset=${offset}`);
+      return res.data;
+    },
+    setSpendCap: async (data: { overage_enabled: boolean; overage_ceiling: number | null }): Promise<CreditBalance> => {
+      const res = await http.put<CreditBalance>('/api/billing/spend-cap', data);
+      return res.data;
+    },
+    setPlan: async (planTier: string): Promise<CreditBalance> => {
+      const res = await http.post<CreditBalance>('/api/billing/plan', { plan_tier: planTier });
+      return res.data;
+    },
+    grantCredits: async (credits: number, note?: string): Promise<CreditBalance> => {
+      const res = await http.post<CreditBalance>('/api/billing/grant', { credits, note });
+      return res.data;
+    },
+    getCreditPacks: async (): Promise<{ packs: CreditPack[]; stripe_enabled: boolean }> => {
+      const res = await http.get<{ packs: CreditPack[]; stripe_enabled: boolean }>('/api/billing/packs');
+      return res.data;
+    },
+    startCheckout: async (packId: string): Promise<{ url: string }> => {
+      const res = await http.post<{ url: string }>('/api/billing/checkout', { pack_id: packId });
+      return res.data;
+    },
+
+    // ── Support System API ─────────────────────────────────────────────────────
+
+    getSupportDocs: async (params?: { q?: string; category?: string; limit?: number }): Promise<{ docs: SupportDoc[]; total: number; page: number; limit: number }> => {
+      const qs = new URLSearchParams();
+      if (params?.q)        qs.set('q',        params.q);
+      if (params?.category) qs.set('category', params.category);
+      if (params?.limit)    qs.set('limit',    String(params.limit));
+      const res = await http.get<{ docs: SupportDoc[]; total: number; page: number; limit: number }>(
+        `/api/support/docs${qs.toString() ? `?${qs}` : ''}`,
+      );
+      return res.data;
+    },
+
+    getSupportDoc: async (key: string): Promise<SupportDoc> => {
+      const res = await http.get<SupportDoc>(`/api/support/docs/${encodeURIComponent(key)}`);
+      return res.data;
+    },
+
+    getSupportChangelog: async (limit?: number): Promise<{ entries: ChangelogEntry[] }> => {
+      const qs = limit ? `?limit=${limit}` : '';
+      const res = await http.get<{ entries: ChangelogEntry[] }>(`/api/support/changelog${qs}`);
+      return res.data;
+    },
+
+    getSupportKnownIssues: async (): Promise<{ issues: KnownIssue[] }> => {
+      const res = await http.get<{ issues: KnownIssue[] }>('/api/support/known-issues');
+      return res.data;
+    },
+
+    getSupportRoadmap: async (): Promise<{ sections: RoadmapSection[] }> => {
+      const res = await http.get<{ sections: RoadmapSection[] }>('/api/support/roadmap');
+      return res.data;
+    },
+
+    getSupportStatus: async (): Promise<SystemStatus> => {
+      const res = await http.get<SystemStatus>('/api/support/status');
+      return res.data;
+    },
+
+    getSupportAccount: async (): Promise<AccountState> => {
+      const res = await http.get<AccountState>('/api/support/account');
+      return res.data;
+    },
+
+    createSupportTicket: async (data: CreateTicketRequest): Promise<SupportTicket> => {
+      const res = await http.post<SupportTicket>('/api/support/tickets', data);
+      return res.data;
+    },
+
+    submitDocFeedback: async (data: DocFeedbackRequest): Promise<{ received: boolean }> => {
+      const res = await http.post<{ received: boolean }>('/api/support/feedback', data);
+      return res.data;
+    },
+
+    crystalSupport: async (message: string, context?: Record<string, unknown>): Promise<CrystalSupportResponse> => {
+      const res = await http.post<CrystalSupportResponse>('/api/admin/crystal-support', { message, context });
+      return res.data;
+    },
+
+    // ── Admin Support Pipeline ─────────────────────────────────────────────────
+
+    adminSupportGetQueue: async (): Promise<{ docs: QueuedDoc[] }> => {
+      const res = await http.get<{ docs?: QueuedDoc[]; queue?: Record<string, unknown>[] }>(
+        '/api/admin-support/queue',
+      );
+      const rows = res.data.queue ?? res.data.docs ?? [];
+      const docs = rows.map((row) =>
+        row && typeof row === 'object' && 'docKey' in row
+          ? (row as unknown as QueuedDoc)
+          : mapQueuedDoc(row as Record<string, unknown>),
+      );
+      return { docs };
+    },
+
+    adminSupportGetFeed: async (): Promise<{ events: PipelineEvent[]; sinceLastVisit: number }> => {
+      const res = await http.get<{
+        events?: Record<string, unknown>[];
+        sinceLastVisit?: number;
+        since?: string;
+      }>('/api/admin-support/feed');
+      const events = (res.data.events ?? []).map((row) =>
+        row && 'eventType' in row
+          ? (row as unknown as PipelineEvent)
+          : mapPipelineEvent(row),
+      );
+      return {
+        events,
+        sinceLastVisit: res.data.sinceLastVisit ?? events.length,
+      };
+    },
+
+    adminSupportGetDoc: async (id: string): Promise<AdminDocDetail> => {
+      const res = await http.get<Record<string, unknown>>(`/api/admin-support/docs/${id}`);
+      return mapAdminDocDetail(res.data);
+    },
+
+    adminSupportApprove: async (docId: string): Promise<{ ok: boolean }> => {
+      const res = await http.post<{ ok?: boolean; approved?: boolean }>(
+        '/api/admin-support/approve',
+        { docId },
+      );
+      return { ok: res.data.ok ?? res.data.approved ?? true };
+    },
+
+    adminSupportReject: async (docId: string, reason: string): Promise<{ ok: boolean }> => {
+      const res = await http.post<{ ok?: boolean; rejected?: boolean }>(
+        '/api/admin-support/reject',
+        { docId, reason },
+      );
+      return { ok: res.data.ok ?? res.data.rejected ?? true };
+    },
+
+    adminSupportEditSections: async (docId: string, sections: SectionEdit[]): Promise<{ ok: boolean }> => {
+      const res = await http.put<{ ok?: boolean; sectionsEdited?: number }>(
+        '/api/admin-support/sections',
+        {
+          docId,
+          sections: sections.map((s) => ({
+            sectionKey: s.sectionKey,
+            content:    s.content,
+            lock:       s.locked,
+          })),
+        },
+      );
+      return { ok: res.data.ok ?? true };
+    },
+
+    adminSupportGetGaps: async (): Promise<{ gaps: DocGap[] }> => {
+      const res = await http.get<{ gaps?: Record<string, unknown>[] }>('/api/admin-support/gaps');
+      return { gaps: (res.data.gaps ?? []).map(mapDocGap) };
+    },
+
+    adminSupportGetStats: async (): Promise<PipelineStats> => {
+      const res = await http.get<Record<string, unknown>>('/api/admin-support/stats');
+      return mapPipelineStats(res.data);
+    },
+
   };
+}
+
+// ── Credit system types ───────────────────────────────────────────────────────
+export interface CreditBalance {
+  plan_tier:           string;
+  monthly_allowance:   number;
+  allowance_remaining: number;
+  pack_balance:        number;
+  available:           number;
+  overage_enabled:     boolean;
+  overage_ceiling:     number | null;
+  overage_used:        number;
+  overage_remaining:   number | null;
+  period_start:        string;
+  period_days:         number;
+}
+export interface CreditConfig {
+  credit_usd:          number;
+  period_days:         number;
+  costs:               Record<string, number>;
+  plan_allowances:     Record<string, number>;
+  plan_prices?:        Record<string, number>;
+  free_lifetime_grant: number;
+}
+export interface CreditUsageRow {
+  action_type:    string;
+  total_credits:  number;
+  event_count:    number;
+  total_cost_usd: number;
+}
+export interface CreditUsageResponse {
+  summary: CreditUsageRow[];
+  balance: CreditBalance;
+  days:    number;
+}
+export interface CreditLedgerEntry {
+  id:            string;
+  action_type:   string;
+  credits:       number;
+  source:        string;
+  action_ref:    string | null;
+  balance_after: number;
+  unit_cost_usd: number | null;
+  note:          string | null;
+  user_id:       string | null;
+  created_at:    string;
+}
+export interface CreditPack {
+  id:        string;
+  label:     string;
+  credits:   number;
+  price_usd: number;
+}
+
+// ── Support System types ───────────────────────────────────────────────────────
+
+export interface SupportDoc {
+  key:          string;
+  title:        string;
+  category:     string;
+  content:      string;
+  excerpt?:     string;
+  tags?:        string[];
+  updated_at:   string;
+  author?:      string;
+}
+
+export interface ChangelogEntry {
+  version:      string;
+  date:         string;
+  title:        string;
+  description:  string;
+  type:         'feature' | 'fix' | 'improvement' | 'deprecation';
+  tags?:        string[];
+}
+
+export interface KnownIssue {
+  id:           string;
+  title:        string;
+  description:  string;
+  status:       'investigating' | 'identified' | 'monitoring' | 'resolved';
+  severity:     'critical' | 'major' | 'minor';
+  affected?:    string[];
+  started_at:   string;
+  resolved_at?: string | null;
+}
+
+export interface RoadmapSection {
+  id:           string;
+  title:        string;
+  status:       'planned' | 'in_progress' | 'completed';
+  eta?:         string;
+  items:        RoadmapItem[];
+}
+
+export interface RoadmapItem {
+  id:           string;
+  title:        string;
+  description?: string;
+  status:       'planned' | 'in_progress' | 'completed';
+  votes?:       number;
+}
+
+export type SystemStatusLevel = 'operational' | 'degraded' | 'partial_outage' | 'major_outage';
+
+export interface SystemStatusComponent {
+  name:         string;
+  status:       SystemStatusLevel;
+  updated_at:   string;
+}
+
+export interface SystemStatus {
+  overall:      SystemStatusLevel;
+  components:   SystemStatusComponent[];
+  updated_at:   string;
+  incident?:    string | null;
+}
+
+export interface AccountState {
+  plan_tier:    string;
+  seats_used:   number;
+  seats_limit:  number | null;
+  features:     string[];
+  billing_email?: string;
+  next_renewal?:  string | null;
+}
+
+export interface CreateTicketRequest {
+  subject:      string;
+  description:  string;
+  priority?:    'low' | 'normal' | 'high' | 'urgent';
+  category?:    string;
+  attachments?: string[];
+}
+
+export interface SupportTicket {
+  id:           string;
+  subject:      string;
+  status:       'open' | 'pending' | 'resolved' | 'closed';
+  priority:     string;
+  created_at:   string;
+  url?:         string;
+}
+
+export interface DocFeedbackRequest {
+  doc_key:      string;
+  helpful:      boolean;
+  query?:       string;
+  comment?:     string;
+}
+
+export interface CrystalSupportResponse {
+  answer:               string;
+  suggestions?:         string[];
+  doc_refs?:            string[];
+  escalation_package?:  EscalationPackage | null;
+  resolved:             boolean;
+}
+
+export interface EscalationPackage {
+  description:  string;
+  priority:     'low' | 'normal' | 'high' | 'urgent';
+  context:      Record<string, unknown>;
+}
+
+// ── Admin Support Pipeline types ──────────────────────────────────────────────
+
+export type PipelineStatus =
+  | 'queued' | 'extracting' | 'drafting' | 'quality_check'
+  | 'auto_approved' | 'pending_review' | 'requires_annotation'
+  | 'rejected' | 'publishing' | 'live' | 'stale';
+
+export interface QueuedDoc {
+  id:                  string;
+  title:               string;
+  docKey:              string;
+  qualityScore:        number;
+  status:              PipelineStatus;
+  autoApproveDeadline: string | null;
+  humanEdited:         boolean;
+  sourceUrl:           string | null;
+  version:             number;
+  updatedAt:           string;
+  createdAt:           string;
+}
+
+export interface AdminDocSection {
+  key:     string;
+  heading: string;
+  content: string;
+}
+
+export interface AdminDocDetail {
+  doc:              QueuedDoc;
+  sections:         AdminDocSection[];
+  oldSections:      AdminDocSection[];
+  locks:            Array<{ sectionKey: string; lockedBy: string }>;
+  pipelineHistory:  PipelineEvent[];
+  qualityBreakdown: QualityBreakdown;
+}
+
+export interface PipelineEvent {
+  id:        string;
+  docId:     string;
+  docTitle:  string;
+  eventType: string;
+  actor:     string | null;
+  actorType: 'system' | 'crystal' | 'admin';
+  occurredAt: string;
+}
+
+export interface DocGap {
+  id:              string;
+  query:           string;
+  feedbackType:    string;
+  crystalIntent:   string | null;
+  occurrenceCount: number;
+  firstSeenAt:     string;
+  lastSeenAt:      string;
+  resolvedAt:      string | null;
+  resolution:      'doc_created' | 'linked' | 'wont_fix' | null;
+}
+
+export interface QualityBreakdown {
+  accuracy:       number;
+  completeness:   number;
+  clarity:        number;
+  searchability:  number;
+  actionability:  number;
+}
+
+export interface PipelineStats {
+  docsLive:            number;
+  docsLiveDelta:       number;
+  publishedToday:      number;
+  publishedTodayDelta: number;
+  gapsOpen:            number;
+  avgQualityScore:     number;
+  statusDistribution:  Record<PipelineStatus, number>;
+  qualityHistogram:    Array<{ bucket: string; count: number }>;
+}
+
+export interface SectionEdit {
+  sectionKey: string;
+  content:    string;
+  locked:     boolean;
 }
 
 // Re-export for consumers that import InsightRunStatus from api.ts

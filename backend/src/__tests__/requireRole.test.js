@@ -8,6 +8,7 @@ const __dirname = dirname(__filename);
 const _require = createRequire(import.meta.url);
 
 const CLERK_PATH      = _require.resolve('@clerk/backend');
+const AUTH_PATH       = _require.resolve(resolve(__dirname, '../middleware/auth'));
 const MIDDLEWARE_PATH = _require.resolve(resolve(__dirname, '../middleware/requireRole'));
 
 function fakeMod(id, exports) {
@@ -17,9 +18,13 @@ function fakeMod(id, exports) {
 // Shared mock state — all verifyToken calls read this
 let mockVerifyTokenFn;
 
-function setupMiddleware() {
+// requireRole bypasses verification when DEV_MODE (no CLERK_SECRET_KEY) is true.
+// We mock the auth module's DEV_MODE export directly so each test controls the gate
+// without depending on process env or loading the real auth/provisioning chain.
+function setupMiddleware(devMode = false) {
+  _require.cache[AUTH_PATH] = fakeMod(AUTH_PATH, { DEV_MODE: devMode });
   _require.cache[CLERK_PATH] = fakeMod(CLERK_PATH, {
-    createClerkClient: () => ({ verifyToken: (...args) => mockVerifyTokenFn(...args) }),
+    verifyToken: (...args) => mockVerifyTokenFn(...args),
   });
   delete _require.cache[MIDDLEWARE_PATH];
   return _require(MIDDLEWARE_PATH).requireRole;
@@ -39,23 +44,20 @@ function makeReqRes(authHeader = 'Bearer test-token') {
 
 describe('requireRole middleware', () => {
   let requireRole;
-  const origSkipAuth = process.env.SKIP_AUTH;
 
   beforeEach(() => {
-    delete process.env.SKIP_AUTH;
     mockVerifyTokenFn = vi.fn();
-    requireRole = setupMiddleware();
+    requireRole = setupMiddleware(false); // DEV_MODE off → verification runs
   });
 
   afterEach(() => {
-    if (origSkipAuth !== undefined) process.env.SKIP_AUTH = origSkipAuth;
-    else delete process.env.SKIP_AUTH;
     delete _require.cache[MIDDLEWARE_PATH];
     delete _require.cache[CLERK_PATH];
+    delete _require.cache[AUTH_PATH];
   });
 
-  it('passes through when SKIP_AUTH=true regardless of role', async () => {
-    process.env.SKIP_AUTH = 'true';
+  it('passes through in DEV_MODE regardless of role', async () => {
+    requireRole = setupMiddleware(true); // DEV_MODE on → all roles granted
     const { req, res, next } = makeReqRes();
     await requireRole('admin')(req, res, next);
     expect(next).toHaveBeenCalled();

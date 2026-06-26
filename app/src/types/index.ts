@@ -463,3 +463,219 @@ export interface CopilotChange {
 // ── Breakpoint ────────────────────────────────────────────────────────────────
 
 export type Breakpoint = 'mobile' | 'tablet' | 'desktop';
+
+// ── Action Proposals (from Crystal action tools + action-recommender skill) ───
+
+export type ActionProposalType =
+  | 'create_survey'
+  | 'edit_survey'
+  | 'distribute'
+  | 'workflow'
+  | 'template'
+  | 'schedule_rerun'
+  | 'export_insights'
+  // Internal proposal_type aliases from action tool executors
+  | 'create_followup_survey'
+  | 'edit_survey_questions'
+  | 'distribute_to_segment'
+  | 'create_workflow'
+  | 'create_alert'
+  | 'view_template'
+  // Tier 3 — Closed-Loop Action Platform
+  | 'create_case'
+  | 'assign_owner'
+  | 'send_slack_alert';
+
+export interface ActionProposal {
+  id:                    string;               // kebab-case unique ID
+  type:                  ActionProposalType;
+  priority:              'critical' | 'high' | 'medium' | 'low';
+  title:                 string;               // imperative label, max 60 chars
+  description:           string;               // what + why
+  cta_label?:            string;               // button label, default "Apply"
+  params:                Record<string, unknown>; // execution params for frontend API
+  estimated_time?:       string;
+  business_rationale?:   string;
+  confidence?:           number;
+  tags?:                 string[];
+  requires_confirmation: boolean;              // always true — safety guarantee
+}
+
+export interface ActionRecommendations {
+  actions:       ActionProposal[];
+  urgency_level: 'immediate' | 'this_week' | 'this_month' | 'strategic' | null;
+  summary:       string | null;
+  generated_at:  string | null;
+}
+
+// ── Contacts (Tier 3) ────────────────────────────────────────────────────────
+export interface Contact {
+  id: string;
+  org_id: string;
+  external_id?: string | null;
+  email?: string | null;         // masked if user lacks data:pii
+  name?: string | null;          // masked if user lacks data:pii
+  phone?: string | null;         // masked if user lacks data:pii
+  account_id?: string | null;
+  account_name?: string | null;
+  segment_attrs: Record<string, string>;
+  consent_given: boolean;
+  consent_at?: string | null;
+  anonymized_at?: string | null;
+  data_region: string;
+  import_source?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── CX Cases (Tier 3) ────────────────────────────────────────────────────────
+export type CaseStatus = 'open' | 'in_progress' | 'escalated' | 'resolved' | 'closed';
+export type CaseSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+export interface CxCase {
+  id: string;
+  org_id: string;
+  contact_id?: string | null;
+  contact?: Contact | null;      // joined
+  response_id?: string | null;
+  survey_id?: string | null;
+  insight_id?: string | null;
+  driver_ref?: string | null;
+  proposal_id?: string | null;
+  title: string;
+  description?: string | null;
+  category: string;
+  status: CaseStatus;
+  severity: CaseSeverity;
+  owner_user_id?: string | null;
+  owner_label?: string | null;
+  owner_role?: string | null;
+  ack_due_at?: string | null;
+  resolve_due_at?: string | null;
+  acked_at?: string | null;
+  sla_breached: boolean;
+  escalation_tier: number;
+  external_refs: Record<string, string>;
+  resolved_at?: string | null;
+  resolution_note?: string | null;
+  created_at: string;
+  updated_at: string;
+  created_by: string;
+  audit_log: CaseAuditEntry[];
+}
+
+export interface CaseAuditEntry {
+  ts: string;
+  actor: string;
+  action: string;
+  from_status?: string | null;
+  to_status?: string | null;
+  note?: string | null;
+}
+
+// ── Ownership Routing (Tier 3) ───────────────────────────────────────────────
+export interface OwnershipRoute {
+  id: string;
+  org_id: string;
+  dimension: 'segment' | 'account' | 'touchpoint' | 'driver' | 'survey' | 'category';
+  match_value: string;
+  match_type: 'exact' | 'prefix' | 'contains' | 'regex';
+  owner_user_id: string;
+  owner_label?: string | null;
+  owner_email?: string | null;
+  escalation_user_id?: string | null;
+  escalation_label?: string | null;
+  priority: number;
+  role_label?: string | null;
+  created_at: string;
+}
+
+// ── Ontology (Tier 3) ─────────────────────────────────────────────────────────
+export interface OntologyNode {
+  id: string;
+  org_id: string;
+  category: 'entity' | 'metric' | 'signal' | 'risk' | 'action' | 'concept';
+  label: string;
+  description?: string | null;
+  definition?: string | null;
+  synonyms: string[];
+  x_data_ref?: string | null;
+  x_data_range?: Record<string, number> | null;
+  o_data_ref?: string | null;
+  platform_node: boolean;
+  parent_id?: string | null;
+}
+
+// ── Contact Segments (Tier 3) ─────────────────────────────────────────────────
+export interface FilterCondition {
+  field: string;
+  operator: 'eq' | 'neq' | 'contains' | 'starts_with' | 'ends_with' | 'in' | 'before' | 'after' | 'within_days';
+  value: string;
+}
+
+export interface FilterDef {
+  logic: 'AND' | 'OR';
+  conditions: FilterCondition[];
+}
+
+export interface ContactSegment {
+  id: string;
+  org_id: string;
+  name: string;
+  description?: string | null;
+  color: string;
+  is_dynamic: boolean;
+  filter_def: FilterDef;
+  contact_count: number;
+  last_evaluated_at?: string | null;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── CRM Sync (Tier 3) ─────────────────────────────────────────────────────────
+export type SyncProvider = 'hubspot' | 'salesforce' | 'webhook' | 'csv_url';
+
+export interface FieldMapping { source: string; dest: string; }
+
+export interface SyncConfig {
+  id: string;
+  org_id: string;
+  name: string;
+  provider: SyncProvider;
+  config: Record<string, string>;
+  field_mappings: FieldMapping[];
+  sync_schedule?: 'manual' | 'hourly' | 'daily' | 'weekly' | null;
+  is_active: boolean;
+  last_synced_at?: string | null;
+  last_sync_status?: 'running' | 'completed' | 'failed' | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyncLog {
+  id: string;
+  sync_config_id: string;
+  status: 'running' | 'completed' | 'failed';
+  contacts_fetched: number;
+  contacts_created: number;
+  contacts_updated: number;
+  contacts_failed: number;
+  error_detail?: string | null;
+  started_at: string;
+  completed_at?: string | null;
+}
+
+// ── Activity Timeline (Tier 3) ────────────────────────────────────────────────
+export interface ActivityItem {
+  type: 'response' | 'case';
+  source?: string;
+  ts: string;
+  id: string;
+  survey_id?: string;
+  survey_title?: string;
+  status?: string;
+  severity?: string;
+  title?: string;
+  linked_by?: string;
+}

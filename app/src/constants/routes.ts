@@ -4,6 +4,8 @@ export const ROUTES = {
   LANDING:            '/',
   SIGNIN:             '/signin',
   ONBOARDING:         '/onboarding',
+  DASHBOARD:          '/app/dashboard',
+  VISUAL_STUDIO:      '/app/visual',
   SURVEYS:            '/app/surveys',
   CREATE:             '/app/surveys/create',
   BUILDER:            '/app/surveys/:surveyId/build',
@@ -21,7 +23,21 @@ export const ROUTES = {
   TEMPLATES:          '/app/templates',
   TEMPLATE_EDITOR:    '/app/templates/new',
   WORKFLOWS:          '/app/workflows',
+  WORKFLOW_BUILD:     '/app/workflows/build',
+  WORKFLOW_CANVAS:    '/app/workflows/canvas',
+  ALERTS:             '/app/alerts',
+  NOTIFICATION_PREFS:      '/app/settings/notifications',
+  NOTIFICATION_ANALYTICS:  '/app/settings/notification-analytics',
   SETTINGS:           '/app/settings',
+  BILLING:            '/app/settings/billing',
+  SETTINGS_USERS:       '/app/settings/users',
+  SETTINGS_ROLES:       '/app/settings/users/roles',
+  SETTINGS_DEPARTMENTS: '/app/settings/users/departments',
+  SETTINGS_GROUPS:      '/app/settings/users/groups',
+  SETTINGS_PROVISIONING: '/app/settings/users/provisioning',
+  SETTINGS_SEATS:        '/app/settings/users/seats',
+  SETTINGS_AUDIT:        '/app/settings/users/audit',
+  SETTINGS_TAGS:         '/app/settings/tags',
   DATA:               '/app/data',
   EXPERIENCE:                  '/app/experience',
   EXPERIENCE_ORG_TRENDS:       '/app/experience/org/trends',
@@ -30,6 +46,46 @@ export const ROUTES = {
   EXPERIENCE_SURVEY_TOPICS:    '/app/experience/survey/:surveyId/topics',
   EXPERIENCE_SURVEY_TOPIC:     '/app/experience/survey/:surveyId/topics/:topicId',
   EXPERIENCE_SURVEY_TRENDS:    '/app/experience/survey/:surveyId/trends',
+  GROUP_REPORT:        '/app/groups/:tagId/report/:runId',
+  GROUP_REPORT_LATEST: '/app/groups/:tagId/report',
+
+  // Admin — Crystal
+  ADMIN_CRYSTAL:              '/app/admin/crystal',
+  ADMIN_CRYSTAL_SKILLS:       '/app/admin/crystal/skills',
+  ADMIN_CRYSTAL_SKILL_DETAIL: '/app/admin/crystal/skills/:skillName',
+  ADMIN_CRYSTAL_QUALITY:      '/app/admin/crystal/quality',
+  ADMIN_CRYSTAL_SIGNALS:      '/app/admin/crystal/signals',
+  ADMIN_CRYSTAL_GAPS:         '/app/admin/crystal/gaps',
+  ADMIN_CRYSTAL_DLQ:          '/app/admin/crystal/dlq',
+
+  // Tier 3 — Closed-Loop Action Platform
+  CONTACTS:              '/app/contacts',
+  CONTACT_DETAIL:        '/app/contacts/:contactId',
+  CONTACT_SEGMENTS:      '/app/contacts/segments',
+  CASES:                 '/app/cases',
+  CASE_DETAIL:           '/app/cases/:caseId',
+  SETTINGS_OWNERSHIP:    '/app/settings/ownership',
+  SETTINGS_ONTOLOGY:     '/app/settings/ontology',
+  SETTINGS_CONNECTIONS:  '/app/settings/connections',
+
+  // Broadcasts (Tier 3 Phase J)
+  BROADCASTS:            '/app/broadcasts',
+  BROADCASTS_APPROVAL:   '/app/broadcasts/approval',
+
+  // Support System
+  SUPPORT_ROOT:               '/app/support',
+  SUPPORT_DOCS:               '/app/support/docs',
+  SUPPORT_DOC:                '/app/support/docs/:key',
+  SUPPORT_CHANGELOG:          '/app/support/changelog',
+  SUPPORT_ROADMAP:            '/app/support/roadmap',
+  SUPPORT_STATUS:             '/app/support/status',
+
+  // Admin — Support Pipeline
+  ADMIN_SUPPORT_PIPELINE:     '/app/admin/support/pipeline',
+  ADMIN_SUPPORT_REVIEW:       '/app/admin/support/review/:docId',
+  ADMIN_SUPPORT_EDIT:         '/app/admin/support/edit/:docId',
+  ADMIN_SUPPORT_GAPS:         '/app/admin/support/gaps',
+  ADMIN_SUPPORT_STATS:        '/app/admin/support/stats',
 };
 
 /** Replace :param placeholders with concrete values */
