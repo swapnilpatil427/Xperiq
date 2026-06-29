@@ -45,8 +45,8 @@ export async function chat(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
-        'HTTP-Referer': 'https://experient.app',
-        'X-Title': 'Experient',
+        'HTTP-Referer': 'https://xperiq.com',
+        'X-Title': 'Xperiq',
       },
       body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
     });

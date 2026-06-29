@@ -1,4 +1,4 @@
-# Experient — Work Tracker
+# Xperiq — Work Tracker
 # Updated: 2026-05-15
 
 > **How to use:** Tell Claude "mark P0-1 done and tested" or "start Sprint 1" and the tracker updates automatically.
@@ -56,7 +56,7 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 ---
 
 ## Phase OCI — Production Migration
-**Goal: Ship Experient to production on Oracle Cloud Infrastructure Always Free tier. Zero infrastructure cost until ~200 orgs.**
+**Goal: Ship Xperiq to production on Oracle Cloud Infrastructure Always Free tier. Zero infrastructure cost until ~200 orgs.**
 
 > IaC files live in `infra/terraform/`. Run `terraform apply` to provision. See `docs/OCI_DEPLOY.md` for full guide.
 

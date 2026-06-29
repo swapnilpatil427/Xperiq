@@ -17,8 +17,66 @@ catch { ({ Client } = require('../backend/node_modules/pg')); }
 const fs         = require('fs');
 const path       = require('path');
 
+// Root .env is the source of truth (same as backend / CrystalOS).
+const rootEnv = path.join(__dirname, '../.env');
+if (fs.existsSync(rootEnv)) {
+  try { require('dotenv').config({ path: rootEnv }); }
+  catch { require('../backend/node_modules/dotenv').config({ path: rootEnv }); }
+}
+
 const DB_URL = process.env.DATABASE_URL
-  || 'postgresql://postgres:postgres@localhost:5432/experient';
+  || 'postgresql://postgres:postgres@localhost:5432/xperiq';
+
+const LEGACY_DB_NAME = 'experient';
+
+function parseDbUrl(url) {
+  const u = new URL(url);
+  const dbName = decodeURIComponent(u.pathname.replace(/^\//, ''));
+  const maint = new URL(url);
+  maint.pathname = '/postgres';
+  return { dbName, maintUrl: maint.toString() };
+}
+
+function quoteIdent(name) {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`invalid database name: ${name}`);
+  }
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+async function ensureDatabase(retries = 15, delayMs = 2000) {
+  const { dbName, maintUrl } = parseDbUrl(DB_URL);
+  for (let i = 1; i <= retries; i++) {
+    const client = new Client({ connectionString: maintUrl });
+    try {
+      await client.connect();
+      const { rows } = await client.query(
+        'SELECT 1 FROM pg_database WHERE datname = $1',
+        [dbName]
+      );
+      if (rows.length === 0) {
+        const { rows: legacy } = await client.query(
+          'SELECT 1 FROM pg_database WHERE datname = $1',
+          [LEGACY_DB_NAME]
+        );
+        if (legacy.length > 0 && dbName === 'xperiq') {
+          await client.query(`ALTER DATABASE ${quoteIdent(LEGACY_DB_NAME)} RENAME TO ${quoteIdent(dbName)}`);
+          console.log(`[migrate] ✓ renamed database ${LEGACY_DB_NAME} → ${dbName}`);
+        } else {
+          await client.query(`CREATE DATABASE ${quoteIdent(dbName)}`);
+          console.log(`[migrate] ✓ created database ${dbName}`);
+        }
+      }
+      await client.end();
+      return;
+    } catch (err) {
+      await client.end().catch(() => {});
+      if (i === retries) throw err;
+      process.stdout.write(`[migrate] waiting for postgres (${i}/${retries})…\r`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
 
 // Migrations that Docker applies on a fresh DB via docker-entrypoint-initdb.d.
 // Pre-mark these as done when we detect an existing bootstrapped DB.
@@ -78,6 +136,7 @@ async function connectWithRetry(retries = 15, delayMs = 2000) {
 }
 
 async function main() {
+  await ensureDatabase();
   const client = await connectWithRetry();
 
   try {

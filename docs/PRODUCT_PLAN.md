@@ -1,4 +1,4 @@
-# Experient — Complete Product & Go-to-Market Plan
+# Xperiq — Complete Product & Go-to-Market Plan
 # AI-Era Experience Management Platform
 
 **Vision:** The world's first AI-native experience management platform — and the first to be fully agentic. Not a survey tool with AI bolted on. An intelligence layer that happens to collect feedback, packaged as four AI skills any agent can use. Beats legacy XM platforms (SurveyMonkey, Medallia, InMoment) by being 10× simpler, 100× cheaper, natively AI, and callable from anywhere.

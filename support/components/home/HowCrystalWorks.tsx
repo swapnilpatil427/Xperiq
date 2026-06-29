@@ -10,7 +10,7 @@ const STEPS = [
     step: '01',
     title: 'Ask anything',
     description:
-      'Type your question in plain English. Crystal understands context, intent, and the full Experient platform.',
+      'Type your question in plain English. Crystal understands context, intent, and the full Xperiq platform.',
   },
   {
     icon: 'psychology',

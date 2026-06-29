@@ -1,6 +1,6 @@
 # Environment Variables — canonical reference
 
-The single source of truth for every env var Experient reads. **Rule:** when you add a
+The single source of truth for every env var Xperiq reads. **Rule:** when you add a
 `process.env.X` / `import.meta.env.VITE_X` / `os.getenv("X")`, add it here **and** to the matching
 `.env.example` in the same PR. (See the "Keeping this in sync" rule in the root `CLAUDE.md`.)
 
@@ -15,7 +15,7 @@ Legend: **[req]** required to run · **[opt]** optional (feature/integration) ·
 ## Core (backend + CrystalOS) — root `.env`
 | Var | Status | Default | Purpose |
 |---|---|---|---|
-| `DATABASE_URL` | [req] | `postgresql://postgres:postgres@localhost:5432/experient` | Postgres connection |
+| `DATABASE_URL` | [req] | `postgresql://postgres:postgres@localhost:5432/xperiq` | Postgres connection |
 | `REDIS_URL` | [req prod / opt dev] | `redis://localhost:6379` | Rate limits, caches, streams, credit balance cache |
 | `OPENROUTER_API_KEY` | [req] | — | LLM gateway |
 | `AGENTS_INTERNAL_KEY` | [req] | `dev-internal-key-change-in-prod` | Shared secret: backend ↔ CrystalOS ↔ internal metering API. **Change in prod.** |
@@ -99,7 +99,7 @@ Legend: **[req]** required to run · **[opt]** optional (feature/integration) ·
 `CHECKPOINT_LOCAL_PATH`, `GOOGLE_VISION_KEY`, `VISION_PROVIDER`, `EVENT_BUS`, `PUBSUB_TOPIC`, `WORKER_ID`.
 
 ## Frontend — `app/.env.example`
-`VITE_API_URL` [req], `VITE_CLERK_PUBLISHABLE_KEY` [opt], `VITE_NOVU_APP_ID` [opt], `VITE_SENTRY_DSN` [opt], `VITE_SUPPORT_URL` [opt — defaults to `https://support.experient.ai`; set to `http://localhost:3002` in local dev to link to the local support site], `VITE_INSIGHTS_TRAJECTORY_V1` [opt — defaults `true`; set `false` to hide the Phase 0.5 Insight Pipeline v2 investigation trajectory UI (Enhanced Header Band + Investigation Drawer + Topic Change Bar)].
+`VITE_API_URL` [req], `VITE_CLERK_PUBLISHABLE_KEY` [opt], `VITE_NOVU_APP_ID` [opt], `VITE_SENTRY_DSN` [opt], `VITE_SUPPORT_URL` [opt — defaults to `https://support.xperiq.ai`; set to `http://localhost:3002` in local dev to link to the local support site], `VITE_INSIGHTS_TRAJECTORY_V1` [opt — defaults `true`; set `false` to hide the Phase 0.5 Insight Pipeline v2 investigation trajectory UI (Enhanced Header Band + Investigation Drawer + Topic Change Bar)].
 
 ## CrystalOS advanced tunables — defaults in `crystalos/lib/constants.py`
 `INGEST_*`, `SKILL_*`, `THREAD_*`, `REPORT_*`, `HALLUCINATION_*`, `SEMANTIC_CACHE_*`, `MAX_TOKENS_PER_RUN`,
@@ -125,7 +125,7 @@ All have safe defaults — only set to tune; they don't belong in `.env.example`
 ### `./.env.example` (root)
 ```dotenv
 # ── Core ──────────────────────────────────────────────────────────────────
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/experient
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/xperiq
 REDIS_URL=redis://localhost:6379
 OPENROUTER_API_KEY=
 AGENTS_INTERNAL_KEY=dev-internal-key-change-in-prod
@@ -223,8 +223,8 @@ Backend reads the **root** `.env`; a backend-local file only needs overrides. At
 
 | Var | Status | Default | Purpose |
 |---|---|---|---|
-| `NEXT_PUBLIC_API_URL` | [req] | `http://localhost:3001` | Experient backend API base URL |
-| `NEXT_PUBLIC_SITE_URL` | [req prod] | `https://support.experient.ai` | Canonical site URL (used in sitemap, OG tags, IndexNow) |
+| `NEXT_PUBLIC_API_URL` | [req] | `http://localhost:3001` | Xperiq backend API base URL |
+| `NEXT_PUBLIC_SITE_URL` | [req prod] | `https://support.xperiq.ai` | Canonical site URL (used in sitemap, OG tags, IndexNow) |
 | `NEXT_PUBLIC_CRYSTAL_ENABLED` | [opt] | `true` | Enable Crystal AI search panel |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | [opt] | — | Same Clerk app as the main frontend. When absent, "My Tickets" auth is disabled. |
 | `CLERK_SECRET_KEY` | [opt] | — | Clerk secret for server-side token verification. Required for `/my-tickets`. |
@@ -232,6 +232,6 @@ Backend reads the **root** `.env`; a backend-local file only needs overrides. At
 | `INDEXNOW_KEY` | [opt] | — | IndexNow key for Google/Bing instant indexing pings on doc publish |
 
 **GitHub Actions secrets** (also needed in CI):
-- `FLY_API_TOKEN_SUPPORT` — Fly.io API token scoped to the `experient-support` app
+- `FLY_API_TOKEN_SUPPORT` — Fly.io API token scoped to the `xperiq-support` app
 - `REVALIDATE_SECRET` — same value as above
 - `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — same key as used in the main app CI

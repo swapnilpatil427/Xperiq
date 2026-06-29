@@ -1,7 +1,7 @@
-# Experient — Project Root
+# Xperiq — Project Root
 
 ## What this is
-Experient is an AI-powered experience intelligence platform. It lets organizations create surveys, collect responses, and generate AI-powered insights. Think of it as a modern enterprise XM platform challenger with dimensional intelligence built in.
+Xperiq is an AI-powered experience management platform (Experience + IQ). It lets organizations create surveys, collect responses, and generate AI-powered insights via Crystal, the built-in AI copilot. Think of it as a modern enterprise XM platform challenger with dimensional intelligence built in.
 
 ## Monorepo layout
 - `app/` — React frontend (Vite + Tailwind v4)

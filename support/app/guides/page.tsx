@@ -9,7 +9,7 @@ export const revalidate = 3600
 
 export const metadata: Metadata = {
   title: 'Documentation & Guides',
-  description: 'Browse all Experient documentation, how-to guides, API references, and integration tutorials.',
+  description: 'Browse all Xperiq documentation, how-to guides, API references, and integration tutorials.',
   alternates: { canonical: '/guides' },
 }
 
@@ -37,7 +37,7 @@ export default async function GuidesPage({
             Documentation
           </h1>
           <p className="text-on-surface-variant font-body text-lg max-w-2xl">
-            Everything you need to build, analyze, and scale with Experient.
+            Everything you need to build, analyze, and scale with Xperiq.
           </p>
         </div>
 

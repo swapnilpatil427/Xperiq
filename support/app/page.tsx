@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     'Get instant answers from Crystal AI, browse expert documentation, and connect with enterprise support specialists. The most intelligent XM support experience.',
   alternates: { canonical: '/' },
   openGraph: {
-    title: 'Experient Support Intelligence',
+    title: 'Xperiq Support Intelligence',
     description: 'AI-powered help center for the leading enterprise XM platform',
     type: 'website',
   },
@@ -68,7 +68,7 @@ export default function HomePage() {
               className="font-body text-lg md:text-xl text-on-surface-variant max-w-2xl mx-auto leading-relaxed animate-fade-up"
               style={{ animationDelay: '0.1s' }}
             >
-              Ask Crystal anything about your Experient workflows, data analysis, or platform
+              Ask Crystal anything about your Xperiq workflows, data analysis, or platform
               capabilities. Get enterprise-grade answers in seconds.
             </p>
           </div>

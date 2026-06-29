@@ -1,6 +1,6 @@
 import type { SupportDoc } from './api'
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://support.experient.ai'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://support.xperiq.ai'
 
 export function buildTechArticleJsonLd(doc: SupportDoc) {
   return {
@@ -12,12 +12,12 @@ export function buildTechArticleJsonLd(doc: SupportDoc) {
     dateModified: doc.updated_at,
     author: {
       '@type': 'Organization',
-      name: 'Experient',
+      name: 'Xperiq',
       url: siteUrl,
     },
     publisher: {
       '@type': 'Organization',
-      name: 'Experient',
+      name: 'Xperiq',
       logo: { '@type': 'ImageObject', url: `${siteUrl}/logo.png` },
     },
     mainEntityOfPage: {
@@ -68,10 +68,10 @@ export function buildOrganizationJsonLd() {
   return {
     '@context': 'https://schema.org',
     '@type': 'Organization',
-    name: 'Experient',
-    url: 'https://experient.ai',
+    name: 'Xperiq',
+    url: 'https://xperiq.ai',
     logo: `${siteUrl}/logo.png`,
-    sameAs: ['https://twitter.com/experient', 'https://linkedin.com/company/experient'],
+    sameAs: ['https://twitter.com/xperiq', 'https://linkedin.com/company/xperiq'],
     contactPoint: {
       '@type': 'ContactPoint',
       contactType: 'customer support',

@@ -2,8 +2,8 @@ import Link from 'next/link'
 
 const footerLinks = {
   Product: [
-    { href: 'https://experient.ai', label: 'Platform' },
-    { href: 'https://experient.ai/pricing', label: 'Pricing' },
+    { href: 'https://xperiq.ai', label: 'Platform' },
+    { href: 'https://xperiq.ai/pricing', label: 'Pricing' },
     { href: '/changelog', label: 'Changelog' },
     { href: '/roadmap', label: 'Roadmap' },
   ],
@@ -66,7 +66,7 @@ export function SiteFooter() {
                 </span>
               </div>
               <span className="font-headline font-extrabold text-on-background tracking-tight">
-                Experient
+                Xperiq
               </span>
             </div>
             <p className="text-sm text-on-surface-variant font-body leading-relaxed max-w-xs">
@@ -100,7 +100,7 @@ export function SiteFooter() {
         <div className="tonal-separator mb-6" />
         <div className="flex flex-col md:flex-row items-center justify-between gap-4">
           <p className="text-xs text-on-surface-variant font-label">
-            © 2026 Experient, Inc. The experience layer that learns.
+            © 2026 Xperiq, Inc. The experience layer that learns.
           </p>
           <p className="text-xs text-on-surface-variant/50 font-label">
             AI-generated content is reviewed by our team before publication.

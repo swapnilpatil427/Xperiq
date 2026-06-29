@@ -9,7 +9,7 @@ export const revalidate = 3600
 export const metadata: Metadata = {
   title: 'Product Roadmap',
   description:
-    "See what we're building next. Track Experient's planned features, in-progress work, and recently shipped capabilities.",
+    "See what we're building next. Track Xperiq's planned features, in-progress work, and recently shipped capabilities.",
   alternates: { canonical: '/roadmap' },
 }
 

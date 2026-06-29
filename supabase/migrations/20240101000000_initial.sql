@@ -1,4 +1,4 @@
--- Experient local schema
+-- Xperiq local schema
 -- Mirrors the SURVEY_DATA_MODEL.md v2.0 in relational form.
 -- Run via: supabase db reset
 

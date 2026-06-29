@@ -11,7 +11,7 @@ import { Pool } from 'pg';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
-  'postgresql://postgres:postgres@localhost:5432/experient';
+  'postgresql://postgres:postgres@localhost:5432/xperiq';
 
 const pool = new Pool({ connectionString: DATABASE_URL });
 
@@ -27,14 +27,14 @@ interface DocSeed {
 const DOCS: DocSeed[] = [
   // ── Getting Started ────────────────────────────────────────────────────────
   {
-    key: 'getting-started/what-is-experient',
-    title: 'What is Experient?',
+    key: 'getting-started/what-is-xperiq',
+    title: 'What is Xperiq?',
     category: 'getting-started',
     source_type: 'manual',
     quality_score: 0.98,
-    content: `# What is Experient?
+    content: `# What is Xperiq?
 
-Experient is an AI-powered experience intelligence platform that helps organizations collect, analyze, and act on feedback at scale. Unlike traditional survey tools, Experient combines enterprise-grade data collection with Crystal AI — an always-on intelligence layer that finds patterns, surfaces risks, and proposes concrete actions.
+Xperiq is an AI-powered experience intelligence platform that helps organizations collect, analyze, and act on feedback at scale. Unlike traditional survey tools, Xperiq combines enterprise-grade data collection with Crystal AI — an always-on intelligence layer that finds patterns, surfaces risks, and proposes concrete actions.
 
 ## Core Capabilities
 
@@ -52,7 +52,7 @@ Layer responses against customer segments, lifecycle stages, product usage, and 
 
 ## How It's Different
 
-Most XM platforms show you dashboards. Experient shows you what to do next. Crystal proposes actions, you confirm them, and the system learns from the outcomes — closing the loop between insight and execution.
+Most XM platforms show you dashboards. Xperiq shows you what to do next. Crystal proposes actions, you confirm them, and the system learns from the outcomes — closing the loop between insight and execution.
 
 ## Getting Started
 
@@ -121,7 +121,7 @@ Go to **Insights** and click **Generate Insights** to run the full Crystal analy
     quality_score: 0.95,
     content: `# Dashboard Overview
 
-The Experient dashboard gives you a real-time snapshot of your experience program health.
+The Xperiq dashboard gives you a real-time snapshot of your experience program health.
 
 ## Main Sections
 
@@ -164,7 +164,7 @@ Drag and resize dashboard cards. Your layout is saved per-user. Click the filter
     quality_score: 0.99,
     content: `# Introduction to Crystal AI
 
-Crystal is Experient's AI intelligence layer. It reads every survey response, identifies patterns, and surfaces actionable insights — all without you having to write a single query.
+Crystal is Xperiq's AI intelligence layer. It reads every survey response, identifies patterns, and surfaces actionable insights — all without you having to write a single query.
 
 ## What Crystal Does
 
@@ -290,7 +290,7 @@ Nothing executes without your explicit confirmation. Crystal's role is to reason
 
 ## Outcome Tracking
 
-When you apply a proposal, Experient tracks the outcome:
+When you apply a proposal, Xperiq tracks the outcome:
 - Did the follow-up survey get better response rates?
 - Did the alert fire when expected?
 - Did the re-run produce different insights?
@@ -422,7 +422,7 @@ Templates are versioned. If you update a template, existing surveys built from i
     quality_score: 0.95,
     content: `# Building Your First Workflow
 
-Workflows automate your response to experience data. When something happens in Experient (a low score, a specific response pattern, a threshold breach), a workflow can automatically take action.
+Workflows automate your response to experience data. When something happens in Xperiq (a low score, a specific response pattern, a threshold breach), a workflow can automatically take action.
 
 ## Workflow Anatomy
 
@@ -531,7 +531,7 @@ Automated NPS surveys send at the right moment without manual effort — capturi
 
 ## How Automated NPS Works
 
-Instead of sending surveys manually, you define rules: when a customer reaches a milestone (or a period of time), Experient automatically sends them an NPS survey. Responses flow into your dashboard alongside manually-triggered surveys.
+Instead of sending surveys manually, you define rules: when a customer reaches a milestone (or a period of time), Xperiq automatically sends them an NPS survey. Responses flow into your dashboard alongside manually-triggered surveys.
 
 ## Creating an Automated NPS Program
 
@@ -618,7 +618,7 @@ Time-based triggers send NPS surveys automatically at defined points in the cust
 
 You can create a sequence of NPS surveys across the lifecycle:
 - Day 7: "How was your first week?"
-- Day 30: "Are you getting value from Experient?"
+- Day 30: "Are you getting value from Xperiq?"
 - Day 90: "Would you recommend us to a colleague?"
 
 Each sends independently with its own frequency controls. Crystal tracks NPS trends across the sequence to identify where customers are succeeding or struggling.
@@ -640,7 +640,7 @@ Each sends independently with its own frequency controls. Crystal tracks NPS tre
     quality_score: 0.97,
     content: `# REST API Quick Start
 
-The Experient REST API lets you programmatically submit responses, retrieve insights, and manage surveys from your own applications.
+The Xperiq REST API lets you programmatically submit responses, retrieve insights, and manage surveys from your own applications.
 
 ## Authentication
 
@@ -648,13 +648,13 @@ All API requests require a Bearer token. Get your API key from **Settings → AP
 
 \`\`\`bash
 curl -H "Authorization: Bearer YOUR_API_KEY" \\
-  https://api.experient.ai/v1/surveys
+  https://api.xperiq.ai/v1/surveys
 \`\`\`
 
 ## Base URL
 
 \`\`\`
-https://api.experient.ai/v1
+https://api.xperiq.ai/v1
 \`\`\`
 
 ## Core Endpoints
@@ -714,11 +714,11 @@ POST /surveys/:surveyId/insights/generate
 ## SDKs
 
 Client libraries are available for:
-- **Node.js**: \`npm install @experient/sdk\`
-- **Python**: \`pip install experient-sdk\`
-- **Ruby**: \`gem install experient\`
+- **Node.js**: \`npm install @xperiq/sdk\`
+- **Python**: \`pip install xperiq-sdk\`
+- **Ruby**: \`gem install xperiq\`
 
-Full API reference at [api.experient.ai/docs](https://api.experient.ai/docs)`,
+Full API reference at [api.xperiq.ai/docs](https://api.xperiq.ai/docs)`,
   },
   {
     key: 'api-integrations/webhooks',
@@ -728,7 +728,7 @@ Full API reference at [api.experient.ai/docs](https://api.experient.ai/docs)`,
     quality_score: 0.94,
     content: `# Webhook Configuration
 
-Webhooks let Experient push real-time events to your servers — no polling required. Configure webhooks to receive notifications when responses come in, insights are generated, or alerts fire.
+Webhooks let Xperiq push real-time events to your servers — no polling required. Configure webhooks to receive notifications when responses come in, insights are generated, or alerts fire.
 
 ## Setting Up a Webhook
 
@@ -769,7 +769,7 @@ Webhooks let Experient push real-time events to your servers — no polling requ
 
 ## Verifying Webhook Signatures
 
-Verify the \`X-Experient-Signature\` header to confirm requests are from Experient:
+Verify the \`X-Xperiq-Signature\` header to confirm requests are from Xperiq:
 
 \`\`\`javascript
 const crypto = require('crypto');
@@ -804,7 +804,7 @@ After 5 failed attempts, the webhook is paused and you'll receive an alert.`,
     quality_score: 0.98,
     content: `# Data Security Overview
 
-Experient is built for enterprise security requirements. Here's how we protect your data.
+Xperiq is built for enterprise security requirements. Here's how we protect your data.
 
 ## Infrastructure
 
@@ -855,7 +855,7 @@ Security incidents trigger our SLA:
 - High: 4-hour response
 - Medium/Low: 24-hour response
 
-Report a security issue: security@experient.ai`,
+Report a security issue: security@xperiq.ai`,
   },
   {
     key: 'data-privacy/gdpr-compliance',
@@ -865,15 +865,15 @@ Report a security issue: security@experient.ai`,
     quality_score: 0.96,
     content: `# GDPR & Data Privacy
 
-Experient is fully GDPR-compliant. This guide explains how we handle personal data and how to manage your obligations as a data controller.
+Xperiq is fully GDPR-compliant. This guide explains how we handle personal data and how to manage your obligations as a data controller.
 
 ## Data Processing Agreement
 
-As a data processor on your behalf, Experient provides a standard DPA. Download from **Settings → Legal → Data Processing Agreement** or contact support for a custom DPA.
+As a data processor on your behalf, Xperiq provides a standard DPA. Download from **Settings → Legal → Data Processing Agreement** or contact support for a custom DPA.
 
 ## Respondent Rights
 
-Experient supports all GDPR data subject rights:
+Xperiq supports all GDPR data subject rights:
 
 **Right to Access**
 Export all data for a respondent via **Settings → Privacy → Export Respondent Data**. Provide the respondent's email address.
@@ -904,13 +904,13 @@ Best practices:
 
 ## Sub-processors
 
-Experient's current sub-processors:
+Xperiq's current sub-processors:
 - **Google Cloud** — infrastructure
 - **OpenRouter** — AI model routing (no data retained)
 - **Clerk** — authentication
 - **Sentry** — error monitoring (anonymised)
 
-Full list available at [experient.ai/legal/sub-processors](https://experient.ai/legal/sub-processors).`,
+Full list available at [xperiq.ai/legal/sub-processors](https://xperiq.ai/legal/sub-processors).`,
   },
 
   // ── Billing & Plans ───────────────────────────────────────────────────────
@@ -922,7 +922,7 @@ Full list available at [experient.ai/legal/sub-processors](https://experient.ai/
     quality_score: 0.97,
     content: `# Understanding Credits & Plans
 
-Experient uses a credit system to measure AI usage. Credits let you pay for exactly what you use, with a monthly allowance included in each plan.
+Xperiq uses a credit system to measure AI usage. Credits let you pay for exactly what you use, with a monthly allowance included in each plan.
 
 ## Plans
 
@@ -964,7 +964,7 @@ Monthly allowance credits expire at the end of each billing period. Purchased cr
 
 ## Enterprise Billing
 
-Enterprise plans include custom terms, purchase orders, and invoicing. Contact sales@experient.ai or your account manager.`,
+Enterprise plans include custom terms, purchase orders, and invoicing. Contact sales@xperiq.ai or your account manager.`,
   },
   {
     key: 'billing/upgrading-your-plan',
@@ -1009,7 +1009,7 @@ Invoices are emailed automatically and available at **Settings → Billing → I
 
 ## Questions?
 
-Contact billing@experient.ai or open a support ticket. We typically respond in under 2 hours.`,
+Contact billing@xperiq.ai or open a support ticket. We typically respond in under 2 hours.`,
   },
 
   // ── Troubleshooting ───────────────────────────────────────────────────────
@@ -1067,7 +1067,7 @@ Quick fixes for the most frequent problems.
 
 **SSO not working**
 - SAML metadata must match exactly — re-download from your IdP
-- Check the ACS URL and Entity ID in your IdP settings match Experient's values
+- Check the ACS URL and Entity ID in your IdP settings match Xperiq's values
 - Test in an incognito window to avoid cached sessions
 
 ## Account
@@ -1093,10 +1093,10 @@ When you can't find the answer in our docs, our support team is here to help.
 Click the ✨ Crystal icon on any page and ask your question. Crystal has access to all documentation and your account context.
 
 **Support Portal (this site)**
-Search docs, browse guides, or submit a ticket at [support.experient.ai](https://support.experient.ai/contact).
+Search docs, browse guides, or submit a ticket at [support.xperiq.ai](https://support.xperiq.ai/contact).
 
 **Email**
-Write directly to support@experient.ai. Include your Org ID from **Settings → General**.
+Write directly to support@xperiq.ai. Include your Org ID from **Settings → General**.
 
 ## Response Times (SLA)
 
@@ -1124,7 +1124,7 @@ To help us resolve your issue quickly, please include:
 If a response is taking too long or the issue is urgent:
 
 1. Open a new ticket and set severity to **P1 Critical**
-2. Email escalations@experient.ai with your ticket ID
+2. Email escalations@xperiq.ai with your ticket ID
 3. Enterprise customers: ping the dedicated Slack channel
 
 ## Known Issues

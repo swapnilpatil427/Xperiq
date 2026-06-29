@@ -23,7 +23,7 @@
  *   resetBrandTheme();
  */
 
-const STORAGE_KEY = 'experient_brand_theme';
+const STORAGE_KEY = 'xperiq_brand_theme';
 
 /** All brand token defaults — mirrors the :root block in theme.css */
 export const DEFAULT_BRAND_THEME = {
@@ -102,7 +102,7 @@ export function loadBrandTheme() {
 }
 
 /**
- * Reset all brand tokens back to the Experient defaults and clear localStorage.
+ * Reset all brand tokens back to the Xperiq defaults and clear localStorage.
  */
 export function resetBrandTheme() {
   applyBrandTheme(DEFAULT_BRAND_THEME);

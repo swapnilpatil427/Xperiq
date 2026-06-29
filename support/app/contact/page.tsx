@@ -6,7 +6,7 @@ import { ContactForm } from '@/components/contact/ContactForm'
 export const metadata: Metadata = {
   title: 'Contact Support',
   description:
-    "Get help from the Experient enterprise support team. Open a ticket, describe your issue, and we'll respond within 2 hours.",
+    "Get help from the Xperiq enterprise support team. Open a ticket, describe your issue, and we'll respond within 2 hours.",
   alternates: { canonical: '/contact' },
 }
 
@@ -93,11 +93,11 @@ export default function ContactPage() {
                 Direct Email
               </p>
               <a
-                href="mailto:support@experient.ai"
+                href="mailto:support@xperiq.ai"
                 className="font-label text-sm font-semibold text-primary hover:underline inline-flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-[16px]">mail</span>
-                support@experient.ai
+                support@xperiq.ai
               </a>
             </div>
           </div>

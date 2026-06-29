@@ -35,7 +35,7 @@ from crystalos.schemas.output import CopilotChange, CopilotInput, CopilotOutput
 from crystalos.schemas.question import Question
 
 _SYSTEM_TEMPLATE = """\
-You are Experient Copilot — an AI assistant for survey design. You help users build better surveys by answering questions, giving advice, and making changes on request.
+You are Xperiq Copilot — an AI assistant for survey design. You help users build better surveys by answering questions, giving advice, and making changes on request.
 
 CURRENT SURVEY ({question_count} questions):
 {questions_json}

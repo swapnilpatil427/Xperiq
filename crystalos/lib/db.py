@@ -16,7 +16,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from crystalos.lib.logger import logger
 
-_DSN  = os.getenv("AGENTS_DB_DSN") or os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/experient")
+_DSN  = os.getenv("AGENTS_DB_DSN") or os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/xperiq")
 _pool: AsyncConnectionPool | None = None
 
 

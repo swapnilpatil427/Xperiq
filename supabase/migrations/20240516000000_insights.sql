@@ -1,4 +1,4 @@
--- Experient AI Insights — Sprint 8
+-- Xperiq AI Insights — Sprint 8
 -- Tables: response_embeddings, insights (v2), insight_audit_log
 -- Extends: agent_runs (adds insight_generation run_type)
 -- Compatible with: Postgres 14+ with pgvector extension

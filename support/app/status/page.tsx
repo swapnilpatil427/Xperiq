@@ -9,7 +9,7 @@ export const revalidate = 60
 export const metadata: Metadata = {
   title: 'System Status',
   description:
-    'Real-time system status for Experient services. Check uptime, incidents, and maintenance windows.',
+    'Real-time system status for Xperiq services. Check uptime, incidents, and maintenance windows.',
   alternates: { canonical: '/status' },
 }
 
@@ -80,10 +80,10 @@ export default async function StatusPage() {
             <p className="font-body text-sm text-on-surface-variant">
               View full incident history at{' '}
               <a
-                href="https://status.experient.ai"
+                href="https://status.xperiq.ai"
                 className="text-primary hover:underline font-medium"
               >
-                status.experient.ai
+                status.xperiq.ai
               </a>
             </p>
           </div>

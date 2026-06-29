@@ -3,7 +3,7 @@ import { PageShell } from '@/components/layout/PageShell'
 
 export const metadata: Metadata = {
   title: 'Terms of Service',
-  description: "Experient's Terms of Service governing use of the platform and support services.",
+  description: "Xperiq's Terms of Service governing use of the platform and support services.",
   alternates: { canonical: '/legal/terms' },
 }
 
@@ -24,7 +24,7 @@ export default function TermsPage() {
         <div className="space-y-10 font-body text-on-surface-variant leading-relaxed">
           <section>
             <h2 className="font-headline text-xl font-bold text-on-surface mb-4">1. Acceptance of Terms</h2>
-            <p>By accessing or using Experient services (&quot;Services&quot;), you agree to be bound by these Terms of Service (&quot;Terms&quot;). If you are using the Services on behalf of an organization, you represent that you have authority to bind that organization to these Terms.</p>
+            <p>By accessing or using Xperiq services (&quot;Services&quot;), you agree to be bound by these Terms of Service (&quot;Terms&quot;). If you are using the Services on behalf of an organization, you represent that you have authority to bind that organization to these Terms.</p>
           </section>
 
           <section>
@@ -53,7 +53,7 @@ export default function TermsPage() {
               {[
                 'AI outputs may be inaccurate, incomplete, or outdated',
                 'You are responsible for reviewing AI-generated insights before acting on them',
-                'Experient does not warrant the accuracy of Crystal AI outputs',
+                'Xperiq does not warrant the accuracy of Crystal AI outputs',
                 'AI recommendations should be one input among many in your decision-making process',
               ].map(item => (
                 <li key={item} className="flex items-start gap-2">
@@ -66,7 +66,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="font-headline text-xl font-bold text-on-surface mb-4">4. Intellectual Property</h2>
-            <p>Experient retains all intellectual property rights in the Services, including Crystal AI models and algorithms. You retain ownership of your data and survey content. By using the Services, you grant Experient a limited license to process your data to provide the Services.</p>
+            <p>Xperiq retains all intellectual property rights in the Services, including Crystal AI models and algorithms. You retain ownership of your data and survey content. By using the Services, you grant Xperiq a limited license to process your data to provide the Services.</p>
           </section>
 
           <section>
@@ -76,7 +76,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="font-headline text-xl font-bold text-on-surface mb-4">6. Limitation of Liability</h2>
-            <p>To the maximum extent permitted by law, Experient&apos;s liability for any claim arising from the Services is limited to the amount you paid in the 12 months preceding the claim. Experient is not liable for indirect, incidental, special, or consequential damages.</p>
+            <p>To the maximum extent permitted by law, Xperiq&apos;s liability for any claim arising from the Services is limited to the amount you paid in the 12 months preceding the claim. Xperiq is not liable for indirect, incidental, special, or consequential damages.</p>
           </section>
 
           <section>
@@ -86,7 +86,7 @@ export default function TermsPage() {
 
           <section>
             <h2 className="font-headline text-xl font-bold text-on-surface mb-4">8. Contact</h2>
-            <p>For legal notices: legal@experient.ai</p>
+            <p>For legal notices: legal@xperiq.ai</p>
           </section>
         </div>
       </div>

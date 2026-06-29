@@ -17,7 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
-import { ExperientCopilot } from '../components/ExperientCopilot';
+import { XperiqCopilot } from '../components/ExperientCopilot';
 import { TagSelector } from '../components/TagSelector';
 import type { Question, Template, SkipLogicRule, DisplayLogic } from '../types';
 import type { SurveyTag } from '../lib/api';
@@ -2412,7 +2412,7 @@ export function SurveyBuilderPage() {
       <div className="fixed pointer-events-none -z-10 rounded-full"
         style={{ top: '-5%', right: '-10%', width: 600, height: 600, background: 'rgba(224,231,255,0.25)', filter: 'blur(150px)' }} />
 
-      <ExperientCopilot
+      <XperiqCopilot
         context={{
           surveyTitle,
           questionCount: questions.length,

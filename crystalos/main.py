@@ -1,4 +1,4 @@
-"""Experient Copilot Agents — FastAPI application.
+"""Xperiq Copilot Agents — FastAPI application.
 
 Endpoints:
   POST /orchestrate                                    — Start a survey creation run (async background)
@@ -136,7 +136,7 @@ async def lifespan(app: FastAPI):
         )
         print(
             f"\n{'─' * 58}\n"
-            f"  Experient Agents  ·  AGENTS_ENV = {_env}\n"
+            f"  Xperiq Agents  ·  AGENTS_ENV = {_env}\n"
             f"{'─' * 58}\n"
             f"{_banner_rows}\n"
             f"{'─' * 58}\n",
@@ -177,9 +177,9 @@ async def lifespan(app: FastAPI):
 # ── FastAPI app ──────────────────────────────────────────────────────────────────
 
 app = FastAPI(
-    title="Experient Copilot Agents",
+    title="Xperiq Copilot Agents",
     version="2.0.0",
-    description="Survey orchestration + editing microservice for Experient Copilot.",
+    description="Survey orchestration + editing microservice for Xperiq Copilot.",
     docs_url=None if _IS_PROD else "/docs",
     redoc_url=None,
     lifespan=lifespan,

@@ -59,7 +59,7 @@ interface ChatMessage {
   recommendations?: Recommendation[];
 }
 
-export interface ExperientCopilotProps {
+export interface XperiqCopilotProps {
   context?:                 CopilotContext;
   onRefine?:                (message: string, history: Array<{ role: 'user' | 'assistant'; content: string }>) => Promise<RefineResult>;
   onAction?:                (action: CopilotAction) => void;
@@ -104,7 +104,7 @@ function buildGreeting({ surveyTitle, questionCount, surveyType, surveySettings,
     msg += ' Tell me what to change and I\'ll apply it instantly.';
     return msg;
   }
-  return `Hi, I'm Crystal — Experient's AI copilot. Tell me what you'd like to do and I'll handle it.`;
+  return `Hi, I'm Crystal — Xperiq's AI copilot. Tell me what you'd like to do and I'll handle it.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ function buildGreeting({ surveyTitle, questionCount, surveyType, surveySettings,
 // ─────────────────────────────────────────────────────────────────────────────
 
 // onAction is scaffolded for future UI commands (open panels, highlight questions, etc.)
-export function ExperientCopilot({ context = {}, onRefine, onAction, onApplyRecommendation, recommendations, quickCommands, initiallyOpen = false, initialMessage }: ExperientCopilotProps) {
+export function XperiqCopilot({ context = {}, onRefine, onAction, onApplyRecommendation, recommendations, quickCommands, initiallyOpen = false, initialMessage }: XperiqCopilotProps) {
   const [isOpen, setIsOpen] = useState(initiallyOpen);
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const msgs: ChatMessage[] = [{ role: 'ai', text: buildGreeting(context) }];

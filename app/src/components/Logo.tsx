@@ -13,7 +13,7 @@ export function LogoMark({ size = 40, className = '' }: LogoMarkProps) {
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={className}
-      aria-label="Experient logo mark"
+      aria-label="Xperiq logo mark"
     >
       <defs>
         <linearGradient id={`${id}-tr`} x1="50%" y1="8%" x2="92%" y2="50%">
@@ -85,7 +85,7 @@ export function LogoFull({ height = 32, className = '', showTagline = false }: L
             letterSpacing: '-0.03em',
           }}
         >
-          Experient
+          Xperiq
         </span>
         {showTagline && (
           <span
@@ -99,7 +99,7 @@ export function LogoFull({ height = 32, className = '', showTagline = false }: L
               marginTop: 2,
             }}
           >
-            Dimensional Intelligence
+            Intelligence for Every Experience
           </span>
         )}
       </div>

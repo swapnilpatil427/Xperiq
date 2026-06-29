@@ -8,7 +8,7 @@ export const revalidate = 3600
 export const metadata: Metadata = {
   title: 'Changelog',
   description:
-    'Product updates, new features, bug fixes, and improvements to the Experient platform.',
+    'Product updates, new features, bug fixes, and improvements to the Xperiq platform.',
   alternates: { canonical: '/changelog' },
 }
 

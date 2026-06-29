@@ -186,7 +186,7 @@ export function LandingPage() {
                 ))}
               </div>
               <p className="text-sm text-on-surface-variant">
-                <strong className="text-on-surface">2,400+</strong> teams building on Experient
+                <strong className="text-on-surface">2,400+</strong> teams building on Xperiq
               </p>
             </motion.div>
           </motion.div>
@@ -259,7 +259,7 @@ export function LandingPage() {
                     <Icon name="diamond" fill={1} size={18} className="text-white" />
                   </div>
                   <span className="text-sm font-bold font-headline text-on-surface">
-                    Crystal · Experient Copilot
+                    Crystal · Xperiq Copilot
                   </span>
                   <span className="ml-auto w-2 h-2 rounded-full bg-green-400 animate-pulse" />
                 </div>
@@ -592,7 +592,7 @@ export function LandingPage() {
                   style={{ background: 'rgba(131,41,200,0.08)', border: '1px solid rgba(131,41,200,0.2)', color: '#8329c8' }}
                 >
                   <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse" />
-                  Experient Copilot
+                  Xperiq Copilot
                 </div>
               </motion.div>
 
