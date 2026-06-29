@@ -20,6 +20,7 @@ const RECON_PATH    = _require.resolve(resolve(__dirname, '../scheduler/jobs/rec
 const COSTDOWN_PATH = _require.resolve(resolve(__dirname, '../scheduler/jobs/costDownDividend'));
 const LEDGER_MAINT_PATH = _require.resolve(resolve(__dirname, '../scheduler/jobs/creditLedgerMaintenance'));
 const CRED_HEALTH_PATH  = _require.resolve(resolve(__dirname, '../scheduler/jobs/credentialHealth'));
+const PAYMENTS_PATH     = _require.resolve(resolve(__dirname, '../lib/payments'));
 const REGISTRY_PATH = _require.resolve(resolve(__dirname, '../scheduler/registry'));
 
 function fakeMod(id, exports) { return { id, filename: id, loaded: true, exports, children: [] }; }
@@ -49,7 +50,7 @@ beforeEach(() => {
   clientQuery = vi.fn(async () => ({ rows: [{ locked: false }] }));
 });
 afterAll(() => {
-  for (const p of [DB_PATH, LOGGER_PATH, RUNNER_PATH, LEADER_PATH, EXPIRE_PATH, RECON_PATH, COSTDOWN_PATH, LEDGER_MAINT_PATH, CRED_HEALTH_PATH, REGISTRY_PATH]) {
+  for (const p of [DB_PATH, LOGGER_PATH, RUNNER_PATH, LEADER_PATH, EXPIRE_PATH, RECON_PATH, COSTDOWN_PATH, LEDGER_MAINT_PATH, CRED_HEALTH_PATH, PAYMENTS_PATH, REGISTRY_PATH]) {
     delete _require.cache[p];
   }
 });
@@ -226,5 +227,16 @@ describe('credential-health job', () => {
       probe('stripe', true, { status: 'ok', expiresAt: soon }),
     ]);
     expect(res.affected).toBe(0); // valid even though expiring soon (alert fires off the gauge)
+  });
+
+  it('DEFAULT_PROBES skips stripe when the payments rail is not operational', () => {
+    injectDeps();
+    _require.cache[PAYMENTS_PATH] = fakeMod(PAYMENTS_PATH, { isStripeConfigured: () => false });
+    delete _require.cache[CRED_HEALTH_PATH];
+    const { DEFAULT_PROBES } = _require(CRED_HEALTH_PATH);
+    const stripe = DEFAULT_PROBES.find((p) => p.integration === 'stripe');
+    expect(stripe.configured()).toBe(false);
+    delete _require.cache[PAYMENTS_PATH];
+    delete _require.cache[CRED_HEALTH_PATH];
   });
 });

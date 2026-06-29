@@ -36,6 +36,9 @@ from crystalos.lib.constants import (
     NARRATE_MAX_ATTEMPTS, REPORT_QUALITY_RENARRATE_THRESHOLD,
     PRIOR_INSIGHT_MIN_TRUST, PRIOR_INSIGHT_MAX_COUNT, PRIOR_INSIGHT_LAYERS,
     USE_SKILL_RUNTIME,
+    PROGRESSIVE_TIER_FIRST_VOICES, PROGRESSIVE_TIER_EARLY_SIGNALS,
+    PROGRESSIVE_TIER_GROWING_PICTURE, PROGRESSIVE_TIER_FULL_REPORT,
+    STOP_LEGACY_CHECKPOINT_WRITE,
 )
 from crystalos.lib.logger import logger
 from crystalos.lib.openrouter import call_agent
@@ -69,7 +72,12 @@ from crystalos.agents.tiered_report import run_tiered_report_agent
 from crystalos.specialists.registry import get_registry
 from crystalos.schemas.context import OrgContextModel, SurveyContextModel
 from crystalos.lib.checkpoint_store import write_checkpoint_blob
-from crystalos.lib.constants import CHECKPOINT_BLOB_SCHEMA_VERSION
+from crystalos.lib.constants import (
+    CHECKPOINT_BLOB_SCHEMA_VERSION,
+    INSIGHT_CHECKPOINTS_V2_ENABLED,
+    INSIGHT_PROFILE_AUTOMATED, INSIGHT_PROFILE_REFRESH,
+    INSIGHT_PROFILE_MANUAL_EXPERT, INSIGHT_PROFILE_MANUAL_QUICK,
+)
 
 
 # ── Signal extraction helpers ─────────────────────────────────────────────────
@@ -157,6 +165,29 @@ class InsightState(TypedDict, total=False):
     last_report_response_count: int               # response count when last report.* insights were generated
     prior_insights:       list[dict[str, Any]]    # high-confidence insights from last run — used for incremental narration and delta report
     prior_context_run_id: str                     # run_id of the anchor run whose insights were used as prior context
+    # ── Insight Pipeline v2 — Phase 0.5 (node_delta_compute) ──────────────────
+    delta_from_prior:     dict[str, Any] | None   # compute_delta() output, or None on bootstrap / load failure
+    meaningful_delta:     bool                     # True = write checkpoint (always True on bootstrap)
+    prior_checkpoint_summaries: list[dict[str, Any]]  # [{checkpoint_number, created_at, nps}], oldest first
+    # Insight Pipeline v2 — Phase 2/3 (resolve_context + profiles)
+    profile:              str                      # automated_incremental | refresh | manual_expert | manual_quick
+    actor:                str                      # system:stream | system:scheduler | user:{id}
+    survey_settings:      dict[str, Any]           # effective settings (3-level COALESCE merge)
+    parent_checkpoint:    dict[str, Any] | None    # latest automated checkpoint row (v2 or legacy)
+    prior_checkpoints:    list[dict[str, Any]]     # walked parent chain (full rows / blobs)
+    watermark:            Any                      # parent.response_high_watermark (datetime) or None
+    window_start:         Any                      # manual/refresh window lower bound (datetime) or None
+    window_end:           Any                      # manual/refresh window upper bound (datetime) or None
+    metric_snapshots:     list[dict[str, Any]]     # snapshots loaded per profile rules
+    config_hash:          str                      # sha256(canonical settings) for lineage
+    sample_ids:           set[str]                 # manual/refresh sampled response ids
+    sample_stats:         dict[str, Any]           # {corpus_size, sampled, window_start, window_end}
+    parent_checkpoint_id: str                      # explicit override / resolved parent id (v2)
+    config_override:      dict[str, Any]           # caller config override merged into settings
+    skip_run:             bool                     # resolve_context decided to abort
+    skip_reason:          str                      # reason string for skip_run
+    skip_report:          bool                     # automated_report_generation_enabled=False routing
+    report_id:            str                      # insight_reports row id (manual modes)
 
 
 # ── Model config ──────────────────────────────────────────────────────────────
@@ -166,6 +197,22 @@ DEFAULT_SEED = 42
 
 # Time windows for per-window metric publishing
 WINDOWS = ["all_time", "last_30d", "last_7d"]
+
+
+class _ManualSampleLoaded(Exception):
+    """Control-flow sentinel: resolve_context already produced the manual/refresh
+    sample, so node_ingest skips its stratified-sampling block (raised + caught
+    inside node_ingest only — never propagates)."""
+
+# Tier-milestone response counts (Insight Pipeline v2 §9 decision table). A run whose
+# total response count lands on one of these always writes a checkpoint, even when the
+# metric/topic delta is below the meaningful threshold.
+_TIER_MILESTONE_COUNTS: frozenset[int] = frozenset({
+    PROGRESSIVE_TIER_FIRST_VOICES,     # 10
+    PROGRESSIVE_TIER_EARLY_SIGNALS,    # 40
+    PROGRESSIVE_TIER_GROWING_PICTURE,  # 70
+    PROGRESSIVE_TIER_FULL_REPORT,      # 100
+})
 
 
 # ── Trust score helpers ───────────────────────────────────────────────────────
@@ -620,6 +667,357 @@ async def _generate_action_recommendations(state: dict) -> None:
         logger.warning("action_recommendations_failed", survey_id=survey_id, error=str(exc))
 
 
+# ── Node: resolve_context (Insight Pipeline v2 — Phase 2) ─────────────────────
+
+_MANUAL_PROFILES: frozenset[str] = frozenset({
+    INSIGHT_PROFILE_MANUAL_EXPERT, INSIGHT_PROFILE_MANUAL_QUICK,
+})
+
+
+def _config_hash(settings: dict) -> str:
+    """sha256 of canonical-JSON settings — stored on each checkpoint for audit (03 §2)."""
+    try:
+        canonical = json.dumps(settings or {}, sort_keys=True, default=str)
+    except Exception:
+        canonical = str(settings)
+    return hashlib.sha256(canonical.encode()).hexdigest()[:32]
+
+
+async def walk_parent_chain(
+    survey_id: str,
+    org_id: str,
+    lookback: int,
+    max_age_days: int | None = None,
+) -> list[dict]:
+    """Walk the automated checkpoint chain newest→oldest, up to ``lookback`` nodes.
+
+    Reads ``insight_checkpoints_v2`` (lane='automated') following ``parent_checkpoint_id``
+    when available. Falls back to ``survey_insight_checkpoints`` ordered by
+    ``checkpoint_number DESC`` when v2 is empty / absent. Rows older than
+    ``max_age_days`` (when set) are excluded. Never raises — returns [] on any failure.
+
+    Returns rows newest-first (the head is index 0). Each row is a plain dict of the
+    columns present in whichever table was used.
+    """
+    if lookback <= 0:
+        return []
+    rows: list[dict] = []
+    # ── Try v2 (linked list) first ────────────────────────────────────────────
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT * FROM insight_checkpoints_v2
+                       WHERE survey_id = %s AND org_id = %s AND lane = 'automated'
+                       ORDER BY checkpoint_number DESC
+                       LIMIT %s""",
+                    (survey_id, org_id, lookback),
+                )
+                fetched = await cur.fetchall()
+                if fetched:
+                    cols = [d[0] for d in cur.description]
+                    rows = [dict(zip(cols, r)) for r in fetched]
+    except Exception as exc:
+        logger.debug("walk_parent_chain_v2_unavailable", survey_id=survey_id, error=str(exc))
+        rows = []
+
+    # ── Fallback: legacy survey_insight_checkpoints ───────────────────────────
+    if not rows:
+        try:
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT * FROM survey_insight_checkpoints
+                           WHERE survey_id = %s AND org_id = %s
+                           ORDER BY checkpoint_number DESC
+                           LIMIT %s""",
+                        (survey_id, org_id, lookback),
+                    )
+                    fetched = await cur.fetchall()
+                    if fetched:
+                        cols = [d[0] for d in cur.description]
+                        rows = [dict(zip(cols, r)) for r in fetched]
+        except Exception as exc:
+            logger.warning("walk_parent_chain_legacy_failed", survey_id=survey_id, error=str(exc))
+            return []
+
+    # ── Age filter ────────────────────────────────────────────────────────────
+    if max_age_days is not None and rows:
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+        cutoff = _dt.now(_tz.utc) - _td(days=max_age_days)
+        kept = []
+        for r in rows:
+            created = r.get("created_at")
+            if created is None:
+                kept.append(r)
+                continue
+            try:
+                if hasattr(created, "tzinfo"):
+                    cdt = created if created.tzinfo else created.replace(tzinfo=_tz.utc)
+                    if cdt >= cutoff:
+                        kept.append(r)
+                else:
+                    kept.append(r)
+            except Exception:
+                kept.append(r)
+        rows = kept
+    return rows
+
+
+async def node_resolve_context(state: dict) -> dict:
+    """Resolve run context: settings, parent chain, watermark, window, snapshots.
+
+    First node in the v2 graph (entry point). Implements 04 §2 + 02 §8 across all
+    profiles. Never crashes the pipeline — on any load failure it falls back to
+    defaults so the run proceeds (degraded) rather than aborting.
+
+    Sets in state: profile, survey_settings, parent_checkpoint, prior_checkpoints,
+    watermark, new_response_ids (automated), window_start/window_end (manual/refresh),
+    sample_ids/sample_stats (manual/refresh), metric_snapshots, config_hash,
+    is_bootstrap, skip_run/skip_reason, skip_report.
+    """
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+    survey_id = state["survey_id"]
+    org_id    = state["org_id"]
+    run_id    = state["run_id"]
+    trigger   = state.get("trigger", "schedule")
+    profile   = state.get("profile") or INSIGHT_PROFILE_AUTOMATED
+    await _update_heartbeat(run_id)
+
+    # ── Load effective settings (3-level merge) ──────────────────────────────
+    try:
+        from crystalos.lib.insight_settings import load_insight_settings
+        settings = await load_insight_settings(survey_id, org_id)
+    except Exception as exc:
+        logger.warning("resolve_context_settings_failed", survey_id=survey_id, error=str(exc))
+        settings = {}
+
+    # Merge caller config_override on top (highest precedence).
+    config_override = state.get("config_override") or {}
+    if config_override:
+        settings = {**settings, **config_override}
+
+    config_hash = _config_hash(settings)
+
+    # ── enabled-flag routing (04 §16) — automated only ───────────────────────
+    is_automated = profile == INSIGHT_PROFILE_AUTOMATED
+    skip_report = False
+    if is_automated:
+        if settings.get("automated_insights_enabled") is False:
+            logger.info("resolve_context_automated_disabled", survey_id=survey_id)
+            return {
+                **state, "profile": profile, "survey_settings": settings,
+                "config_hash": config_hash, "skip_run": True,
+                "skip_reason": "automated_disabled",
+            }
+        skip_report = settings.get("automated_report_generation_enabled") is False
+
+    # ── Resolve parent (latest automated) for trail/watermark ─────────────────
+    lookback = int(settings.get("prior_checkpoint_lookback", 5) or 5)
+    max_age  = settings.get("prior_checkpoint_max_age_days")
+    try:
+        max_age = int(max_age) if max_age is not None else None
+    except (TypeError, ValueError):
+        max_age = None
+    prior_chain = await walk_parent_chain(survey_id, org_id, lookback, max_age_days=max_age)
+    parent = prior_chain[0] if prior_chain else None
+    parent_ckpt_id = state.get("parent_checkpoint_id") or (
+        str(parent.get("id")) if parent and parent.get("id") else ""
+    )
+
+    # ── Watermark = parent.response_high_watermark; bootstrap → epoch ─────────
+    watermark = None
+    if parent is not None:
+        watermark = parent.get("response_high_watermark")
+    is_bootstrap = parent is None
+
+    out: dict = {
+        **state,
+        "profile":              profile,
+        "survey_settings":      settings,
+        "config_hash":          config_hash,
+        "parent_checkpoint":    parent,
+        "parent_checkpoint_id": parent_ckpt_id,
+        "prior_checkpoints":    prior_chain,
+        "watermark":            watermark,
+        "is_bootstrap":         is_bootstrap,
+        "skip_report":          skip_report,
+        "skip_run":             False,
+    }
+
+    # ── Profile-specific resolution ──────────────────────────────────────────
+    if is_automated:
+        # new_response_ids via submitted_at > watermark. Bootstrap (watermark None)
+        # loads nothing here — node_ingest does the wide bootstrap sample.
+        new_ids: set[str] = set()
+        max_submitted = None
+        if watermark is not None:
+            try:
+                async with db._pool_conn().connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """SELECT id, submitted_at FROM responses
+                               WHERE survey_id = %s AND submitted_at > %s
+                                 AND deleted_at IS NULL""",
+                            (survey_id, watermark),
+                        )
+                        for r in await cur.fetchall():
+                            new_ids.add(str(r[0]))
+                            if r[1] is not None and (max_submitted is None or r[1] > max_submitted):
+                                max_submitted = r[1]
+            except Exception as exc:
+                logger.warning("resolve_context_new_ids_failed", survey_id=survey_id, error=str(exc))
+        out["new_response_ids"] = new_ids
+
+        # Threshold gate (04 §2 step 6): skip when below stream threshold AND not
+        # bootstrap AND not a tier milestone. Milestone is detected later by count;
+        # here we honour an explicit milestone trigger.
+        threshold = int(settings.get("stream_response_threshold", 10) or 10)
+        is_milestone = trigger == "milestone"
+        if (not is_bootstrap) and (not is_milestone) and watermark is not None and len(new_ids) < threshold:
+            logger.info("resolve_context_below_threshold", survey_id=survey_id,
+                        new_responses=len(new_ids), threshold=threshold)
+            out["skip_run"] = True
+            out["skip_reason"] = "below_threshold"
+            return out
+
+        # 1 snapshot for anomaly context.
+        out["metric_snapshots"] = await _load_recent_snapshots(survey_id, 1)
+        out["window_start"] = None
+        out["window_end"]   = None
+        return out
+
+    # ── Manual / refresh: resolve window + sample + snapshots ─────────────────
+    now = _dt.now(_tz.utc)
+    ws = state.get("window_start")
+    we = state.get("window_end") or now
+
+    if profile == INSIGHT_PROFILE_REFRESH:
+        lookback_days = int(settings.get("refresh_lookback_days", 30) or 30)
+        min_count     = int(settings.get("refresh_min_response_count", 25) or 25)
+        we = now
+        ws = now - _td(days=lookback_days)
+        corpus = await _load_response_meta_in_window(survey_id, ws, we)
+        # Expand backwards until min_count or 365d cap.
+        guard = 0
+        while len(corpus) < min_count and (we - ws) < _td(days=365) and guard < 60:
+            ws = ws - _td(days=7)
+            corpus = await _load_response_meta_in_window(survey_id, ws, we)
+            guard += 1
+        sample_ids = {str(r["id"]) for r in corpus}
+        out["force_regenerate"] = True
+        out["sample_ids"]   = sample_ids
+        out["sample_stats"] = {"corpus_size": len(corpus), "sampled": len(sample_ids),
+                               "window_start": str(ws), "window_end": str(we)}
+        out["metric_snapshots"] = await _load_recent_snapshots(survey_id, 5)
+
+    elif profile == INSIGHT_PROFILE_MANUAL_EXPERT:
+        if ws is None:
+            ws = now - _td(days=90)
+        corpus = await _load_response_meta_in_window(survey_id, ws, we)
+        full_cap = int(settings.get("manual_expert_full_corpus_cap", 500) or 500)
+        max_corpus = int(settings.get("manual_expert_max_corpus", 2000) or 2000)
+        if len(corpus) <= full_cap:
+            sample_ids = {str(r["id"]) for r in corpus}
+        else:
+            from crystalos.tools.sampling import stratified_sample
+            sample_ids = set(stratified_sample(corpus, max_corpus))
+        snap_n = int(settings.get("manual_expert_snapshot_count", 5) or 5)
+        out["force_regenerate"] = True
+        out["sample_ids"]   = sample_ids
+        out["sample_stats"] = {"corpus_size": len(corpus), "sampled": len(sample_ids),
+                               "window_start": str(ws), "window_end": str(we)}
+        out["metric_snapshots"] = await _load_recent_snapshots(survey_id, snap_n)
+
+    elif profile == INSIGHT_PROFILE_MANUAL_QUICK:
+        if ws is None:
+            wdays = int(settings.get("manual_quick_default_window_days", 14) or 14)
+            ws = now - _td(days=wdays)
+        corpus = await _load_response_meta_in_window(survey_id, ws, we)
+        cap = int(settings.get("manual_quick_sample_cap", 150) or 150)
+        from crystalos.tools.sampling import recency_weighted_sample
+        sample_ids = set(recency_weighted_sample(corpus, cap))
+        snap_n = int(settings.get("manual_quick_snapshot_count", 2) or 2)
+        out["force_regenerate"] = True
+        out["sample_ids"]   = sample_ids
+        out["sample_stats"] = {"corpus_size": len(corpus), "sampled": len(sample_ids),
+                               "window_start": str(ws), "window_end": str(we)}
+        out["metric_snapshots"] = await _load_recent_snapshots(survey_id, snap_n)
+
+    out["window_start"] = ws
+    out["window_end"]   = we
+    # Manual/refresh do not use the automated watermark path.
+    out["new_response_ids"] = out.get("sample_ids", set())
+
+    # Empty window guard for manual profiles (12 error-handling: 400 empty_window).
+    if profile in _MANUAL_PROFILES and not out.get("sample_ids"):
+        out["skip_run"] = True
+        out["skip_reason"] = "empty_window"
+
+    logger.info("resolve_context_done", survey_id=survey_id, profile=profile,
+                is_bootstrap=is_bootstrap, parent=parent_ckpt_id or "none",
+                sampled=len(out.get("sample_ids", set())) if profile != INSIGHT_PROFILE_AUTOMATED
+                else len(out.get("new_response_ids", set())))
+    return out
+
+
+async def _load_recent_snapshots(survey_id: str, limit: int) -> list[dict]:
+    """Load the last N survey_metric_snapshots (newest first). Never raises."""
+    if limit <= 0:
+        return []
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT * FROM survey_metric_snapshots
+                       WHERE survey_id = %s
+                       ORDER BY captured_at DESC LIMIT %s""",
+                    (survey_id, limit),
+                )
+                rows = await cur.fetchall()
+                if not rows:
+                    return []
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, r)) for r in rows]
+    except Exception as exc:
+        logger.warning("load_recent_snapshots_failed", survey_id=survey_id, error=str(exc))
+        return []
+
+
+async def _load_response_meta_in_window(survey_id: str, ws, we) -> list[dict]:
+    """Load lightweight response metadata in [ws, we] for sampling. Never raises.
+
+    Uses submitted_at (the responses table has no created_at) and excludes soft-deleted.
+    """
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT id, submitted_at, nps_score, ai_sentiment, ai_sentiment_score
+                       FROM responses
+                       WHERE survey_id = %s AND deleted_at IS NULL
+                         AND submitted_at >= %s AND submitted_at <= %s""",
+                    (survey_id, ws, we),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+                out = []
+                for r in rows:
+                    d = dict(zip(cols, r))
+                    out.append({
+                        "id": str(d.get("id")),
+                        "submitted_at": d.get("submitted_at"),
+                        "nps_score": d.get("nps_score"),
+                        "sentiment": d.get("ai_sentiment"),
+                        "sentiment_score": d.get("ai_sentiment_score"),
+                    })
+                return out
+    except Exception as exc:
+        logger.warning("load_response_meta_window_failed", survey_id=survey_id, error=str(exc))
+        return []
+
+
 # ── Node: ingest ──────────────────────────────────────────────────────────────
 
 async def node_ingest(state: dict) -> dict:
@@ -629,6 +1027,26 @@ async def node_ingest(state: dict) -> dict:
     user_id   = state.get("user_id", "")
 
     await _update_heartbeat(run_id)
+
+    # ── resolve_context skip short-circuit (v2) ───────────────────────────────
+    # When resolve_context aborted (below threshold / automated disabled / empty
+    # window), mark the run completed-skipped and pass through with no data so the
+    # remaining nodes no-op. node_publish honours skip_run too as a backstop.
+    if state.get("skip_run"):
+        reason = state.get("skip_reason", "skipped")
+        logger.info("node_ingest_skip_run", survey_id=survey_id, reason=reason)
+        try:
+            async with db._pool_conn().connection() as conn:
+                await conn.execute(
+                    """UPDATE agent_runs SET status='completed', completed_at=NOW()
+                       WHERE id=%s""",
+                    (run_id,),
+                )
+        except Exception:
+            pass
+        await _emit_event(run_id, "run_complete", "resolve_context",
+                          {"skipped": True, "reason": reason})
+        return {**state, "responses": [], "errors": state.get("errors", [])}
 
     # Set up async-safe trace context so all log lines in this pipeline run
     # carry run_id, org_id, and trace_id without explicit threading.
@@ -706,6 +1124,8 @@ async def node_ingest(state: dict) -> dict:
     # Bootstrap detection: if no topic centroids exist this is the first run.
     # First run loads more responses to seed the centroid registry; incremental
     # runs load fewer (metrics window) and cap new-response processing at 50.
+    # Insight Pipeline v2: resolve_context sets is_bootstrap from parent-checkpoint
+    # absence — prefer it when present; centroid presence is the fallback signal.
     is_bootstrap = True
     try:
         async with db._pool_conn().connection() as conn:
@@ -717,8 +1137,15 @@ async def node_ingest(state: dict) -> dict:
                 is_bootstrap = await cur.fetchone() is None
     except Exception:
         pass  # table may not exist yet — treat as bootstrap
+    if "is_bootstrap" in state and state.get("profile"):
+        # v2 path: resolve_context already decided bootstrap (no parent checkpoint).
+        # A survey can have centroids but no checkpoint chain (pre-v2 data); honour
+        # resolve_context's signal so the watermark/delta logic stays consistent,
+        # but never claim bootstrap when centroids exist (would re-seed duplicates).
+        is_bootstrap = bool(state["is_bootstrap"]) and is_bootstrap
 
     force_regenerate = state.get("force_regenerate", False)
+    profile = state.get("profile") or INSIGHT_PROFILE_AUTOMATED
 
     # Manual runs (force_regenerate=True) get the same wide sample as bootstrap
     # so the user always receives the highest-quality picture, not an incremental window.
@@ -728,6 +1155,34 @@ async def node_ingest(state: dict) -> dict:
         else INGEST_MAX_RESPONSES_CAP
     )
     new_response_cap = INGEST_NEW_RESPONSE_ABSA_CAP
+
+    # ── v2 manual/refresh: load exactly the resolved sample window ─────────────
+    # resolve_context computed sample_ids (stratified/recency) for manual_expert,
+    # manual_quick, and refresh. Load just those rows — no stratified re-sampling.
+    # The sample is already capped in resolve_context; we trust it here. Sets
+    # _manual_response_rows so the stratified-sampling block below is skipped.
+    _v2_sample_ids = state.get("sample_ids") or set()
+    _manual_response_rows: list[dict] | None = None
+    if profile in (INSIGHT_PROFILE_MANUAL_EXPERT, INSIGHT_PROFILE_MANUAL_QUICK,
+                   INSIGHT_PROFILE_REFRESH) and _v2_sample_ids:
+        try:
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """SELECT id, answers, submitted_at,
+                                  ai_enriched_at, ai_sentiment, ai_sentiment_score,
+                                  ai_emotion, ai_effort_score, nps_score, ai_topics
+                           FROM responses
+                           WHERE survey_id = %s AND id = ANY(%s) AND deleted_at IS NULL
+                           ORDER BY submitted_at ASC NULLS LAST""",
+                        (survey_id, list(_v2_sample_ids)),
+                    )
+                    rows = await cur.fetchall()
+                    cols = [desc[0] for desc in cur.description]
+                    _manual_response_rows = [dict(zip(cols, r)) for r in rows]
+        except Exception as exc:
+            logger.warning("node_ingest_manual_sample_load_failed", error=str(exc))
+            _manual_response_rows = None
 
     # ── Stratified response sampling ─────────────────────────────────────────
     # Goal: load a representative sample of responses across the survey's lifetime.
@@ -757,7 +1212,15 @@ async def node_ingest(state: dict) -> dict:
     _survey_age_days  = 0.0
     _used_sql_ntile   = False
 
+    # v2 manual/refresh fast path: sample already resolved by resolve_context.
+    # Setting _total_available high makes every tier branch a no-op (total > limit
+    # but the merged-id queries below all key off selected ids we override after).
+    # We simply skip the whole sampling block when the manual rows are present.
+    _skip_stratified = _manual_response_rows is not None
+
     try:
+        if _skip_stratified:
+            raise _ManualSampleLoaded()  # jump to the manual-assignment handler below
         # ── Step 1: Count responses and measure survey lifespan ───────────────
         # MIN/MAX submitted_at adds negligible cost — same index scan as COUNT(*).
         # The age drives dynamic bucket count so each bucket ≈ a consistent
@@ -932,6 +1395,12 @@ async def node_ingest(state: dict) -> dict:
             sql_ntile=_used_sql_ntile,
         )
 
+    except _ManualSampleLoaded:
+        # v2 manual/refresh: response_rows already loaded from resolve_context sample.
+        response_rows = _manual_response_rows or []
+        _total_available = len(response_rows)
+        logger.info("node_ingest_manual_sample", survey_id=survey_id,
+                    selected=len(response_rows), profile=profile)
     except Exception as exc:
         # Fallback: simple recency-based query — never fails the pipeline
         logger.warning("node_ingest_stratified_failed", error=str(exc))
@@ -1029,6 +1498,13 @@ async def node_ingest(state: dict) -> dict:
         if not (r.get("ai_enriched_at") and r.get("ai_sentiment") and r.get("ai_emotion"))
         or (r.get("ai_enriched_at") and not r.get("ai_topics"))
     }
+    # v2 automated_incremental: restrict to responses after the parent watermark.
+    # resolve_context computed new_response_ids via submitted_at > watermark; only
+    # those are processed (do not re-enrich pre-watermark verbatims — 04 §3 critical
+    # rule). Bootstrap keeps the full enrichment-based set.
+    _wm_new_ids = state.get("new_response_ids") or set()
+    if profile == INSIGHT_PROFILE_AUTOMATED and not is_bootstrap and _wm_new_ids:
+        all_new_ids = all_new_ids & set(_wm_new_ids)
     # Incremental runs: cap new responses to process at 50 (newest first).
     # Metrics run on the full loaded set; clustering/ABSA only touches the cap.
     if not is_bootstrap and len(all_new_ids) > new_response_cap:
@@ -2466,6 +2942,237 @@ def _map_skill_insights_to_records(skill_output: dict, state: dict) -> list[dict
     return records
 
 
+# ── Node: delta_compute (Insight Pipeline v2 — Phase 0.5) ─────────────────────
+
+async def node_delta_compute(state: dict) -> dict:
+    """Compute delta from the prior checkpoint. Runs BETWEEN topics and narrate.
+
+    Phase 0.5: uses compute_delta() output only (NPS/CSAT/CES + topic name-set
+    changes). Loads up to 5 prior checkpoints from survey_insight_checkpoints
+    (ordered by checkpoint_number DESC, report_url IS NOT NULL), reads the latest
+    prior blob, computes current metrics from state + parent metrics from the blob,
+    sets meaningful_delta, and builds scalar prior_checkpoint_summaries (oldest
+    first). On bootstrap or any load failure it falls back to the bootstrap path
+    (delta_from_prior=None, meaningful_delta=True) — never crashes the pipeline.
+
+    Phase 2 extension: walk_parent_chain + compute_topic_lifecycle (share-weighted).
+    """
+    from crystalos.tools.delta import (
+        compute_delta,
+        extract_metrics_from_state,
+        extract_metrics_from_blob,
+        build_current_topic_name_set,
+        evaluate_meaningful_delta,
+    )
+
+    survey_id = state["survey_id"]
+    org_id    = state["org_id"]
+    run_id    = state["run_id"]
+    settings  = state.get("survey_settings", {})  # Phase 2 loads this; {} in Phase 0.5
+    is_bootstrap = state.get("is_bootstrap", False)
+    await _update_heartbeat(run_id)
+
+    if is_bootstrap:
+        return {
+            **state,
+            "delta_from_prior":           None,
+            "meaningful_delta":           True,   # bootstrap always writes
+            "prior_checkpoint_summaries": [],
+        }
+
+    # Load prior checkpoints (Phase 0.5 has no parent_checkpoint_id — order by
+    # checkpoint_number; Phase 2 replaces this with walk_parent_chain).
+    prior_rows: list[dict] = []
+    prior_blob: dict | None = None
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT checkpoint_number, report_url, created_at,
+                              nps_at_checkpoint, topic_fingerprint
+                       FROM survey_insight_checkpoints
+                       WHERE survey_id = %s AND org_id = %s
+                         AND report_url IS NOT NULL
+                       ORDER BY checkpoint_number DESC LIMIT 5""",
+                    (survey_id, org_id),
+                )
+                rows = await cur.fetchall()
+                if rows:
+                    cols = [d[0] for d in cur.description]
+                    prior_rows = [dict(zip(cols, r)) for r in rows]
+                    prior_blob_url = prior_rows[0]["report_url"]
+                    if prior_blob_url:
+                        from crystalos.lib.checkpoint_store import read_checkpoint_blob
+                        prior_blob = await read_checkpoint_blob(prior_blob_url)
+    except Exception as exc:
+        logger.warning("node_delta_compute_load_failed", survey_id=survey_id, error=str(exc))
+
+    if not prior_blob:
+        # No prior checkpoint blob — treat as bootstrap (cannot compute a delta).
+        return {
+            **state,
+            "delta_from_prior":           None,
+            "meaningful_delta":           True,
+            "prior_checkpoint_summaries": [],
+        }
+
+    current_metrics = extract_metrics_from_state(state)
+    parent_metrics  = extract_metrics_from_blob(prior_blob)
+
+    # Phase 0.5 topic changes: name-set intersection. compute_delta derives
+    # emerged/resolved/persisted from the "topics" arrays of {name} on each side, so
+    # we attach a normalized {name} list to both the current and parent metric dicts.
+    current_topic_names = build_current_topic_name_set(state)
+    current_metrics["topics"] = [{"name": n} for n in sorted(current_topic_names)]
+    parent_metrics["topics"] = [
+        {"name": t.get("name", "")} for t in (prior_blob.get("topics") or []) if t.get("name")
+    ]
+
+    # Phase 2: pull N-2 blob (second prior checkpoint) for trend persistence when
+    # available, so trend_direction/persistence reflect a 3-point trajectory.
+    n2_blob = None
+    if len(prior_rows) >= 2:
+        try:
+            n2_url = prior_rows[1].get("report_url")
+            if n2_url:
+                from crystalos.lib.checkpoint_store import read_checkpoint_blob as _read2
+                n2_blob = await _read2(n2_url)
+                n2_blob = extract_metrics_from_blob(n2_blob)
+        except Exception:
+            n2_blob = None
+    delta = compute_delta(current_metrics, parent_metrics, n2_blob)
+
+    # Phase 2: share-weighted topic lifecycle. When the parent blob carries topic
+    # volume/volume_share data, replace the name-set topic_changes with the richer
+    # emerged/growing/stable/declining/resolved classification + fingerprint_changed.
+    try:
+        from crystalos.tools.delta import compute_topic_lifecycle
+        parent_topics_blob = prior_blob.get("topics") or []
+        has_share = any(
+            (isinstance(t, dict) and (t.get("volume_share") is not None or t.get("volume") is not None))
+            for t in parent_topics_blob
+        )
+        current_topic_signals = state.get("topic_signals") or {}
+        if has_share and current_topic_signals:
+            lifecycle = compute_topic_lifecycle(parent_topics_blob, current_topic_signals, settings)
+            delta["topic_changes"] = {
+                "emerged":   lifecycle["emerged"],
+                "resolved":  lifecycle["resolved"],
+                "persisted": lifecycle["persisted"],
+                "growing":   lifecycle["growing"],
+                "declining": lifecycle["declining"],
+                "stable":    lifecycle["stable"],
+            }
+            delta["fingerprint_changed"] = lifecycle["fingerprint_changed"]
+    except Exception as exc:
+        logger.debug("node_delta_compute_lifecycle_skipped", survey_id=survey_id, error=str(exc))
+
+    meaningful = evaluate_meaningful_delta(delta, settings)
+    delta["meaningful_delta"] = meaningful
+
+    prior_checkpoint_summaries = [
+        {
+            "checkpoint_number": r["checkpoint_number"],
+            "created_at":        str(r["created_at"])[:10] if r.get("created_at") else "",
+            "nps":               r.get("nps_at_checkpoint"),
+        }
+        for r in reversed(prior_rows)   # oldest first
+    ]
+
+    logger.info(
+        "node_delta_compute_done",
+        survey_id=survey_id,
+        nps_delta=delta.get("nps_delta"),
+        meaningful_delta=meaningful,
+        topics_emerged=len(delta.get("topic_changes", {}).get("emerged", [])),
+        topics_resolved=len(delta.get("topic_changes", {}).get("resolved", [])),
+    )
+
+    return {
+        **state,
+        "delta_from_prior":           delta,
+        "meaningful_delta":           meaningful,
+        "prior_checkpoint_summaries": prior_checkpoint_summaries,
+    }
+
+
+# ── DELTA_FACTS narrate-injection helpers (Phase 0.5) ─────────────────────────
+
+def _build_delta_facts_block(delta: dict) -> str:
+    """Build the authoritative DELTA_FACTS block prepended to specialist overlays.
+
+    Omits the NPS/CSAT/CES line when that delta is None; omits the emerged/resolved
+    lines when empty. Never suppresses the whole block for a missing NPS — other
+    fields may still be meaningful. The caller suppresses the block only when delta
+    itself is None (bootstrap path).
+    """
+    nps_line = ""
+    if delta.get("nps_delta") is not None:
+        nps_line = (
+            f"NPS delta: {delta['nps_delta']:+.1f} pts  "
+            f"({delta.get('trend_direction', 'stable')}, "
+            f"{delta.get('trend_persistence', 'first_occurrence')})\n"
+        )
+    topic_changes = delta.get("topic_changes", {}) or {}
+
+    def _names(items: list) -> list[str]:
+        # Phase 0.5 items are strings; Phase 2 items are {"name": ...} dicts.
+        out = []
+        for it in (items or []):
+            if isinstance(it, dict):
+                n = it.get("name")
+                if n:
+                    out.append(str(n))
+            elif it:
+                out.append(str(it))
+        return out
+
+    emerged  = _names(topic_changes.get("emerged"))
+    resolved = _names(topic_changes.get("resolved"))
+    return (
+        "━━━ DELTA_FACTS (code-computed — authoritative for metric values) ━━━\n"
+        + nps_line
+        + (f"CSAT delta: {delta['csat_delta']:+.2f}\n" if delta.get("csat_delta") is not None else "")
+        + (f"CES delta: {delta['ces_delta']:+.2f}\n" if delta.get("ces_delta") is not None else "")
+        + f"New responses: {delta.get('response_count_delta', 0)}\n"
+        + (f"Topics emerged: {', '.join(emerged)}\n" if emerged else "")
+        + (f"Topics resolved: {', '.join(resolved)}\n" if resolved else "")
+        + "\nCITATION RULE: Metric delta claims state DELTA_FACTS values directly "
+          "(no verbatim citation); theme/topic claims require a [rXXX] citation; "
+          "multi-checkpoint trend claims cite the TRAJECTORY block (no verbatim).\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+
+
+def _build_trajectory_block(summaries: list[dict]) -> str:
+    """Build the CHECKPOINT TRAJECTORY block (oldest → newest). Caller appends it
+    only when len(summaries) >= 2."""
+    traj_lines = "\n".join(
+        f"  Checkpoint #{s['checkpoint_number']} ({str(s.get('created_at', ''))[:10]}): "
+        f"NPS {s.get('nps', 'N/A')}"
+        for s in summaries
+    )
+    return (
+        "━━━ CHECKPOINT TRAJECTORY (oldest → newest) ━━━\n"
+        + traj_lines + "\n"
+        "Use this to identify multi-checkpoint trends in your narrative.\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+
+
+def _build_baseline_mode_block() -> str:
+    """Build the BASELINE_MODE block for the bootstrap / null-delta path."""
+    return (
+        "━━━ BASELINE_MODE ━━━\n"
+        "This is the FIRST checkpoint for this survey. No prior state exists.\n"
+        "Narrate as a BASELINE — establish what IS, not what changed.\n"
+        "Do NOT use directional language: avoid 'increased', 'decreased', 'dropped', "
+        "'grew', 'improved', 'declined'.\n"
+        "Describe current NPS, top themes by volume, and sentiment distribution.\n"
+        "━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+
+
 async def node_narrate(state: dict) -> dict:
     """Generate headlines + narratives using specialist expert agents in parallel.
 
@@ -2596,11 +3303,22 @@ async def node_narrate(state: dict) -> dict:
             logger.warning("node_narrate_skill_error", error=str(_skill_exc))
             # Fall through to legacy path
 
+    # ── DELTA_FACTS injection setup (Phase 0.5) ───────────────────────────────
+    # The checkpoint chain (delta_from_prior + prior_checkpoint_summaries) is the
+    # single source of historical narrative context. When it is available we SUPPRESS
+    # the ESTABLISHED FINDINGS anchor-run query and block so the two history channels
+    # do not double-count. On bootstrap / null-delta we narrate in BASELINE_MODE.
+    delta_from_prior    = state.get("delta_from_prior")
+    ckpt_summaries      = state.get("prior_checkpoint_summaries", []) or []
+    is_bootstrap_run    = state.get("is_bootstrap", False)
+    suppress_established_findings = is_bootstrap_run or bool(ckpt_summaries) or delta_from_prior is not None
+
     # ── Query 2: find the anchor run for prior context ────────────────────────
     # The anchor = last completed insight_generation run that had real new data:
     #   • trigger_type IN ('schedule', 'stream') — scheduled/stream runs always process data
     #   • OR new_response_count > 0 — manual run that actually processed new responses
     # Excludes the CURRENT run (id != run_id) and manual regens with 0 new responses.
+    # Skipped entirely when the checkpoint chain supplies historical context.
     anchor_run_id: str = ""
     prior_insight_rows: list[dict] = []
     try:
@@ -2644,9 +3362,15 @@ async def node_narrate(state: dict) -> dict:
     except Exception as exc:
         logger.warning("node_narrate_anchor_load_failed", error=str(exc))
 
+    # Phase 0.5: when the checkpoint chain supplies historical context, drop any
+    # anchor-run rows so ESTABLISHED FINDINGS is fully suppressed below.
+    if suppress_established_findings:
+        prior_insight_rows = []
+        anchor_run_id = ""
+
     # Fallback: if no anchor found (first run or DB miss), use active insights as prior
     # so the first real report still gets some context from what's been published.
-    if not prior_insight_rows and current_insight_rows:
+    if not suppress_established_findings and not prior_insight_rows and current_insight_rows:
         prior_insight_rows = current_insight_rows
 
     logger.info(
@@ -2724,8 +3448,33 @@ async def node_narrate(state: dict) -> dict:
     # Append prior context to specialist overlay so ALL narration calls
     # get established-findings context. The overlay is passed through to
     # narrate_topic_insight, narrate_prescriptive_insight, etc.
+    # (prior_context_block is empty when suppressed by the checkpoint chain.)
     if prior_context_block:
         specialist_overlay = specialist_overlay + prior_context_block
+
+    # ── DELTA_FACTS injection into the specialist overlay (Phase 0.5) ──────────
+    # Topic + prescriptive specialists receive the overlay; prepend the code-computed
+    # delta facts (authoritative for metric values) plus the trajectory block.
+    # On bootstrap / null delta, prepend BASELINE_MODE instead (ESTABLISHED FINDINGS
+    # is already suppressed above).
+    if not is_bootstrap_run and delta_from_prior is not None:
+        delta_block = _build_delta_facts_block(delta_from_prior)
+        if len(ckpt_summaries) >= 2:
+            delta_block = delta_block + _build_trajectory_block(ckpt_summaries)
+        specialist_overlay = delta_block + specialist_overlay
+    else:
+        specialist_overlay = _build_baseline_mode_block() + specialist_overlay
+
+    # NPS specialist: inject checkpoint history via prior_snapshots (reformatted).
+    nps_prior_snapshots = [
+        {
+            "nps":            s.get("nps"),
+            "captured_at":    s.get("created_at"),
+            "response_count": None,  # not available in Phase 0.5 summaries
+        }
+        for s in ckpt_summaries
+        if s.get("nps") is not None
+    ]
 
     # ── L1: Descriptive metric insights (NPS + CSAT in parallel) ─────────────
 
@@ -2740,7 +3489,8 @@ async def node_narrate(state: dict) -> dict:
         nps_task = narrate_nps_insight(
             score=nps_score, n=n, ci_low=ci_low, ci_high=ci_high,
             promoters=m.get("promoters"), passives=m.get("passives"), detractors=m.get("detractors"),
-            prior_snapshots=state.get("prior_snapshots"),
+            # Phase 0.5: prefer checkpoint-chain NPS history; fall back to metric snapshots.
+            prior_snapshots=nps_prior_snapshots or state.get("prior_snapshots"),
         )
 
     if "csat" in metrics and csat_score is not None:
@@ -3318,15 +4068,391 @@ async def node_verify(state: dict) -> dict:
 
 # ── Node: publish ─────────────────────────────────────────────────────────────
 
+async def _append_metric_snapshot(state: dict) -> None:
+    """Append a survey_metric_snapshots row for this run. Used by both the normal
+    publish path and the skipped-checkpoint path (so the time series stays dense
+    even when a checkpoint write is gated out). Never raises."""
+    survey_id = state["survey_id"]
+    org_id    = state["org_id"]
+    run_id    = state["run_id"]
+    metrics   = state.get("metrics", {})
+    nps_m   = metrics.get("nps", {})
+    csat_m  = metrics.get("csat", {})
+    trend_m = metrics.get("trend", {})
+    compl_m = metrics.get("completion", {})
+    try:
+        async with db._pool_conn().connection() as conn:
+            await conn.execute(
+                """INSERT INTO survey_metric_snapshots
+                       (survey_id, org_id, run_id, captured_at,
+                        response_count, nps, nps_ci_low, nps_ci_high, nps_n,
+                        promoter_pct, detractor_pct, passive_pct,
+                        csat, completion_rate, effort_score,
+                        response_velocity_7d, anomaly_flag)
+                   VALUES (%s,%s,%s,NOW(),%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    survey_id, org_id, run_id,
+                    metrics.get("total_responses"),
+                    nps_m.get("score"), nps_m.get("ci_low"), nps_m.get("ci_high"),
+                    nps_m.get("n") or None,
+                    nps_m.get("promoters"), nps_m.get("detractors"), nps_m.get("passives"),
+                    csat_m.get("score"),
+                    compl_m.get("rate"),
+                    metrics.get("effort_score"),
+                    trend_m.get("recent_avg"),
+                    bool(trend_m.get("anomaly", False)),
+                ),
+            )
+    except Exception as exc:
+        logger.warning("append_metric_snapshot_failed", error=str(exc))
+
+
+def _build_citations_manifest(state: dict, insights: list[dict]) -> dict:
+    """Build the citations manifest (04 §11). Phase 2: prior_checkpoint refs come from
+    walked v2 chain when available, else fall back to Phase 0.5 checkpoint_number refs."""
+    response_ids: set[str] = set()
+    for ins in insights:
+        for c in (ins.get("citations_json") or []):
+            rid = c.get("response_id")
+            if rid:
+                response_ids.add(str(rid))
+    snapshots = state.get("metric_snapshots") or []
+    snapshot_ids = [str(s.get("id")) for s in snapshots if isinstance(s, dict) and s.get("id")]
+    prior_chain = state.get("prior_checkpoints") or []
+    prior_refs = [str(p.get("id")) for p in prior_chain if isinstance(p, dict) and p.get("id")]
+    if not prior_refs:
+        prior_refs = [
+            f"checkpoint#{s['checkpoint_number']}"
+            for s in (state.get("prior_checkpoint_summaries") or [])
+            if isinstance(s, dict) and s.get("checkpoint_number") is not None
+        ]
+    return {
+        "response_ids":          sorted(response_ids),
+        "snapshot_ids":          snapshot_ids,
+        "prior_checkpoint_refs": prior_refs,
+        "total_citations":       len(response_ids),
+        "generated_at":          time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def _build_lineage_json(state: dict, *, run_mode: str, blob_ref: str | None,
+                        sample_stats: dict | None = None,
+                        insight_report_id: str | None = None) -> dict:
+    """Assemble lineage_json for an insight_checkpoints_v2 row (03 §3a)."""
+    prior_chain = state.get("prior_checkpoints") or []
+    prior_refs = [str(p.get("id")) for p in prior_chain if isinstance(p, dict) and p.get("id")]
+    new_ids = list(state.get("new_response_ids") or set())[:500]  # cap in-row; full list in manifest
+    snapshots = state.get("metric_snapshots") or []
+    snapshot_ids = [str(s.get("id")) for s in snapshots if isinstance(s, dict) and s.get("id")]
+    return {
+        "config_hash":          state.get("config_hash", ""),
+        "pipeline_version":     "2.1.0",
+        "run_mode":             run_mode,
+        "prior_checkpoint_refs": prior_refs,
+        "new_response_ids":     new_ids,
+        "metric_snapshot_ids":  snapshot_ids,
+        "insight_report_id":    insight_report_id,
+        "sample_stats":         sample_stats or state.get("sample_stats") or {},
+        "report_blob_ref":      blob_ref,
+    }
+
+
+async def _write_checkpoint_v2(
+    state: dict,
+    *,
+    run_mode: str,
+    lane: str,
+    checkpoint_number: int,
+    blob_ref: str | None,
+    citations_manifest_ref: str | None,
+    delta_from_prior: dict | None,
+    meaningful_delta: bool,
+    report_label: str | None = None,
+    report_id: str | None = None,
+) -> str | None:
+    """Insert an insight_checkpoints_v2 row. Returns the new checkpoint id, or None on
+    failure (the legacy write remains the source of truth during migration). Never raises."""
+    survey_id = state["survey_id"]
+    org_id    = state["org_id"]
+    run_id    = state["run_id"]
+    metrics   = state.get("metrics", {})
+    trigger   = state.get("trigger", "scheduler")
+    actor     = state.get("actor") or "system:scheduler"
+    parent_id = state.get("parent_checkpoint_id") or None
+    high_wm   = None
+    # response_high_watermark = max(submitted_at) of included responses
+    try:
+        subs = [r.get("submitted_at") for r in state.get("responses", []) if r.get("submitted_at")]
+        high_wm = max(subs) if subs else None
+    except Exception:
+        high_wm = None
+    lineage = _build_lineage_json(state, run_mode=run_mode, blob_ref=blob_ref,
+                                  insight_report_id=report_id)
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """INSERT INTO insight_checkpoints_v2
+                         (survey_id, org_id, checkpoint_number, parent_checkpoint_id, lane,
+                          run_id, run_mode, trigger, created_by,
+                          response_count_at_checkpoint, response_high_watermark, new_response_count,
+                          nps_at_checkpoint, csat_at_checkpoint, ces_at_checkpoint, topic_fingerprint,
+                          delta_from_prior, meaningful_delta, lineage_json,
+                          report_blob_ref, citations_manifest_ref, schema_version,
+                          window_start, window_end, report_label)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                       RETURNING id""",
+                    (
+                        survey_id, org_id, checkpoint_number, parent_id, lane,
+                        run_id, run_mode, trigger, actor,
+                        len(state.get("responses", [])), high_wm,
+                        len(state.get("new_response_ids") or set()),
+                        metrics.get("nps", {}).get("score"),
+                        metrics.get("csat", {}).get("score"),
+                        metrics.get("ces", {}).get("score"),
+                        None,
+                        json.dumps(delta_from_prior) if delta_from_prior is not None else None,
+                        meaningful_delta, json.dumps(lineage),
+                        blob_ref, citations_manifest_ref, 2,
+                        state.get("window_start"), state.get("window_end"), report_label,
+                    ),
+                )
+                row = await cur.fetchone()
+            await conn.commit()
+        new_id = str(row[0]) if row else None
+        logger.info("checkpoint_v2_written", survey_id=survey_id, lane=lane,
+                    run_mode=run_mode, checkpoint_number=checkpoint_number, id=new_id)
+        return new_id
+    except Exception as exc:
+        logger.warning("checkpoint_v2_write_failed", survey_id=survey_id, error=str(exc))
+        return None
+
+
+async def _next_checkpoint_number(survey_id: str, org_id: str, lane: str) -> int:
+    """Next monotonic checkpoint_number per (survey, org, lane) in v2. Falls back to 1."""
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT COALESCE(MAX(checkpoint_number), 0) + 1
+                       FROM insight_checkpoints_v2
+                       WHERE survey_id = %s AND org_id = %s AND lane = %s""",
+                    (survey_id, org_id, lane),
+                )
+                row = await cur.fetchone()
+                return int(row[0]) if row and row[0] else 1
+    except Exception:
+        return 1
+
+
+async def node_publish_manual(state: dict) -> dict:
+    """Publish branch for manual_expert / manual_quick (04 §8 manual).
+
+    INSERT insight_reports (generating→ready), write blob + citations_manifest,
+    INSERT insight_checkpoints_v2 (lane='manual', parent=latest automated). Does NOT
+    supersede automated active insights. Emits SSE complete with the report URL.
+    """
+    survey_id = state["survey_id"]
+    org_id    = state["org_id"]
+    run_id    = state["run_id"]
+    profile   = state.get("profile")
+    insights  = state.get("insights", [])
+    metrics   = state.get("metrics", {})
+    actor     = state.get("actor") or "user:unknown"
+    label     = state.get("report_label") or state.get("config_override", {}).get("label")
+    report_id = state.get("report_id") or None
+    await _update_heartbeat(run_id)
+
+    run_mode = profile  # manual_expert | manual_quick
+    ws = state.get("window_start")
+    we = state.get("window_end")
+
+    # ── Build + write report blob (v2 schema) ────────────────────────────────
+    citations_manifest = _build_citations_manifest(state, insights)
+    blob = {
+        "schema_version": 2,
+        "survey_id": survey_id,
+        "org_id": org_id,
+        "run_mode": run_mode,
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "window_start": str(ws) if ws else None,
+        "window_end": str(we) if we else None,
+        "executive_summary": next(
+            (i.get("narrative", "") for i in insights
+             if i.get("category", "").startswith("report.executive")), ""),
+        "nps": metrics.get("nps", {}).get("score"),
+        "csat": metrics.get("csat", {}).get("score"),
+        "ces": metrics.get("ces", {}).get("score"),
+        "insights": [
+            {"layer": i.get("layer"), "category": i.get("category"),
+             "headline": i.get("headline"), "narrative": i.get("narrative"),
+             "metric_json": i.get("metric_json", {}), "citations_json": i.get("citations_json", []),
+             "trust_score": i.get("trust_score")}
+            for i in insights
+        ],
+        "themes": [{"name": t.get("name", ""), "volume": t.get("volume", 0)}
+                   for t in state.get("topics", [])[:40]],
+        "metrics": metrics,
+        "sample_stats": state.get("sample_stats", {}),
+        "citations_manifest": citations_manifest,
+    }
+    blob_ref = None
+    try:
+        blob_ref = await write_checkpoint_blob(blob, org_id, survey_id, f"report-{run_id}")
+    except Exception as exc:
+        logger.error("manual_report_blob_failed", run_id=run_id, error=str(exc))
+
+    # Optional separate citations manifest blob when large.
+    manifest_ref = None
+    try:
+        if len(citations_manifest.get("response_ids", [])) > 1000:
+            manifest_ref = await write_checkpoint_blob(
+                citations_manifest, org_id, survey_id, f"manifest-{run_id}")
+    except Exception:
+        manifest_ref = None
+
+    trust_scores = [i.get("trust_score") for i in insights if i.get("trust_score") is not None]
+    trust_avg = round(sum(trust_scores) / len(trust_scores), 1) if trust_scores else None
+    summary_headline = next((i.get("headline") for i in insights
+                             if i.get("category", "").startswith("report.executive")),
+                            insights[0].get("headline") if insights else None)
+
+    # ── INSERT / UPDATE insight_reports → ready ──────────────────────────────
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                if report_id:
+                    await cur.execute(
+                        """UPDATE insight_reports
+                           SET status='ready', blob_ref=%s, citations_manifest_ref=%s,
+                               summary_headline=%s, trust_score_avg=%s
+                           WHERE id=%s""",
+                        (blob_ref, manifest_ref, summary_headline, trust_avg, report_id),
+                    )
+                else:
+                    await cur.execute(
+                        """INSERT INTO insight_reports
+                             (survey_id, org_id, run_id, run_mode, label,
+                              window_start, window_end, created_by, status,
+                              blob_ref, citations_manifest_ref, summary_headline, trust_score_avg)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'ready',%s,%s,%s,%s)
+                           RETURNING id""",
+                        (survey_id, org_id, run_id, run_mode, label, ws, we, actor,
+                         blob_ref, manifest_ref, summary_headline, trust_avg),
+                    )
+                    r = await cur.fetchone()
+                    report_id = str(r[0]) if r else None
+            await conn.commit()
+    except Exception as exc:
+        logger.error("insight_reports_write_failed", run_id=run_id, error=str(exc))
+
+    # ── Optional manual checkpoint node (lane='manual', parent=latest automated) ─
+    checkpoint_id = None
+    if INSIGHT_CHECKPOINTS_V2_ENABLED:
+        ckpt_num = await _next_checkpoint_number(survey_id, org_id, "manual")
+        checkpoint_id = await _write_checkpoint_v2(
+            state, run_mode=run_mode, lane="manual", checkpoint_number=ckpt_num,
+            blob_ref=blob_ref, citations_manifest_ref=manifest_ref,
+            delta_from_prior=state.get("delta_from_prior"),
+            meaningful_delta=False, report_label=label, report_id=report_id,
+        )
+        if checkpoint_id and report_id:
+            try:
+                async with db._pool_conn().connection() as conn:
+                    await conn.execute(
+                        "UPDATE insight_reports SET checkpoint_id=%s WHERE id=%s",
+                        (checkpoint_id, report_id),
+                    )
+            except Exception:
+                pass
+
+    # Append metric snapshot for the time series, mark run complete.
+    await _append_metric_snapshot(state)
+    try:
+        async with db._pool_conn().connection() as conn:
+            await conn.execute(
+                """UPDATE agent_runs SET status='completed', completed_at=NOW(),
+                       trigger_type=%s, new_response_count=%s
+                   WHERE id=%s""",
+                (state.get("trigger", "manual"), len(state.get("sample_ids") or set()), run_id),
+            )
+    except Exception as exc:
+        logger.warning("manual_publish_run_status_failed", error=str(exc))
+
+    report_url = f"/experience/surveys/{survey_id}/intelligence/reports/{report_id}" if report_id else None
+    await _emit_event(run_id, "run_complete", "publish", {
+        "manual": True, "run_mode": run_mode, "report_id": report_id,
+        "report_url": report_url, "checkpoint_id": checkpoint_id,
+        "published_count": len(insights), "survey_id": survey_id,
+    })
+    logger.info("node_publish_manual_done", run_id=run_id, run_mode=run_mode,
+                report_id=report_id, checkpoint_id=checkpoint_id)
+    return {**state, "report_id": report_id, "manual_report_url": report_url}
+
+
 async def node_publish(state: dict) -> dict:
     """Insert insight rows into DB, supersede old ones, and add per-window metrics."""
     survey_id = state["survey_id"]
     org_id    = state["org_id"]
     run_id    = state["run_id"]
     await _update_heartbeat(run_id)
+
+    # ── skip_run backstop ─────────────────────────────────────────────────────
+    # node_ingest already marked the run completed on skip; if we somehow reach
+    # publish with skip_run set, do nothing further.
+    if state.get("skip_run"):
+        await _emit_event(run_id, "run_complete", "publish",
+                          {"skipped": True, "reason": state.get("skip_reason", "skipped")})
+        return state
+
+    # ── Manual modes → separate publish branch (additive, no supersede) ───────
+    profile = state.get("profile") or INSIGHT_PROFILE_AUTOMATED
+    if profile in (INSIGHT_PROFILE_MANUAL_EXPERT, INSIGHT_PROFILE_MANUAL_QUICK):
+        return await node_publish_manual(state)
+
     insights  = state["insights"]
     responses = state["responses"]
     metrics   = state["metrics"]
+
+    # ── Checkpoint write gate (Insight Pipeline v2 §8/§9) ─────────────────────
+    # delta_from_prior / meaningful_delta come from node_delta_compute and are already
+    # in state (they propagate even through the narrate cache-hit path).
+    delta_from_prior  = state.get("delta_from_prior")
+    meaningful_delta  = bool(state.get("meaningful_delta", True))
+    is_bootstrap      = bool(state.get("is_bootstrap", False))
+    trigger_for_gate  = state.get("trigger", "schedule")
+    is_tier_milestone = (
+        len(responses) in _TIER_MILESTONE_COUNTS
+        or trigger_for_gate == "milestone"
+    )
+    should_write_checkpoint = meaningful_delta or is_bootstrap or is_tier_milestone
+
+    # When the delta is not meaningful and this is neither a bootstrap nor a tier
+    # milestone, skip the checkpoint write AND the active-projection supersede.
+    # The metric snapshot is still appended (below) and the run is marked completed.
+    if not should_write_checkpoint:
+        logger.info(
+            "node_publish_skipped_checkpoint",
+            survey_id=survey_id, run_id=run_id,
+            nps_delta=(delta_from_prior or {}).get("nps_delta"),
+            response_count=len(responses),
+        )
+        await _append_metric_snapshot(state)
+        try:
+            async with db._pool_conn().connection() as conn:
+                await conn.execute(
+                    """UPDATE agent_runs
+                       SET status='completed', completed_at=NOW(), trigger_type=%s,
+                           new_response_count=%s
+                       WHERE id=%s""",
+                    (trigger_for_gate, len(state.get("new_response_ids") or set()), run_id),
+                )
+        except Exception as exc:
+            logger.warning("node_publish_skip_status_failed", error=str(exc))
+        await _emit_event(run_id, "run_complete", "publish", {
+            "published_count": 0, "survey_id": survey_id, "skipped_checkpoint": True,
+        })
+        return {**state, "skipped_checkpoint": True}
 
     # Capture user state (pins, thumbs, dismissals) from currently active insights
     # keyed by category:time_window so re-generation carries them forward even when
@@ -3503,6 +4629,15 @@ async def node_publish(state: dict) -> dict:
                         duration = 0
                     trigger = state.get("trigger", "schedule")
                     agent_run_duration_seconds.labels(trigger=trigger).observe(duration)
+                    # SLO histogram: per-profile, per-org run duration
+                    try:
+                        from crystalos.lib.metrics import insight_run_duration_seconds
+                        _profile = state.get("profile", "automated_incremental")
+                        insight_run_duration_seconds.labels(
+                            profile=_profile, org_id=org_id
+                        ).observe(duration)
+                    except Exception:
+                        pass
     except Exception:
         pass
 
@@ -3551,14 +4686,16 @@ async def node_publish(state: dict) -> dict:
     except Exception as exc:
         logger.warning("node_publish_metric_snapshot_failed", error=str(exc))
 
-    # Write checkpoint blob
+    # Write checkpoint blob + row
+    # delta_from_prior / meaningful_delta are computed by node_delta_compute and carried
+    # in state (they survive the narrate cache-hit path). We persist them here verbatim
+    # rather than recomputing — the delta is authoritative for the whole run.
     try:
         from crystalos.lib import db as _db
-        from crystalos.lib.checkpoint_store import read_checkpoint_blob
-        from crystalos.tools.delta import compute_delta
+
+        prior_delta = delta_from_prior  # from node_delta_compute (gate block above)
 
         checkpoint_number = 1
-        prior_blob_ref = None
         async with _db._pool_conn().connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(
@@ -3567,40 +4704,6 @@ async def node_publish(state: dict) -> dict:
                 )
                 row = await cur.fetchone()
                 checkpoint_number = row[0] if row else 1
-
-                # Load prior checkpoint blob ref for delta computation
-                await cur.execute(
-                    """SELECT report_url FROM survey_insight_checkpoints
-                       WHERE survey_id = %s AND org_id = %s AND report_url IS NOT NULL
-                       ORDER BY checkpoint_number DESC LIMIT 1""",
-                    (survey_id, org_id),
-                )
-                prior_row = await cur.fetchone()
-                prior_blob_ref = prior_row[0] if prior_row else None
-
-        # Compute delta from prior checkpoint — this is the core linked-list capability.
-        # Without delta, Crystal cannot narrate "NPS dropped 3 pts since last checkpoint".
-        current_metrics_for_delta = {
-            "nps": metrics.get("nps", {}).get("score"),
-            "csat": metrics.get("csat", {}).get("score"),
-            "ces": metrics.get("ces", {}).get("score"),
-            "response_count": len(responses),
-            "topics": [{"name": t.get("name", ""), "volume": t.get("volume", 0)} for t in state.get("topics", [])[:20]],
-        }
-        prior_delta = None
-        if prior_blob_ref:
-            try:
-                prior_blob = await read_checkpoint_blob(prior_blob_ref)
-                prior_delta = compute_delta(current_metrics_for_delta, prior_blob)
-                logger.info(
-                    "checkpoint_delta_computed",
-                    survey_id=survey_id,
-                    nps_delta=prior_delta.get("nps_delta"),
-                    topics_emerged=len(prior_delta.get("topic_changes", {}).get("emerged", [])),
-                    topics_resolved=len(prior_delta.get("topic_changes", {}).get("resolved", [])),
-                )
-            except Exception as _delta_exc:
-                logger.warning("compute_delta_failed", survey_id=survey_id, error=str(_delta_exc))
 
         report_blob = {
             "schema_version": CHECKPOINT_BLOB_SCHEMA_VERSION,
@@ -3621,24 +4724,64 @@ async def node_publish(state: dict) -> dict:
         checkpoint_id = f"ckpt-{run_id}"
         blob_ref = await write_checkpoint_blob(report_blob, org_id, survey_id, checkpoint_id)
 
-        async with _db._pool_conn().connection() as conn:
-            await conn.execute(
-                """INSERT INTO survey_insight_checkpoints
-                   (survey_id, org_id, checkpoint_number, trigger, response_count_at_checkpoint,
-                    nps_at_checkpoint, csat_at_checkpoint, ces_at_checkpoint, report_url, schema_version)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-                (
-                    survey_id, org_id, checkpoint_number,
-                    state.get("trigger", "schedule"),
-                    len(responses),
-                    metrics.get("nps", {}).get("score"),
-                    metrics.get("csat", {}).get("score"),
-                    metrics.get("ces", {}).get("score"),
-                    blob_ref,
-                    CHECKPOINT_BLOB_SCHEMA_VERSION,
-                ),
-            )
-        logger.info("checkpoint_written", survey_id=survey_id, checkpoint_number=checkpoint_number, ref=blob_ref)
+        if not STOP_LEGACY_CHECKPOINT_WRITE:
+            async with _db._pool_conn().connection() as conn:
+                await conn.execute(
+                    """INSERT INTO survey_insight_checkpoints
+                       (survey_id, org_id, checkpoint_number, trigger, response_count_at_checkpoint,
+                        nps_at_checkpoint, csat_at_checkpoint, ces_at_checkpoint, report_url, schema_version,
+                        delta_from_prior, meaningful_delta)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (
+                        survey_id, org_id, checkpoint_number,
+                        state.get("trigger", "schedule"),
+                        len(responses),
+                        metrics.get("nps", {}).get("score"),
+                        metrics.get("csat", {}).get("score"),
+                        metrics.get("ces", {}).get("score"),
+                        blob_ref,
+                        CHECKPOINT_BLOB_SCHEMA_VERSION,
+                        json.dumps(prior_delta) if prior_delta is not None else None,
+                        meaningful_delta,
+                    ),
+                )
+        logger.info(
+            "checkpoint_written",
+            survey_id=survey_id, checkpoint_number=checkpoint_number, ref=blob_ref,
+            meaningful_delta=meaningful_delta,
+        )
+        # Emit checkpoint_written SSE event into agent_runs.stream_events so the
+        # backend SSE handler streams it to the Intelligence page automatically.
+        await _emit_event(run_id, "checkpoint_written", "publish", {
+            "checkpoint_number": checkpoint_number,
+            "nps": metrics.get("nps", {}).get("score"),
+            "meaningful": meaningful_delta,
+        })
+
+        # ── Phase 1+ dual-write: insight_checkpoints_v2 (automated lane) ───────
+        # Write the v2 linked-list row (parent_checkpoint_id + lineage_json) IN
+        # ADDITION to the legacy table during migration. Gated by a constant; never
+        # fails the run (the legacy write above remains source of truth).
+        if INSIGHT_CHECKPOINTS_V2_ENABLED:
+            try:
+                manifest = _build_citations_manifest(state, insights)
+                manifest_ref = None
+                if len(manifest.get("response_ids", [])) > 1000:
+                    manifest_ref = await write_checkpoint_blob(
+                        manifest, org_id, survey_id, f"manifest-{run_id}")
+                v2_num = await _next_checkpoint_number(survey_id, org_id, "automated")
+                v2_id = await _write_checkpoint_v2(
+                    state, run_mode=INSIGHT_PROFILE_AUTOMATED, lane="automated",
+                    checkpoint_number=v2_num, blob_ref=blob_ref,
+                    citations_manifest_ref=manifest_ref,
+                    delta_from_prior=prior_delta, meaningful_delta=meaningful_delta,
+                )
+                # Advance parent pointer so a later node (or same-process chaining)
+                # links correctly; harmless for single-run invocations.
+                if v2_id:
+                    state["parent_checkpoint_id"] = v2_id
+            except Exception as _v2e:
+                logger.warning("checkpoint_v2_dual_write_failed", error=str(_v2e))
     except Exception as exc:
         logger.error("checkpoint_write_failed", error=str(exc), traceback=traceback.format_exc())
 
@@ -3668,6 +4811,90 @@ async def node_publish(state: dict) -> dict:
                 )
     except Exception as _te:
         logger.debug("reasoning_trace_write_failed", error=str(_te))
+
+    # G27 — Audit log: write per-insight audit rows to insight_audit_log for
+    # SOC2 compliance, GDPR right-to-explanation, and SLO tracking.
+    try:
+        audit_rows = []
+        for ins in insights:
+            ins_id = ins.get("id") or ins.get("insight_id")
+            if not ins_id:
+                continue
+            citation_count = len(ins.get("citations_json") or [])
+            # citation_valid_count: count citations that map to a real response ID.
+            # The hallucination filter in node_verify strips invalid IDs, so all
+            # remaining citations are valid — citation_valid_count == citation_count post-filter.
+            citation_valid_count = citation_count
+            verifier_pass = ins.get("_eval_score", 1.0) is not None and ins.get("_eval_score", 1.0) >= 0.7
+            verifier_score_raw = ins.get("_eval_score")
+            verifier_score = float(verifier_score_raw) if verifier_score_raw is not None else None
+            hallucination_raw = ins.get("_hallucination_score")
+            hallucination_score = float(hallucination_raw) if hallucination_raw is not None else None
+            # prompt_hash: prefer the one the narrate node computed; fall back to a
+            # deterministic run fingerprint so the column is never silently NULL.
+            _audit_json = ins.get("audit_json") or {}
+            prompt_hash = _audit_json.get("prompt_hash") or _audit_json.get("prompt_sha256")
+            if not prompt_hash:
+                import hashlib as _hl
+                prompt_hash = _hl.sha256(f"{org_id}:{run_id}:{ins_id}".encode()).hexdigest()
+            audit_rows.append((
+                str(ins_id),           # 0  insight_id
+                run_id,                # 1  run_id
+                str(survey_id),        # 2  survey_id
+                org_id,                # 3  org_id
+                str(state.get("checkpoint_id") or ""),  # 4  checkpoint_id
+                _audit_json.get("model", "insight_narrate"),  # 5  model
+                0.1,  # temperature for narrate specialists per PIPELINE_SPEC §13  # 6
+                state.get("profile", "automated_incremental"),  # 7  run_mode
+                verifier_pass,         # 8  verifier_pass  ← index used by metrics
+                verifier_score,        # 9  verifier_score
+                json.dumps(ins.get("_eval_issues") or []),  # 10  verifier_notes
+                hallucination_score,   # 11  hallucination_score
+                citation_count,        # 12  citation_count  ← index used by metrics
+                citation_valid_count,  # 13  citation_valid_count  ← index used by metrics
+                prompt_hash,           # 14  prompt_hash (added last to preserve metric indices)
+            ))
+
+        if audit_rows:
+            async with db._pool_conn().connection() as _audit_conn:
+                for row in audit_rows:
+                    await _audit_conn.execute(
+                        """INSERT INTO insight_audit_log
+                           (insight_id, run_id, survey_id, org_id, checkpoint_id,
+                            model, temperature, run_mode,
+                            verifier_pass, verifier_score, verifier_notes,
+                            hallucination_score, citation_count, citation_valid_count,
+                            prompt_hash)
+                           VALUES (%s, %s, %s, %s, NULLIF(%s, ''),
+                                   %s, %s, %s,
+                                   %s, %s, %s::jsonb,
+                                   %s, %s, %s,
+                                   %s)""",
+                        row,
+                    )
+            logger.info("audit_log_written", survey_id=survey_id,
+                        run_id=run_id, count=len(audit_rows))
+
+        # Increment SLO Prometheus counters (best-effort — never blocks the run)
+        try:
+            from crystalos.lib.metrics import (
+                insight_citation_total, insight_citation_valid_total,
+                insight_verifier_total, insight_verifier_pass_total,
+            )
+            labels = {"org_id": org_id}
+            total_citations = sum(r[12] for r in audit_rows)   # citation_count column index
+            total_valid = sum(r[13] for r in audit_rows)        # citation_valid_count column index
+            total_pass = sum(1 for r in audit_rows if r[8])     # verifier_pass column index
+            insight_citation_total.labels(**labels).inc(total_citations)
+            insight_citation_valid_total.labels(**labels).inc(total_valid)
+            insight_verifier_total.labels(**labels).inc(len(audit_rows))
+            insight_verifier_pass_total.labels(**labels).inc(total_pass)
+        except Exception:
+            pass  # metrics are best-effort
+    except Exception as _audit_err:
+        # Audit log write failure NEVER blocks the run — log and continue.
+        logger.warning("audit_log_write_failed", survey_id=survey_id,
+                       run_id=run_id, error=str(_audit_err))
 
     # ── Action recommendations (async, non-blocking) ─────────────────────────
     # Run the action-recommender skill after every successful publish.
@@ -4100,6 +5327,7 @@ def build_insight_graph():
     publish:      DB upsert + per-window metric snapshots.
     """
     g = StateGraph(InsightState)
+    g.add_node("resolve_context",   node_resolve_context)
     g.add_node("ingest",            node_ingest)
     g.add_node("context",           node_context)
     g.add_node("route_specialists", node_route_specialists)
@@ -4109,6 +5337,7 @@ def build_insight_graph():
     g.add_node("absa",              node_absa)
     g.add_node("cluster",           node_cluster)
     g.add_node("topics",            node_topics)
+    g.add_node("delta_compute",      node_delta_compute)
     g.add_node("narrate",            node_narrate)
     g.add_node("report_agent",       node_report_agent)
     g.add_node("merge_tracks",       node_merge_tracks)
@@ -4116,7 +5345,8 @@ def build_insight_graph():
     g.add_node("evaluate",           node_evaluate)
     g.add_node("publish",            node_publish)
 
-    g.set_entry_point("ingest")
+    g.set_entry_point("resolve_context")
+    g.add_edge("resolve_context",    "ingest")
     g.add_edge("ingest",             "context")
     g.add_edge("context",            "route_specialists")
     g.add_edge("route_specialists",  "embed")
@@ -4126,7 +5356,8 @@ def build_insight_graph():
     g.add_edge("extract_texts",      "absa")
     g.add_edge("absa",               "cluster")
     g.add_edge("cluster",            "topics")
-    g.add_edge("topics",             "narrate")
+    g.add_edge("topics",             "delta_compute")
+    g.add_edge("delta_compute",      "narrate")
     g.add_edge("narrate",            "report_agent")
     g.add_edge("report_agent",       "merge_tracks")
     g.add_edge("merge_tracks",       "verify")
@@ -4149,13 +5380,44 @@ def get_insight_graph():
     return _insight_graph
 
 
+def _derive_profile(trigger: str, profile: str | None) -> str:
+    """Derive run profile from explicit arg or trigger (backward compatible).
+
+    Explicit profile wins. Otherwise: trigger='manual' → manual_quick (legacy UI
+    Refresh maps to a quick manual run); trigger='refresh' → refresh; everything
+    else (stream/scheduler/milestone/api/schedule) → automated_incremental.
+    """
+    if profile:
+        return profile
+    if trigger == "refresh":
+        return INSIGHT_PROFILE_REFRESH
+    # Legacy: trigger='manual' historically meant "force regenerate the automated
+    # projection" (UI Refresh), NOT a manual report. Keep that behavior — it stays
+    # automated_incremental with force_regenerate=True so existing callers are
+    # unchanged. Manual report runs pass profile= explicitly.
+    return INSIGHT_PROFILE_AUTOMATED
+
+
 async def run_insight_generation(
     survey_id: str,
     org_id: str,
     run_id: str,
     trigger: str = "schedule",
+    *,
+    profile: str | None = None,
+    window_start=None,
+    window_end=None,
+    parent_checkpoint_id: str | None = None,
+    config_override: dict | None = None,
+    actor: str | None = None,
 ) -> dict:
-    """Run the full insight generation pipeline."""
+    """Run the full insight generation pipeline.
+
+    Backward compatible: existing callers pass only (survey_id, org_id, run_id,
+    trigger). New v2 callers may pass profile (automated_incremental | refresh |
+    manual_expert | manual_quick), a manual window, an explicit parent checkpoint,
+    a config_override merged into settings, and an actor string for lineage.
+    """
     # Set trace context HERE, before ainvoke, so all LangGraph node-tasks
     # inherit the correct run_id/org_id when they are created by the graph runner.
     # Setting it only inside node_ingest is too late — LangGraph creates a new
@@ -4164,13 +5426,44 @@ async def run_insight_generation(
     set_trace_context(run_id=run_id, org_id=org_id)
     structlog.contextvars.bind_contextvars(run_id=run_id, org_id=org_id)
 
+    resolved_profile = _derive_profile(trigger, profile)
+    # force_regenerate: manual/refresh always regenerate; legacy trigger='manual'
+    # also forces. Automated stream/scheduler use cache when data is unchanged.
+    force_regen = (
+        trigger == "manual"
+        or resolved_profile in (INSIGHT_PROFILE_REFRESH, INSIGHT_PROFILE_MANUAL_EXPERT,
+                                INSIGHT_PROFILE_MANUAL_QUICK)
+    )
+    _actor = actor or (
+        "user:unknown" if resolved_profile in _MANUAL_PROFILES else f"system:{trigger}"
+    )
+
     graph = get_insight_graph()
     initial_state = {
         "survey_id": survey_id, "org_id": org_id,
         "run_id": run_id, "trigger": trigger,
         # Manual trigger (UI Refresh button) forces full re-narration even if data unchanged.
         # Scheduler/stream/bulk triggers use cached insights when data is identical.
-        "force_regenerate": trigger == "manual",
+        "force_regenerate": force_regen,
+        # Insight Pipeline v2 — profile + manual params consumed by resolve_context.
+        "profile":              resolved_profile,
+        "actor":                _actor,
+        "window_start":         window_start,
+        "window_end":           window_end,
+        "parent_checkpoint_id": parent_checkpoint_id or "",
+        "config_override":      config_override or {},
+        "survey_settings":      {},
+        "parent_checkpoint":    None,
+        "prior_checkpoints":    [],
+        "watermark":            None,
+        "metric_snapshots":     [],
+        "config_hash":          "",
+        "sample_ids":           set(),
+        "sample_stats":         {},
+        "skip_run":             False,
+        "skip_reason":          "",
+        "skip_report":          False,
+        "report_id":            (config_override or {}).get("report_id", "") if config_override else "",
         "survey": {}, "responses": [],
         "new_response_ids": set(),
         "metrics": {}, "open_texts": [],
@@ -4185,6 +5478,10 @@ async def run_insight_generation(
         "prior_snapshots":      [],
         "prior_insights":       [],   # populated by node_narrate, consumed by node_report_agent
         "prior_context_run_id": "",   # run_id of the anchor; written to agent_runs in node_publish
+        # Phase 0.5 — populated by node_delta_compute, consumed by node_narrate + node_publish
+        "delta_from_prior":     None,
+        "meaningful_delta":     True,
+        "prior_checkpoint_summaries": [],
         "last_report_response_count": 0,
         "org_context":          {},
         "survey_context":       {},

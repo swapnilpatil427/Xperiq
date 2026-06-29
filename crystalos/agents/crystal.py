@@ -899,6 +899,10 @@ _PROPOSAL_TYPE_ALIASES = {
     "case":          "create_case",
     "assign_owner":  "assign_owner",
     "slack_notify":  "send_slack_alert",
+    # Insight Pipeline v2 — report proposals → frontend handler names (07 §5)
+    "manual_insight_run":          "trigger_manual_insight_run",
+    "view_report":                 "view_report",
+    "generate_intelligence_report": "generate_intelligence_report",
 }
 
 

@@ -49,6 +49,12 @@ export const CREDIT_COSTS = {
   xo_fusion:       envInt('CREDIT_COST_XO_FUSION', 200),
   broadcast_email: envInt('CREDIT_COST_BROADCAST_EMAIL', 2),
   broadcast_sms:   envInt('CREDIT_COST_BROADCAST_SMS', 8),
+  // Insight Pipeline v2 — per-run costs (05_CONFIGURATION.md §7). These are the platform
+  // fallbacks; survey_insight_settings / org_insight_defaults may override per org/survey.
+  refresh:         envInt('CREDIT_COST_REFRESH', 8),
+  manual_quick:    envInt('CREDIT_COST_MANUAL_QUICK', 15),
+  manual_expert:   envInt('CREDIT_COST_MANUAL_EXPERT', 40),
+  custom_base:     envInt('CREDIT_COST_CUSTOM_BASE', 25),
 } as const;
 
 export type MeteredAction = keyof typeof CREDIT_COSTS;
@@ -64,6 +70,28 @@ export function isPlanTier(v: unknown): v is PlanTier {
 
 export function costFor(action: MeteredAction): number {
   return CREDIT_COSTS[action];
+}
+
+/**
+ * Custom Analysis credit cost scaling (05_CONFIGURATION.md §7).
+ * Cost scales by corpus-size tier on top of `custom_base`:
+ *   ≤500 responses  → base               (default 25)
+ *   ≤2000 responses → base + 1 step       (default 50)
+ *   >2000 responses → base + 2 steps      (default 75)
+ *
+ * `custom_base` is env-overridable (`CREDIT_COST_CUSTOM_BASE`, default 25). The per-tier
+ * step is derived so the documented 25/50/75 ladder holds at the default base (step = base).
+ * Capped at the platform ceiling (500) to mirror the per-run cost validation rules.
+ */
+export function resolveCustomCost(corpusSize: number): number {
+  const base = CREDIT_COSTS.custom_base;
+  const step = base; // default base 25 → 25/50/75 ladder
+  const n = Number.isFinite(corpusSize) && corpusSize > 0 ? Math.trunc(corpusSize) : 0;
+  let cost: number;
+  if (n <= 500)       cost = base;
+  else if (n <= 2000) cost = base + step;
+  else                cost = base + step * 2;
+  return Math.min(Math.max(cost, 1), 500);
 }
 
 /** Plan period length in days (monthly). Configurable for testing/annual experiments. */

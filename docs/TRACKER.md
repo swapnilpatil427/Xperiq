@@ -628,6 +628,18 @@ Sprint 2 shipped: `usePermissions()` hook + `<PermissionGate>` component, `featu
 | Topic sentiment visualization in Voice tab | ✅ | `sentiment_score` + `dominant_emotion` per topic |
 | Crystal drawer with conversation history | ✅ | Thread persistence via crystal_threads; messages array |
 
+### Insight Pipeline v2 — Phase 7 (Deprecation & Cleanup)
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| IP7-1 | `insight_audit_log` table (G27) + write on every pipeline verify step | ✅ | `GET /api/insights/:insightId/audit` — admin-gated; SOC2/GDPR right-to-explanation |
+| IP7-2 | GET /api/insights/:insightId/audit endpoint — admin-gated audit trail | ✅ | Returns 10 most-recent audit entries; 403 for non-admin |
+| IP7-3 | SLO metrics endpoint (`GET /api/insights/_slo`) + Prometheus counters | ✅ | 24h window; citation validity + verifier pass rate; warn/critical thresholds |
+| IP7-4 | Legacy `/checkpoints` deprecation headers (`Deprecation`, `Sunset`, `Link`) | ✅ | 90-day sunset; successor: `/api/insights/:surveyId/trail` |
+| IP7-5 | Legacy `/surveys/:surveyId/insights` backward-compat deprecation headers | ✅ | 90-day sunset; successor: `/api/insights/:surveyId/list` |
+| IP7-6 | `STOP_LEGACY_CHECKPOINT_WRITE` env gate + retention job auto-enable | ✅ | ENV-gated; auto-enables compaction when `INSIGHT_CHECKPOINTS_V2_ENABLED=true` |
+| IP7-7 | Intelligence lifecycle visual guide updated to v2 | ✅ | `docs/intelligence-lifecycle-visual-guide.md` — full pipeline, checkpoint linked list, manual modes, SLO thresholds |
+
 ### GCP Deployment Tasks 🔜
 
 | ID | Task | Status | Notes |

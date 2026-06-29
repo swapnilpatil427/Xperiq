@@ -3,9 +3,12 @@ import type { Request, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { requireAuth, DEV_MODE } from '../middleware/auth';
+import { requireRole } from '../middleware/requireRole';
 import { validate } from '../lib/validate';
 import { createOrgSchema, updateOrgSchema } from '../schemas/orgs';
+import { updateOrgInsightDefaultsSchema, ORG_INSIGHT_DEFAULT_KEYS } from '../schemas/insightSettings';
 import { query } from '../lib/db';
+import logger from '../lib/logger';
 import { serverError } from '../lib/httpError';
 
 const router = express.Router();
@@ -192,5 +195,85 @@ router.get('/me/analytics', requireAuth, async (req: Request, res: Response): Pr
     res.status(500).json({ error: 'Failed to fetch org analytics' });
   }
 });
+
+// ── Org-level insight defaults (Phase 1) ──────────────────────────────────────
+
+// GET /api/orgs/:orgId/insight-defaults — any member of that org.
+router.get('/:orgId/insight-defaults', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { orgId } = req.params;
+  // Tenancy: a caller may only read their own org's defaults.
+  if (orgId !== req.orgId) {
+    res.status(403).json({ error: 'Cannot read another org\'s insight defaults' });
+    return;
+  }
+  try {
+    let row: Record<string, unknown> = {};
+    try {
+      const { rows } = await query('SELECT * FROM org_insight_defaults WHERE org_id = $1', [orgId]);
+      row = (rows[0] as Record<string, unknown>) ?? {};
+    } catch (e: unknown) {
+      // org_insight_defaults not migrated yet — return nulls.
+      logger.warn({ err: (e as Error).message, orgId }, 'orgs:insight-defaults:get:table_unavailable');
+    }
+
+    const defaults: Record<string, unknown> = {};
+    for (const key of ORG_INSIGHT_DEFAULT_KEYS) {
+      defaults[key] = row[key] ?? null;
+    }
+    res.json({ org_id: orgId, defaults, updated_at: row.updated_at ?? null, updated_by: row.updated_by ?? null });
+  } catch (err: unknown) {
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
+// PATCH /api/orgs/:orgId/insight-defaults — brand_admin only.
+router.patch(
+  '/:orgId/insight-defaults',
+  requireAuth,
+  requireRole('admin'),
+  validate(updateOrgInsightDefaultsSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    const { orgId } = req.params;
+    if (orgId !== req.orgId) {
+      res.status(403).json({ error: 'Cannot modify another org\'s insight defaults' });
+      return;
+    }
+    try {
+      const patch = req.body as Record<string, unknown>;
+      const keys = Object.keys(patch);
+      if (keys.length === 0) {
+        res.status(400).json({ error: 'No defaults provided' });
+        return;
+      }
+
+      const insertCols = ['org_id', ...keys, 'updated_by'];
+      const insertParams: unknown[] = [orgId, ...keys.map(k => patch[k]), req.userId];
+      const placeholders = insertParams.map((_, i) => `$${i + 1}`);
+      const updateAssignments = keys.map(k => `${k} = EXCLUDED.${k}`);
+      updateAssignments.push('updated_by = EXCLUDED.updated_by');
+      updateAssignments.push('updated_at = NOW()');
+
+      const { rows } = await query(
+        `INSERT INTO org_insight_defaults (${insertCols.join(', ')})
+         VALUES (${placeholders.join(', ')})
+         ON CONFLICT (org_id) DO UPDATE SET
+           ${updateAssignments.join(',\n           ')}
+         RETURNING *`,
+        insertParams,
+      );
+
+      const row = (rows[0] as Record<string, unknown>) ?? {};
+      const defaults: Record<string, unknown> = {};
+      for (const key of ORG_INSIGHT_DEFAULT_KEYS) {
+        defaults[key] = row[key] ?? null;
+      }
+      logger.info({ orgId, keys, by: req.userId }, 'orgs:insight-defaults:patched');
+      res.json({ org_id: orgId, defaults, updated_at: row.updated_at ?? null, updated_by: row.updated_by ?? null });
+    } catch (err: unknown) {
+      logger.error({ err: (err as Error).message, orgId }, 'orgs:insight-defaults:patch:error');
+      serverError(res, err instanceof Error ? err : new Error(String(err)));
+    }
+  },
+);
 
 export default router;

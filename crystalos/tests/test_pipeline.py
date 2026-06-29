@@ -21,6 +21,7 @@ from crystalos.graphs.insights import (
     node_topics,
     node_narrate,
     node_publish,
+    node_delta_compute,
     _update_heartbeat,
 )
 from crystalos.lib.constants import (
@@ -558,3 +559,114 @@ class TestSelectiveSupersede:
         assert any("category NOT LIKE" in sql for sql in supersede_sqls), (
             f"'reported.*' category should not trigger full supersede: {supersede_sqls}"
         )
+
+
+# ── TestNodeDeltaCompute (Insight Pipeline v2 — Phase 0.5) ────────────────────
+
+class TestNodeDeltaCompute:
+    """Tests for node_delta_compute — bootstrap path + non-bootstrap delta path."""
+
+    def _make_cursor_pool(self, fetchall_return=None):
+        """Pool mock whose cursor returns the given rows for fetchall(), with a
+        matching cur.description for the node_delta_compute SELECT."""
+        mock_cur = AsyncMock()
+        mock_cur.execute = AsyncMock()
+        mock_cur.fetchall = AsyncMock(return_value=fetchall_return or [])
+        mock_cur.description = [
+            ("checkpoint_number",), ("report_url",), ("created_at",),
+            ("nps_at_checkpoint",), ("topic_fingerprint",),
+        ]
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        pool_ctx = MagicMock()
+        pool_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        pool_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=pool_ctx)
+        return mock_pool
+
+    @pytest.mark.asyncio
+    async def test_bootstrap_returns_meaningful_true_none_delta(self):
+        """Bootstrap run: delta None, meaningful_delta True, no DB read."""
+        state = _make_state(is_bootstrap=True, metrics={"nps": {"score": 40.0}})
+        with patch("crystalos.graphs.insights._update_heartbeat", new=AsyncMock()):
+            result = await node_delta_compute(state)
+        assert result["delta_from_prior"] is None
+        assert result["meaningful_delta"] is True
+        assert result["prior_checkpoint_summaries"] == []
+
+    @pytest.mark.asyncio
+    async def test_no_prior_blob_falls_back_to_bootstrap_path(self):
+        """Non-bootstrap but no prior checkpoint rows → bootstrap-like fallback."""
+        pool = self._make_cursor_pool(fetchall_return=[])
+        state = _make_state(is_bootstrap=False, metrics={"nps": {"score": 40.0}})
+        with (
+            patch("crystalos.graphs.insights._update_heartbeat", new=AsyncMock()),
+            patch("crystalos.graphs.insights.db._pool_conn", return_value=pool),
+        ):
+            result = await node_delta_compute(state)
+        assert result["delta_from_prior"] is None
+        assert result["meaningful_delta"] is True
+        assert result["prior_checkpoint_summaries"] == []
+
+    @pytest.mark.asyncio
+    async def test_non_bootstrap_computes_delta_and_summaries(self):
+        """Non-bootstrap with a prior blob → computes delta + scalar summaries."""
+        from datetime import datetime, timezone
+        rows = [
+            (3, "ref-3", datetime(2026, 6, 1, tzinfo=timezone.utc), 45.0, "fp3"),
+            (2, "ref-2", datetime(2026, 5, 1, tzinfo=timezone.utc), 44.0, "fp2"),
+        ]
+        pool = self._make_cursor_pool(fetchall_return=rows)
+        prior_blob = {
+            "nps_at_checkpoint": 45.0,
+            "csat_at_checkpoint": 4.0,
+            "response_count_at_checkpoint": 50,
+            "topics": [{"name": "Billing"}],
+        }
+        state = _make_state(
+            is_bootstrap=False,
+            metrics={"nps": {"score": 40.0}, "csat": {"score": 4.0}, "total_responses": 60},
+            topic_signals={"Billing": {}, "AI features": {}},
+        )
+        with (
+            patch("crystalos.graphs.insights._update_heartbeat", new=AsyncMock()),
+            patch("crystalos.graphs.insights.db._pool_conn", return_value=pool),
+            patch(
+                "crystalos.lib.checkpoint_store.read_checkpoint_blob",
+                new=AsyncMock(return_value=prior_blob),
+            ),
+        ):
+            result = await node_delta_compute(state)
+
+        delta = result["delta_from_prior"]
+        assert delta is not None
+        assert delta["nps_delta"] == -5.0            # 40 - 45
+        assert "AI features" in delta["topic_changes"]["emerged"]
+        assert result["meaningful_delta"] is True    # 5-pt drop > 2.0 default
+        # Summaries are oldest-first, scalar only, date truncated to YYYY-MM-DD.
+        summaries = result["prior_checkpoint_summaries"]
+        assert [s["checkpoint_number"] for s in summaries] == [2, 3]
+        assert summaries[0]["created_at"] == "2026-05-01"
+        assert summaries[1]["nps"] == 45.0
+
+    @pytest.mark.asyncio
+    async def test_db_failure_falls_back_to_bootstrap_path(self):
+        """A DB error during prior-checkpoint load must not crash the pipeline."""
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(side_effect=Exception("DB down"))
+        state = _make_state(is_bootstrap=False, metrics={"nps": {"score": 40.0}})
+        with (
+            patch("crystalos.graphs.insights._update_heartbeat", new=AsyncMock()),
+            patch("crystalos.graphs.insights.db._pool_conn", return_value=mock_pool),
+        ):
+            result = await node_delta_compute(state)
+        assert result["delta_from_prior"] is None
+        assert result["meaningful_delta"] is True

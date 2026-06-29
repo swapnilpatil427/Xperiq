@@ -12,6 +12,13 @@ export const ROUTES = {
   RESPONSE_DASHBOARD: '/app/surveys/:surveyId/responses',
   SURVEY_INSIGHTS:    '/app/surveys/:surveyId/insights',
   SAMPLE_RESPONSES:   '/app/surveys/:surveyId/sample-responses',
+  // Insight Pipeline v2 — Phase 4 Trail + report viewer
+  INSIGHT_TRAIL:      '/app/surveys/:surveyId/intelligence/trail',
+  INSIGHT_REPORT:     '/app/surveys/:surveyId/intelligence/reports/:reportId',
+  // Insight Pipeline v2 — Phase 5 Settings + Phase 6 Custom Analysis
+  INSIGHT_SETTINGS:   '/app/surveys/:surveyId/intelligence/settings',
+  CUSTOM_ANALYSIS:    '/app/surveys/:surveyId/intelligence/custom',
+  CUSTOM_REPORT:      '/app/surveys/:surveyId/intelligence/custom/:reportId',
   INSIGHTS:           '/app/insights',
   INSIGHTS_TOPICS:    '/app/insights/topics',
   ADVANCED_INSIGHTS:  '/app/insights/advanced',

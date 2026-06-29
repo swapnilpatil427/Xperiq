@@ -136,7 +136,7 @@ describe('InsightsDashboardPage — generate polling', () => {
     await act(async () => { clickGenerate(); });
     await act(async () => {}); // flush triggerInsightGeneration promise
 
-    expect(api.triggerInsightGeneration).toHaveBeenCalledWith('s1');
+    expect(api.triggerInsightGeneration).toHaveBeenCalledWith('s1', { trigger: 'manual' });
     expect(screen.getByText('sentinel-generating')).toBeTruthy();
   });
 

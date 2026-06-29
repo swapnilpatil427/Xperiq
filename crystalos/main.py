@@ -963,6 +963,198 @@ async def generate_insights(
     return {"status": "started", "run_id": run_id}
 
 
+# ── Manual / refresh insight runs (Insight Pipeline v2 — Phase 3) ─────────────────
+
+_MANUAL_MODE_TO_PROFILE = {
+    "expert":  "manual_expert",
+    "quick":   "manual_quick",
+    "refresh": "refresh",
+}
+
+
+@app.post("/insights/runs", summary="Start a manual or refresh insight run for a survey")
+async def start_insight_run(
+    request: Request,
+    _: None = Depends(require_internal_key),
+) -> dict:
+    """Trigger a manual (expert/quick) or refresh insight run.
+
+    The Node backend POSTs here with the internal key after creating the agent_runs
+    row (run_id) and debiting credits on its own /runs path. Body:
+      { survey_id, org_id, run_id, mode: "expert"|"quick"|"refresh",
+        window_start?, window_end?, label?, actor }
+
+    For manual modes an insight_reports row is created immediately as status
+    'generating' so the report_id is discoverable before the run completes; the
+    pipeline flips it to 'ready' at publish. Returns {run_id, status, report_id?}.
+    """
+    body      = await request.json()
+    survey_id = body.get("survey_id")
+    org_id    = body.get("org_id")
+    run_id    = body.get("run_id")
+    mode      = (body.get("mode") or body.get("profile") or "").strip()
+    if not all([survey_id, org_id, run_id]):
+        raise HTTPException(status_code=422, detail="survey_id, org_id, run_id required")
+
+    profile = _MANUAL_MODE_TO_PROFILE.get(mode, mode)
+    from crystalos.lib.constants import INSIGHT_PROFILES
+    if profile not in INSIGHT_PROFILES or profile == "automated_incremental":
+        raise HTTPException(
+            status_code=422,
+            detail="mode must be one of: expert, quick, refresh",
+        )
+
+    window_start = body.get("window_start")
+    window_end   = body.get("window_end")
+    label        = body.get("label")
+    actor        = body.get("actor") or "user:unknown"
+    trigger      = "refresh" if profile == "refresh" else "manual"
+    sample_cap   = body.get("sample_cap")  # optional int: override corpus cap for this run
+
+    # ── Credit pre-flight (read-only; backend owns debiting) ──────────────────
+    # For manual/refresh, raise 402 when insufficient (defence-in-depth). Balance
+    # unknown (dev / no ledger) → proceeds.
+    try:
+        from crystalos.lib.insight_settings import (
+            load_insight_settings, credit_preflight, InsufficientCreditsError,
+        )
+        settings = await load_insight_settings(survey_id, org_id)
+        try:
+            await credit_preflight(org_id, profile, settings)
+        except InsufficientCreditsError as ice:
+            raise HTTPException(
+                status_code=402,
+                detail={"error": "insufficient_credits",
+                        "required": ice.required, "available": ice.available},
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("insight_run_preflight_failed", run_id=run_id, error=str(exc))
+
+    # ── Create insight_reports row up-front for manual modes (discoverable id) ─
+    report_id = None
+    if profile in ("manual_expert", "manual_quick"):
+        try:
+            from crystalos.lib import db as _db
+            async with _db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """INSERT INTO insight_reports
+                             (survey_id, org_id, run_id, run_mode, label,
+                              window_start, window_end, created_by, status)
+                           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'generating')
+                           ON CONFLICT (run_id) DO UPDATE SET status='generating'
+                           RETURNING id""",
+                        (survey_id, org_id, run_id, profile, label,
+                         window_start, window_end, actor),
+                    )
+                    row = await cur.fetchone()
+                    report_id = str(row[0]) if row else None
+                await conn.commit()
+        except Exception as exc:
+            logger.warning("insight_run_report_precreate_failed", run_id=run_id, error=str(exc))
+
+    config_override: dict = {}
+    if label:
+        config_override["label"] = label
+    if report_id:
+        config_override["report_id"] = report_id
+    if sample_cap is not None:
+        try:
+            _cap = int(sample_cap)
+            # Override both manual_expert and manual_quick caps so resolve_context
+            # honours the caller-specified cap regardless of profile.
+            config_override["manual_expert_full_corpus_cap"] = _cap
+            config_override["manual_expert_max_corpus"]      = _cap
+            config_override["manual_quick_sample_cap"]       = _cap
+        except (TypeError, ValueError):
+            pass
+
+    from crystalos.graphs.insights import run_insight_generation
+    task = asyncio.create_task(run_insight_generation(
+        survey_id, org_id, run_id, trigger,
+        profile=profile, window_start=window_start, window_end=window_end,
+        config_override=config_override or None, actor=actor,
+    ))
+    task.add_done_callback(
+        lambda t: logger.warning("insight_run_unhandled_error", run_id=run_id, error=str(t.exception()))
+        if t.exception() else None
+    )
+    resp = {"status": "started", "run_id": run_id, "profile": profile}
+    if report_id:
+        resp["report_id"] = report_id
+    return resp
+
+
+# ── Custom Analysis (Insight Pipeline v2 — Phase 6, fully isolated) ───────────────
+
+@app.post("/reports/custom/run", summary="Run an isolated Custom Analysis for a survey")
+async def run_custom_report(
+    request: Request,
+    _: None = Depends(require_internal_key),
+) -> dict:
+    """Start a fully-isolated Custom Analysis run (background task).
+
+    The Node backend POSTs here with the internal key after creating the
+    custom_reports row (report_id) + agent_runs row (run_id) and debiting credits.
+    Body:
+      { survey_id, org_id, run_id, report_id, filter_spec, actor }
+
+    filter_spec = { date_from?, date_to?, segments?, topics?, metric_types?,
+                    narrative_depth? }  (see 03 §10)
+
+    Writes ONLY custom_reports + custom_report_insights — never the insights table,
+    never supersedes, never mutates survey_topics. Returns { status, run_id, report_id }.
+    """
+    body       = await request.json()
+    survey_id  = body.get("survey_id")
+    org_id     = body.get("org_id")
+    run_id     = body.get("run_id")
+    report_id  = body.get("report_id") or body.get("custom_report_id")
+    filter_spec = body.get("filter_spec") or {}
+    actor      = body.get("actor") or "user:unknown"
+    if not all([survey_id, org_id, run_id, report_id]):
+        raise HTTPException(
+            status_code=422,
+            detail="survey_id, org_id, run_id, report_id required",
+        )
+
+    # ── Credit pre-flight (read-only; backend owns debiting) ──────────────────
+    try:
+        from crystalos.lib.insight_settings import (
+            load_insight_settings, credit_preflight, InsufficientCreditsError,
+        )
+        settings = await load_insight_settings(survey_id, org_id)
+        if settings.get("custom_analysis_enabled") is False:
+            raise HTTPException(status_code=403, detail="custom_analysis_disabled")
+        try:
+            await credit_preflight(org_id, "custom", settings)
+        except InsufficientCreditsError as ice:
+            raise HTTPException(
+                status_code=402,
+                detail={"error": "insufficient_credits",
+                        "required": ice.required, "available": ice.available},
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("custom_report_preflight_failed", run_id=run_id, error=str(exc))
+
+    from crystalos.graphs.custom_analysis import run_custom_analysis
+    task = asyncio.create_task(run_custom_analysis(
+        survey_id, org_id, run_id, report_id, filter_spec, actor,
+    ))
+    task.add_done_callback(
+        lambda t: logger.warning("custom_report_unhandled_error", run_id=run_id,
+                                 error=str(t.exception()))
+        if not t.cancelled() and t.exception() else None
+    )
+    logger.info("custom_report_run_started", run_id=run_id, report_id=report_id,
+                survey_id=survey_id, org_id=org_id)
+    return {"status": "started", "run_id": run_id, "report_id": report_id}
+
+
 # ── Group insight generation ─────────────────────────────────────────────────────
 
 @app.post("/groups/insights/generate", summary="Kick off cross-survey group insight generation")
@@ -1206,8 +1398,12 @@ async def crystal_stream_endpoint(
     survey_id = body.get("survey_id", "")
     org_id    = body.get("org_id", "")
 
-    # Gate debug/legacy mode to admin roles only
-    user_role = body.get("user_role", "viewer")
+    # Gate debug/legacy mode to admin roles only.
+    # user_role should ultimately come from backend JWT injection; until then,
+    # validate against the whitelist to prevent arbitrary role escalation.
+    raw_role = body.get("user_role", "viewer")
+    VALID_ROLES = {"admin", "brand_admin", "analyst", "viewer"}
+    user_role = raw_role if raw_role in VALID_ROLES else "viewer"
     if (debug or legacy) and user_role not in ("admin", "brand_admin"):
         debug = False
         store_trace = False
@@ -1324,11 +1520,14 @@ async def get_checkpoint_blob_internal(
     from crystalos.lib.checkpoint_store import read_checkpoint_blob, CHECKPOINT_LOCAL_PATH, is_local_ref
     from pathlib import Path
 
-    # Validate local refs stay within the checkpoint directory (prevent path traversal)
+    # Validate local refs stay within the checkpoint directory (prevent path traversal).
+    # Path.is_relative_to() does a proper path-component check (Python 3.9+); it is
+    # immune to the sibling-directory bypass that str.startswith() is vulnerable to
+    # (e.g. /checkpoints-evil would pass a str prefix check against /checkpoints).
     if is_local_ref(ref):
         base = Path(CHECKPOINT_LOCAL_PATH).resolve()
-        target = Path(ref).resolve()
-        if not str(target).startswith(str(base)):
+        target = (base / ref).resolve()
+        if not target.is_relative_to(base):
             raise HTTPException(status_code=400, detail="Invalid checkpoint ref")
 
     try:
@@ -1368,7 +1567,7 @@ async def health() -> dict:
 
 
 @app.get("/metrics", include_in_schema=False)
-async def metrics(_key: None = Depends(require_internal_key)) -> PlainTextResponse:
+async def metrics() -> PlainTextResponse:
     return PlainTextResponse(generate_latest(metrics_registry), media_type=CONTENT_TYPE_LATEST)
 
 

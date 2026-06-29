@@ -32,6 +32,15 @@ def _reset_batches():
 # ---------------------------------------------------------------------------
 
 class TestShouldTriggerCountThreshold:
+    def setup_method(self):
+        import crystalos.consumers.response_stream as rs
+        self._orig_threshold = rs.NEW_RESPONSE_THRESHOLD
+        rs.NEW_RESPONSE_THRESHOLD = 10
+
+    def teardown_method(self):
+        import crystalos.consumers.response_stream as rs
+        rs.NEW_RESPONSE_THRESHOLD = self._orig_threshold
+
     @pytest.mark.asyncio
     async def test_triggers_at_threshold(self):
         from crystalos.consumers import response_stream as rs
@@ -74,6 +83,15 @@ class TestShouldTriggerCountThreshold:
 # ---------------------------------------------------------------------------
 
 class TestShouldTriggerTimeThreshold:
+    def setup_method(self):
+        import crystalos.consumers.response_stream as rs
+        self._orig_threshold = rs.NEW_RESPONSE_THRESHOLD
+        rs.NEW_RESPONSE_THRESHOLD = 10
+
+    def teardown_method(self):
+        import crystalos.consumers.response_stream as rs
+        rs.NEW_RESPONSE_THRESHOLD = self._orig_threshold
+
     @pytest.mark.asyncio
     async def test_triggers_after_time_with_pending_responses(self):
         from crystalos.consumers import response_stream as rs

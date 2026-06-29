@@ -961,6 +961,502 @@ const en = {
       },
     },
     sampleDataBanner: 'Sample data — select a survey above for real insights',
+
+    // ── Insight Pipeline v2 — Phase 0.5 investigation trajectory ──────────────
+    // Enhanced Header Band, Topic Change Bar, Investigation Drawer. All strings
+    // for feature flag insightsTrajectoryV1.
+    investigation: {
+      provenanceLine:        'Updated {ago} ago · {trigger} · checkpoint #{checkpoint} · {newResponses} new responses',
+      provenanceLineFirst:   'First analysis · checkpoint #{checkpoint} · {responses} responses analyzed',
+      deltaSince:            '{arrow}{delta} since #{prev}',
+      npsLabel:              'Net Promoter Score',
+      emerged:               'emerged',
+      declining:             'declining',
+      countEmerged:          '{count} emerged',
+      countDeclining:        '{count} declining',
+      viewDetails:           'View details →',
+      topicBarLabel:         'Since checkpoint #{checkpoint} ({date}):',
+
+      // Generate dropdown (reuses existing generate strings; band-local labels)
+      generate:              'Generate',
+      refresh:               'Refresh',
+      menuCustomAnalysis:    'Custom analysis…',
+      menuSettings:          'Intelligence settings…',
+
+      // Drawer
+      drawerTitle:           'Investigation Details',
+      sectionA:              'NPS over last {n} checkpoints',
+      metricNPS:             'Net Promoter Score',
+      metricCSAT:            'CSAT',
+      metricCES:             'CES',
+      deltaPoints:           '{arrow}{delta} pts',
+      sectionB:              'What changed',
+      topicsEmerged:         'Topics emerged',
+      topicsDeclining:       'Topics declining',
+      topicsStable:          '{n} topics unchanged',
+      sectionC:              'Provenance',
+      provenanceCheckpoint:  'Checkpoint',
+      provenanceGenerated:   'Generated',
+      provenanceTrigger:     'Trigger',
+      provenanceNewResponses:'New responses',
+      provenanceCreditCost:  'Credit cost',
+      provenanceCreditCostValue: '{cost} credits',
+      provenanceModel:       'Model',
+      viewPriorCheckpoint:   '← View checkpoint #{n}',
+      crystalBanner:         'Ask Crystal about these changes →',
+      crystalPreFill:        'What changed since checkpoint #{prev}?',
+      featureFlag:           'Feature: insights_trajectory_v1',
+
+      // Bootstrap / baseline variants
+      noBaseline:            'No prior checkpoint',
+      baselineCaption:       'This is your baseline.',
+      noChangeData:          'No change data for first checkpoint',
+
+      // a11y
+      deltaChipAriaLabel:    'NPS {direction} {delta} points since checkpoint {prev}. Click to view investigation details.',
+      deltaChipAriaLabelStable: 'NPS unchanged since checkpoint {prev}. Click to view investigation details.',
+      viewDetailsAriaLabel:  'View investigation details for checkpoint {checkpoint}',
+      topicCountAriaLabel:   '{count} {direction} since last checkpoint',
+      crystalBannerAriaLabel:'Ask Crystal: What changed since checkpoint {prev}?',
+      sparklineAriaLabel:    'NPS trend over last {n} checkpoints: {values}',
+
+      // a11y direction words (for screen-reader equivalents of arrows)
+      directionUp:           'increased',
+      directionDown:         'decreased',
+      directionStable:       'unchanged',
+
+      // State 2 (generating)
+      analyzingResponses:    'Analyzing {count} new responses…',
+      analysisInProgress:    'Analysis in progress…',
+
+      // State 4 (legacy checkpoint)
+      deltaNotAvailable:     'Delta not available — this checkpoint predates investigation tracking.',
+      noChangeDataLegacy:    'No change data for this checkpoint',
+
+      // Sparkline degraded states
+      noTrendYet:            'No trend yet — first update since baseline',
+      sparklineSinglePoint:  'Checkpoint #{n} · NPS {val}',
+
+      // Null checkpoint guard (States 1 and 2)
+      loading:               'Loading investigation details…',
+
+      // Trigger labels
+      triggerStream:         'Automated (new responses)',
+      triggerScheduler:      'Automated (scheduled)',
+      triggerMilestone:      'Automated (milestone)',
+      triggerRefresh:        'Manual refresh',
+      triggerManualExpert:   'Expert report',
+      triggerManualQuick:    'Quick brief',
+      triggerApi:            'API trigger',
+
+      // View trail (conditional, Phase 4)
+      viewTrail:             'View trail',
+      viewTrailComingSoon:   'Coming in Phase 4',
+    },
+
+    // ── Phase 4 — Insight Trail page ──────────────────────────────────────────
+    trail: {
+      title:                 'Insight Trail',
+      subtitle:              'Automated and manual checkpoints over time',
+      back:                  '← Intelligence',
+      generate:              'Generate report',
+
+      // Filters
+      filtersLabel:          'Filters',
+      laneAll:               'All',
+      laneAutomated:         'Automated',
+      laneManual:            'Manual',
+      rangeLabel:            'Range',
+      range7d:               'Last 7 days',
+      range30d:              'Last 30 days',
+      range90d:              'Last 90 days',
+      rangeAll:              'All time',
+      compare:               'Compare',
+      compareExit:          'Exit compare',
+      compareHint:           'Select two checkpoints to compare',
+
+      // Lanes
+      laneAutomatedHeading:  'Automated',
+      laneManualHeading:     'Manual',
+      laneCustomHeading:   'Custom Analysis',
+
+      // Tier milestone labels (shown on automated checkpoints)
+      tier: {
+        first_voices:    'First Voices',
+        early_signals:   'Early Signals',
+        growing_picture: 'Growing Picture',
+        full_report:     'Full Report',
+      },
+
+      // Node
+      checkpointNumber:      'Checkpoint #{number}',
+      openReport:            'Open report',
+      openDetail:            'Open',
+      npsValue:              'NPS {value}',
+      deltaSince:            '({arrow}{delta})',
+      stable:                'stable',
+      newResponses:          '{count} new responses',
+      emergedCount:          '{count} emerged',
+      decliningCount:        '{count} declining',
+      windowRange:           'Window: {from} – {to}',
+      sampled:               '{count} sampled',
+      byUser:                'by {name}',
+      modeExpert:            'Expert report',
+      modeQuick:             'Quick brief',
+      customCardOpen:        'Open analysis',
+      customCardMeta:        '{count} responses · {pct}% coverage',
+      customCardTrust:       'Trust {score}',
+
+      // Rollup (collapsed quiet checkpoints)
+      rollupLabel:           '{count} quiet checkpoints',
+      rollupSubLabel:        'NPS stable',
+      rollupExpand:          'Expand',
+      rollupCollapse:        'Collapse',
+
+      // Compare panel
+      compareTitle:          'Comparing checkpoints',
+      compareMetricNps:      'NPS',
+      compareMetricCsat:     'CSAT',
+      compareMetricCes:      'CES',
+      compareTopicsAdded:    'Topics added',
+      compareTopicsRemoved:  'Topics removed',
+      compareNone:           'No change',
+      compareSelectPrompt:   'Pick a second checkpoint to compare',
+      compareDesktopOnly:    'Compare is available on desktop',
+
+      // Pagination
+      loadMore:              'Load more',
+      loading:               'Loading trail…',
+
+      // Empty / edge states
+      emptyTitle:            'No checkpoints yet',
+      emptyBody:             'Insights will appear after 10 responses.',
+      emptyManual:           'No manual reports yet',
+      emptyCustom:           'No custom analysis yet',
+      emptyAutomated:        'No automated checkpoints yet',
+      errorTitle:            'Could not load the trail',
+      errorBody:             'Something went wrong loading checkpoints. Try again.',
+      retry:                 'Retry',
+
+      // a11y
+      nodeAriaLabel:         'Checkpoint {number}, {lane}, NPS {nps}. Open details.',
+      selectForCompareAria:  'Select checkpoint {number} for comparison',
+
+      // Relative time (used by relativeAgo() in trajectory.ts)
+      relativeAgo: {
+        justNow:  'just now',
+        minutes:  '{count}m',
+        hours:    '{h}h',
+        days:     '{d}d',
+        months:   '{mo}mo',
+      },
+
+      reportLabelQuoted: '"{label}"',
+    },
+
+    // ── Phase 3 — Manual Run dialog ───────────────────────────────────────────
+    manualRun: {
+      title:                 'Generate insight report',
+      description:           'Run a fresh analysis over a time window of your choice.',
+
+      // Mode selector
+      modeLabel:             'Mode',
+      modeExpert:            'Expert',
+      modeExpertDesc:        'Deepest analysis — full corpus, industry-leading detail',
+      modeExpertMeta:        '3–8 min · full depth',
+      modeQuick:             'Quick',
+      modeQuickDesc:         'Executive brief in about a minute',
+      modeQuickMeta:         '~1 min · top findings',
+      modeRefresh:           'Refresh',
+      modeRefreshDesc:       'Update the active intelligence cards from recent responses',
+      modeRefreshMeta:       '~45 sec · last 30 days',
+
+      // Time window
+      windowLabel:           'Time window',
+      window7d:              'Last 7 days',
+      window30d:             'Last 30 days',
+      window90d:             'Last 90 days',
+      windowAll:             'All time',
+      windowCustom:          'Custom',
+      windowFrom:            'From',
+      windowTo:              'To',
+
+      // Preview
+      previewLabel:          'Preview',
+      previewCorpus:         'Responses in window',
+      previewSample:         'Sample size',
+      previewCost:           'Estimated cost',
+      previewCostValue:      '{cost} credits',
+      previewDuration:       'Estimated time',
+      previewLoading:        'Estimating…',
+      previewUnavailable:    'Preview unavailable',
+      previewLowSample:      'Exploratory · low sample (n={count})',
+
+      // Label
+      labelLabel:            'Label (optional)',
+      labelPlaceholder:      'e.g. Q2 board prep',
+
+      // Actions
+      cancel:                'Cancel',
+      confirm:               'Generate report',
+      confirmRefresh:        'Refresh',
+      generating:            'Generating…',
+
+      // Progress
+      progressTitle:         'Generating your report',
+      progressBody:          'Analyzing responses — this can take a few minutes.',
+      progressDone:          'Report ready',
+      viewReport:            'View report',
+      viewTrail:             'View in trail',
+
+      // Errors
+      errorCredits:          'Not enough credits to run this report.',
+      errorCreditsCta:       'Upgrade or top up credits to continue.',
+      errorRateLimited:      'Daily run limit reached. Try again tomorrow.',
+      errorInsufficientData: 'Not enough responses — try expanding the time window.',
+      errorGeneric:          'Could not start the run. Please try again.',
+      errorFailed:           'The run failed. Please try again.',
+
+      // a11y
+      modeOptionAria:        '{mode} mode: {desc}',
+    },
+
+    // ── Phase 5 — Settings UI ─────────────────────────────────────────────────
+    settings: {
+      title:               'Intelligence settings',
+      subtitle:            'Configure how automated insights, refresh, manual runs, and custom analysis behave for this survey.',
+      back:                'Back to intelligence',
+
+      // Tabs
+      tabSurvey:           'This survey',
+      tabOrg:              'Org defaults',
+
+      // RBAC / lock
+      lockedBadge:         'Read only',
+      lockHint:            'Only org admins or the survey owner can change insight settings.',
+      askAdmin:            'Ask your admin to change these settings.',
+      orgAdminOnly:        'Only org admins can edit org-wide defaults.',
+
+      // Provenance labels (where the effective value comes from)
+      sourceSurvey:        'Overridden for this survey',
+      sourceOrg:           'From org default',
+      sourcePlatform:      'Platform default',
+      effectiveLabel:      'Effective',
+      overrideLabel:       'Override',
+      resetToInherited:    'Reset to inherited',
+      rangeHint:           'Range {min}–{max}',
+
+      // Save
+      save:                'Save changes',
+      saving:             'Saving…',
+      saved:               'Settings saved',
+      saveError:           'Could not save settings. Please try again.',
+      noChanges:           'No changes to save',
+      unsavedChanges:      'You have unsaved changes',
+
+      // Validation
+      validationRange:     'Must be between {min} and {max}',
+      validationRequired:  'This value is required',
+      validationStreamVsRegen: 'Stream threshold should be below the report regen threshold.',
+      validationCorpusOrder:   'Max sampled responses must be at least the full-corpus cap.',
+      validationCreditCost:    'Must be between 1 and 500',
+
+      // Loading / error
+      loading:             'Loading settings…',
+      errorTitle:          'Could not load settings',
+      errorBody:           'Something went wrong loading insight settings. Try again.',
+      retry:               'Retry',
+
+      // Section A — Automated intelligence
+      sectionAutomated:        'Automated intelligence',
+      sectionAutomatedDesc:    'How far back automated runs look and when checkpoints write.',
+      automatedInsightsEnabled:       'Enable automated insights (insight cards)',
+      automatedInsightsEnabledHelp:   'Master switch — controls continuous card updates on the Intelligence page.',
+      automatedReportGenerationEnabled:     'Generate automated report documents',
+      automatedReportGenerationEnabledHelp: 'Full report documents at tier milestones. Turn off to save credits while keeping live cards.',
+      streamResponseThreshold:        'New responses before auto-update',
+      streamResponseThresholdHelp:    'Lower = more frequent updates. High-volume surveys may set 100–200 to avoid noise.',
+      reportRegenThreshold:           'Responses before narrative refresh',
+      reportRegenThresholdHelp:       'Minimum new data for a full report regen.',
+      priorCheckpointLookback:        'Prior checkpoints to reference',
+      priorCheckpointLookbackHelp:    'How many past checkpoints inform the delta.',
+      priorCheckpointMaxAgeDays:      'Max age of prior checkpoints (days)',
+      priorCheckpointMaxAgeDaysHelp:  'Ignore older nodes in the lookback walk.',
+      fullCheckpointResponseThreshold:     'Force full checkpoint after N new',
+      fullCheckpointResponseThresholdHelp: 'Write a full archival checkpoint.',
+      meaningfulDeltaNpsPoints:       'NPS change worth reporting',
+      meaningfulDeltaNpsPointsHelp:   'Suppress noise below this delta.',
+      meaningfulDeltaTopicPct:        'Topic share change (pp)',
+      meaningfulDeltaTopicPctHelp:    'Threshold for declaring a topic emerging/declining.',
+
+      // Section B — Refresh
+      sectionRefresh:          'Refresh',
+      sectionRefreshDesc:      'The user-initiated Refresh button on the Intelligence page.',
+      refreshLookbackDays:     'Refresh window (days)',
+      refreshLookbackDaysHelp: 'How many days back the Refresh button looks by default.',
+      refreshMinResponseCount:     'Minimum responses for refresh',
+      refreshMinResponseCountHelp: 'If fewer exist in the window, it expands backwards until N are found.',
+      refreshDailyLimit:       'Refreshes per day',
+      refreshDailyLimitHelp:   'Survey-level limit. Prevents accidental cost runup.',
+
+      // Section C — Manual intelligence
+      sectionManual:           'Manual intelligence',
+      sectionManualDesc:       'Limits and sampling for Expert and Quick manual runs.',
+      manualDailyRunLimit:     'Manual runs per day (Expert + Quick)',
+      manualDailyRunLimitHelp: 'Combined daily cap on manual runs.',
+      manualExpertFullCorpusCap:     'Use full corpus up to N responses',
+      manualExpertFullCorpusCapHelp: 'Below this size, Expert reads every response.',
+      manualExpertMaxCorpus:         'Max sampled responses (Expert)',
+      manualExpertMaxCorpusHelp:     'Caps the Expert corpus on very large surveys.',
+      manualExpertSnapshotCount:     'Metric snapshots (Expert)',
+      manualExpertSnapshotCountHelp: 'How many metric snapshots Expert captures.',
+      manualExpertCheckpointLookback:     'Prior checkpoints as context (Expert)',
+      manualExpertCheckpointLookbackHelp: 'Automated checkpoints fed to Expert as memory.',
+      manualQuickSampleCap:    'Quick mode sample size',
+      manualQuickSampleCapHelp:'Sample size for Quick briefs.',
+      manualQuickDefaultWindowDays:     'Quick mode default window (days)',
+      manualQuickDefaultWindowDaysHelp: 'Default time window for a Quick run.',
+
+      // Section D — Custom Analysis
+      sectionCustom:           'Custom analysis',
+      sectionCustomDesc:       'Ad-hoc, user-driven targeted reports over a chosen window/segment/topic scope.',
+      customAnalysisEnabled:     'Enable custom analysis',
+      customAnalysisEnabledHelp: 'Available to all members by default.',
+      customAnalysisDailyLimit:     'Custom analysis runs per day',
+      customAnalysisDailyLimitHelp: 'Per-survey limit.',
+      customAnalysisMaxCorpus:     'Max responses for custom runs',
+      customAnalysisMaxCorpusHelp: 'Caps large-corpus analysis cost.',
+      customAnalysisMinNForNps:     'Minimum n to show NPS metric',
+      customAnalysisMinNForNpsHelp: 'Below this, trust degrades and a warning is shown.',
+
+      // Section E — Credits
+      sectionCredits:          'Credits',
+      sectionCreditsDesc:      'Per-run credit costs. Positive integers, 1–500.',
+      creditCostAutomated:     'Automated incremental',
+      creditCostReport:        'Automated report generation',
+      creditCostRefresh:       'Refresh',
+      creditCostQuick:         'Manual Quick',
+      creditCostExpert:        'Manual Expert',
+      creditCostCustom:        'Custom analysis',
+      creditCostHelp:          'Leave blank to use the org default.',
+
+      // Section F — History & retention
+      sectionRetention:        'History & retention',
+      sectionRetentionDesc:    'How long checkpoints and reports are kept, and UI grouping.',
+      automatedCheckpointRetentionDays:     'Keep automated checkpoints (days)',
+      automatedCheckpointRetentionDaysHelp: 'Older automated checkpoints are pruned.',
+      collapseSimilarCheckpoints:     'Group low-delta runs in UI',
+      collapseSimilarCheckpointsHelp: 'Collapse consecutive quiet checkpoints in the trail.',
+      manualReportRetentionDays:     'Keep manual reports (days)',
+      manualReportRetentionDaysHelp: 'Older manual reports are pruned.',
+
+      // Org defaults tab
+      orgTitle:            'Org-wide insight defaults',
+      orgSubtitle:         'These apply to every survey unless overridden at the survey level.',
+      orgUpdatedAt:        'Last updated {date}',
+      orgUpdatedNever:     'Using platform defaults',
+    },
+
+    // ── Phase 6 — Custom Analysis wizard ──────────────────────────────────────
+    customAnalysis: {
+      title:               'Custom analysis',
+      subtitle:            'Build a targeted report over a specific window, segment, and topic scope.',
+      back:                'Back to intelligence',
+      disabled:            'Custom analysis is disabled for this survey.',
+      disabledHint:        'Ask your admin to enable it in Intelligence settings.',
+
+      // Steps
+      stepScope:           'Scope',
+      stepFocus:           'Focus',
+      stepReview:          'Review',
+      stepOf:              'Step {current} of {total}',
+      next:                'Next',
+      prev:                'Back',
+      cancel:              'Cancel',
+
+      // Step 1 — date + segment
+      scopeTitle:          'Date range & segments',
+      dateFrom:            'From',
+      dateTo:              'To',
+      dateHint:            'Leave blank to include all responses.',
+      segmentsLabel:       'Segments',
+      segmentsPlaceholder: 'Add a segment, press Enter…',
+      segmentsHint:        'Filter to specific respondent segments (optional).',
+
+      // Step 2 — topics + depth
+      focusTitle:          'Topics & depth',
+      topicsLabel:         'Topics',
+      topicsPlaceholder:   'Add a topic, press Enter…',
+      topicsHint:          'Restrict analysis to these topics (optional).',
+      metricTypesLabel:    'Metrics',
+      narrativeDepthLabel: 'Narrative depth',
+      depthBrief:          'Brief',
+      depthStandard:       'Standard',
+      depthDeep:           'Deep',
+
+      // Step 3 — preview + name + confirm
+      reviewTitle:         'Review & generate',
+      nameLabel:           'Report name',
+      namePlaceholder:     'e.g. Q2 enterprise segment deep-dive',
+      nameRequired:        'Give your report a name.',
+      previewLabel:        'Estimate',
+      previewCorpus:       'Responses in scope',
+      previewSample:       'Sample size',
+      previewCost:         'Estimated cost',
+      previewCostValue:    '{cost} credits',
+      previewLoading:      'Estimating…',
+      previewUnavailable:  'Preview unavailable',
+      lowConfidence:       'Low confidence — fewer than 30 responses match this scope. Findings are exploratory.',
+      filterLabel:         'Filter',
+      confirm:             'Generate report',
+
+      // Run progress
+      generating:          'Generating…',
+      progressTitle:       'Running custom analysis',
+      progressBody:        'Analyzing the responses in scope — this can take a few minutes.',
+      progressDone:        'Report ready',
+      viewReport:          'View report',
+
+      // Errors
+      errorCredits:          'Not enough credits to run this analysis.',
+      errorCreditsCta:       'Upgrade or top up credits to continue.',
+      errorRateLimited:      'Daily custom-analysis limit reached. Try again tomorrow.',
+      errorInsufficientData: 'Not enough responses match this scope — widen the filters.',
+      errorGeneric:          'Could not start the analysis. Please try again.',
+      errorFailed:           'The analysis failed. Please try again.',
+
+      // List of past reports
+      pastTitle:           'Past custom reports',
+      pastEmpty:           'No custom reports yet. Build your first one above.',
+      newReport:           'New custom report',
+      statusPending:       'Pending',
+      statusRunning:       'Running',
+      statusCompleted:     'Ready',
+      statusFailed:        'Failed',
+      createdBy:           'by {name}',
+
+      // Result view
+      resultBack:          'Back to custom analysis',
+      resultEmpty:         'No findings for this report.',
+      resultCaveat:        'Based on {count} responses — below 30, so treat these findings as exploratory.',
+      resultSampleNote:    'Sample: {count} responses',
+      resultErrorTitle:    'Could not load report',
+      resultErrorBody:     'Something went wrong loading this report. Try again.',
+      reportRunning:       'Analysis is still running — check back in a few minutes.',
+      pastReportsError:    'Could not load past reports. Please try again.',
+      tagRemoveAriaLabel:  'Remove {tag}',
+    },
+
+    // ── Phase 6 — Crystal insight document card ───────────────────────────────
+    documentCard: {
+      reportLabel:         'Insight report',
+      automated:           'Automated',
+      manual:             'Manual',
+      openReport:          'Open full report',
+      emerged:             'Emerged: {topics}',
+      declining:           'Declining: {topics}',
+      metaLine:            '{nps} · {responses} new responses · {insights} insights',
+    },
   },
 
   advancedInsights: {
@@ -2400,6 +2896,9 @@ const en = {
       advanced:         'Advanced',
       trends:           'Trends',
       report:           'Report',
+      trail:            'Trail',
+      customAnalysis:   'Custom',
+      settings:         'Settings',
       backTopics:       '← Back to topics',
       backHub:          '← Experience hub',
     },

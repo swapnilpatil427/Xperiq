@@ -187,6 +187,144 @@ async def ensure_schema() -> None:
         # Advances only when real new data arrives — manual regens reuse the same anchor.
         # Audit chain: current_run → prior_context_run_id → prior_context_run_id → ... → first_run
         "ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS prior_context_run_id UUID REFERENCES agent_runs(id) ON DELETE SET NULL",
+        # ── Insight Pipeline v2 — Phase 0.5 (survey_insight_checkpoints) ──────────
+        # meaningful_delta: write-gate flag set by node_delta_compute. When false (and
+        # not bootstrap / not tier milestone) node_publish skips the checkpoint write.
+        "ALTER TABLE survey_insight_checkpoints ADD COLUMN IF NOT EXISTS meaningful_delta BOOLEAN NOT NULL DEFAULT FALSE",
+        # delta_from_prior: compute_delta() output JSON (may already exist on newer DBs).
+        "ALTER TABLE survey_insight_checkpoints ADD COLUMN IF NOT EXISTS delta_from_prior JSONB",
+        # Widen the trigger CHECK constraint to include the automated v2 triggers
+        # ('scheduler', 'milestone'). Drop the old constraint then re-add the wide one;
+        # both steps are wrapped in the per-statement try/except so they are idempotent.
+        "ALTER TABLE survey_insight_checkpoints DROP CONSTRAINT IF EXISTS survey_insight_checkpoints_trigger_check",
+        """ALTER TABLE survey_insight_checkpoints
+             ADD CONSTRAINT survey_insight_checkpoints_trigger_check
+             CHECK (trigger IN ('responses','days','manual','stream','scheduler','milestone'))""",
+        # One checkpoint per (survey, org, checkpoint_number) — protects the linked list.
+        "CREATE UNIQUE INDEX IF NOT EXISTS survey_insight_checkpoints_survey_num_unique ON survey_insight_checkpoints (survey_id, org_id, checkpoint_number)",
+        # Watermark lookup index. NOTE: the responses table uses submitted_at (not
+        # created_at) — the watermark concept maps to submitted_at here.
+        "CREATE INDEX IF NOT EXISTS idx_responses_survey_submitted ON responses (survey_id, submitted_at) WHERE deleted_at IS NULL",
+        # ── Insight Pipeline v2 Phase 4 — insight_checkpoints_v2 ────────────────────
+        """CREATE TABLE IF NOT EXISTS insight_checkpoints_v2 (
+            id                          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            survey_id                   UUID        NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+            org_id                      TEXT        NOT NULL,
+            run_id                      UUID        REFERENCES agent_runs(id) ON DELETE SET NULL,
+            checkpoint_number           INT         NOT NULL DEFAULT 1,
+            parent_checkpoint_id        UUID        REFERENCES insight_checkpoints_v2(id) ON DELETE SET NULL,
+            lane                        TEXT        NOT NULL DEFAULT 'automated',
+            run_mode                    TEXT,
+            trigger                     TEXT,
+            created_by                  TEXT,
+            response_count_at_checkpoint INT        NOT NULL DEFAULT 0,
+            response_high_watermark     TIMESTAMPTZ,
+            new_response_count          INT         NOT NULL DEFAULT 0,
+            nps_at_checkpoint           NUMERIC(5,1),
+            csat_at_checkpoint          NUMERIC(5,1),
+            ces_at_checkpoint           NUMERIC(5,1),
+            topic_fingerprint           TEXT,
+            delta_from_prior            JSONB,
+            meaningful_delta            BOOLEAN     NOT NULL DEFAULT FALSE,
+            lineage_json                JSONB,
+            report_blob_ref             TEXT,
+            citations_manifest_ref      TEXT,
+            schema_version              INT         NOT NULL DEFAULT 2,
+            window_start                TIMESTAMPTZ,
+            window_end                  TIMESTAMPTZ,
+            report_label                TEXT,
+            created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS insight_checkpoints_v2_survey_org ON insight_checkpoints_v2 (survey_id, org_id, checkpoint_number DESC)",
+        "CREATE INDEX IF NOT EXISTS insight_checkpoints_v2_parent ON insight_checkpoints_v2 (parent_checkpoint_id) WHERE parent_checkpoint_id IS NOT NULL",
+        # ── Insight Pipeline v2 Phase 3 — insight_reports ───────────────────────────
+        """CREATE TABLE IF NOT EXISTS insight_reports (
+            id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            survey_id                UUID        NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+            org_id                   TEXT        NOT NULL,
+            run_id                   UUID        REFERENCES agent_runs(id) ON DELETE SET NULL,
+            run_mode                 TEXT,
+            label                    TEXT,
+            status                   TEXT        NOT NULL DEFAULT 'generating',
+            window_start             TIMESTAMPTZ,
+            window_end               TIMESTAMPTZ,
+            blob_ref                 TEXT,
+            citations_manifest_ref   TEXT,
+            summary_headline         TEXT,
+            trust_score_avg          NUMERIC(5,2),
+            checkpoint_id            UUID,
+            created_by               TEXT,
+            created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            completed_at             TIMESTAMPTZ
+        )""",
+        "CREATE INDEX IF NOT EXISTS insight_reports_survey_org ON insight_reports (survey_id, org_id, created_at DESC)",
+        # ── Custom Analysis Phase 6 — custom_reports ────────────────────────────────
+        """CREATE TABLE IF NOT EXISTS custom_reports (
+            id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            survey_id           UUID        NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+            org_id              TEXT        NOT NULL,
+            run_id              UUID        REFERENCES agent_runs(id) ON DELETE SET NULL,
+            name                TEXT,
+            filter_spec         JSONB,
+            status              TEXT        NOT NULL DEFAULT 'pending',
+            blob_ref            TEXT,
+            output_url          TEXT,
+            slug                TEXT,
+            credit_cost         INT,
+            trust_score_avg     NUMERIC(5,2),
+            corpus_coverage_pct NUMERIC(5,2),
+            sample_size         INT,
+            created_by          TEXT,
+            created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            completed_at        TIMESTAMPTZ,
+            expires_at          TIMESTAMPTZ
+        )""",
+        "CREATE INDEX IF NOT EXISTS custom_reports_survey_org ON custom_reports (survey_id, org_id, created_at DESC)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS custom_reports_slug_unique ON custom_reports (org_id, slug) WHERE slug IS NOT NULL",
+        """CREATE TABLE IF NOT EXISTS custom_report_insights (
+            id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+            custom_report_id UUID        NOT NULL REFERENCES custom_reports(id) ON DELETE CASCADE,
+            survey_id        UUID        NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+            org_id           TEXT        NOT NULL,
+            layer            TEXT,
+            category         TEXT,
+            headline         TEXT        NOT NULL DEFAULT '',
+            narrative        TEXT,
+            metric_json      JSONB,
+            citations_json   JSONB       NOT NULL DEFAULT '[]',
+            trust_score      NUMERIC(5,2),
+            trust_json       JSONB,
+            priority         INT,
+            filter_label     TEXT,
+            created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""",
+        "CREATE INDEX IF NOT EXISTS custom_report_insights_report ON custom_report_insights (custom_report_id)",
+        # Idempotent fixups — rename report_blob_ref → blob_ref where needed.
+        """DO $$
+           BEGIN
+             IF EXISTS (
+               SELECT 1 FROM information_schema.columns
+               WHERE table_name='insight_reports' AND column_name='report_blob_ref'
+             ) THEN
+               ALTER TABLE insight_reports RENAME COLUMN report_blob_ref TO blob_ref;
+             END IF;
+           END $$""",
+        "ALTER TABLE insight_reports ADD COLUMN IF NOT EXISTS blob_ref TEXT",
+        "ALTER TABLE insight_reports ADD COLUMN IF NOT EXISTS citations_manifest_ref TEXT",
+        "ALTER TABLE insight_reports ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ",
+        """DO $$
+           BEGIN
+             IF EXISTS (
+               SELECT 1 FROM information_schema.columns
+               WHERE table_name='custom_reports' AND column_name='report_blob_ref'
+             ) THEN
+               ALTER TABLE custom_reports RENAME COLUMN report_blob_ref TO blob_ref;
+             END IF;
+           END $$""",
+        "ALTER TABLE custom_reports ADD COLUMN IF NOT EXISTS blob_ref TEXT",
+        "ALTER TABLE custom_reports ADD COLUMN IF NOT EXISTS output_url TEXT",
+        "ALTER TABLE custom_reports ADD COLUMN IF NOT EXISTS credit_cost INT",
+        "ALTER TABLE custom_reports ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ",
     ]
     try:
         async with _pool_conn().connection() as conn:

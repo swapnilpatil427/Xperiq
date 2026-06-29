@@ -6,6 +6,13 @@ import type {
   TopicTheme, TopicDetail, TopicVerbatim, ActionRecommendations,
   Contact, CxCase, CaseAuditEntry, OwnershipRoute, OntologyNode,
   ContactSegment, FilterDef, SyncConfig, SyncLog, ActivityItem,
+  LatestCheckpoint, CheckpointDelta, RecentCheckpointPoint,
+  ManualRunRequest, ManualRunResponse, ManualRunPreviewRequest, ManualRunPreview,
+  InsightTrailResult, TrailLane, TrailCheckpoint, TrailReport, CheckpointDetail,
+  CheckpointComparison, InsightReport,
+  InsightSettings, InsightSettingsPatchResult, OrgInsightDefaults,
+  CustomReportRequest, CustomReportResponse, CustomReportPreviewRequest,
+  CustomReportPreview, CustomReport, CustomReportDetail,
 } from '../types';
 import type { SavedDashboardConfig, WidgetConfig, DashboardFilters } from '../types/dashboard';
 
@@ -445,6 +452,43 @@ const BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 export type GetToken = () => Promise<string | null>;
 
+// ── Manual-run typed errors ──────────────────────────────────────────────────
+// The /runs endpoints surface domain failures via HTTP status + a `code` field.
+// We rethrow these as a typed error so the ManualRunDialog can branch on `.code`
+// (402 → credits, 429 → daily limit) rather than parsing message strings.
+export type ManualRunErrorCode =
+  | 'INSUFFICIENT_CREDITS'
+  | 'RATE_LIMITED'
+  | 'INSUFFICIENT_DATA'
+  | 'UNKNOWN';
+
+export class ManualRunError extends Error {
+  code: ManualRunErrorCode;
+  status?: number;
+  detail?: Record<string, unknown>;
+  constructor(code: ManualRunErrorCode, message: string, status?: number, detail?: Record<string, unknown>) {
+    super(message);
+    this.name = 'ManualRunError';
+    this.code = code;
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+/** Normalize an axios error from a /runs call into a ManualRunError. */
+function toManualRunError(error: unknown): ManualRunError {
+  const e = error as { response?: { status?: number; data?: Record<string, unknown> }; message?: string };
+  const status = e?.response?.status;
+  const data = e?.response?.data ?? {};
+  const rawCode = String(data.code ?? '').toUpperCase();
+  let code: ManualRunErrorCode = 'UNKNOWN';
+  if (status === 402 || rawCode === 'INSUFFICIENT_CREDITS') code = 'INSUFFICIENT_CREDITS';
+  else if (status === 429 || rawCode === 'RATE_LIMITED') code = 'RATE_LIMITED';
+  else if (status === 400 && rawCode === 'INSUFFICIENT_DATA') code = 'INSUFFICIENT_DATA';
+  const message = String((data.error as string) ?? (data.message as string) ?? e?.message ?? 'Manual run failed');
+  return new ManualRunError(code, message, status, data);
+}
+
 function createAxiosInstance(getToken: GetToken) {
   const instance = axios.create({ baseURL: BASE });
 
@@ -575,6 +619,19 @@ function mapPipelineStats(raw: Record<string, unknown>): PipelineStats {
 
 export function createApiClient(getToken: GetToken) {
   const http = createAxiosInstance(getToken);
+
+  // Auth-injected instance WITHOUT the response interceptor, so callers can read
+  // the original `error.response` (status + `code`). Used by the manual-run
+  // endpoints which surface 402/429 domain codes the dialog branches on.
+  const rawHttp = axios.create({ baseURL: BASE });
+  rawHttp.interceptors.request.use(async (config) => {
+    const token = await getToken();
+    if (token) {
+      config.headers = config.headers ?? {};
+      config.headers['Authorization'] = `Bearer ${token}`;
+    }
+    return config;
+  });
 
   return {
     // Surveys
@@ -1112,13 +1169,70 @@ export function createApiClient(getToken: GetToken) {
       crystal_opening?: string | null;
       pipeline_active?: boolean;
       survey_status?:  string;
+      // Phase 0.5 — investigation trajectory. Null until the backend task
+      // "Add latest_checkpoint to GET /api/insights/:surveyId/list" ships.
+      latest_checkpoint?: LatestCheckpoint | null;
     }> => {
       const params = new URLSearchParams();
       if (opts.timeWindow && opts.timeWindow !== 'all_time') params.set('time_window', opts.timeWindow);
       const qs = params.toString();
       const url = `/api/insights/${surveyId}/list${qs ? '?' + qs : ''}`;
       const res = await http.get(url);
-      return res.data;
+      // Postgres NUMERIC columns (nps, deltas) arrive as strings — coerce so
+      // .toFixed() in the header band/drawer never crashes. See listTopics().
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const raw = res.data?.latest_checkpoint;
+      let latest_checkpoint: LatestCheckpoint | null = null;
+      if (raw) {
+        const rawDelta = raw.delta;
+        const delta: CheckpointDelta | null = rawDelta
+          ? {
+              nps_delta:            coerce(rawDelta.nps_delta),
+              csat_delta:           coerce(rawDelta.csat_delta),
+              response_count_delta: Number(rawDelta.response_count_delta ?? 0),
+              topic_changes: {
+                emerged:   rawDelta.topic_changes?.emerged   ?? [],
+                resolved:  rawDelta.topic_changes?.resolved  ?? [],
+                persisted: rawDelta.topic_changes?.persisted ?? [],
+              },
+              trend_direction:   rawDelta.trend_direction   ?? 'stable',
+              trend_persistence: rawDelta.trend_persistence ?? '',
+            }
+          : null;
+        latest_checkpoint = {
+          number:        Number(raw.number),
+          nps:           coerce(raw.nps),
+          delta,
+          meaningful:    Boolean(raw.meaningful),
+          created_at:    raw.created_at,
+          trigger:       raw.trigger ?? null,
+          new_responses: raw.new_responses != null ? Number(raw.new_responses) : null,
+          csat:          coerce(raw.csat),
+          ces:           coerce(raw.ces),
+          model:         raw.model ?? null,
+        };
+      }
+      return { ...res.data, latest_checkpoint };
+    },
+
+    // Phase 0.5 — recent checkpoints for the drawer sparkline. The Trail
+    // endpoint ships in Phase 4; tolerate its absence now by returning [] on 404.
+    getRecentCheckpoints: async (surveyId: string, limit = 5): Promise<RecentCheckpointPoint[]> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      try {
+        const res = await http.get<{ checkpoints?: Array<Record<string, unknown>> }>(
+          `/api/insights/${surveyId}/trail?limit=${limit}`,
+        );
+        const rows = res.data?.checkpoints ?? [];
+        return rows.map((c) => ({
+          number:     Number(c.number),
+          nps:        coerce(c.nps),
+          created_at: String(c.created_at ?? ''),
+        }));
+      } catch {
+        // 404 (Trail not yet shipped) or any error → graceful empty fallback.
+        return [];
+      }
     },
 
     triggerInsightGeneration: async (
@@ -1137,6 +1251,376 @@ export function createApiClient(getToken: GetToken) {
     getInsightRunStatus: async (surveyId: string): Promise<{ run_id: string; status: string; stream_events: unknown[] }> => {
       const res = await http.get<{ run_id: string; status: string; stream_events: unknown[] }>(`/api/insights/${surveyId}/run-status`);
       return res.data;
+    },
+
+    // ── Manual runs (Phase 3) + Insight Trail (Phase 4) ────────────────────────
+
+    /**
+     * Trigger a manual insight run (expert / quick / refresh). Returns 202 with a
+     * run_id to poll via getInsightRunStatus. Surfaces 402/429 as a ManualRunError
+     * (use `err instanceof ManualRunError` + `.code` to render the right message).
+     */
+    triggerManualRun: async (
+      surveyId: string,
+      body: ManualRunRequest,
+    ): Promise<ManualRunResponse> => {
+      try {
+        const res = await rawHttp.post<ManualRunResponse>(`/api/insights/${surveyId}/runs`, body);
+        return res.data;
+      } catch (error) {
+        throw toManualRunError(error);
+      }
+    },
+
+    /** Preview the corpus size / credit cost / duration / sample size for a run. */
+    previewManualRun: async (
+      surveyId: string,
+      body: ManualRunPreviewRequest,
+    ): Promise<ManualRunPreview> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      try {
+        const res = await rawHttp.post<Record<string, unknown>>(
+          `/api/insights/${surveyId}/runs/preview`,
+          body,
+        );
+        const d = res.data ?? {};
+        return {
+          estimated_cost:           coerce(d.estimated_cost),
+          corpus_size:              coerce(d.corpus_size),
+          estimated_duration_label: String(d.estimated_duration_label ?? ''),
+          sample_size:              coerce(d.sample_size),
+        };
+      } catch (error) {
+        throw toManualRunError(error);
+      }
+    },
+
+    /** Paginated trail: automated + manual checkpoints with deltas + manual reports. */
+    getInsightTrail: async (
+      surveyId: string,
+      opts: { lane?: TrailLane | 'all'; limit?: number; cursor?: string | null } = {},
+    ): Promise<InsightTrailResult> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const params = new URLSearchParams();
+      if (opts.lane && opts.lane !== 'all') params.set('lane', opts.lane);
+      if (opts.limit != null) params.set('limit', String(opts.limit));
+      if (opts.cursor) params.set('cursor', opts.cursor);
+      const qs = params.toString();
+      const res = await http.get<Record<string, unknown>>(
+        `/api/insights/${surveyId}/trail${qs ? '?' + qs : ''}`,
+      );
+      const data = res.data ?? {};
+      const mapDelta = (rawDelta: any): CheckpointDelta | null =>
+        rawDelta
+          ? {
+              nps_delta:            coerce(rawDelta.nps_delta),
+              csat_delta:           coerce(rawDelta.csat_delta),
+              response_count_delta: Number(rawDelta.response_count_delta ?? 0),
+              topic_changes: {
+                emerged:   rawDelta.topic_changes?.emerged   ?? [],
+                resolved:  rawDelta.topic_changes?.resolved  ?? [],
+                persisted: rawDelta.topic_changes?.persisted ?? [],
+              },
+              trend_direction:   rawDelta.trend_direction   ?? 'stable',
+              trend_persistence: rawDelta.trend_persistence ?? '',
+            }
+          : null;
+      const checkpoints: TrailCheckpoint[] = ((data.checkpoints as any[]) ?? []).map((c) => ({
+        id:           String(c.id ?? ''),
+        number:       Number(c.number ?? 0),
+        lane:         (c.lane === 'manual' ? 'manual' : 'automated') as TrailLane,
+        run_mode:     c.run_mode ?? null,
+        trigger:      c.trigger ?? null,
+        nps:          coerce(c.nps),
+        csat:         coerce(c.csat),
+        ces:          coerce(c.ces),
+        delta:        mapDelta(c.delta),
+        meaningful:   Boolean(c.meaningful),
+        created_at:   String(c.created_at ?? ''),
+        created_by:   c.created_by ?? null,
+        report_label: c.report_label ?? null,
+        report_id:    c.report_id ?? null,
+        window_start: c.window_start ?? null,
+        window_end:   c.window_end ?? null,
+        response_count: c.response_count != null ? Number(c.response_count) : null,
+        tier_label:     (c.tier_label ?? null) as TrailCheckpoint['tier_label'],
+      }));
+      const reports: TrailReport[] = ((data.reports as any[]) ?? []).map((r) => ({
+        id:                   String(r.id ?? ''),
+        label:                r.label ?? null,
+        name:                 r.name ?? null,
+        mode:                 r.mode ?? null,
+        report_type:          (r.report_type === 'custom' ? 'custom' : 'manual') as TrailReport['report_type'],
+        created_at:           String(r.created_at ?? ''),
+        created_by:           r.created_by ?? null,
+        window_start:         r.window_start ?? null,
+        window_end:           r.window_end ?? null,
+        trust_score_avg:      r.trust_score_avg != null ? Number(r.trust_score_avg) : null,
+        corpus_coverage_pct:  r.corpus_coverage_pct != null ? Number(r.corpus_coverage_pct) : null,
+        sample_size:          r.sample_size != null ? Number(r.sample_size) : null,
+        slug:                 r.slug ?? null,
+      }));
+      return { checkpoints, reports, next_cursor: (data.next_cursor as string) ?? null };
+    },
+
+    /** Single checkpoint detail + lineage + blob ref. */
+    getCheckpointDetail: async (
+      surveyId: string,
+      checkpointId: string,
+    ): Promise<CheckpointDetail> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const mapDelta = (raw: any): CheckpointDelta | null =>
+        raw
+          ? {
+              nps_delta:            coerce(raw.nps_delta),
+              csat_delta:           coerce(raw.csat_delta),
+              response_count_delta: Number(raw.response_count_delta ?? 0),
+              topic_changes: {
+                emerged:   raw.topic_changes?.emerged   ?? [],
+                resolved:  raw.topic_changes?.resolved  ?? [],
+                persisted: raw.topic_changes?.persisted ?? [],
+              },
+              trend_direction:   raw.trend_direction   ?? 'stable',
+              trend_persistence: raw.trend_persistence ?? '',
+            }
+          : null;
+
+      const res = await http.get<Record<string, unknown>>(
+        `/api/insights/${surveyId}/trail/${checkpointId}`,
+      );
+      const data = res.data ?? {};
+      const delta = mapDelta(data.delta_from_prior);
+
+      // Backend sends an already-shaped checkpoint but with raw delta — re-map it.
+      const raw = (data.checkpoint as any) ?? {};
+      const checkpoint: TrailCheckpoint = {
+        id:             String(raw.id ?? ''),
+        number:         Number(raw.number ?? 0),
+        lane:           (raw.lane === 'manual' ? 'manual' : 'automated') as TrailLane,
+        run_mode:       raw.run_mode  ?? null,
+        trigger:        raw.trigger   ?? null,
+        nps:            coerce(raw.nps),
+        csat:           coerce(raw.csat),
+        ces:            coerce(raw.ces),
+        delta,
+        meaningful:     Boolean(raw.meaningful),
+        created_at:     String(raw.created_at ?? ''),
+        created_by:     raw.created_by    ?? null,
+        report_label:   raw.report_label  ?? null,
+        report_id:      raw.report_id     ?? null,
+        window_start:   raw.window_start  ?? null,
+        window_end:     raw.window_end    ?? null,
+        response_count: raw.response_count != null ? Number(raw.response_count) : null,
+        tier_label:     (raw.tier_label   ?? null) as TrailCheckpoint['tier_label'],
+      };
+
+      return {
+        checkpoint,
+        lineage_json: (data.lineage_json as Record<string, unknown>) ?? null,
+        delta,
+        blob_ref: (data.report_blob_ref as string) ?? null,
+        document: data.document,
+        blob_url: (data.blob_url as string) ?? null,
+        source:   (data.source as 'v2' | 'legacy') ?? undefined,
+      };
+    },
+
+    /** Compare two checkpoints → metric deltas + topic diff. */
+    compareCheckpoints: async (
+      surveyId: string,
+      a: string,
+      b: string,
+    ): Promise<CheckpointComparison> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const res = await http.get<Record<string, unknown>>(
+        `/api/insights/${surveyId}/trail/${a}/compare/${b}`,
+      );
+      const d = res.data ?? {};
+      const md = (d.metric_deltas as Record<string, unknown>) ?? {};
+      const td = (d.topic_diff as Record<string, unknown>) ?? {};
+      const coerceCheckpoint = (cp: Record<string, unknown>): TrailCheckpoint => ({
+        ...(cp as object),
+        nps: coerce(cp.nps),
+        csat: coerce(cp.csat),
+        ces: coerce(cp.ces),
+        delta: cp.delta ? {
+          ...(cp.delta as Record<string, unknown>),
+          nps_delta: coerce((cp.delta as Record<string, unknown>).nps_delta),
+          csat_delta: coerce((cp.delta as Record<string, unknown>).csat_delta),
+          ces_delta: coerce((cp.delta as Record<string, unknown>).ces_delta),
+        } : null,
+      } as TrailCheckpoint);
+      return {
+        a: coerceCheckpoint(d.a as Record<string, unknown>),
+        b: coerceCheckpoint(d.b as Record<string, unknown>),
+        metric_deltas: { nps: coerce(md.nps), csat: coerce(md.csat), ces: coerce(md.ces) },
+        topic_diff: {
+          added:   (td.added as string[]) ?? [],
+          removed: (td.removed as string[]) ?? [],
+        },
+      };
+    },
+
+    /** Fetch a persisted insight report document (manual report viewer). */
+    getInsightReport: async (
+      surveyId: string,
+      reportId: string,
+    ): Promise<InsightReport> => {
+      const res = await http.get<InsightReport>(
+        `/api/insights/${surveyId}/reports/${reportId}`,
+      );
+      return res.data;
+    },
+
+    // ── Insight settings (Phase 5) + Custom Analysis (Phase 6) ──────────────────
+
+    /** Effective merged insight settings + survey/org layers + provenance. */
+    getInsightSettings: async (surveyId: string): Promise<InsightSettings> => {
+      const res = await http.get<Record<string, unknown>>(`/api/insights/${surveyId}/settings`);
+      const d = res.data ?? {};
+      return {
+        survey_id:        String(d.survey_id ?? surveyId),
+        effective:        (d.effective as Record<string, unknown>) ?? {},
+        survey_overrides: (d.survey_overrides as Record<string, unknown>) ?? {},
+        org_defaults:     (d.org_defaults as Record<string, unknown>) ?? {},
+        config_hash:      (d.config_hash as string) ?? null,
+        config_version:   d.config_version != null ? Number(d.config_version) : null,
+        editable:         Boolean(d.editable),
+      };
+    },
+
+    /** PATCH only the changed setting keys (admin or owner). */
+    updateInsightSettings: async (
+      surveyId: string,
+      patch: Record<string, unknown>,
+    ): Promise<InsightSettingsPatchResult> => {
+      const res = await http.patch<Record<string, unknown>>(
+        `/api/insights/${surveyId}/settings`,
+        patch,
+      );
+      const d = res.data ?? {};
+      return {
+        survey_overrides: (d.survey_overrides as Record<string, unknown>) ?? {},
+        config_version:   d.config_version != null ? Number(d.config_version) : null,
+        config_hash:      (d.config_hash as string) ?? null,
+      };
+    },
+
+    /** Read the org-level insight defaults template. */
+    getOrgInsightDefaults: async (orgId: string): Promise<OrgInsightDefaults> => {
+      const res = await http.get<Record<string, unknown>>(`/api/orgs/${orgId}/insight-defaults`);
+      const d = res.data ?? {};
+      return {
+        org_id:     String(d.org_id ?? orgId),
+        defaults:   (d.defaults as Record<string, unknown>) ?? {},
+        updated_at: (d.updated_at as string) ?? null,
+        updated_by: (d.updated_by as string) ?? null,
+      };
+    },
+
+    /** PATCH the org-level insight defaults (admin only). */
+    updateOrgInsightDefaults: async (
+      orgId: string,
+      patch: Record<string, unknown>,
+    ): Promise<OrgInsightDefaults> => {
+      const res = await http.patch<Record<string, unknown>>(
+        `/api/orgs/${orgId}/insight-defaults`,
+        patch,
+      );
+      const d = res.data ?? {};
+      return {
+        org_id:     String(d.org_id ?? orgId),
+        defaults:   (d.defaults as Record<string, unknown>) ?? {},
+        updated_at: (d.updated_at as string) ?? null,
+        updated_by: (d.updated_by as string) ?? null,
+      };
+    },
+
+    /**
+     * Trigger a custom analysis run. Returns 202 with report_id/run_id to poll.
+     * Surfaces 402/429 as a ManualRunError (same pattern as manual runs).
+     */
+    createCustomReport: async (body: CustomReportRequest): Promise<CustomReportResponse> => {
+      try {
+        const res = await rawHttp.post<CustomReportResponse>('/api/reports/custom', body);
+        return res.data;
+      } catch (error) {
+        throw toManualRunError(error);
+      }
+    },
+
+    /** Preview corpus size / est cost / sample size / low-confidence for a custom run. */
+    previewCustomReport: async (body: CustomReportPreviewRequest): Promise<CustomReportPreview> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      try {
+        const res = await rawHttp.post<Record<string, unknown>>('/api/reports/custom/preview', body);
+        const d = res.data ?? {};
+        return {
+          estimated_cost: coerce(d.estimated_cost),
+          corpus_size:    coerce(d.corpus_size),
+          sample_size:    coerce(d.sample_size),
+          low_confidence: Boolean(d.low_confidence),
+        };
+      } catch (error) {
+        throw toManualRunError(error);
+      }
+    },
+
+    /** List past custom reports (optionally scoped to a survey). */
+    listCustomReports: async (surveyId?: string): Promise<{ reports: CustomReport[] }> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const qs = surveyId ? `?survey_id=${encodeURIComponent(surveyId)}` : '';
+      const res = await http.get<{ reports?: Array<Record<string, unknown>> }>(`/api/reports/custom${qs}`);
+      const reports: CustomReport[] = (res.data?.reports ?? []).map((r) => ({
+        id:             String(r.id ?? ''),
+        survey_id:      String(r.survey_id ?? ''),
+        name:           String(r.name ?? ''),
+        slug:           (r.slug as string) ?? null,
+        status:         String(r.status ?? 'pending'),
+        filter_spec:    (r.filter_spec as CustomReport['filter_spec']) ?? {},
+        filter_label:   (r.filter_label as string) ?? null,
+        corpus_size:    coerce(r.corpus_size),
+        sample_size:    coerce(r.sample_size),
+        low_confidence: Boolean(r.low_confidence),
+        created_at:     String(r.created_at ?? ''),
+        created_by:     (r.created_by as string) ?? null,
+        completed_at:   (r.completed_at as string) ?? null,
+      }));
+      return { reports };
+    },
+
+    /** Fetch a single custom report + its insights + optional document. */
+    getCustomReport: async (reportId: string): Promise<CustomReportDetail> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      const res = await http.get<Record<string, unknown>>(`/api/reports/custom/${reportId}`);
+      const d = res.data ?? {};
+      const r = (d.report as Record<string, unknown>) ?? {};
+      const report: CustomReport = {
+        id:             String(r.id ?? reportId),
+        survey_id:      String(r.survey_id ?? ''),
+        name:           String(r.name ?? ''),
+        slug:           (r.slug as string) ?? null,
+        status:         String(r.status ?? 'pending'),
+        filter_spec:    (r.filter_spec as CustomReport['filter_spec']) ?? {},
+        filter_label:   (r.filter_label as string) ?? null,
+        corpus_size:    coerce(r.corpus_size),
+        sample_size:    coerce(r.sample_size),
+        low_confidence: Boolean(r.low_confidence),
+        created_at:     String(r.created_at ?? ''),
+        created_by:     (r.created_by as string) ?? null,
+        completed_at:   (r.completed_at as string) ?? null,
+      };
+      const insights: CustomReportDetail['insights'] = ((d.insights as Array<Record<string, unknown>>) ?? []).map((i) => ({
+        id:           String(i.id ?? ''),
+        layer:        String(i.layer ?? 'descriptive'),
+        category:     (i.category as string) ?? null,
+        headline:     String(i.headline ?? ''),
+        narrative:    (i.narrative as string) ?? null,
+        trust_score:  coerce(i.trust_score),
+        filter_label: (i.filter_label as string) ?? null,
+        sample_size:  coerce(i.sample_size),
+      }));
+      return { report, insights, document: (d.document as Record<string, unknown>) ?? null };
     },
 
     updateInsightFeedback: async (insightId: string, feedback: { thumbs?: 'up' | 'down' | null; pinned?: boolean; dismissed?: boolean }): Promise<void> => {

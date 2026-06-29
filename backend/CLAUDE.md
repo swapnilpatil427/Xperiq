@@ -34,7 +34,8 @@ src/
 `/api/dashboard`, `/api/dashboard-configs`, `/api/visual`,
 `/api/notification-channels`, `/scim/v2` (bearer-token auth, **no** apiLimiter),
 `/api/copilot`, `/api/runs`, `/api/experience`, `/api/notifications`,
-`/api/admin` (proxy → CrystalOS, see below). Plus `/webhooks/clerk`, `/api/health`, `/api/metrics`.
+`/api/reports` (Custom Analysis — Phase 6), `/api/admin` (proxy → CrystalOS, see below).
+Plus `/webhooks/clerk`, `/api/health`, `/api/metrics`.
 
 ## Two outbound paths to CrystalOS (port 8001)
 - **`lib/agentsClient.ts`** — typed client for orchestration/insights/Crystal calls.
@@ -67,6 +68,28 @@ src/
 - `POST|GET /api/insights/:surveyId/crystal/proposals` — **action-proposal outcome tracking**.
   POST upserts on `(org_id, proposal_key)` with `status ∈ {emitted,accepted,dismissed,succeeded,failed}`
   (idempotent); GET lists recent proposals for analytics. Backed by `crystal_action_proposals`.
+- **Insight Pipeline v2 — Phase 3 (manual runs + reports):**
+  - `POST /api/insights/:surveyId/runs` — start a manual/refresh run (`{ mode: expert|quick|refresh, window_start?, window_end?, label? }`).
+    Daily-limit gate → 429 `RATE_LIMITED`; credit preflight → 402 `INSUFFICIENT_CREDITS`; creates `agent_runs`,
+    debits credits, calls `agentsClient.triggerManualInsightRun` → 202 `{ run_id, status:'started' }`.
+  - `POST /api/insights/:surveyId/runs/preview` — cost/corpus preview (no debit) → `{ estimated_cost, corpus_size, estimated_duration_label, sample_size }`.
+  - `GET /api/insights/:surveyId/reports/:reportId` — manual report row (`insight_reports`) + blob document/`blob_url`.
+- **Insight Pipeline v2 — Phase 4 (trail):**
+  - `GET /api/insights/:surveyId/trail` — linked checkpoint list (`insight_checkpoints_v2`, falls back to legacy
+    `survey_insight_checkpoints`) + manual `insight_reports`. Query: `lane` (automated|manual|all), `limit`, `cursor`.
+  - `GET /api/insights/:surveyId/trail/:checkpointId` — node + `lineage_json` + `delta_from_prior` + blob.
+  - `GET /api/insights/:surveyId/trail/:checkpointId/compare/:otherId` — side-by-side metric/topic diff.
+- **Insight Pipeline v2 — Phase 6 (Custom Analysis):** `routes/reports.ts` mounted at `/api/reports`.
+  Custom Analysis is a SEPARATE surface (own queue + tables); results go to `custom_reports` /
+  `custom_report_insights` and **never** to the `insights` table.
+  - `POST /api/reports/custom` — body `{ survey_id, name, filter_spec }`. Corpus count → credit
+    cost via `resolveCustomCost()` (25–75 by tier); daily-limit gate → 429 `RATE_LIMITED`; credit
+    preflight → 402 `INSUFFICIENT_CREDITS`; inserts `custom_reports` (status `pending`) + `agent_runs`,
+    debits, calls `agentsClient.triggerCustomAnalysis` → 202 `{ report_id, run_id, status:'pending', slug }`.
+  - `POST /api/reports/custom/preview` — `{ survey_id, filter_spec }` → `{ estimated_cost, corpus_size,
+    sample_size, low_confidence }` (no debit).
+  - `GET /api/reports/custom?survey_id=` — list org's custom reports (newest first).
+  - `GET /api/reports/custom/:reportId` — report row + isolated `custom_report_insights` + blob document.
 
 ## Postgres schema highlights
 See docs/SURVEY_DATA_MODEL.md for full schema.
@@ -79,6 +102,9 @@ Key tables: surveys, responses, templates, workflows, orgs, insights, survey_top
 - `agent_runs`: pipeline run tracking with `status`, `heartbeat_at`, `stream_events`
 - `notification_preferences` + `notification_events`: notification infrastructure (channels: in_app/email/push)
 - `crystal_action_proposals`: outcome funnel for Crystal action proposals (emitted→accepted→succeeded/failed/dismissed)
+- `insight_checkpoints_v2`: Insight Pipeline v2 linked-list checkpoints (lane automated|manual, parent_checkpoint_id, delta_from_prior, lineage_json); legacy `survey_insight_checkpoints` still read as fallback
+- `insight_reports`: manual insight run documents (run_mode manual_expert|manual_quick, window, blob_ref, status)
+- `custom_reports` + `custom_report_insights`: Custom Analysis (Phase 6) — ISOLATED from the insights pipeline; `custom_report_insights` rows never appear in the `insights` table and never supersede live projections
 
 ## Testing
 

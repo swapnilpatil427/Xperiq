@@ -433,6 +433,9 @@ export function SurveyIntelligencePage() {
               { label: t('experience.nav.advanced'),     icon: 'analytics',    path: `${ROUTES.ADVANCED_INSIGHTS}?survey=${surveyId}` },
               { label: t('experience.nav.trends'),       icon: 'timeline',     path: toPath(ROUTES.EXPERIENCE_SURVEY_TRENDS, { surveyId: surveyId! }) },
               { label: t('experience.nav.report'),       icon: 'description',  path: toPath(ROUTES.EXPERIENCE_SURVEY_REPORT, { surveyId: surveyId! }) },
+              { label: t('experience.nav.trail'),        icon: 'history',      path: toPath(ROUTES.INSIGHT_TRAIL, { surveyId: surveyId! }) },
+              { label: t('experience.nav.customAnalysis'), icon: 'tune',       path: toPath(ROUTES.CUSTOM_ANALYSIS, { surveyId: surveyId! }) },
+              { label: t('experience.nav.settings'),     icon: 'settings',     path: toPath(ROUTES.INSIGHT_SETTINGS, { surveyId: surveyId! }) },
             ] as const).map((item) => (
               <Link key={item.label} to={item.path}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold transition-all"

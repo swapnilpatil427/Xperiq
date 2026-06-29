@@ -111,7 +111,7 @@ creation graph's revision loop).
 - **Fallback chain:** skill synthesis returns None (no match / eval fail / normalize fail) → single-shot `_run_crystal`; if the stream throws before the first event → `_run_crystal` once more (`main.py`)
 - **Legacy:** `?legacy=true` (admin/brand_admin only) runs `_run_react_loop_streaming` — the old LLM-driven ReAct tool loop, preserved for admin debug. `?debug=true` (admin) emits `debug_routing`/`debug_timing` events
 - Semantic routing is live because the lifespan calls `await _skill_reg.warm_router()` at startup (pre-embeds skill descriptions); falls back to difflib `find_sync()` if not warmed
-- `TOOL_REGISTRY` (`crystal/registry.py`) has **35** tool definitions; executors + `dispatch_tool` in `crystal/tools.py`
+- `TOOL_REGISTRY` (`crystal/registry.py`) has **45** tool definitions (re-derive: count `"name":` in `TOOL_REGISTRY`); executors + `dispatch_tool` in `crystal/tools.py`. Phase 6 added the Insight Pipeline v2 read tools (`get_checkpoint_chain`, `get_insight_settings`, `get_insight_report`, `get_insight_trail`, `get_checkpoint_detail`, `compare_checkpoints`) and three report action proposals (`propose_manual_insight_run` → `trigger_manual_insight_run`, `propose_view_report` → `view_report`, `propose_generate_intelligence_report` → `generate_intelligence_report`). `get_insight_report` output carries `render_hint='document'` so the frontend renders an `InsightDocumentCard`.
 - Thread continuity: `crystal_threads` by `(survey_id, org_id)`, 7-day TTL. Rate limit: 10 req/org/min (Redis)
 
 ### Crystal action proposals & telemetry
@@ -125,12 +125,27 @@ creation graph's revision loop).
 `BrandContext` carries brand persona + `permitted_features`/`restricted_features` allowlist + per-brand limits; `ROLE_PERMISSIONS` resolved via `_resolve_permissions` (role defaults ∩ brand contract) gates which tools Crystal may use per request.
 
 ### Insight Pipeline (LangGraph)
-- Entry: `run_insight_generation(survey_id, org_id, run_id, trigger)` in `graphs/insights.py`
-- 13 nodes (Phase 0.5+): ingest → context → route_specialists → embed → metrics → extract_texts → absa → cluster → topics → **delta_compute** → narrate → verify → evaluate → publish
-  (`delta_compute` added in Phase 0.5 — loads prior checkpoint summaries, computes `delta_from_prior` and `meaningful_delta` before narrate so LLM receives delta facts)
-- `force_regenerate=True` for `trigger='manual'`, `False` for schedule/stream
-- Heartbeat updates `agent_runs.heartbeat_at` every 30s; zombie sweep reaps runs stale > 15 min
-- Checkpoint blob written to `checkpoint_store` at publish; schema_version=1
+- Entry: `run_insight_generation(survey_id, org_id, run_id, trigger, *, profile=None, window_start=None, window_end=None, parent_checkpoint_id=None, config_override=None, actor=None)` in `graphs/insights.py`
+- 17 nodes (Phase 2/3+): **resolve_context** → ingest → context → route_specialists → embed → metrics → extract_texts → absa → cluster → topics → **delta_compute** → narrate → report_agent → merge_tracks → verify → evaluate → publish
+  - `resolve_context` (Phase 2, entry point) — loads effective settings (3-level COALESCE merge via `lib/insight_settings.load_insight_settings`), resolves parent checkpoint chain (`walk_parent_chain`, reads `insight_checkpoints_v2` with fallback to `survey_insight_checkpoints`), sets watermark + `new_response_ids` (automated, `submitted_at > watermark`) or window+`sample_ids` (manual/refresh via `tools/sampling`), computes `config_hash`, routes `automated_insights_enabled`/`automated_report_generation_enabled`, and can `skip_run` (below threshold / disabled / empty window)
+  - `delta_compute` (Phase 0.5/2) — `delta_from_prior` + `meaningful_delta`; Phase 2 adds share-weighted `compute_topic_lifecycle` (emerged/growing/stable/declining/resolved + `fingerprint_changed`) when parent topic share data exists
+- **Run profiles** (04 §1): `automated_incremental` (default; stream/scheduler/milestone) · `refresh` · `manual_expert` · `manual_quick`. `profile` derives from `trigger` when omitted (backward compatible — legacy `trigger='manual'` stays automated + `force_regenerate`)
+- **publish** routes to `node_publish_manual` for manual modes (INSERT `insight_reports` generating→ready, blob + citations_manifest, `insight_checkpoints_v2` lane='manual', **no supersede** of automated insights). Automated dual-writes `insight_checkpoints_v2` (lane='automated', `parent_checkpoint_id` + `lineage_json`) alongside the legacy `survey_insight_checkpoints` write, gated by `INSIGHT_CHECKPOINTS_V2_ENABLED` (default True)
+- **Credits**: `lib/insight_settings.credit_preflight` reads org balance for the automated silent-skip decision; **the Node backend owns debiting** (single ledger writer). Manual/refresh raise `InsufficientCreditsError` → HTTP 402
+- `force_regenerate=True` for `trigger='manual'` + refresh + manual modes, `False` for schedule/stream
+- Heartbeat updates `agent_runs.last_heartbeat_at`; zombie sweep reaps stale runs
+- Checkpoint blob written to `checkpoint_store` at publish (legacy schema_version=1; manual/v2 blobs schema_version=2)
+
+### Manual / refresh HTTP entry (Phase 3)
+- `POST /insights/runs` (`main.py`, secured by `require_internal_key` / `X-Internal-Key`) — the Node backend calls this for manual + refresh runs. Body: `{ survey_id, org_id, run_id, mode: "expert"|"quick"|"refresh", window_start?, window_end?, label?, actor }`. Pre-creates the `insight_reports` row (status `generating`) for manual modes so `report_id` is returned immediately; starts the run as a background task. Returns `{ status, run_id, profile, report_id? }`. (`POST /insights/generate` remains for automated stream/scheduler.)
+
+### Custom Analysis — isolated graph (Phase 6)
+- `graphs/custom_analysis.py` `run_custom_analysis(survey_id, org_id, run_id, custom_report_id, filter_spec, actor)` — a **fully isolated** ad-hoc analysis. It reuses the shared computational tools (metrics, embed, ABSA, clustering, **read-only** topic discovery via `discover_topics` — never `upsert_survey_topics`) but composes them in its own linear flow that writes **only** `custom_reports` + `custom_report_insights` (+ a `custom-…` blob).
+- **HARD INVARIANTS (03 §10/§11):** never writes the `insights` table; never sets `superseded_at`; never mutates `survey_topics`/centroids; `trust_score` capped at 55 when n < `custom_analysis_min_n_for_nps`; **no predictive-layer** insights (only descriptive + diagnostic). `filter_spec` = `{date_from, date_to, segments, topics, metric_types, narrative_depth}`; corpus is capped at `custom_analysis_max_corpus` with `tools/sampling.stratified_sample`.
+- **HTTP entry:** `POST /reports/custom/run` (`main.py`, `X-Internal-Key`). Body `{ survey_id, org_id, run_id, report_id, filter_spec, actor }` → runs as a background task → returns `{ status:'started', run_id, report_id }`. Credit pre-flight uses `run_type='custom'` (read-only; backend owns debiting) and returns 402 on insufficient credits / 403 when `custom_analysis_enabled=false`.
+
+### Retention / compaction job (Phase 7)
+- `scheduler.run_retention_job()` (nightly, via `run_scheduler_once`) collapses **automated-lane** checkpoints with `meaningful_delta=false` older than the survey's `automated_checkpoint_retention_days` into rollup markers (`lineage_json.rollup_collapsed=true`) and drops their `report_blob_ref` after `RETENTION_BLOB_DROP_DAYS` (default 30). Idempotent (already-collapsed rows are excluded); **never** touches `meaningful_delta=true` rows, manual reports, or the `insights` table. Gated behind `ENABLE_RETENTION_JOB` (default `false` → dev no-op).
 
 ### Progressive Tier System (response_stream.py)
 - Redis stream consumer listens for new response events

@@ -138,7 +138,7 @@ class TestGetBrandSignals:
         with patch("crystalos.lib.security._INTERNAL_KEY", "test-key"), \
              patch("crystalos.routers.brand_admin._pool_conn", return_value=mock_pool):
             resp = client.get(
-                "/api/brands/brand-1/signals?user_id=user-xyz",
+                "/api/admin/brands/brand-1/signals?user_id=user-xyz",
                 headers=_headers(),
             )
 
@@ -183,7 +183,7 @@ class TestGetBrandSignals:
         with patch("crystalos.lib.security._INTERNAL_KEY", "test-key"), \
              patch("crystalos.routers.brand_admin._pool_conn", return_value=mock_pool):
             resp = client.get(
-                "/api/brands/brand-1/signals?user_id=admin-user&limit=10&offset=0",
+                "/api/admin/brands/brand-1/signals?user_id=admin-user&limit=10&offset=0",
                 headers=_headers(),
             )
 
@@ -225,7 +225,7 @@ class TestGetBrandSignalsSummary:
         with patch("crystalos.lib.security._INTERNAL_KEY", "test-key"), \
              patch("crystalos.routers.brand_admin._pool_conn", return_value=mock_pool):
             resp = client.get(
-                "/api/brands/brand-1/signals/summary?user_id=admin-user",
+                "/api/admin/brands/brand-1/signals/summary?user_id=admin-user",
                 headers=_headers(),
             )
 
@@ -244,8 +244,8 @@ class TestGetBrandSignalsSummary:
 
 class TestPostSignalStatus:
     def _post_status(self, client, signal_id, new_status):
-        return client.post(
-            f"/api/brands/brand-1/signals/{signal_id}/status?user_id=admin-user",
+        return client.patch(
+            f"/api/admin/brands/brand-1/signals/{signal_id}/status?user_id=admin-user",
             json={"status": new_status},
             headers=_headers(),
         )

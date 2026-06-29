@@ -177,7 +177,8 @@ describe('GET /api/insights/:surveyId/crystal/proposals', () => {
       if (!sql.includes('crystal_action_proposals')) return { rows: [] };
       expect(sql).toContain('FROM crystal_action_proposals');
       expect(sql).toContain('WHERE org_id = $1');
-      expect(params).toEqual(['o1']);
+      expect(sql).toContain('AND survey_id = $2');
+      expect(params).toEqual(['o1', 's1']);
       return { rows: [{ id: 'p-1', status: 'emitted' }, { id: 'p-2', status: 'succeeded' }] };
     });
 
@@ -193,8 +194,8 @@ describe('GET /api/insights/:surveyId/crystal/proposals', () => {
   it('filters by status when provided', async () => {
     dbQuery = vi.fn(async (sql, params) => {
       if (!sql.includes('crystal_action_proposals')) return { rows: [] };
-      expect(sql).toContain('AND status = $2');
-      expect(params).toEqual(['o1', 'succeeded']);
+      expect(sql).toContain('AND status = $3');
+      expect(params).toEqual(['o1', 's1', 'succeeded']);
       return { rows: [{ id: 'p-2', status: 'succeeded' }] };
     });
 
