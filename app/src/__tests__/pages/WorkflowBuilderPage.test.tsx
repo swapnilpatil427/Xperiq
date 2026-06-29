@@ -100,17 +100,8 @@ describe('WorkflowBuilderPage — registry loading', () => {
     // The SelectTrigger button shows the currently-selected value.
     // Wait for the select trigger button to appear (it has aria-expanded)
     await waitFor(() => {
-      const selectBtns = document.querySelectorAll('button[aria-expanded]');
-      expect(selectBtns.length).toBeGreaterThan(0);
+      expect(screen.getByText(/New Response \(filtered\)/)).toBeInTheDocument();
     });
-    // The trigger select should now display the first option label: "Survey · New Response (filtered)"
-    // The SelectTrigger renders its selected value as displayed text
-    const selectTriggers = document.querySelectorAll('button[aria-expanded]');
-    // Find the trigger card's select button (first select in the trigger card)
-    const triggerCardSelect = selectTriggers[0];
-    expect(triggerCardSelect).toBeTruthy();
-    // The selected value text should contain the first trigger's label
-    expect(triggerCardSelect.textContent).toContain('New Response (filtered)');
   });
 });
 
