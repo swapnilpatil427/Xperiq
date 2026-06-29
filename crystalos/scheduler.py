@@ -739,10 +739,122 @@ async def _cx_sla_breach_sweep() -> None:
         logger.error("cx_sla_breach_sweep_failed", error=str(exc))
 
 
+# ── Phase 7 — automated checkpoint retention / compaction (03 §12) ─────────────
+# Gated behind ENABLE_RETENTION_JOB (default false) so it is a no-op in dev unless
+# explicitly enabled. Idempotent + safe: only ever touches automated-lane checkpoints
+# with meaningful_delta=false older than the per-survey retention window; never
+# meaningful_delta=true rows, never manual reports, never the insights table.
+#
+# Phase 7 readiness: default to enabled when insight_checkpoints_v2 is active
+# (the retention job only operates on v2 rows — `insight_checkpoints_v2` lane='automated').
+# Explicit ENABLE_RETENTION_JOB env var always wins; the v2 flag sets the smart default.
+from crystalos.lib.constants import INSIGHT_CHECKPOINTS_V2_ENABLED as _V2_ENABLED
+ENABLE_RETENTION_JOB: bool = os.getenv(
+    "ENABLE_RETENTION_JOB",
+    "true" if _V2_ENABLED else "false",
+).lower() == "true"
+
+_retention_last_run: float = 0.0
+_RETENTION_INTERVAL_SEC = 86400  # nightly
+
+# Low-delta blobs are dropped after this many days (UI keeps the rollup marker row).
+RETENTION_BLOB_DROP_DAYS: int = int(os.getenv("RETENTION_BLOB_DROP_DAYS", "30"))
+
+
+async def run_retention_job() -> dict:
+    """Collapse low-delta automated checkpoints into rollup markers (03 §12).
+
+    Policy (automated lane only):
+      - Keep every checkpoint with meaningful_delta=true for the full retention period.
+      - For meaningful_delta=false checkpoints older than the survey's
+        automated_checkpoint_retention_days: mark them collapsed (rollup marker) so
+        the UI groups them, and drop their report_blob_ref after RETENTION_BLOB_DROP_DAYS.
+
+    Idempotent — re-running only touches rows not already collapsed/blob-cleared.
+    Returns a counts dict for observability/tests. Never raises.
+
+    The collapse is recorded in lineage_json.rollup_collapsed=true (additive — no
+    schema change required) so a later run skips already-collapsed rows. Manual-lane
+    rows and meaningful_delta=true rows are never selected.
+    """
+    if not ENABLE_RETENTION_JOB:
+        logger.debug("retention_job_disabled")
+        return {"enabled": False, "collapsed": 0, "blobs_dropped": 0}
+
+    collapsed = 0
+    blobs_dropped = 0
+    try:
+        # ── 1. Collapse low-delta automated checkpoints past the retention window ──
+        # Join each checkpoint to its survey's retention setting (default 365), with a
+        # 3-level COALESCE to org defaults / platform constant. collapse_similar_checkpoints
+        # must be on (default true) for the survey.
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    WITH eff AS (
+                      SELECT v.id,
+                             COALESCE(s.automated_checkpoint_retention_days,
+                                      o.automated_checkpoint_retention_days, 365) AS retention_days,
+                             COALESCE(s.collapse_similar_checkpoints,
+                                      o.collapse_similar_checkpoints, TRUE) AS collapse_on,
+                             v.created_at
+                      FROM insight_checkpoints_v2 v
+                      LEFT JOIN survey_insight_settings s ON s.survey_id = v.survey_id
+                      LEFT JOIN org_insight_defaults o ON o.org_id = v.org_id
+                      WHERE v.lane = 'automated'
+                        AND v.meaningful_delta = FALSE
+                        AND COALESCE((v.lineage_json->>'rollup_collapsed')::boolean, FALSE) = FALSE
+                    )
+                    UPDATE insight_checkpoints_v2 v
+                    SET lineage_json = COALESCE(v.lineage_json, '{}'::jsonb)
+                                       || jsonb_build_object('rollup_collapsed', true,
+                                                             'rollup_collapsed_at', NOW()::text)
+                    FROM eff
+                    WHERE v.id = eff.id
+                      AND eff.collapse_on = TRUE
+                      AND eff.created_at < NOW() - (eff.retention_days * INTERVAL '1 day')
+                    RETURNING v.id
+                    """,
+                )
+                rows = await cur.fetchall()
+                collapsed = len(rows)
+            await conn.commit()
+
+        # ── 2. Drop blobs of collapsed low-delta checkpoints after the grace window ──
+        async with _pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """UPDATE insight_checkpoints_v2
+                       SET report_blob_ref = NULL
+                       WHERE lane = 'automated'
+                         AND meaningful_delta = FALSE
+                         AND report_blob_ref IS NOT NULL
+                         AND COALESCE((lineage_json->>'rollup_collapsed')::boolean, FALSE) = TRUE
+                         AND created_at < NOW() - (%s * INTERVAL '1 day')
+                       RETURNING id""",
+                    (RETENTION_BLOB_DROP_DAYS,),
+                )
+                rows = await cur.fetchall()
+                blobs_dropped = len(rows)
+            await conn.commit()
+
+        if collapsed or blobs_dropped:
+            logger.info("retention_job_done", collapsed=collapsed, blobs_dropped=blobs_dropped)
+        else:
+            logger.debug("retention_job_noop")
+        return {"enabled": True, "collapsed": collapsed, "blobs_dropped": blobs_dropped}
+    except Exception as exc:
+        logger.warning("retention_job_failed", error=str(exc))
+        return {"enabled": True, "collapsed": collapsed, "blobs_dropped": blobs_dropped,
+                "error": str(exc)}
+
+
 async def run_scheduler_once() -> None:
     """Run a single scheduler tick (useful for testing and inline embedding)."""
     global _zombie_sweep_last_run, _org_aggregation_last_run, _sla_check_last_run, _skill_quality_last_run
     global _feedback_rollup_last_run, _quality_sla_last_run, _gap_cluster_last_run, _cx_sla_breach_last_run
+    global _retention_last_run
 
     # Always clean up stale runs first so they don't block re-triggering.
     await _recover_stale_runs()
@@ -791,6 +903,11 @@ async def run_scheduler_once() -> None:
     if now - _cx_sla_breach_last_run >= _CX_SLA_BREACH_INTERVAL_SEC:
         await _cx_sla_breach_sweep()
         _cx_sla_breach_last_run = now
+
+    # Nightly insight checkpoint retention/compaction (Phase 7; no-op unless enabled)
+    if ENABLE_RETENTION_JOB and now - _retention_last_run >= _RETENTION_INTERVAL_SEC:
+        await run_retention_job()
+        _retention_last_run = now
 
     surveys = await _get_surveys_due(INTERVAL_FREE_MIN)
     if surveys:

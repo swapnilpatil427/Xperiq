@@ -50,6 +50,8 @@ Legend: **[req]** required to run · **[opt]** optional (feature/integration) ·
 | `CREDIT_DEFAULT_PLAN` | `free` | Plan for new orgs w/o a profile (set `enterprise` in dev to skip the free cap) |
 | `CREDIT_ALLOWANCE_{FREE,STARTER,GROWTH,ENTERPRISE,PLATFORM}` | 0/1500/12000/80000/500000 | Monthly credit allowance per plan |
 | `CREDIT_COST_{INSIGHT_RUN,CRYSTAL_TURN,XO_FUSION,BROADCAST_EMAIL,BROADCAST_SMS}` | 50/15/200/2/8 | Per-action credit cost |
+| `CREDIT_COST_{REFRESH,MANUAL_QUICK,MANUAL_EXPERT,CUSTOM_BASE}` | 8/15/40/25 | Insight Pipeline v2 per-run costs (platform fallback; survey/org settings may override). `CUSTOM_BASE` is the Custom Analysis base; cost scales by corpus tier via `resolveCustomCost()` — ≤500 resp = base, ≤2000 = base×2, >2000 = base×3 (25/50/75 at the default base) |
+| `CREDIT_COST_{AUTOMATED_CHECKPOINT,AUTOMATED_REPORT}` | 5/15 | Insight Pipeline v2 automated run costs — checkpoint-only vs +tiered report (CrystalOS `credit_preflight`; survey/org settings may override) |
 | `REFRESH_DAILY_LIMIT` | 5 | Max "Refresh" button presses per survey per day (backend; evaluated at startup) |
 | `MANUAL_DAILY_RUN_LIMIT` | 10 | Max Expert + Quick manual insight runs per survey per day (backend; evaluated at startup) |
 | `CREDIT_PRICE_{STARTER,GROWTH,ENTERPRISE,PLATFORM}` | 49/299/1499/0 | Plan list price (USD) |
@@ -97,12 +99,24 @@ Legend: **[req]** required to run · **[opt]** optional (feature/integration) ·
 `CHECKPOINT_LOCAL_PATH`, `GOOGLE_VISION_KEY`, `VISION_PROVIDER`, `EVENT_BUS`, `PUBSUB_TOPIC`, `WORKER_ID`.
 
 ## Frontend — `app/.env.example`
-`VITE_API_URL` [req], `VITE_CLERK_PUBLISHABLE_KEY` [opt], `VITE_NOVU_APP_ID` [opt], `VITE_SENTRY_DSN` [opt], `VITE_SUPPORT_URL` [opt — defaults to `https://support.experient.ai`; set to `http://localhost:3002` in local dev to link to the local support site].
+`VITE_API_URL` [req], `VITE_CLERK_PUBLISHABLE_KEY` [opt], `VITE_NOVU_APP_ID` [opt], `VITE_SENTRY_DSN` [opt], `VITE_SUPPORT_URL` [opt — defaults to `https://support.experient.ai`; set to `http://localhost:3002` in local dev to link to the local support site], `VITE_INSIGHTS_TRAJECTORY_V1` [opt — defaults `true`; set `false` to hide the Phase 0.5 Insight Pipeline v2 investigation trajectory UI (Enhanced Header Band + Investigation Drawer + Topic Change Bar)].
 
 ## CrystalOS advanced tunables — defaults in `crystalos/lib/constants.py`
 `INGEST_*`, `SKILL_*`, `THREAD_*`, `REPORT_*`, `HALLUCINATION_*`, `SEMANTIC_CACHE_*`, `MAX_TOKENS_PER_RUN`,
 `MAX_DAILY_SPEND_USD`, `ORG_MEMORY_*`, `PRIOR_INSIGHT_*`, `USE_SKILL_RUNTIME`, `AGENTS_HOST`/`AGENTS_PORT`,
-`NODE_TIMEOUT_S`. All have safe defaults — only set to tune; they don't belong in `.env.example`.
+`NODE_TIMEOUT_S`. Insight Pipeline v2 (Phase 2/3): `DEFAULT_PRIOR_CHECKPOINT_LOOKBACK`,
+`DEFAULT_PRIOR_CHECKPOINT_MAX_AGE_DAYS`, `DEFAULT_STREAM_THRESHOLD`, `DEFAULT_REPORT_REGEN_THRESHOLD`,
+`DEFAULT_FULL_CHECKPOINT_THRESHOLD`, `DEFAULT_MEANINGFUL_DELTA_NPS_POINTS`, `DEFAULT_MEANINGFUL_DELTA_TOPIC_PCT`,
+`DEFAULT_MANUAL_EXPERT_SNAPSHOTS`, `DEFAULT_MANUAL_QUICK_SAMPLE`, `DEFAULT_MANUAL_QUICK_SNAPSHOTS`,
+`DEFAULT_MANUAL_QUICK_WINDOW_DAYS`, `DEFAULT_MANUAL_EXPERT_CHECKPOINT_LOOKBACK`, `DEFAULT_MANUAL_EXPERT_MAX_CORPUS`,
+`DEFAULT_MANUAL_EXPERT_FULL_CORPUS_CAP`, `DEFAULT_REFRESH_LOOKBACK_DAYS`, `DEFAULT_REFRESH_MIN_RESPONSE_COUNT`
+(platform-constant fallbacks for the survey/org settings COALESCE merge), and `INSIGHT_CHECKPOINTS_V2_ENABLED`
+(default `true` — dual-write `insight_checkpoints_v2` alongside the legacy `survey_insight_checkpoints` table during migration).
+Insight Pipeline v2 (Phase 6/7): `CREDIT_COST_CUSTOM_BASE` (default `25` — base credit cost for a Custom Analysis run),
+`ENABLE_RETENTION_JOB` (default `false` — gate the nightly automated-checkpoint retention/compaction job in `scheduler.py`;
+dev no-op unless set to `true`), `RETENTION_BLOB_DROP_DAYS` (default `30` — grace days before a collapsed low-delta
+automated checkpoint's `report_blob_ref` is dropped).
+All have safe defaults — only set to tune; they don't belong in `.env.example`.
 
 ---
 
@@ -195,6 +209,7 @@ VITE_API_URL=http://localhost:3001
 # VITE_CLERK_PUBLISHABLE_KEY=
 # VITE_NOVU_APP_ID=
 # VITE_SENTRY_DSN=
+# VITE_INSIGHTS_TRAJECTORY_V1=true   # set false to disable Phase 0.5 trajectory UI
 ```
 
 ### `backend/.env.example`

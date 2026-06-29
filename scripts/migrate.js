@@ -57,6 +57,9 @@ const FINGERPRINTS = {
     `SELECT to_regclass('public.skill_example_refreshes') AS exists`,
   '20260623000008_gap_clusters':
     `SELECT to_regclass('public.capability_gap_clusters') AS exists`,
+  '20260626000001_insight_audit_log':
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_name='insight_audit_log' AND column_name='org_id' LIMIT 1`,
 };
 
 async function connectWithRetry(retries = 15, delayMs = 2000) {

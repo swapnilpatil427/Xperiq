@@ -1,4 +1,6 @@
 import logger from '../../lib/logger';
+import { resolveClerkSecretKey } from '../../lib/clerkKeys';
+import { isStripeConfigured } from '../../lib/payments';
 import { credentialValid, credentialLastCheck, credentialDaysToExpiry } from '../../lib/metrics';
 
 /**
@@ -54,7 +56,10 @@ export const DEFAULT_PROBES: CredentialProbe[] = [
   },
   {
     integration: 'stripe',
-    configured: () => !!process.env.STRIPE_SECRET_KEY,
+    // Key alone is not enough — the `stripe` SDK must be installed (see lib/payments.ts).
+    // Probing when only STRIPE_SECRET_KEY is set (common in local .env) spams errors for
+    // an integration that is not actually active.
+    configured: () => isStripeConfigured(),
     check: async () => {
       const { status } = await probeHttp('https://api.stripe.com/v1/balance', {
         Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
@@ -66,10 +71,11 @@ export const DEFAULT_PROBES: CredentialProbe[] = [
   },
   {
     integration: 'clerk',
-    configured: () => !!process.env.CLERK_SECRET_KEY,
+    configured: () => !!resolveClerkSecretKey(),
     check: async () => {
+      const clerkKey = resolveClerkSecretKey()!;
       const { status } = await probeHttp('https://api.clerk.com/v1/jwks', {
-        Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+        Authorization: `Bearer ${clerkKey}`,
       });
       if (status === 401) return { status: 'invalid', detail: 'unauthorized' };
       if (status !== 200) return { status: 'error', detail: `HTTP ${status}` };

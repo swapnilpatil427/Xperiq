@@ -110,3 +110,36 @@ agent_run_duration_seconds = Histogram(
     buckets=[5, 15, 30, 60, 120, 300, 600],
     registry=registry,
 )
+
+# ── Insight pipeline SLO tracking (G27 — citation validity + verifier pass rate) ──
+insight_citation_total = Counter(
+    "insight_citation_total",
+    "Total citation references across all published insights",
+    ["org_id"],
+    registry=registry,
+)
+insight_citation_valid_total = Counter(
+    "insight_citation_valid_total",
+    "Valid citation references (post hallucination filter) across published insights",
+    ["org_id"],
+    registry=registry,
+)
+insight_verifier_total = Counter(
+    "insight_verifier_total",
+    "Total insights evaluated by the verifier",
+    ["org_id"],
+    registry=registry,
+)
+insight_verifier_pass_total = Counter(
+    "insight_verifier_pass_total",
+    "Insights that passed verifier (score >= 0.7)",
+    ["org_id"],
+    registry=registry,
+)
+insight_run_duration_seconds = Histogram(
+    "insight_run_duration_seconds",
+    "End-to-end insight pipeline run duration in seconds",
+    ["profile", "org_id"],
+    buckets=[30, 60, 90, 120, 180, 300, 480, 600],
+    registry=registry,
+)

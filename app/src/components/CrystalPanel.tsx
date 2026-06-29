@@ -15,6 +15,9 @@ import { Icon } from './Icon';
 import { Button } from '@/components/ui/button';
 import { useCrystalPanel, type CrystalCtx } from '../contexts/crystalPanel';
 import { GlassCard, CitationChip, ConfidenceChip, SENTIMENT_BORDER } from '../pages/insights/shared';
+import { InsightDocumentCard, type InsightDocument } from './insights/InsightDocumentCard';
+import { ManualRunDialog } from './insights/ManualRunDialog';
+import type { ManualRunMode } from '../types';
 import { useApi } from '../hooks/useApi';
 import { useAppAuth } from '../lib/auth';
 import { useBrand } from '../contexts/brandContext';
@@ -35,6 +38,7 @@ interface Message {
   suggestions?: string[];          // follow-up prompts from the real API
   thumbs?: 'up' | 'down' | null;
   pinned?: boolean;
+  documents?: InsightDocument[];   // render_hint==='document' tool results
 }
 
 // Citation object returned from the streaming crystal endpoint
@@ -321,6 +325,8 @@ export function CrystalPanel({
                   suggestions?: string[];
                   map?: CitationMap;
                   proposals?: ActionProposal[];
+                  documents?: InsightDocument[];
+                  render_hint?: string;
                 };
                 if (event.type === 'citation_context' && event.map) {
                   const merged = { ...citationMapRef.current, ...event.map };
@@ -351,6 +357,8 @@ export function CrystalPanel({
                     citationMapRef.current,
                   );
                   const { text: cleanedAnswer } = parseInlineCitations(event.answer ?? '');
+                  // render_hint==='document' (or explicit documents[]) → surface report doc card(s).
+                  const docs = event.documents ?? [];
                   setMessages((prev) => [
                     ...prev,
                     {
@@ -360,6 +368,7 @@ export function CrystalPanel({
                       timestamp: new Date(),
                       citations: normCitations,
                       suggestions: event.suggestions ?? [],
+                      documents: docs.length ? docs : undefined,
                     },
                   ]);
                 } else if (event.type === 'action_proposals' && event.proposals?.length) {
@@ -641,6 +650,12 @@ export function CrystalPanel({
   const navigate = useNavigate();
   const [actionProposals, setActionProposals] = useState<ActionProposal[]>([]);
   const [executingAction, setExecutingAction] = useState<string | null>(null);
+  // Manual-run dialog opened from a Crystal report proposal
+  // (trigger_manual_insight_run / generate_intelligence_report).
+  const [manualRunDialog, setManualRunDialog] = useState<{ open: boolean; mode: ManualRunMode }>({
+    open: false,
+    mode: 'expert',
+  });
 
   const note = useCallback((content: string) => {
     setMessages(prev => [...prev, {
@@ -795,6 +810,23 @@ export function CrystalPanel({
         case 'send_slack_alert': {
           // Actual sending happens server-side when the case is created.
           track('succeeded');
+          break;
+        }
+
+        // ── Insight Pipeline v2 — report proposals (Phase 6) ───────────────────
+        case 'view_report':
+        case 'trigger_manual_insight_run':
+        case 'generate_intelligence_report': {
+          const intent = resolveReportProposalAction(proposal, surveyId);
+          if (intent.kind === 'navigate') {
+            track('succeeded', proposal.params.report_id as string | undefined);
+            navigate(intent.url);
+          } else if (intent.kind === 'open_dialog') {
+            track('succeeded', surveyId);
+            setManualRunDialog({ open: true, mode: intent.mode });
+          } else {
+            track('failed', undefined, intent.reason);
+          }
           break;
         }
 
@@ -1144,6 +1176,21 @@ export function CrystalPanel({
                     <div className="text-xs text-red-500 px-2">{streamError}</div>
                   )}
 
+                  {/* ── Action proposals — confirm cards (Crystal proposes, app executes) ── */}
+                  {actionProposals.length > 0 && !isThinking && (
+                    <div className="space-y-2">
+                      {actionProposals.map((p) => (
+                        <ActionProposalCard
+                          key={p.id}
+                          proposal={p}
+                          isExecuting={executingAction === p.id}
+                          onApply={() => executeAction(p)}
+                          onDismiss={() => dismissAction(p.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+
                   {/* ── Support mode: escalation CTA card ─────────────── */}
                   {isSupportMode && escalationPackage && !lastSupportResolved && !isThinking && (
                     <div
@@ -1279,6 +1326,24 @@ export function CrystalPanel({
                 ⌘K to close · Shift+Enter for new line · Every answer cites real responses
               </p>
             </div>
+
+            {/* Manual-run dialog opened from a Crystal report proposal */}
+            {focusSurvey?.id && (
+              <ManualRunDialog
+                open={manualRunDialog.open}
+                onClose={() => setManualRunDialog((s) => ({ ...s, open: false }))}
+                surveyId={focusSurvey.id}
+                initialMode={manualRunDialog.mode}
+                onViewReport={(rid) => {
+                  setManualRunDialog((s) => ({ ...s, open: false }));
+                  if (rid) navigate(toPath(ROUTES.INSIGHT_REPORT, { surveyId: focusSurvey.id, reportId: rid }));
+                }}
+                onViewTrail={() => {
+                  setManualRunDialog((s) => ({ ...s, open: false }));
+                  navigate(toPath(ROUTES.INSIGHT_TRAIL, { surveyId: focusSurvey.id }));
+                }}
+              />
+            )}
           </motion.div>
         </>
       )}
@@ -1852,6 +1917,15 @@ function CrystalBubble({
           <CitedText content={message.content} citations={message.citations ?? []} />
         </div>
 
+        {/* Insight report document cards (render_hint==='document') */}
+        {message.documents && message.documents.length > 0 && (
+          <div className="space-y-2 mb-3">
+            {message.documents.map((doc, i) => (
+              <InsightDocumentCard key={i} doc={doc} />
+            ))}
+          </div>
+        )}
+
         {/* Sources footer — behaviour adapts to scope */}
         {message.citations && message.citations.length > 0 && (
           <SourcesFooter citations={message.citations} isAll={isAll} />
@@ -2286,6 +2360,39 @@ function CrystalThinkingBubble({
 // Renders a single action proposal from Crystal as a confirmation card.
 // User must click "Apply" to execute — Crystal never acts autonomously.
 
+// ── Report-proposal dispatch (pure, unit-testable) ─────────────────────────────
+// Maps a view_report / trigger_manual_insight_run / generate_intelligence_report
+// proposal to a concrete frontend intent: navigate to the report viewer (read-only)
+// or open the ManualRunDialog in a given mode (confirm → POST /runs).
+export type ReportProposalIntent =
+  | { kind: 'navigate'; url: string }
+  | { kind: 'open_dialog'; mode: ManualRunMode }
+  | { kind: 'noop'; reason: string };
+
+export function resolveReportProposalAction(
+  proposal: ActionProposal,
+  surveyId: string | undefined,
+): ReportProposalIntent {
+  if (proposal.type === 'view_report') {
+    const url = proposal.params.url as string | undefined;
+    const reportId = proposal.params.report_id as string | undefined;
+    if (url) return { kind: 'navigate', url };
+    if (surveyId && reportId) {
+      return { kind: 'navigate', url: toPath(ROUTES.INSIGHT_REPORT, { surveyId, reportId }) };
+    }
+    return { kind: 'noop', reason: 'view_report missing url and report id' };
+  }
+  if (!surveyId) return { kind: 'noop', reason: 'no survey in scope' };
+  if (proposal.type === 'trigger_manual_insight_run') {
+    const raw = String(proposal.params.mode ?? 'expert');
+    const mode: ManualRunMode =
+      raw.includes('quick') ? 'quick' : raw.includes('refresh') ? 'refresh' : 'expert';
+    return { kind: 'open_dialog', mode };
+  }
+  // generate_intelligence_report → Expert mode (confirm shows estimated credits).
+  return { kind: 'open_dialog', mode: 'expert' };
+}
+
 const ACTION_TYPE_ICONS: Record<string, string> = {
   create_survey:          'add_circle',
   create_followup_survey: 'add_circle',
@@ -2304,6 +2411,10 @@ const ACTION_TYPE_ICONS: Record<string, string> = {
   create_case:            'work',
   assign_owner:           'person_check',
   send_slack_alert:       'chat',
+  // Insight Pipeline v2 — report proposals
+  view_report:                'description',
+  trigger_manual_insight_run: 'auto_awesome',
+  generate_intelligence_report: 'auto_awesome',
 };
 
 const PRIORITY_COLORS: Record<string, string> = {

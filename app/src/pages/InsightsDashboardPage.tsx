@@ -19,7 +19,8 @@ import { Button } from '@/components/ui/button';
 import { SurveyScopePicker, type SurveyScope } from '../components/SurveyScopePicker';
 import { UnifiedInsightsView } from './insights/UnifiedInsightsView';
 import { useCrystalPanel } from '../contexts/crystalPanel';
-import type { AgenticInsight, SurveyTopic } from '../types';
+import { useInvalidation } from '../lib/dataBus';
+import type { AgenticInsight, SurveyTopic, LatestCheckpoint, RecentCheckpointPoint } from '../types';
 
 const SCOPE_STORAGE_KEY = 'insights_scope';
 
@@ -135,6 +136,10 @@ export function InsightsDashboardPage() {
   // ── Agentic insights (real pipeline data) ────────────────────────────────
   const [agenticInsights, setAgenticInsights] = useState<AgenticInsight[]>([]);
   const [agenticLoading,  setAgenticLoading]  = useState(false);
+  // ── Phase 0.5 — investigation trajectory (Enhanced Header Band) ───────────
+  const [latestCheckpoint,  setLatestCheckpoint]  = useState<LatestCheckpoint | null>(null);
+  const [priorCheckpoints,  setPriorCheckpoints]  = useState<RecentCheckpointPoint[]>([]);
+  const [runStatus,         setRunStatus]         = useState<string | null>(null);
   const [generating,      setGenerating]      = useState(false);
   const [nodesDone,       setNodesDone]       = useState<string[]>([]);
   const [genError,        setGenError]        = useState<string | null>(null);
@@ -145,19 +150,43 @@ export function InsightsDashboardPage() {
   const bgPollRef  = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadAgentic = useCallback(async () => {
-    if (!focusSurveyId) { setAgenticInsights([]); setCrystalData([], []); return; }
+    if (!focusSurveyId) {
+      setAgenticInsights([]);
+      setLatestCheckpoint(null);
+      setPriorCheckpoints([]);
+      setRunStatus(null);
+      setCrystalData([], []);
+      return;
+    }
     setAgenticLoading(true);
+    const surveyId = focusSurveyId;
     try {
-      const { insights: list } = await api.listInsights(focusSurveyId);
+      const { insights: list, run_status, latest_checkpoint } = await api.listInsights(surveyId);
       const loaded = list ?? [];
       setAgenticInsights(loaded);
+      setRunStatus(run_status ?? null);
+      setLatestCheckpoint(latest_checkpoint ?? null);
       setCrystalData(loaded, topics);
+      // Sparkline trail — Phase 4 endpoint; tolerates absence (returns []).
+      if (latest_checkpoint) {
+        api.getRecentCheckpoints(surveyId, 5)
+          .then(setPriorCheckpoints)
+          .catch(() => setPriorCheckpoints([]));
+      } else {
+        setPriorCheckpoints([]);
+      }
     } catch {
       setAgenticInsights([]);
+      setLatestCheckpoint(null);
+      setPriorCheckpoints([]);
     } finally {
       setAgenticLoading(false);
     }
   }, [api, focusSurveyId, topics, setCrystalData]);
+
+  // Subscribe to DataBus: a Crystal-driven mutation or checkpoint write that
+  // invalidates 'insights' should refresh the band + drawer.
+  useInvalidation('insights', loadAgentic);
 
   useEffect(() => {
     loadAgentic();
@@ -188,7 +217,13 @@ export function InsightsDashboardPage() {
     }, BG_POLL_INTERVAL_MS);
   }, [api, loadAgentic, t]);
 
-  const handleGenerate = useCallback(async () => {
+  const handleGenerate = useCallback(async (
+    triggerArg?: unknown,
+  ) => {
+    // Tolerate being used both as a direct onClick handler (receives a
+    // MouseEvent) and as an explicit trigger caller. Only honor a string.
+    const trigger: 'manual' | 'regenerate' =
+      triggerArg === 'regenerate' ? 'regenerate' : 'manual';
     if (!focusSurveyId || generating) return;
     setGenerating(true);
     setNodesDone([]);
@@ -197,7 +232,7 @@ export function InsightsDashboardPage() {
     setGenToast(null);
     if (bgPollRef.current) clearInterval(bgPollRef.current);
     try {
-      await api.triggerInsightGeneration(focusSurveyId);
+      await api.triggerInsightGeneration(focusSurveyId, { trigger });
     } catch {
       setGenError(t('insights.generate.errorStart'));
       setGenerating(false);
@@ -258,7 +293,7 @@ export function InsightsDashboardPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={handleGenerate}
+              onClick={() => handleGenerate('manual')}
               disabled={generating || !focusSurveyId}
               className="text-xs h-auto py-2 px-3"
               title={!focusSurveyId ? 'Pick a survey to run the insight pipeline' : undefined}
@@ -433,6 +468,11 @@ export function InsightsDashboardPage() {
         onGenerate={handleGenerate}
         focusSurvey={focusSurvey}
         orgAvgNps={orgNps}
+        latestCheckpoint={latestCheckpoint}
+        priorCheckpoints={priorCheckpoints}
+        runStatus={runStatus}
+        onGenerateTrigger={(trigger) => handleGenerate(trigger)}
+        onRefresh={() => handleGenerate('manual')}
       />
 
       {/* Crystal Panel is mounted globally in AppShell; data injected via setCrystalData() */}

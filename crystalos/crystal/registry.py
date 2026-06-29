@@ -152,6 +152,131 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "get_recent_checkpoints",
+        "description": (
+            "Get the most recent insight checkpoints for a survey with their NPS, "
+            "delta_from_prior (code-computed metric/topic changes), and meaningful_delta "
+            "flag. Use to answer 'what changed since the last checkpoint' or to summarize "
+            "the recent intelligence trajectory."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "limit": {"type": "integer", "default": 5, "description": "Max checkpoints to return"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    # ── Insight Pipeline v2 — checkpoint chain / trail / report tools (Phase 6) ──
+    {
+        "name": "get_checkpoint_chain",
+        "description": (
+            "Walk the verified automated checkpoint chain (insight_checkpoints_v2) newest→oldest "
+            "via parent_checkpoint_id, returning each node's NPS, nps_delta, new_response_count, "
+            "meaningful_delta, a one-line summary and a trail URL. Use to show the intelligence "
+            "trajectory ('how has NPS moved over the last N checkpoints'). Verified linked-list "
+            "walk — prefer over get_recent_checkpoints when ancestry matters."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "lookback": {"type": "integer", "default": 5, "description": "How many checkpoints back to walk"},
+                "lane": {"type": "string", "enum": ["automated", "manual", "all"], "default": "automated"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "get_insight_settings",
+        "description": (
+            "Return the effective merged insight settings for a survey (3-level COALESCE: "
+            "survey → org defaults → platform constants). Use to explain pipeline behavior to the "
+            "user, e.g. 'Your survey references 5 prior checkpoints and updates every 10 new responses.'"
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "get_insight_report",
+        "description": (
+            "Fetch an insight report document (executive summary, themes, insights, citation count) "
+            "plus an in-app report URL for a survey. survey_id is required; report_id or checkpoint_id "
+            "are optional filters — if neither is given, returns the latest report. Output carries "
+            "render_hint='document' so the frontend renders an InsightDocumentCard. Call this before "
+            "emitting a report-related action proposal to decide view vs generate."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "report_id": {"type": "string", "description": "Specific insight_reports id (optional)"},
+                "checkpoint_id": {"type": "string", "description": "Checkpoint to resolve a report for (optional)"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "get_insight_trail",
+        "description": (
+            "List the checkpoint/report nodes for a survey (the Insight Trail), newest first, with a "
+            "one-line summary, lane (automated/manual), and trail URL per node. Use for 'history', "
+            "'timeline', 'show me past reports', or to fuzzy-match a named manual report (lane='manual')."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id": {"type": "string"},
+                "lane": {"type": "string", "enum": ["all", "automated", "manual"], "default": "all"},
+                "limit": {"type": "integer", "default": 10},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "get_checkpoint_detail",
+        "description": (
+            "Deep-dive one checkpoint: its metrics, delta_from_prior (what changed), lineage "
+            "(parent + prior checkpoint refs), and new-response count. Use for 'what changed since "
+            "the last update' on a specific checkpoint."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "checkpoint_id": {"type": "string", "description": "insight_checkpoints_v2 id (or legacy checkpoint id)"},
+            },
+            "required": ["checkpoint_id"],
+        },
+    },
+    {
+        "name": "compare_checkpoints",
+        "description": (
+            "Side-by-side comparison of two checkpoints — metric deltas (NPS/CSAT/CES) and topic "
+            "diff (emerged / resolved between A and B). Use for 'compare checkpoint 12 to 14'."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "checkpoint_id_a": {"type": "string"},
+                "checkpoint_id_b": {"type": "string"},
+            },
+            "required": ["checkpoint_id_a", "checkpoint_id_b"],
+        },
+    },
+    {
         "name": "compare_surveys",
         "description": "Compare two surveys side-by-side on key metrics and themes.",
         "scope": "org",
@@ -437,6 +562,64 @@ TOOL_REGISTRY: list[dict[str, Any]] = [
             "required": ["condition"],
         },
     },
+    # ── Insight Pipeline v2 — report action proposals (Phase 6) ─────────────────
+    {
+        "name": "propose_manual_insight_run",
+        "description": (
+            "Propose a manual Expert or Quick insight run (deep-dive over a window). Returns a "
+            "proposal the user confirms; on confirm the frontend POSTs /api/insights/:surveyId/runs "
+            "and streams progress. Use when the user asks for an Expert report or a deep dive."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id":    {"type": "string"},
+                "mode":         {"type": "string", "enum": ["manual_expert", "manual_quick"], "default": "manual_expert"},
+                "window_start": {"type": "string", "description": "ISO8601 window lower bound (optional)"},
+                "window_end":   {"type": "string", "description": "ISO8601 window upper bound (optional)"},
+                "label":        {"type": "string", "description": "User-facing label, e.g. 'Q2 board prep'"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "propose_view_report",
+        "description": (
+            "Propose opening an existing insight report when one exists within the last 7 days "
+            "(read-only navigation — no API call). Call get_insight_report first to confirm a recent "
+            "report exists, then emit this with its report_id + url."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id":     {"type": "string"},
+                "report_id":     {"type": "string"},
+                "checkpoint_id": {"type": "string", "description": "Associated checkpoint id, if automated"},
+                "url":           {"type": "string", "description": "In-app report viewer URL"},
+                "summary":       {"type": "string", "description": "One-line summary for Crystal's prose"},
+            },
+            "required": ["survey_id"],
+        },
+    },
+    {
+        "name": "propose_generate_intelligence_report",
+        "description": (
+            "Propose generating a fresh intelligence report when no report exists within the last "
+            "7 days (or the user explicitly asks to generate one). Returns a proposal showing "
+            "estimated_credits; on confirm the frontend POSTs the trigger endpoint and streams progress."
+        ),
+        "scope": "survey",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "survey_id":         {"type": "string"},
+                "estimated_credits": {"type": "integer", "description": "Credit cost shown in the confirm dialog"},
+            },
+            "required": ["survey_id"],
+        },
+    },
     {
         "name": "list_relevant_templates",
         "description": (
@@ -700,6 +883,9 @@ DATA_TOOL_NAMES = {
     "get_survey_overview", "get_topic_details", "get_metric_history",
     "get_insights_list", "get_verbatims", "get_benchmark_comparison",
     "get_driver_analysis", "get_segment_breakdown", "get_checkpoint_history",
+    "get_recent_checkpoints",
+    "get_checkpoint_chain", "get_insight_settings", "get_insight_report",
+    "get_insight_trail", "get_checkpoint_detail", "compare_checkpoints",
     "list_segmentable_questions",
     "compare_surveys", "get_org_portfolio", "get_cross_survey_themes",
     "get_anomaly_events",
@@ -721,6 +907,8 @@ ACTION_TOOL_NAMES = {
     "recommend_next_actions", "propose_survey_creation", "propose_survey_edit",
     "propose_distribution", "propose_workflow", "propose_alert", "list_relevant_templates",
     "propose_create_case", "propose_assign_owner", "propose_slack_alert",
+    "propose_manual_insight_run", "propose_view_report",
+    "propose_generate_intelligence_report",
 }
 
 

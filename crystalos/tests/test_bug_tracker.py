@@ -203,7 +203,7 @@ class TestFireCriticalAlert:
 
         assert mock_conn.execute.await_count == 1
         sql = mock_conn.execute.call_args[0][0]
-        assert "notification_events" in sql
+        assert "crystal_event_queue" in sql
 
         payload_str = mock_conn.execute.call_args[0][1][1]
         import json

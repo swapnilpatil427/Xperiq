@@ -277,6 +277,269 @@ export interface AgenticInsight {
   superseded_at?: string | null;
 }
 
+// ── Insight Pipeline v2 — Phase 0.5 checkpoint trajectory ────────────────────
+// The investigation tracking layer: each automated/manual checkpoint records a
+// delta from the prior checkpoint so the UI can show "what changed".
+
+/** Topic lifecycle changes between two checkpoints. */
+export interface CheckpointTopicChanges {
+  emerged:   string[];
+  resolved:  string[];
+  persisted: string[];
+}
+
+/** Phase 0.5 delta schema — the diff from the prior checkpoint. NUMERICs coerced. */
+export interface CheckpointDelta {
+  nps_delta:             number | null;
+  csat_delta:            number | null;
+  response_count_delta:  number;
+  topic_changes:         CheckpointTopicChanges;
+  trend_direction:       'up' | 'down' | 'stable';
+  trend_persistence:     string;
+}
+
+/** The latest checkpoint summary returned by GET /api/insights/:surveyId/list. */
+export interface LatestCheckpoint {
+  number:     number;
+  nps:        number | null;
+  delta:      CheckpointDelta | null;
+  meaningful: boolean;
+  created_at: string;
+  /** Optional provenance fields the backend may include. */
+  trigger?:        string | null;
+  new_responses?:  number | null;
+  csat?:           number | null;
+  ces?:            number | null;
+  model?:          string | null;
+}
+
+/** One point in the recent-checkpoints trail used for the drawer sparkline. */
+export interface RecentCheckpointPoint {
+  number:     number;
+  nps:        number | null;
+  created_at: string;
+}
+
+// ── Insight Pipeline v2 — Phase 3 (Manual runs) + Phase 4 (Insight Trail) ────
+
+/** Manual-run mode selector — drives depth, sampling, and cost. */
+export type ManualRunMode = 'expert' | 'quick' | 'refresh';
+
+/** Which timeline a checkpoint belongs to. */
+export type TrailLane = 'automated' | 'manual';
+
+/** Body for POST /api/insights/:surveyId/runs (trigger a manual run). */
+export interface ManualRunRequest {
+  mode:          ManualRunMode;
+  window_start?: string | null;
+  window_end?:   string | null;
+  label?:        string | null;
+}
+
+/** 202 response from POST /api/insights/:surveyId/runs. */
+export interface ManualRunResponse {
+  run_id:     string;
+  status:     string;        // 'started'
+  report_id?: string | null;
+}
+
+/** Body for POST /api/insights/:surveyId/runs/preview. */
+export interface ManualRunPreviewRequest {
+  mode:          ManualRunMode;
+  window_start?: string | null;
+  window_end?:   string | null;
+}
+
+/** Preview estimate for a manual run (NUMERICs coerced to numbers). */
+export interface ManualRunPreview {
+  estimated_cost:           number | null;
+  corpus_size:              number | null;
+  estimated_duration_label: string;
+  sample_size:              number | null;
+}
+
+/** One node in the Insight Trail timeline (NUMERICs coerced). */
+export interface TrailCheckpoint {
+  id:            string;
+  number:        number;
+  lane:          TrailLane;
+  run_mode:      string | null;
+  trigger:       string | null;
+  nps:           number | null;
+  csat:          number | null;
+  ces:           number | null;
+  delta:         CheckpointDelta | null;
+  meaningful:    boolean;
+  created_at:    string;
+  created_by:    string | null;
+  report_label:  string | null;
+  report_id?:    string | null;
+  window_start:  string | null;
+  window_end:    string | null;
+  response_count?: number | null;
+  tier_label?:     'first_voices' | 'early_signals' | 'growing_picture' | 'full_report' | null;
+}
+
+/** A report row surfaced in the trail (manual run or custom analysis). */
+export interface TrailReport {
+  id:                   string;
+  label:                string | null;
+  name?:                string | null;
+  mode:                 string | null;
+  report_type:          'manual' | 'custom';
+  created_at:           string;
+  created_by:           string | null;
+  window_start:         string | null;
+  window_end:           string | null;
+  // Custom analysis fields (present when report_type === 'custom')
+  trust_score_avg?:     number | null;
+  corpus_coverage_pct?: number | null;
+  sample_size?:         number | null;
+  slug?:                string | null;
+}
+
+/** GET /api/insights/:surveyId/trail response. */
+export interface InsightTrailResult {
+  checkpoints: TrailCheckpoint[];
+  reports:     TrailReport[];
+  next_cursor: string | null;
+}
+
+/** Lineage info returned by the checkpoint detail endpoint. */
+export interface CheckpointDetail {
+  checkpoint:    TrailCheckpoint;
+  /** Raw lineage JSON from the DB (pipeline_version, prior_checkpoint_refs, run_mode, etc.) */
+  lineage_json?: Record<string, unknown> | null;
+  delta:         CheckpointDelta | null;
+  blob_ref?:     string | null;
+  /** Inline blob document (dev / local only). */
+  document?:     unknown;
+  /** Signed read URL for the report blob (production). */
+  blob_url?:     string | null;
+  /** v2 | legacy — which table the row came from. */
+  source?:       'v2' | 'legacy';
+}
+
+/** GET /api/insights/:surveyId/trail/:a/compare/:b response. */
+export interface CheckpointComparison {
+  a:             TrailCheckpoint;
+  b:             TrailCheckpoint;
+  metric_deltas: { nps: number | null; csat: number | null; ces: number | null };
+  topic_diff:    { added: string[]; removed: string[] };
+}
+
+/** A persisted insight report document + optional rendered body. */
+export interface InsightReport {
+  report:    Record<string, unknown>;
+  document?: Record<string, unknown> | null;
+}
+
+// ── Insight Pipeline v2 — Phase 5 (Settings) ──────────────────────────────────
+
+/** The effective merged insight settings + each layer + provenance. */
+export interface InsightSettings {
+  survey_id:        string;
+  effective:        Record<string, unknown>;
+  survey_overrides: Record<string, unknown>;
+  org_defaults:     Record<string, unknown>;
+  config_hash:      string | null;
+  config_version:   number | null;
+  /** True when the requester may PATCH (admin or survey owner). */
+  editable:         boolean;
+}
+
+/** Response from PATCH /api/insights/:surveyId/settings. */
+export interface InsightSettingsPatchResult {
+  survey_overrides: Record<string, unknown>;
+  config_version:   number | null;
+  config_hash:      string | null;
+}
+
+/** Org-level insight defaults (admin-editable template). */
+export interface OrgInsightDefaults {
+  org_id:     string;
+  defaults:   Record<string, unknown>;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+// ── Insight Pipeline v2 — Phase 6 (Custom Analysis) ───────────────────────────
+
+/** Filter spec for a custom analysis run. */
+export interface CustomReportFilterSpec {
+  date_from?:     string | null;
+  date_to?:       string | null;
+  segments?:      string[];
+  topics?:        string[];
+  metric_types?:  string[];
+  narrative_depth?: 'brief' | 'standard' | 'deep' | string;
+}
+
+/** Body for POST /api/reports/custom. */
+export interface CustomReportRequest {
+  survey_id:   string;
+  name:        string;
+  filter_spec: CustomReportFilterSpec;
+}
+
+/** 202 response from POST /api/reports/custom. */
+export interface CustomReportResponse {
+  report_id: string;
+  run_id:    string;
+  status:    'pending' | string;
+  slug:      string;
+}
+
+/** Body for POST /api/reports/custom/preview. */
+export interface CustomReportPreviewRequest {
+  survey_id:   string;
+  filter_spec: CustomReportFilterSpec;
+}
+
+/** Preview estimate for a custom analysis run (NUMERICs coerced). */
+export interface CustomReportPreview {
+  estimated_cost: number | null;
+  corpus_size:    number | null;
+  sample_size:    number | null;
+  low_confidence: boolean;
+}
+
+/** A custom report row (list + detail header). */
+export interface CustomReport {
+  id:           string;
+  survey_id:    string;
+  name:         string;
+  slug:         string | null;
+  status:       'pending' | 'running' | 'completed' | 'failed' | string;
+  filter_spec:  CustomReportFilterSpec;
+  filter_label: string | null;
+  corpus_size:  number | null;
+  sample_size:  number | null;
+  low_confidence: boolean;
+  created_at:   string;
+  created_by:   string | null;
+  completed_at: string | null;
+}
+
+/** One custom_report_insights row surfaced in the result view. */
+export interface CustomReportInsight {
+  id:           string;
+  layer:        'descriptive' | 'diagnostic' | 'predictive' | 'prescriptive' | string;
+  category:     string | null;
+  headline:     string;
+  narrative:    string | null;
+  trust_score:  number | null;
+  filter_label: string | null;
+  sample_size:  number | null;
+}
+
+/** GET /api/reports/custom/:reportId response. */
+export interface CustomReportDetail {
+  report:    CustomReport;
+  insights:  CustomReportInsight[];
+  document?: Record<string, unknown> | null;
+}
+
 export interface InsightRunStatus {
   run_id:    string;
   status:    'running' | 'completed' | 'failed';
@@ -484,7 +747,11 @@ export type ActionProposalType =
   // Tier 3 — Closed-Loop Action Platform
   | 'create_case'
   | 'assign_owner'
-  | 'send_slack_alert';
+  | 'send_slack_alert'
+  // Insight Pipeline v2 — Phase 6 (report-related proposals)
+  | 'view_report'
+  | 'trigger_manual_insight_run'
+  | 'generate_intelligence_report';
 
 export interface ActionProposal {
   id:                    string;               // kebab-case unique ID

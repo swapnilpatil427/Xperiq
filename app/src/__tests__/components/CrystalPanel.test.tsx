@@ -45,6 +45,14 @@ vi.mock('../../components/Icon', () => ({
   Icon: ({ name }: { name: string }) => <span data-icon={name} />,
 }));
 
+// ── InsightDocumentCard — stub so CrystalPanel's document rendering doesn't ──
+// ── need a full DOM environment for PDF/doc previews ─────────────────────────
+vi.mock('../../components/insights/InsightDocumentCard', () => ({
+  InsightDocumentCard: ({ doc }: { doc: { title?: string | null } }) => (
+    <div data-testid="insight-document-card">{doc.title ?? ''}</div>
+  ),
+}));
+
 // ── Stable mock references for crystalPanel context ──────────────────────────
 const mockCloseCrystal  = vi.fn();
 const mockSetScope      = vi.fn();
@@ -108,7 +116,7 @@ vi.mock('../../lib/auth', () => ({
 }));
 
 // ── import component AFTER all vi.mock declarations ──────────────────────────
-import { CrystalPanel } from '../../components/CrystalPanel';
+import { CrystalPanel, resolveReportProposalAction } from '../../components/CrystalPanel';
 import { useCrystalPanel } from '../../contexts/crystalPanel';
 import type { ActionProposal } from '../../types';
 
@@ -712,5 +720,55 @@ describe('CrystalPanel — scope propagation', () => {
     expect(body.scope).toBe('org');
     // survey_id must be '' — never 'all'
     expect(body.survey_id).toBe('');
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+describe('resolveReportProposalAction — Phase 6 insight proposal dispatch', () => {
+// ═════════════════════════════════════════════════════════════════════════════
+
+  it('view_report with an explicit url → navigate to that url', () => {
+    const p = makeProposal({ type: 'view_report', params: { url: '/app/surveys/s1/intelligence/reports/r9' } });
+    expect(resolveReportProposalAction(p, 's1')).toEqual({
+      kind: 'navigate',
+      url: '/app/surveys/s1/intelligence/reports/r9',
+    });
+  });
+
+  it('view_report with report_id (no url) → navigate to the built INSIGHT_REPORT route', () => {
+    const p = makeProposal({ type: 'view_report', params: { report_id: 'r9' } });
+    const intent = resolveReportProposalAction(p, 's1');
+    expect(intent.kind).toBe('navigate');
+    expect(intent).toMatchObject({ kind: 'navigate' });
+    if (intent.kind === 'navigate') {
+      expect(intent.url).toContain('s1');
+      expect(intent.url).toContain('r9');
+    }
+  });
+
+  it('view_report with neither url nor report_id → noop with a reason', () => {
+    const p = makeProposal({ type: 'view_report', params: {} });
+    const intent = resolveReportProposalAction(p, 's1');
+    expect(intent.kind).toBe('noop');
+  });
+
+  it('trigger_manual_insight_run → open_dialog with the parsed mode (quick)', () => {
+    const p = makeProposal({ type: 'trigger_manual_insight_run', params: { mode: 'manual_quick' } });
+    expect(resolveReportProposalAction(p, 's1')).toEqual({ kind: 'open_dialog', mode: 'quick' });
+  });
+
+  it('trigger_manual_insight_run defaults to expert when no mode is given', () => {
+    const p = makeProposal({ type: 'trigger_manual_insight_run', params: {} });
+    expect(resolveReportProposalAction(p, 's1')).toEqual({ kind: 'open_dialog', mode: 'expert' });
+  });
+
+  it('generate_intelligence_report → open_dialog in expert mode', () => {
+    const p = makeProposal({ type: 'generate_intelligence_report', params: { estimated_credits: 5 } });
+    expect(resolveReportProposalAction(p, 's1')).toEqual({ kind: 'open_dialog', mode: 'expert' });
+  });
+
+  it('manual-run proposals require a survey in scope → noop when surveyId is undefined', () => {
+    const p = makeProposal({ type: 'generate_intelligence_report', params: {} });
+    expect(resolveReportProposalAction(p, undefined)).toMatchObject({ kind: 'noop' });
   });
 });

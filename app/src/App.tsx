@@ -12,6 +12,11 @@ import { SurveyInsightsPage }    from './pages/SurveyInsightsPage';
 import { SampleResponsesPage }  from './pages/SampleResponsesPage';
 import { InsightsDashboardPage } from './pages/InsightsDashboardPage';
 import { TopicsAnalysisPage } from './pages/insights/TopicsAnalysisPage';
+import { InsightTrailPage } from './pages/insights/InsightTrailPage';
+import { InsightReportPage } from './pages/insights/InsightReportPage';
+import { InsightSettingsPage } from './pages/insights/InsightSettingsPage';
+import { CustomAnalysisPage } from './pages/insights/CustomAnalysisPage';
+import { CustomReportPage } from './pages/insights/CustomReportPage';
 import { AdvancedInsightsPage } from './pages/AdvancedInsightsPage';
 import { InsightsBriefPage } from './pages/insights/InsightsBriefPage';
 import { InsightsMetricsPage } from './pages/insights/InsightsMetricsPage';
@@ -107,6 +112,11 @@ export default function App() {
             <Route path={ROUTES.SAMPLE_RESPONSES}   element={<ErrorBoundary inline><SampleResponsesPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS}           element={<ErrorBoundary inline><InsightsDashboardPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS_TOPICS}    element={<ErrorBoundary inline><TopicsAnalysisPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHT_TRAIL}      element={<ErrorBoundary inline><InsightTrailPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHT_REPORT}     element={<ErrorBoundary inline><InsightReportPage /></ErrorBoundary>} />
+            <Route path={ROUTES.INSIGHT_SETTINGS}   element={<ErrorBoundary inline><InsightSettingsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.CUSTOM_ANALYSIS}    element={<ErrorBoundary inline><CustomAnalysisPage /></ErrorBoundary>} />
+            <Route path={ROUTES.CUSTOM_REPORT}      element={<ErrorBoundary inline><CustomReportPage /></ErrorBoundary>} />
             <Route path={ROUTES.ADVANCED_INSIGHTS}  element={<ErrorBoundary inline><AdvancedInsightsPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS_BRIEF}     element={<ErrorBoundary inline><InsightsBriefPage /></ErrorBoundary>} />
             <Route path={ROUTES.INSIGHTS_METRICS}   element={<ErrorBoundary inline><InsightsMetricsPage /></ErrorBoundary>} />

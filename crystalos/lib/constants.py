@@ -104,6 +104,59 @@ def compute_stratified_buckets(survey_age_days: float) -> int:
 MANUAL_REFRESH_MIN_NEW_RESPONSES = 10      # min new responses required to allow manual refresh
 MANUAL_REFRESH_MAX_DAILY = 3               # max manual refreshes per survey per day
 
+# ── Insight Pipeline v2 — settings defaults (04 §14) ──────────────────────────
+# Platform-constant fallbacks for survey_insight_settings → org_insight_defaults →
+# constant COALESCE merge (see lib/insight_settings.py::load_insight_settings).
+# Per-survey/per-org overrides take precedence; these are the floor.
+DEFAULT_PRIOR_CHECKPOINT_LOOKBACK:        int = int(os.getenv("DEFAULT_PRIOR_CHECKPOINT_LOOKBACK",        "5"))
+DEFAULT_PRIOR_CHECKPOINT_MAX_AGE_DAYS:    int = int(os.getenv("DEFAULT_PRIOR_CHECKPOINT_MAX_AGE_DAYS",    "90"))
+DEFAULT_STREAM_THRESHOLD:                 int = int(os.getenv("DEFAULT_STREAM_THRESHOLD",                 "10"))
+DEFAULT_REPORT_REGEN_THRESHOLD:           int = int(os.getenv("DEFAULT_REPORT_REGEN_THRESHOLD",           "25"))
+DEFAULT_FULL_CHECKPOINT_THRESHOLD:        int = int(os.getenv("DEFAULT_FULL_CHECKPOINT_THRESHOLD",        "200"))
+DEFAULT_MEANINGFUL_DELTA_NPS_POINTS:    float = float(os.getenv("DEFAULT_MEANINGFUL_DELTA_NPS_POINTS",    "2.0"))
+DEFAULT_MEANINGFUL_DELTA_TOPIC_PCT:     float = float(os.getenv("DEFAULT_MEANINGFUL_DELTA_TOPIC_PCT",     "10.0"))
+DEFAULT_MANUAL_EXPERT_SNAPSHOTS:          int = int(os.getenv("DEFAULT_MANUAL_EXPERT_SNAPSHOTS",          "5"))
+DEFAULT_MANUAL_QUICK_SAMPLE:              int = int(os.getenv("DEFAULT_MANUAL_QUICK_SAMPLE",              "150"))
+DEFAULT_MANUAL_QUICK_SNAPSHOTS:           int = int(os.getenv("DEFAULT_MANUAL_QUICK_SNAPSHOTS",           "2"))
+DEFAULT_MANUAL_QUICK_WINDOW_DAYS:         int = int(os.getenv("DEFAULT_MANUAL_QUICK_WINDOW_DAYS",         "14"))
+DEFAULT_MANUAL_EXPERT_CHECKPOINT_LOOKBACK: int = int(os.getenv("DEFAULT_MANUAL_EXPERT_CHECKPOINT_LOOKBACK", "3"))
+DEFAULT_MANUAL_EXPERT_MAX_CORPUS:         int = int(os.getenv("DEFAULT_MANUAL_EXPERT_MAX_CORPUS",         "2000"))
+DEFAULT_MANUAL_EXPERT_FULL_CORPUS_CAP:    int = int(os.getenv("DEFAULT_MANUAL_EXPERT_FULL_CORPUS_CAP",    "500"))
+DEFAULT_REFRESH_LOOKBACK_DAYS:            int = int(os.getenv("DEFAULT_REFRESH_LOOKBACK_DAYS",            "30"))
+DEFAULT_REFRESH_MIN_RESPONSE_COUNT:       int = int(os.getenv("DEFAULT_REFRESH_MIN_RESPONSE_COUNT",       "25"))
+DEFAULT_REFRESH_DAILY_LIMIT:              int = int(os.getenv("REFRESH_DAILY_LIMIT",                      "5"))
+DEFAULT_MANUAL_DAILY_RUN_LIMIT:           int = int(os.getenv("MANUAL_DAILY_RUN_LIMIT",                   "10"))
+
+# ── Insight Pipeline v2 — credit costs (04 §15) ───────────────────────────────
+# Default per-run credit cost; env-overridable; per-survey/org overrides win.
+CREDIT_COST_AUTOMATED_CHECKPOINT: int = int(os.getenv("CREDIT_COST_AUTOMATED_CHECKPOINT", "5"))
+CREDIT_COST_AUTOMATED_REPORT:     int = int(os.getenv("CREDIT_COST_AUTOMATED_REPORT",     "15"))
+CREDIT_COST_REFRESH:              int = int(os.getenv("CREDIT_COST_REFRESH",              "8"))
+CREDIT_COST_MANUAL_QUICK:         int = int(os.getenv("CREDIT_COST_MANUAL_QUICK",         "15"))
+CREDIT_COST_MANUAL_EXPERT:        int = int(os.getenv("CREDIT_COST_MANUAL_EXPERT",        "40"))
+CREDIT_COST_CUSTOM_BASE:          int = int(os.getenv("CREDIT_COST_CUSTOM_BASE",          "25"))
+
+# ── Insight Pipeline v2 — checkpoint v2 dual-write toggle (Phase 3 §9) ─────────
+# When True, node_publish writes insight_checkpoints_v2 (with parent_checkpoint_id +
+# lineage_json) IN ADDITION TO the legacy survey_insight_checkpoints write. Gates the
+# Phase 1→2 migration so the legacy table stays warm during cutover.
+INSIGHT_CHECKPOINTS_V2_ENABLED: bool = os.getenv("INSIGHT_CHECKPOINTS_V2_ENABLED", "true").lower() == "true"
+
+# Phase 7: when True, skip writing to the legacy survey_insight_checkpoints table.
+# Enable after all orgs have been migrated to insight_checkpoints_v2.
+# Default: False (dual-write still active during migration).
+STOP_LEGACY_CHECKPOINT_WRITE: bool = os.getenv("STOP_LEGACY_CHECKPOINT_WRITE", "false").lower() == "true"
+
+# Run profiles (04 §1). automated_incremental is the default for stream/scheduler.
+INSIGHT_PROFILE_AUTOMATED:     str = "automated_incremental"
+INSIGHT_PROFILE_REFRESH:       str = "refresh"
+INSIGHT_PROFILE_MANUAL_EXPERT: str = "manual_expert"
+INSIGHT_PROFILE_MANUAL_QUICK:  str = "manual_quick"
+INSIGHT_PROFILES: frozenset[str] = frozenset({
+    INSIGHT_PROFILE_AUTOMATED, INSIGHT_PROFILE_REFRESH,
+    INSIGHT_PROFILE_MANUAL_EXPERT, INSIGHT_PROFILE_MANUAL_QUICK,
+})
+
 # ── Topic clustering ──────────────────────────────────────────────────────────
 TOPIC_ASSIGNMENT_THRESHOLD = 0.72          # cosine similarity threshold for topic assignment
 WINDOW_MIN_RESPONSES = {                   # min responses needed per window

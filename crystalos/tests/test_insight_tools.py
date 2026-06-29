@@ -762,6 +762,50 @@ class TestCrystalToolOrgScoping:
         assert "benchmark" in result
         assert result["benchmark"] == 32
 
+    @pytest.mark.asyncio
+    async def test_get_recent_checkpoints_org_scoped_and_shaped(self):
+        """execute_get_recent_checkpoints returns delta_from_prior + meaningful_delta,
+        org-scoped, with delta JSON parsed and nps coerced to float."""
+        from crystalos.crystal.tools import execute_get_recent_checkpoints
+        import json as _json
+
+        row = (
+            7,                      # checkpoint_number
+            42.0,                   # nps_at_checkpoint
+            _json.dumps({"nps_delta": -3.0}),  # delta_from_prior (string JSON)
+            True,                   # meaningful_delta
+            "2026-06-25 12:00:00",  # created_at
+        )
+        mock_pool, mock_cur = self._make_mock_pool(fetchall_return=[row])
+        mock_cur.description = [
+            ("checkpoint_number",), ("nps_at_checkpoint",),
+            ("delta_from_prior",), ("meaningful_delta",), ("created_at",),
+        ]
+
+        ctx = self._make_ctx(org_id="org-scoped-xyz")
+        with patch("crystalos.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_recent_checkpoints(ctx, {"survey_id": "survey-1"})
+
+        assert result["count"] == 1
+        cp = result["checkpoints"][0]
+        assert cp["checkpoint_number"] == 7
+        assert cp["nps_at_checkpoint"] == 42.0
+        assert cp["delta_from_prior"] == {"nps_delta": -3.0}
+        assert cp["meaningful_delta"] is True
+        assert isinstance(cp["created_at"], str)
+
+        # org_id from context must be in the query params
+        params = mock_cur.execute.call_args[0][1]
+        assert "org-scoped-xyz" in params
+
+    @pytest.mark.asyncio
+    async def test_get_recent_checkpoints_missing_survey_id(self):
+        from crystalos.crystal.tools import execute_get_recent_checkpoints
+        from crystalos.crystal.context import CrystalContext
+        ctx = CrystalContext(org_id="org-1", user_id="u1", survey_id=None, scope="survey")
+        result = await execute_get_recent_checkpoints(ctx, {})
+        assert result == {"error": "survey_id required"}
+
 
 class TestProposeAlert:
     """Tests for the propose_alert action tool + proposal normalisation."""
@@ -912,3 +956,267 @@ class TestProposeAlert:
         assert len(proposals) == 1
         assert proposals[0]["type"] == "create_alert"
         assert proposals[0]["id"]            # has a generated id
+
+
+# ── Insight Pipeline v2 — Phase 6 checkpoint chain / trail / report tools ──────
+
+class TestInsightV2DataTools:
+    """Phase 6 data tools: shape, org-scoping, v2→legacy fallback, render_hint."""
+
+    def _ctx(self, survey_id="survey-1", org_id="org-1"):
+        from crystalos.crystal.context import CrystalContext
+        return CrystalContext(org_id=org_id, user_id="u1", survey_id=survey_id, scope="survey")
+
+    def _make_mock_pool(self, fetchone_return=None, fetchall_return=None, description=None):
+        mock_cur = AsyncMock()
+        mock_cur.execute = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value=fetchone_return)
+        mock_cur.fetchall = AsyncMock(return_value=fetchall_return or [])
+        mock_cur.description = description or []
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool_ctx = MagicMock()
+        mock_pool_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_pool_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_pool_ctx)
+        return mock_pool, mock_cur
+
+    @pytest.mark.asyncio
+    async def test_get_checkpoint_chain_walks_and_shapes(self):
+        from crystalos.crystal.tools import execute_get_checkpoint_chain
+        import json as _json
+        # Two v2 rows: child (14) → parent (13). Verified walk yields newest-first.
+        rows = [
+            ("id-14", 14, "id-13", "automated", "2026-06-25 10:00:00", 41.0, 12,
+             _json.dumps({"nps_delta": -3.2, "topic_changes": {"emerged": ["Billing"]}}), True),
+            ("id-13", 13, None, "automated", "2026-06-24 10:00:00", 44.2, 9,
+             _json.dumps({"nps_delta": 1.0, "topic_changes": {"emerged": []}}), False),
+        ]
+        desc = [("id",), ("checkpoint_number",), ("parent_checkpoint_id",), ("lane",),
+                ("created_at",), ("nps_at_checkpoint",), ("new_response_count",),
+                ("delta_from_prior",), ("meaningful_delta",)]
+        mock_pool, mock_cur = self._make_mock_pool(fetchall_return=rows, description=desc)
+        with patch("crystalos.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_checkpoint_chain(
+                self._ctx(org_id="org-xyz"), {"survey_id": "survey-1", "lookback": 5})
+        assert result["total_returned"] == 2
+        first = result["checkpoints"][0]
+        assert first["checkpoint_number"] == 14
+        assert first["nps"] == 41.0
+        assert first["nps_delta"] == -3.2
+        assert "NPS 41" in first["summary"]
+        assert first["url"].endswith("/trail/id-14")
+        # org-scoped query
+        assert "org-xyz" in mock_cur.execute.call_args[0][1]
+
+    @pytest.mark.asyncio
+    async def test_get_checkpoint_chain_requires_survey_id(self):
+        from crystalos.crystal.tools import execute_get_checkpoint_chain
+        from crystalos.crystal.context import CrystalContext
+        ctx = CrystalContext(org_id="o", user_id="u", survey_id=None, scope="survey")
+        assert await execute_get_checkpoint_chain(ctx, {}) == {"error": "survey_id required"}
+
+    @pytest.mark.asyncio
+    async def test_get_insight_settings_reuses_loader(self):
+        from crystalos.crystal.tools import execute_get_insight_settings
+        fake = {"prior_checkpoint_lookback": 5, "stream_response_threshold": 10}
+        with patch("crystalos.lib.insight_settings.load_insight_settings",
+                   new_callable=AsyncMock, return_value=fake):
+            result = await execute_get_insight_settings(self._ctx(), {"survey_id": "survey-1"})
+        assert result["survey_id"] == "survey-1"
+        assert result["settings"]["prior_checkpoint_lookback"] == 5
+
+    @pytest.mark.asyncio
+    async def test_get_insight_report_carries_render_hint_document(self):
+        from crystalos.crystal.tools import execute_get_insight_report
+        row = ("rep-1", "manual_expert", "Q2 board prep", "ready", "user:abc",
+               "2026-06-20 09:00:00", "blob-ref", "NPS 41 summary", 78.0, "ckpt-9",
+               None, None)
+        desc = [("id",), ("run_mode",), ("label",), ("status",), ("created_by",),
+                ("created_at",), ("blob_ref",), ("summary_headline",), ("trust_score_avg",),
+                ("checkpoint_id",), ("window_start",), ("window_end",)]
+        mock_pool, mock_cur = self._make_mock_pool(fetchone_return=row, description=desc)
+        fake_blob = {"executive_summary": "Exec summary.", "themes": [{"name": "Billing"}],
+                     "insights": [{"headline": "h", "layer": "diagnostic",
+                                   "citations_json": [{"response_id": "r1"}]}],
+                     "nps": 41}
+        with patch("crystalos.crystal.tools.db._pool_conn", return_value=mock_pool), \
+             patch("crystalos.lib.checkpoint_store.read_checkpoint_blob",
+                   new_callable=AsyncMock, return_value=fake_blob):
+            result = await execute_get_insight_report(
+                self._ctx(org_id="org-7"), {"survey_id": "survey-1", "report_id": "rep-1"})
+        assert result["render_hint"] == "document"
+        assert result["report_id"] == "rep-1"
+        assert result["executive_summary"] == "Exec summary."
+        assert result["citations_count"] == 1
+        assert result["report_url"].endswith("/reports/rep-1")
+        assert "org-7" in mock_cur.execute.call_args[0][1]
+
+    @pytest.mark.asyncio
+    async def test_get_insight_report_none_still_document_hint(self):
+        from crystalos.crystal.tools import execute_get_insight_report
+        mock_pool, _ = self._make_mock_pool(fetchone_return=None, description=[])
+        with patch("crystalos.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_insight_report(self._ctx(), {"survey_id": "survey-1"})
+        assert result["report"] is None
+        assert result["render_hint"] == "document"
+
+    @pytest.mark.asyncio
+    async def test_get_insight_trail_shapes_nodes(self):
+        from crystalos.crystal.tools import execute_get_insight_trail
+        import json as _json
+        rows = [
+            ("id-14", 14, "automated", "2026-06-25 10:00:00", "system:stream", 41.0,
+             _json.dumps({"nps_delta": -3.2, "topic_changes": {"emerged": ["Billing"]}}),
+             True, None, "automated_incremental"),
+            ("id-m1", 3, "manual", "2026-06-22 10:00:00", "user:abc", 40.0,
+             None, False, "Q2 board prep", "manual_expert"),
+        ]
+        desc = [("id",), ("checkpoint_number",), ("lane",), ("created_at",), ("created_by",),
+                ("nps_at_checkpoint",), ("delta_from_prior",), ("meaningful_delta",),
+                ("report_label",), ("run_mode",)]
+        mock_pool, _ = self._make_mock_pool(fetchall_return=rows, description=desc)
+        with patch("crystalos.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_insight_trail(self._ctx(), {"survey_id": "survey-1"})
+        assert result["count"] == 2
+        types = {n["type"] for n in result["nodes"]}
+        assert types == {"checkpoint", "report"}
+        manual_node = next(n for n in result["nodes"] if n["lane"] == "manual")
+        assert manual_node["summary"] == "Q2 board prep"
+
+    @pytest.mark.asyncio
+    async def test_get_checkpoint_detail_includes_delta_and_lineage(self):
+        from crystalos.crystal.tools import execute_get_checkpoint_detail
+        import json as _json
+        row = ("id-14", 14, "id-13", "automated", "2026-06-25 10:00:00",
+               41.0, 4.1, None, 12, 120,
+               _json.dumps({"nps_delta": -3.2}), True,
+               _json.dumps({"prior_checkpoint_refs": ["id-13"], "new_response_ids": ["r1", "r2"]}))
+        desc = [("id",), ("checkpoint_number",), ("parent_checkpoint_id",), ("lane",),
+                ("created_at",), ("nps_at_checkpoint",), ("csat_at_checkpoint",),
+                ("ces_at_checkpoint",), ("new_response_count",), ("response_count_at_checkpoint",),
+                ("delta_from_prior",), ("meaningful_delta",), ("lineage_json",)]
+        mock_pool, _ = self._make_mock_pool(fetchone_return=row, description=desc)
+        with patch("crystalos.crystal.tools.db._pool_conn", return_value=mock_pool):
+            result = await execute_get_checkpoint_detail(
+                self._ctx(), {"checkpoint_id": "id-14"})
+        assert result["delta_from_prior"] == {"nps_delta": -3.2}
+        assert result["parent_checkpoint_id"] == "id-13"
+        assert result["prior_checkpoint_refs"] == ["id-13"]
+        assert result["citations_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_get_checkpoint_detail_requires_id(self):
+        from crystalos.crystal.tools import execute_get_checkpoint_detail
+        assert await execute_get_checkpoint_detail(self._ctx(), {}) == {"error": "checkpoint_id required"}
+
+    @pytest.mark.asyncio
+    async def test_compare_checkpoints_metric_and_topic_diff(self):
+        from crystalos.crystal import tools as _tools
+        import json as _json
+
+        async def _fake_load(ctx, cid):
+            data = {
+                "a": {"id": "a", "checkpoint_number": 12, "nps_at_checkpoint": 44.0,
+                      "csat_at_checkpoint": None, "ces_at_checkpoint": None,
+                      "created_at": "2026-06-20",
+                      "delta_from_prior": _json.dumps({"topic_changes": {"emerged": ["Login"]}})},
+                "b": {"id": "b", "checkpoint_number": 14, "nps_at_checkpoint": 41.0,
+                      "csat_at_checkpoint": None, "ces_at_checkpoint": None,
+                      "created_at": "2026-06-25",
+                      "delta_from_prior": _json.dumps({"topic_changes": {"emerged": ["Billing"]}})},
+            }
+            return data[cid]
+
+        with patch.object(_tools, "_load_checkpoint_row", new=AsyncMock(side_effect=_fake_load)):
+            result = await _tools.execute_compare_checkpoints(
+                self._ctx(), {"checkpoint_id_a": "a", "checkpoint_id_b": "b"})
+        assert result["metric_delta"]["nps"] == -3.0
+        assert result["topic_diff"]["only_in_a"] == ["Login"]
+        assert result["topic_diff"]["only_in_b"] == ["Billing"]
+
+    def test_v2_data_tools_registered(self):
+        from crystalos.crystal.registry import DATA_TOOL_NAMES, TOOL_REGISTRY
+        from crystalos.crystal.tools import TOOL_EXECUTORS
+        for name in ("get_checkpoint_chain", "get_insight_settings", "get_insight_report",
+                     "get_insight_trail", "get_checkpoint_detail", "compare_checkpoints"):
+            assert name in DATA_TOOL_NAMES, name
+            assert name in TOOL_EXECUTORS, name
+            assert any(t["name"] == name for t in TOOL_REGISTRY), name
+
+
+class TestInsightV2ProposeTools:
+    """Phase 6 report proposals: shape, alias normalisation to frontend handler names."""
+
+    def _ctx(self):
+        from crystalos.crystal.context import CrystalContext
+        return CrystalContext(org_id="org-1", user_id="u1", survey_id="survey-1", scope="survey")
+
+    @pytest.mark.asyncio
+    async def test_propose_manual_insight_run_shape(self):
+        from crystalos.crystal.tools import execute_propose_manual_insight_run
+        result = await execute_propose_manual_insight_run(
+            self._ctx(), {"survey_id": "survey-1", "mode": "manual_expert", "label": "Q2 board prep"})
+        assert result["proposal_type"] == "manual_insight_run"
+        assert result["requires_confirmation"] is True
+        assert result["params"]["mode"] == "expert"       # mapped to backend mode token
+        assert result["params"]["survey_id"] == "survey-1"
+        assert result["params"]["label"] == "Q2 board prep"
+
+    @pytest.mark.asyncio
+    async def test_propose_view_report_builds_url(self):
+        from crystalos.crystal.tools import execute_propose_view_report
+        result = await execute_propose_view_report(
+            self._ctx(), {"survey_id": "survey-1", "report_id": "rep-9",
+                          "summary": "NPS 41 — Jun 24"})
+        assert result["proposal_type"] == "view_report"
+        assert result["params"]["report_id"] == "rep-9"
+        assert "/reports/rep-9" in result["params"]["url"]
+
+    @pytest.mark.asyncio
+    async def test_propose_generate_report_resolves_credits(self):
+        from crystalos.crystal.tools import execute_propose_generate_intelligence_report
+        result = await execute_propose_generate_intelligence_report(
+            self._ctx(), {"survey_id": "survey-1", "estimated_credits": 20})
+        assert result["proposal_type"] == "generate_intelligence_report"
+        assert result["estimated_credits"] == 20
+        assert result["params"]["estimated_credits"] == 20
+
+    def test_v2_propose_tools_registered(self):
+        from crystalos.crystal.registry import ACTION_TOOL_NAMES, TOOL_REGISTRY
+        from crystalos.crystal.tools import TOOL_EXECUTORS
+        for name in ("propose_manual_insight_run", "propose_view_report",
+                     "propose_generate_intelligence_report"):
+            assert name in ACTION_TOOL_NAMES, name
+            assert name in TOOL_EXECUTORS, name
+            assert any(t["name"] == name for t in TOOL_REGISTRY), name
+
+    def test_proposal_type_aliases_map_to_frontend_handlers(self):
+        from crystalos.agents.crystal import _normalize_proposal
+        assert _normalize_proposal(
+            {"proposal_type": "manual_insight_run", "title": "Generate Expert report"}
+        )["type"] == "trigger_manual_insight_run"
+        assert _normalize_proposal(
+            {"proposal_type": "view_report", "title": "Open report"}
+        )["type"] == "view_report"
+        assert _normalize_proposal(
+            {"proposal_type": "generate_intelligence_report", "title": "Generate report"}
+        )["type"] == "generate_intelligence_report"
+
+    @pytest.mark.asyncio
+    async def test_extract_proposals_normalises_v2_tools(self):
+        from crystalos.agents.crystal import _extract_action_proposals
+        tool_results = [{
+            "tool": "propose_manual_insight_run",
+            "result": {"proposal_type": "manual_insight_run",
+                       "title": "Generate Expert report", "params": {}},
+        }]
+        proposals = _extract_action_proposals(tool_results)
+        assert len(proposals) == 1
+        assert proposals[0]["type"] == "trigger_manual_insight_run"
+        assert proposals[0]["id"]

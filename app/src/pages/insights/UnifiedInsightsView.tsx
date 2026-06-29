@@ -13,7 +13,7 @@
 
 import { useState, useCallback, useMemo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Icon } from '../../components/Icon';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -24,6 +24,13 @@ import { useCrystalPanel } from '../../contexts/crystalPanel';
 import { ROUTES, toPath } from '../../constants/routes';
 import { useTranslation } from '../../lib/i18n';
 import { useApi } from '../../hooks/useApi';
+import { getFeatureFlags } from '../../lib/features';
+import { EnhancedHeaderBand } from '../../components/insights/EnhancedHeaderBand';
+import { InvestigationDrawer } from '../../components/insights/InvestigationDrawer';
+import { TopicChangeBar } from '../../components/insights/TopicChangeBar';
+import { ManualRunDialog } from '../../components/insights/ManualRunDialog';
+import type { ManualRunMode } from '../../types';
+import type { LatestCheckpoint, RecentCheckpointPoint } from '../../types';
 import {
   GlassCard,
   CitationChip,
@@ -77,6 +84,13 @@ interface ViewProps {
   onGenerate?: () => void;
   focusSurvey?: Survey;
   orgAvgNps?: number | null;
+  // ── Phase 0.5 — investigation trajectory (Enhanced Header Band) ───────────
+  latestCheckpoint?: LatestCheckpoint | null;
+  priorCheckpoints?: RecentCheckpointPoint[];
+  runStatus?: string | null;
+  /** Band Generate dropdown — distinguishes 'manual' (refresh) vs 'regenerate'. */
+  onGenerateTrigger?: (trigger: 'manual' | 'regenerate') => void;
+  onRefresh?: () => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,12 +106,46 @@ export function UnifiedInsightsView({
   onGenerate,
   focusSurvey,
   orgAvgNps,
+  latestCheckpoint = null,
+  priorCheckpoints = [],
+  runStatus = null,
+  onGenerateTrigger,
+  onRefresh,
 }: ViewProps) {
   const { t } = useTranslation();
   const api = useApi();
+  const navigate = useNavigate();
   const isAll = scope === 'all';
   const { openCrystal } = useCrystalPanel();
   const [askQuery, setAskQuery] = useState('');
+  // ── Phase 0.5 — Enhanced Header Band + Investigation Drawer ───────────────
+  const trajectoryEnabled = getFeatureFlags().insightsTrajectoryV1;
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  // ── Phase 3/4 — Manual Run dialog + Trail navigation ──────────────────────
+  const trailEnabled = getFeatureFlags().insightsTrajectoryV1; // Trail UI ships with trajectory
+  const [manualRunOpen, setManualRunOpen] = useState(false);
+  const [manualRunMode, setManualRunMode] = useState<ManualRunMode>('expert');
+  const focusSurveyId = focusSurvey?.id;
+  const goToTrail = useCallback(() => {
+    if (focusSurveyId) navigate(toPath(ROUTES.INSIGHT_TRAIL, { surveyId: focusSurveyId }));
+  }, [navigate, focusSurveyId]);
+  // Phase 5/6 — Generate ▾ menu deep links to the Custom Analysis wizard and the
+  // Intelligence settings page (single-survey scope only).
+  const goToCustomAnalysis = useCallback(() => {
+    if (focusSurveyId) navigate(toPath(ROUTES.CUSTOM_ANALYSIS, { surveyId: focusSurveyId }));
+  }, [navigate, focusSurveyId]);
+  const goToSettings = useCallback(() => {
+    if (focusSurveyId) navigate(toPath(ROUTES.INSIGHT_SETTINGS, { surveyId: focusSurveyId }));
+  }, [navigate, focusSurveyId]);
+  // The band replaces the legacy header only for a single survey with a
+  // checkpoint present (graceful fallback otherwise — see 06_UX_DESIGN §15.0).
+  const showBand = trajectoryEnabled && !isAll && latestCheckpoint != null;
+  const isGenerating = runStatus === 'running';
+  const showTopicBar =
+    showBand &&
+    !isGenerating &&
+    (latestCheckpoint?.delta?.topic_changes?.emerged?.length ?? 0) +
+      (latestCheckpoint?.delta?.topic_changes?.resolved?.length ?? 0) > 0;
   const [filterLayer,    setFilterLayer]    = useState<AgenticInsight['layer'] | 'all'>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   // Audit drawer state — P10-04
@@ -175,6 +223,65 @@ export function UnifiedInsightsView({
 
   return (
     <div className="space-y-6">
+
+      {/* ════════════════════════════════════════════════════════════════════
+          PHASE 0.5 — Enhanced Header Band (replaces the legacy NPS strip when
+          insightsTrajectoryV1 is on and a checkpoint exists). Graceful fallback:
+          when off / no checkpoint, nothing renders here and the existing header
+          and cards remain unchanged.
+      ════════════════════════════════════════════════════════════════════ */}
+      {showBand && latestCheckpoint && (
+        <EnhancedHeaderBand
+          checkpoint={latestCheckpoint}
+          delta={latestCheckpoint.delta}
+          runStatus={runStatus}
+          newResponseCount={latestCheckpoint.new_responses ?? 0}
+          showTrail={trailEnabled && !!focusSurveyId}
+          onViewTrail={goToTrail}
+          onOpenDrawer={() => setDrawerOpen(true)}
+          onOpenManualRun={focusSurveyId ? () => { setManualRunMode('expert'); setManualRunOpen(true); } : undefined}
+          onOpenCustomAnalysis={focusSurveyId ? goToCustomAnalysis : undefined}
+          onOpenSettings={focusSurveyId ? goToSettings : undefined}
+          onGenerate={(trigger) => (onGenerateTrigger ? onGenerateTrigger(trigger) : onGenerate?.())}
+          onRefresh={
+            focusSurveyId
+              ? () => { setManualRunMode('refresh'); setManualRunOpen(true); }
+              : (onRefresh ?? onGenerate)
+          }
+        />
+      )}
+
+      {/* Manual Run dialog (Phase 3) — opened from the band's Generate ▾ / Refresh */}
+      {focusSurveyId && (
+        <ManualRunDialog
+          open={manualRunOpen}
+          onClose={() => setManualRunOpen(false)}
+          surveyId={focusSurveyId}
+          initialMode={manualRunMode}
+          onViewReport={(reportId) => {
+            if (reportId) {
+              navigate(toPath(ROUTES.INSIGHT_REPORT, { surveyId: focusSurveyId, reportId }));
+            } else {
+              goToTrail();
+            }
+          }}
+          onViewTrail={goToTrail}
+        />
+      )}
+
+      {/* Investigation Drawer — mounted whenever trajectory is on for a single
+          survey; tolerates a null checkpoint (loading skeleton). */}
+      {trajectoryEnabled && !isAll && (
+        <InvestigationDrawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          checkpoint={isGenerating ? null : latestCheckpoint}
+          delta={latestCheckpoint?.delta ?? null}
+          priorCheckpoints={priorCheckpoints}
+          showTrail={false}
+          showFeatureBadge={import.meta.env.DEV}
+        />
+      )}
 
       {/* P11-09: Sample data banner — shown only when scope === 'all' */}
       {isAll && (
@@ -635,6 +742,19 @@ export function UnifiedInsightsView({
             </div>
             )}
           </motion.section>
+
+          {/* Phase 0.5 — Topic Change Bar (below insight cards). Hidden during
+              generation; only shown when there are named topic changes. */}
+          <AnimatePresence mode="wait">
+            {showTopicBar && latestCheckpoint?.delta && (
+              <TopicChangeBar
+                key="topic-change-bar"
+                delta={latestCheckpoint.delta}
+                prevCheckpoint={latestCheckpoint.number - 1}
+                createdAt={latestCheckpoint.created_at}
+              />
+            )}
+          </AnimatePresence>
         </div>
       )}
 

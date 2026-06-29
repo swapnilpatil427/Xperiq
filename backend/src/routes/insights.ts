@@ -20,8 +20,31 @@ import * as agentsClient from '../lib/agentsClient';
 import { getRedisClient } from '../lib/redis';
 import { checkCredits, debitCredits } from '../lib/creditLedger';
 import { CREDIT_COSTS } from '../lib/creditPlans';
+import { verifyToken } from '@clerk/backend';
+import { getOrgClaims } from '../lib/clerkClaims';
+import { validate } from '../lib/validate';
+import { updateInsightSettingsSchema } from '../schemas/insightSettings';
+import { manualRunSchema, runPreviewSchema } from '../schemas/insightRuns';
+import {
+  INSIGHT_SETTING_DEFAULTS,
+  INSIGHT_SETTING_KEYS,
+  computeConfigHash,
+  type InsightSettingKey,
+} from '../lib/insightConfig';
 
 const REFRESH_DAILY_LIMIT = parseInt(process.env.REFRESH_DAILY_LIMIT ?? '5', 10);
+const MANUAL_DAILY_RUN_LIMIT = parseInt(process.env.MANUAL_DAILY_RUN_LIMIT ?? '10', 10);
+
+// SLO alert thresholds — used by GET /api/insights/_slo
+const SLO_CITATION_VALIDITY_WARN     = 0.995; // Alert threshold: <99.5%
+const SLO_CITATION_VALIDITY_CRITICAL = 0.99;  // Page threshold: <99%
+const SLO_VERIFIER_PASS_WARN         = 0.95;  // Alert threshold: <95%
+const SLO_VERIFIER_PASS_CRITICAL     = 0.90;  // Page threshold: <90%
+
+// H2: Startup assertion — DEV_MODE must never be active in production.
+if (DEV_MODE && process.env.NODE_ENV === 'production') {
+  throw new Error('DEV_MODE must not be active in production — set CLERK_SECRET_KEY');
+}
 
 const AGENTS_URL          = process.env.AGENTS_URL ?? 'http://localhost:8001';
 const AGENTS_INTERNAL_KEY = process.env.AGENTS_INTERNAL_KEY
@@ -167,6 +190,126 @@ async function ensureTopicsTables(): Promise<void> {
     `ALTER TABLE insights ADD COLUMN IF NOT EXISTS time_window TEXT NOT NULL DEFAULT 'all_time'`,
     `CREATE UNIQUE INDEX IF NOT EXISTS insights_hash_window_unique
        ON insights(survey_id, insight_hash, time_window)`,
+    // ── Insight Pipeline v2 Phase 4 — insight_checkpoints_v2 ──────────────────
+    `CREATE TABLE IF NOT EXISTS insight_checkpoints_v2 (
+       id                          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+       survey_id                   UUID        NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+       org_id                      TEXT        NOT NULL,
+       run_id                      UUID        REFERENCES agent_runs(id) ON DELETE SET NULL,
+       checkpoint_number           INT         NOT NULL DEFAULT 1,
+       parent_checkpoint_id        UUID        REFERENCES insight_checkpoints_v2(id) ON DELETE SET NULL,
+       lane                        TEXT        NOT NULL DEFAULT 'automated',
+       run_mode                    TEXT,
+       trigger                     TEXT,
+       created_by                  TEXT,
+       response_count_at_checkpoint INT        NOT NULL DEFAULT 0,
+       response_high_watermark     TIMESTAMPTZ,
+       new_response_count          INT         NOT NULL DEFAULT 0,
+       nps_at_checkpoint           NUMERIC(5,1),
+       csat_at_checkpoint          NUMERIC(5,1),
+       ces_at_checkpoint           NUMERIC(5,1),
+       topic_fingerprint           TEXT,
+       delta_from_prior            JSONB,
+       meaningful_delta            BOOLEAN     NOT NULL DEFAULT FALSE,
+       lineage_json                JSONB,
+       report_blob_ref             TEXT,
+       citations_manifest_ref      TEXT,
+       schema_version              INT         NOT NULL DEFAULT 2,
+       window_start                TIMESTAMPTZ,
+       window_end                  TIMESTAMPTZ,
+       report_label                TEXT,
+       created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`,
+    `CREATE INDEX IF NOT EXISTS insight_checkpoints_v2_survey_org
+       ON insight_checkpoints_v2 (survey_id, org_id, checkpoint_number DESC)`,
+    `CREATE INDEX IF NOT EXISTS insight_checkpoints_v2_parent
+       ON insight_checkpoints_v2 (parent_checkpoint_id) WHERE parent_checkpoint_id IS NOT NULL`,
+    // ── Insight Pipeline v2 Phase 3 — insight_reports ─────────────────────────
+    `CREATE TABLE IF NOT EXISTS insight_reports (
+       id                       UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+       survey_id                UUID        NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+       org_id                   TEXT        NOT NULL,
+       run_id                   UUID        REFERENCES agent_runs(id) ON DELETE SET NULL,
+       run_mode                 TEXT,
+       label                    TEXT,
+       status                   TEXT        NOT NULL DEFAULT 'generating',
+       window_start             TIMESTAMPTZ,
+       window_end               TIMESTAMPTZ,
+       blob_ref                 TEXT,
+       citations_manifest_ref   TEXT,
+       summary_headline         TEXT,
+       trust_score_avg          NUMERIC(5,2),
+       checkpoint_id            UUID,
+       created_by               TEXT,
+       created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       completed_at             TIMESTAMPTZ
+     )`,
+    `CREATE INDEX IF NOT EXISTS insight_reports_survey_org
+       ON insight_reports (survey_id, org_id, created_at DESC)`,
+    // ── Custom Analysis Phase 6 — custom_reports ──────────────────────────────
+    `CREATE TABLE IF NOT EXISTS custom_reports (
+       id                  UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+       survey_id           UUID        NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+       org_id              TEXT        NOT NULL,
+       run_id              UUID        REFERENCES agent_runs(id) ON DELETE SET NULL,
+       name                TEXT,
+       filter_spec         JSONB,
+       status              TEXT        NOT NULL DEFAULT 'pending',
+       blob_ref            TEXT,
+       output_url          TEXT,
+       slug                TEXT,
+       credit_cost         INT,
+       trust_score_avg     NUMERIC(5,2),
+       corpus_coverage_pct NUMERIC(5,2),
+       sample_size         INT,
+       created_by          TEXT,
+       created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+       completed_at        TIMESTAMPTZ,
+       expires_at          TIMESTAMPTZ
+     )`,
+    `CREATE INDEX IF NOT EXISTS custom_reports_survey_org
+       ON custom_reports (survey_id, org_id, created_at DESC)`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS custom_reports_slug_unique
+       ON custom_reports (org_id, slug) WHERE slug IS NOT NULL`,
+    `CREATE TABLE IF NOT EXISTS custom_report_insights (
+       id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+       custom_report_id UUID        NOT NULL REFERENCES custom_reports(id) ON DELETE CASCADE,
+       survey_id        UUID        NOT NULL REFERENCES surveys(id) ON DELETE CASCADE,
+       org_id           TEXT        NOT NULL,
+       layer            TEXT,
+       category         TEXT,
+       headline         TEXT        NOT NULL DEFAULT '',
+       narrative        TEXT,
+       metric_json      JSONB,
+       citations_json   JSONB       NOT NULL DEFAULT '[]',
+       trust_score      NUMERIC(5,2),
+       trust_json       JSONB,
+       priority         INT,
+       filter_label     TEXT,
+       created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+     )`,
+    `CREATE INDEX IF NOT EXISTS custom_report_insights_report
+       ON custom_report_insights (custom_report_id)`,
+    // Idempotent fixups — rename report_blob_ref → blob_ref where needed.
+    `DO $$
+     BEGIN
+       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='insight_reports' AND column_name='report_blob_ref') THEN
+         ALTER TABLE insight_reports RENAME COLUMN report_blob_ref TO blob_ref;
+       END IF;
+     END $$`,
+    `ALTER TABLE insight_reports ADD COLUMN IF NOT EXISTS blob_ref TEXT`,
+    `ALTER TABLE insight_reports ADD COLUMN IF NOT EXISTS citations_manifest_ref TEXT`,
+    `ALTER TABLE insight_reports ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`,
+    `DO $$
+     BEGIN
+       IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='custom_reports' AND column_name='report_blob_ref') THEN
+         ALTER TABLE custom_reports RENAME COLUMN report_blob_ref TO blob_ref;
+       END IF;
+     END $$`,
+    `ALTER TABLE custom_reports ADD COLUMN IF NOT EXISTS blob_ref TEXT`,
+    `ALTER TABLE custom_reports ADD COLUMN IF NOT EXISTS output_url TEXT`,
+    `ALTER TABLE custom_reports ADD COLUMN IF NOT EXISTS credit_cost INT`,
+    `ALTER TABLE custom_reports ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ`,
   ];
   for (const sql of stmts) {
     await query(sql).catch(() => {}); // idempotent — ignore if already exists
@@ -179,7 +322,7 @@ router.use(requireAuth);
 // ── Helper: verify survey belongs to org ──────────────────────────────────────
 async function getSurvey(surveyId: string, orgId: string): Promise<Record<string, unknown> | null> {
   const { rows } = await query(
-    `SELECT id, title, questions, org_id, status,
+    `SELECT id, title, questions, org_id, status, created_by,
             (SELECT COUNT(*)::int FROM responses WHERE survey_id = surveys.id) AS response_count
      FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
     [surveyId, orgId],
@@ -189,7 +332,7 @@ async function getSurvey(surveyId: string, orgId: string): Promise<Record<string
   // Fallback: in dev mode, accept the survey regardless of org_id mismatch.
   if (DEV_MODE) {
     const { rows: bare } = await query(
-      'SELECT id, title, questions, org_id, status FROM surveys WHERE id = $1 AND deleted_at IS NULL',
+      'SELECT id, title, questions, org_id, status, created_by FROM surveys WHERE id = $1 AND deleted_at IS NULL',
       [surveyId],
     ).catch(() => ({ rows: [] }));
     if (bare[0]) {
@@ -239,6 +382,68 @@ router.get('/org/metric-history', async (req: Request, res: Response): Promise<v
     res.json({ history: rows, days, org_id: req.orgId });
   } catch (err: unknown) {
     logger.error({ err: (err as Error).message, orgId: req.orgId }, 'insights:org-metric-history:error');
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
+// ── GET /_slo — org SLO dashboard (24h window) ───────────────────────────────
+// Static path registered BEFORE any /:surveyId/* parameterized routes so Express
+// does not accidentally match "_slo" as a survey ID. Requires org:admin.
+
+router.get('/_slo', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const orgRole = await resolveOrgRole(req);
+    if (orgRole !== 'org:admin') {
+      res.status(403).json({
+        error:    'Only org admins can access the SLO dashboard.',
+        required: 'org:admin',
+        current:  orgRole,
+      });
+      return;
+    }
+
+    const { rows } = await query<{
+      citation_validity_rate: string | null;
+      verifier_pass_rate: string | null;
+      total_insights_audited: string;
+    }>(
+      `SELECT
+         COALESCE(SUM(citation_valid_count)::float / NULLIF(SUM(citation_count), 0), 1.0) AS citation_validity_rate,
+         COALESCE(COUNT(*) FILTER (WHERE verifier_pass = true)::float / NULLIF(COUNT(*), 0), 1.0) AS verifier_pass_rate,
+         COUNT(*) AS total_insights_audited
+       FROM insight_audit_log
+       WHERE org_id = $1 AND created_at >= NOW() - INTERVAL '24 hours'`,
+      [req.orgId],
+    ).catch((e: unknown) => {
+      logger.warn({ err: (e as Error).message, orgId: req.orgId }, 'insights:slo:table_unavailable');
+      return { rows: [{ citation_validity_rate: null, verifier_pass_rate: null, total_insights_audited: '0' }] };
+    });
+
+    const row = rows[0];
+    const citation_validity_rate = row.citation_validity_rate  != null ? parseFloat(row.citation_validity_rate)  : 1.0;
+    const verifier_pass_rate     = row.verifier_pass_rate      != null ? parseFloat(row.verifier_pass_rate)      : 1.0;
+    const total_insights_audited = parseInt(row.total_insights_audited, 10);
+
+    res.json({
+      slo: {
+        citation_validity_rate,
+        verifier_pass_rate,
+        total_insights_audited,
+        window_hours: 24,
+        thresholds: {
+          citation_validity: { warn: SLO_CITATION_VALIDITY_WARN, critical: SLO_CITATION_VALIDITY_CRITICAL },
+          verifier_pass:     { warn: SLO_VERIFIER_PASS_WARN,     critical: SLO_VERIFIER_PASS_CRITICAL     },
+        },
+        status: {
+          citation_validity: citation_validity_rate >= SLO_CITATION_VALIDITY_WARN ? 'ok'
+            : citation_validity_rate >= SLO_CITATION_VALIDITY_CRITICAL ? 'warn' : 'critical',
+          verifier_pass: verifier_pass_rate >= SLO_VERIFIER_PASS_WARN ? 'ok'
+            : verifier_pass_rate >= SLO_VERIFIER_PASS_CRITICAL ? 'warn' : 'critical',
+        },
+      },
+    });
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message, orgId: req.orgId }, 'insights:slo:error');
     serverError(res, err instanceof Error ? err : new Error(String(err)));
   }
 });
@@ -306,6 +511,62 @@ router.get('/:surveyId/list', async (req: Request, res: Response): Promise<void>
     ).catch(() => ({ rows: [] }));
     const pipelineActive = runningRows.length > 0;
 
+    // latest_checkpoint — Phase 0.5 trajectory band. Try insight_checkpoints_v2 first
+    // (the new table); fall back to legacy survey_insight_checkpoints. Tolerate neither
+    // table existing yet (pre-migration) by wrapping each attempt in try/catch.
+    let latestCheckpoint: {
+      number: number;
+      nps: number | null;
+      delta: unknown;
+      meaningful: boolean;
+      created_at: unknown;
+    } | null = null;
+    try {
+      const { rows: cpRows } = await query(
+        `SELECT checkpoint_number, nps_at_checkpoint, delta_from_prior, meaningful_delta, created_at
+         FROM insight_checkpoints_v2
+         WHERE survey_id = $1 AND org_id = $2
+         ORDER BY checkpoint_number DESC LIMIT 1`,
+        [surveyId, req.orgId],
+      );
+      const cp = cpRows[0] as Record<string, unknown> | undefined;
+      if (cp) {
+        latestCheckpoint = {
+          number:     cp.checkpoint_number as number,
+          nps:        cp.nps_at_checkpoint != null ? parseFloat(String(cp.nps_at_checkpoint)) : null,
+          delta:      cp.delta_from_prior ?? null,
+          meaningful: cp.meaningful_delta === true,
+          created_at: cp.created_at ?? null,
+        };
+      }
+    } catch {
+      // insight_checkpoints_v2 not migrated yet — try legacy table
+    }
+    if (!latestCheckpoint) {
+      try {
+        const { rows: cpRows } = await query(
+          `SELECT checkpoint_number, nps_at_checkpoint, delta_from_prior, meaningful_delta, created_at
+           FROM survey_insight_checkpoints
+           WHERE survey_id = $1 AND org_id = $2
+           ORDER BY checkpoint_number DESC LIMIT 1`,
+          [surveyId, req.orgId],
+        );
+        const cp = cpRows[0] as Record<string, unknown> | undefined;
+        if (cp) {
+          latestCheckpoint = {
+            number:     cp.checkpoint_number as number,
+            nps:        cp.nps_at_checkpoint != null ? parseFloat(String(cp.nps_at_checkpoint)) : null,
+            delta:      cp.delta_from_prior ?? null,
+            meaningful: cp.meaningful_delta === true,
+            created_at: cp.created_at ?? null,
+          };
+        }
+      } catch (cpErr: unknown) {
+        logger.warn({ err: (cpErr as Error).message, surveyId }, 'insights:list:latest_checkpoint_unavailable');
+        latestCheckpoint = null;
+      }
+    }
+
     res.json({
       insights:        rows,
       run_status:      (runRows[0] as Record<string, unknown> | undefined)?.status ?? null,
@@ -313,6 +574,7 @@ router.get('/:surveyId/list', async (req: Request, res: Response): Promise<void>
       crystal_opening: crystalOpening,
       pipeline_active: pipelineActive,
       survey_status:   survey.status,
+      latest_checkpoint: latestCheckpoint,
     });
   } catch (err: unknown) {
     logger.error({ err: (err as Error).message, surveyId }, 'insights:list:error');
@@ -540,6 +802,18 @@ router.post('/:surveyId/ask', async (req: Request, res: Response): Promise<void>
   }
 
   try {
+    // M1: Per-(orgId, surveyId) rate limit — 10 requests per minute. Fail open if Redis unavailable.
+    const redis = getRedisClient();
+    if (redis) {
+      const key = `rate:ask:${req.orgId}:${surveyId}`;
+      const count = await redis.incr(key);
+      if (count === 1) await redis.expire(key, 60);
+      if (count > 10) {
+        clientError(res, 429, 'Too many questions — try again in a minute.');
+        return;
+      }
+    }
+
     const { rows: insights } = await query(
       `SELECT headline, narrative, layer, category, trust_score, citations_json
        FROM insights
@@ -552,6 +826,18 @@ router.post('/:surveyId/ask', async (req: Request, res: Response): Promise<void>
       res.json({
         answer:    'No insights have been generated for this survey yet. Generate insights first.',
         citations: [],
+      });
+      return;
+    }
+
+    // Credit metering — 1 credit per ask (cheap NLQ, not a full pipeline run).
+    const askCheck = await checkCredits(req.orgId, 1, 'ask');
+    if (!askCheck.ok) {
+      res.status(402).json({
+        error:     'Not enough credits to ask Crystal.',
+        code:      'INSUFFICIENT_CREDITS',
+        required:  askCheck.required,
+        available: askCheck.available,
       });
       return;
     }
@@ -576,6 +862,15 @@ router.post('/:surveyId/ask', async (req: Request, res: Response): Promise<void>
       'ask-insights',
       600,
     );
+
+    // Debit after successful answer (mirrors /generate pattern).
+    await debitCredits(req.orgId, {
+      actionType: 'ask',
+      credits:    1,
+      userId:     req.userId,
+      actionRef:  surveyId,
+      note:       'Ask Crystal NLQ',
+    }).catch((e) => logger.warn({ err: e }, 'ask_debit_failed'));
 
     res.json({ answer, citations: insights.slice(0, 3) });
   } catch (err: unknown) {
@@ -829,6 +1124,18 @@ router.post('/:surveyId/crystal', async (req: Request, res: Response): Promise<v
   try {
     const survey = await getSurvey(surveyId, req.orgId);
     if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+    // Rate limiting — Crystal is conversational; 20 turns/min per org+survey is generous.
+    const redis = getRedisClient();
+    if (redis) {
+      const key = `rate:crystal:${req.orgId}:${surveyId}`;
+      const count = await redis.incr(key);
+      if (count === 1) await redis.expire(key, 60);
+      if (count > 20) {
+        clientError(res, 429, 'Too many Crystal messages — try again in a minute.');
+        return;
+      }
+    }
 
     // Credit metering — a Crystal conversational turn is a metered AI action.
     const crystalCheck = await checkCredits(req.orgId, CREDIT_COSTS.crystal_turn, 'crystal_turn');
@@ -1261,9 +1568,9 @@ router.get('/:surveyId/topics/:topicId/detail', async (req: Request, res: Respon
       const { rows: subRows } = await query(
         `SELECT id, name, volume, sentiment_score, trending, dominant_emotion, urgency_score
          FROM survey_topics
-         WHERE parent_topic_id = $1
+         WHERE parent_topic_id = $1 AND org_id = $2 AND survey_id = $3
          ORDER BY volume DESC`,
-        [topicId],
+        [topicId, req.orgId, surveyId],
       );
       subtopics = subRows as Record<string, unknown>[];
     } catch {
@@ -1582,16 +1889,43 @@ router.get('/:surveyId/checkpoints', requireAuth, async (req: Request, res: Resp
   const { surveyId } = req.params;
   const { orgId } = req;
   try {
-    const { rows } = await query(
-      `SELECT id, checkpoint_number, response_count_at_checkpoint,
-              nps_at_checkpoint, csat_at_checkpoint, topic_fingerprint,
-              created_at, (report_url IS NOT NULL) as has_report
-       FROM survey_insight_checkpoints
-       WHERE survey_id = $1 AND org_id = $2
-       ORDER BY checkpoint_number DESC
-       LIMIT 20`,
-      [surveyId, orgId]
-    );
+    // Try insight_checkpoints_v2 first (post-migration table); fall back to legacy
+    // survey_insight_checkpoints so the endpoint returns data on both old and new schemas.
+    let rows: unknown[] = [];
+    try {
+      const result = await query(
+        `SELECT id, checkpoint_number,
+                nps_at_checkpoint, csat_at_checkpoint,
+                created_at, (report_blob_ref IS NOT NULL) as has_report
+         FROM insight_checkpoints_v2
+         WHERE survey_id = $1 AND org_id = $2
+         ORDER BY checkpoint_number DESC
+         LIMIT 20`,
+        [surveyId, orgId]
+      );
+      if (result.rows.length) {
+        rows = result.rows;
+      }
+    } catch {
+      // insight_checkpoints_v2 not migrated yet — fall through to legacy
+    }
+    if (!rows.length) {
+      const result = await query(
+        `SELECT id, checkpoint_number, response_count_at_checkpoint,
+                nps_at_checkpoint, csat_at_checkpoint, topic_fingerprint,
+                created_at, (report_url IS NOT NULL) as has_report
+         FROM survey_insight_checkpoints
+         WHERE survey_id = $1 AND org_id = $2
+         ORDER BY checkpoint_number DESC
+         LIMIT 20`,
+        [surveyId, orgId]
+      );
+      rows = result.rows;
+    }
+    // Phase 7: deprecation headers — clients should migrate to GET /api/insights/:surveyId/trail
+    res.set('Deprecation', 'true');
+    res.set('Sunset', new Date(Date.now() + 90 * 86400000).toUTCString()); // 90 days from now
+    res.set('Link', '</api/insights/:surveyId/trail>; rel="successor-version"');
     res.json({ checkpoints: rows });
   } catch (err: unknown) {
     serverError(res, err instanceof Error ? err : new Error(String(err)), { endpoint: 'checkpoints_list', surveyId });
@@ -1636,7 +1970,8 @@ router.post('/:surveyId/trigger', requireAuth, async (req: Request, res: Respons
   try {
     // Validate survey belongs to org and is active
     const { rows: surveyRows } = await query(
-      `SELECT status, response_count FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+      `SELECT status, (SELECT COUNT(*)::int FROM responses WHERE survey_id = surveys.id) AS response_count
+       FROM surveys WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
       [surveyId, orgId]
     );
     if (!surveyRows.length) { clientError(res, 404, 'survey_not_found'); return; }
@@ -1835,8 +2170,8 @@ router.get('/:surveyId/crystal/proposals', requireAuth, async (req: Request, res
   const { surveyId } = req.params;
   const status = typeof req.query.status === 'string' ? req.query.status : null;
   try {
-    const params: unknown[] = [req.orgId];
-    let sql = `SELECT * FROM crystal_action_proposals WHERE org_id = $1`;
+    const params: unknown[] = [req.orgId, surveyId];
+    let sql = `SELECT * FROM crystal_action_proposals WHERE org_id = $1 AND survey_id = $2`;
     if (status) {
       params.push(status);
       sql += ` AND status = $${params.length}`;
@@ -1851,9 +2186,894 @@ router.get('/:surveyId/crystal/proposals', requireAuth, async (req: Request, res
   }
 });
 
+// ── Insight settings (Phase 1) ────────────────────────────────────────────────
+
+const SETTINGS_COLUMNS = INSIGHT_SETTING_KEYS.join(',\n         ');
+
+// NUMERIC setting columns whose pg values arrive as strings and must be coerced.
+const NUMERIC_SETTING_KEYS = new Set<InsightSettingKey>([
+  'meaningful_delta_nps_points',
+  'meaningful_delta_topic_pct',
+]);
+
+function coerceSettingValue(key: InsightSettingKey, value: unknown): unknown {
+  if (value == null) return null;
+  if (NUMERIC_SETTING_KEYS.has(key)) return parseFloat(String(value));
+  return value;
+}
+
+/**
+ * Resolve the verified Clerk org role for the request. In DEV_MODE there is no token,
+ * so we grant admin (matches requireRole's DEV_MODE no-op). Returns the normalized
+ * `org:<role>` string, or null when it can't be determined.
+ */
+async function resolveOrgRole(req: Request): Promise<string | null> {
+  if (DEV_MODE) return 'org:admin';
+  try {
+    const token = req.headers.authorization?.slice(7);
+    if (!token) return null;
+    const payload = await verifyToken(token, { secretKey: process.env.CLERK_SECRET_KEY! });
+    return getOrgClaims(payload).orgRole;
+  } catch {
+    return null;
+  }
+}
+
+// GET /api/insights/:surveyId/settings — effective + survey + org layers (any member)
+router.get('/:surveyId/settings', async (req: Request, res: Response): Promise<void> => {
+  const { surveyId } = req.params;
+  try {
+    const survey = await getSurvey(surveyId, req.orgId);
+    if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+    // Survey-level overrides (tolerate table not migrated yet → null layer).
+    let surveyLayer: Record<string, unknown> = {};
+    try {
+      const { rows } = await query(
+        `SELECT ${SETTINGS_COLUMNS}
+         FROM survey_insight_settings WHERE survey_id = $1 AND org_id = $2`,
+        [surveyId, req.orgId],
+      );
+      surveyLayer = (rows[0] as Record<string, unknown>) ?? {};
+    } catch (e: unknown) {
+      logger.warn({ err: (e as Error).message, surveyId }, 'insights:settings:survey_layer_unavailable');
+    }
+
+    // Org-level defaults — only the subset of keys that exist on org_insight_defaults
+    // is present; others stay undefined and fall through to the platform constant.
+    let orgLayer: Record<string, unknown> = {};
+    try {
+      const { rows } = await query(
+        `SELECT * FROM org_insight_defaults WHERE org_id = $1`,
+        [req.orgId],
+      );
+      orgLayer = (rows[0] as Record<string, unknown>) ?? {};
+    } catch (e: unknown) {
+      logger.warn({ err: (e as Error).message, orgId: req.orgId }, 'insights:settings:org_layer_unavailable');
+    }
+
+    // 3-level COALESCE merge: survey → org → platform constant.
+    const effective: Record<string, unknown> = {};
+    const surveyOverrides: Record<string, unknown> = {};
+    const orgDefaults: Record<string, unknown> = {};
+    for (const key of INSIGHT_SETTING_KEYS) {
+      const sv = coerceSettingValue(key, surveyLayer[key]);
+      const ov = coerceSettingValue(key, orgLayer[key]);
+      if (sv != null) surveyOverrides[key] = sv;
+      if (ov != null) orgDefaults[key] = ov;
+      effective[key] = sv != null ? sv : (ov != null ? ov : INSIGHT_SETTING_DEFAULTS[key]);
+    }
+
+    const orgRole = await resolveOrgRole(req);
+    const isAdmin = orgRole === 'org:admin';
+    const isOwner = survey.created_by === req.userId;
+    const editable = isAdmin || isOwner;
+
+    res.json({
+      survey_id:        surveyId,
+      effective,
+      survey_overrides: surveyOverrides,
+      org_defaults:     orgDefaults,
+      config_hash:      computeConfigHash(effective),
+      config_version:   (surveyLayer.config_version as number) ?? null,
+      editable,
+    });
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message, surveyId }, 'insights:settings:get:error');
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
+// PATCH /api/insights/:surveyId/settings — brand_admin OR survey_owner
+router.patch(
+  '/:surveyId/settings',
+  validate(updateInsightSettingsSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    const { surveyId } = req.params;
+    try {
+      const survey = await getSurvey(surveyId, req.orgId);
+      if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+      // Authorization: admin OR the survey owner. requireRole('analyst') is insufficient
+      // per 05_CONFIGURATION.md §8 — only brand_admin or the owning user may write.
+      const orgRole = await resolveOrgRole(req);
+      const isAdmin = orgRole === 'org:admin';
+      const isOwner = survey.created_by === req.userId;
+      if (!isAdmin && !isOwner) {
+        res.status(403).json({
+          error:    'Only org admins or the survey owner can change insight settings.',
+          required: 'org:admin OR survey_owner',
+          current:  orgRole,
+        });
+        return;
+      }
+
+      const patch = req.body as Record<string, unknown>;
+      const keys = Object.keys(patch) as InsightSettingKey[];
+      if (keys.length === 0) {
+        res.status(400).json({ error: 'No settings provided' });
+        return;
+      }
+
+      // Build a parameterized UPSERT. config_version bumps on every write.
+      const insertCols = ['survey_id', 'org_id', ...keys, 'updated_by'];
+      const insertParams: unknown[] = [surveyId, req.orgId, ...keys.map(k => patch[k]), req.userId];
+      const placeholders = insertParams.map((_, i) => `$${i + 1}`);
+      const updateAssignments = keys.map(k => `${k} = EXCLUDED.${k}`);
+      updateAssignments.push('updated_by = EXCLUDED.updated_by');
+      updateAssignments.push('config_version = survey_insight_settings.config_version + 1');
+      updateAssignments.push('updated_at = NOW()');
+
+      const { rows } = await query(
+        `INSERT INTO survey_insight_settings (${insertCols.join(', ')})
+         VALUES (${placeholders.join(', ')})
+         ON CONFLICT (survey_id) DO UPDATE SET
+           ${updateAssignments.join(',\n           ')}
+         RETURNING ${SETTINGS_COLUMNS}, config_version`,
+        insertParams,
+      );
+
+      const saved = (rows[0] as Record<string, unknown>) ?? {};
+      const effective: Record<string, unknown> = {};
+      const surveyOverrides: Record<string, unknown> = {};
+      for (const key of INSIGHT_SETTING_KEYS) {
+        const sv = coerceSettingValue(key, saved[key]);
+        if (sv != null) surveyOverrides[key] = sv;
+        effective[key] = sv != null ? sv : INSIGHT_SETTING_DEFAULTS[key];
+      }
+
+      logger.info({ surveyId, orgId: req.orgId, keys, by: req.userId }, 'insights:settings:patched');
+      res.json({
+        survey_id:        surveyId,
+        survey_overrides: surveyOverrides,
+        config_version:   (saved.config_version as number) ?? null,
+        config_hash:      computeConfigHash(effective),
+      });
+    } catch (err: unknown) {
+      logger.error({ err: (err as Error).message, surveyId }, 'insights:settings:patch:error');
+      serverError(res, err instanceof Error ? err : new Error(String(err)));
+    }
+  },
+);
+
+// ── Insight Pipeline v2 — Phase 3 (manual runs + reports) & Phase 4 (trail) ───
+
+/**
+ * Resolve the effective insight settings for a survey via the 3-level COALESCE merge
+ * (survey_insight_settings → org_insight_defaults → platform constant). Tolerates the
+ * v2 tables not being migrated yet (each layer wrapped in try/catch → falls through to
+ * the platform default). NUMERIC columns are coerced to numbers.
+ */
+async function resolveEffectiveSettings(surveyId: string, orgId: string): Promise<Record<string, unknown>> {
+  let surveyLayer: Record<string, unknown> = {};
+  try {
+    const { rows } = await query(
+      `SELECT ${SETTINGS_COLUMNS}
+       FROM survey_insight_settings WHERE survey_id = $1 AND org_id = $2`,
+      [surveyId, orgId],
+    );
+    surveyLayer = (rows[0] as Record<string, unknown>) ?? {};
+  } catch (e: unknown) {
+    logger.warn({ err: (e as Error).message, surveyId }, 'insights:resolveSettings:survey_layer_unavailable');
+  }
+
+  let orgLayer: Record<string, unknown> = {};
+  try {
+    const { rows } = await query(`SELECT * FROM org_insight_defaults WHERE org_id = $1`, [orgId]);
+    orgLayer = (rows[0] as Record<string, unknown>) ?? {};
+  } catch (e: unknown) {
+    logger.warn({ err: (e as Error).message, orgId }, 'insights:resolveSettings:org_layer_unavailable');
+  }
+
+  const effective: Record<string, unknown> = {};
+  for (const key of INSIGHT_SETTING_KEYS) {
+    const sv = coerceSettingValue(key, surveyLayer[key]);
+    const ov = coerceSettingValue(key, orgLayer[key]);
+    effective[key] = sv != null ? sv : (ov != null ? ov : INSIGHT_SETTING_DEFAULTS[key]);
+  }
+  return effective;
+}
+
+type RunMode = 'expert' | 'quick' | 'refresh';
+
+/** Map a run mode to its credit-cost setting key + CREDIT_COSTS fallback. */
+const MODE_COST_SETTING: Record<RunMode, { settingKey: InsightSettingKey; fallback: number }> = {
+  refresh: { settingKey: 'credit_cost_refresh',       fallback: CREDIT_COSTS.refresh },
+  quick:   { settingKey: 'credit_cost_manual_quick',  fallback: CREDIT_COSTS.manual_quick },
+  expert:  { settingKey: 'credit_cost_manual_expert', fallback: CREDIT_COSTS.manual_expert },
+};
+
+/** Resolve the credit cost for a run mode from effective settings (NULL override → CREDIT_COSTS default). */
+function resolveRunCost(mode: RunMode, settings: Record<string, unknown>): number {
+  const { settingKey, fallback } = MODE_COST_SETTING[mode];
+  const v = settings[settingKey];
+  const n = v != null ? Number(v) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+}
+
+/** Map a run mode → the daily-limit setting key + env-default fallback. */
+function resolveDailyLimit(mode: RunMode, settings: Record<string, unknown>): number {
+  if (mode === 'refresh') {
+    const v = Number(settings.refresh_daily_limit);
+    return Number.isFinite(v) && v > 0 ? Math.trunc(v) : REFRESH_DAILY_LIMIT;
+  }
+  const v = Number(settings.manual_daily_run_limit);
+  return Number.isFinite(v) && v > 0 ? Math.trunc(v) : MANUAL_DAILY_RUN_LIMIT;
+}
+
+/** The agent_runs.intent value used to count daily runs of a mode. */
+function runIntentFor(mode: RunMode): string {
+  return mode === 'refresh' ? 'manual_refresh' : `manual_${mode}`;
+}
+
+/** Resolve the sampling cap applied to the corpus for a mode (used by preview). */
+function resolveSampleCap(mode: RunMode, settings: Record<string, unknown>): number {
+  if (mode === 'quick')  return Number(settings.manual_quick_sample_cap) || 150;
+  if (mode === 'expert') return Number(settings.manual_expert_max_corpus) || 2000;
+  // refresh: bounded by the configured lookback window, not a hard sample cap
+  return Number(settings.manual_expert_max_corpus) || 2000;
+}
+
+// ── POST /:surveyId/runs — manual / refresh run (Phase 3) ─────────────────────
+
+router.post(
+  '/:surveyId/runs',
+  validate(manualRunSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    const { surveyId } = req.params;
+    const { mode, window_start, window_end, label } = req.body as {
+      mode: RunMode; window_start?: string; window_end?: string; label?: string;
+    };
+
+    try {
+      const survey = await getSurvey(surveyId, req.orgId);
+      if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+      const settings = await resolveEffectiveSettings(surveyId, req.orgId);
+
+      // Daily-limit gate — count today's runs of this mode (UTC midnight window) in agent_runs.
+      const dailyLimit = resolveDailyLimit(mode, settings);
+      const intent = runIntentFor(mode);
+      const todayUtcMidnight = `${new Date().toISOString().split('T')[0]}T00:00:00Z`;
+      const { rows: [{ run_count }] } = await query<{ run_count: number }>(
+        `SELECT COUNT(*)::int AS run_count FROM agent_runs
+         WHERE survey_id = $1 AND org_id = $2 AND run_type = 'insight_generation'
+           AND intent = $3 AND created_at >= $4::timestamptz`,
+        [surveyId, req.orgId, intent, todayUtcMidnight],
+      ).catch(() => ({ rows: [{ run_count: 0 }] }));
+      if (run_count >= dailyLimit) {
+        res.status(429).json({
+          error: 'Daily run limit reached for this mode.',
+          code:  'RATE_LIMITED',
+          mode,
+          limit: dailyLimit,
+        });
+        return;
+      }
+
+      // Credit pre-flight (02_ARCHITECTURE.md §6) → 402 when insufficient.
+      const cost = resolveRunCost(mode, settings);
+      const check = await checkCredits(req.orgId, cost, intent);
+      if (!check.ok) {
+        res.status(402).json({
+          error:     'Not enough credits to start this insight run.',
+          code:      'INSUFFICIENT_CREDITS',
+          required:  check.required,
+          available: check.available,
+        });
+        return;
+      }
+
+      // Create the agent_runs row before enqueue so the run is traceable.
+      const { rows: runRows } = await query(
+        `INSERT INTO agent_runs
+           (org_id, user_id, thread_id, run_type, status, intent, survey_id)
+         VALUES ($1, $2, $3, 'insight_generation', 'running', $4, $5)
+         RETURNING id`,
+        [req.orgId, req.userId, `${intent}:${req.orgId}:${surveyId}:${Date.now()}`, intent, surveyId],
+      );
+      const runId = (runRows[0] as { id: string }).id;
+
+      // Debit after the run is committed (mirrors /generate + /trigger). Pre-checked above.
+      try {
+        await debitCredits(req.orgId, {
+          actionType: intent,
+          credits:    cost,
+          userId:     req.userId,
+          actionRef:  runId,
+          note:       `Insight run (${mode})`,
+        });
+      } catch (err) {
+        logger.warn({ err: (err as Error).message, surveyId, runId }, 'insights:runs:debit_failed');
+      }
+
+      // Fire-and-forget to CrystalOS. Tolerate the endpoint not existing yet (built in parallel).
+      const actor = `user:${req.userId}`;
+      const sampleCap = resolveSampleCap(mode, settings);
+      agentsClient.triggerManualInsightRun({
+        surveyId, orgId: req.orgId, runId, mode,
+        windowStart: window_start ?? null,
+        windowEnd:   window_end ?? null,
+        label:       label ?? null,
+        actor,
+        sample_cap:  sampleCap,
+      }).catch(err => {
+        logger.error({ err: (err as Error).message, surveyId, runId, mode }, 'insights:runs:agents_error');
+        query("UPDATE agent_runs SET status='failed', completed_at=NOW() WHERE id=$1", [runId]).catch(() => {});
+      });
+
+      logger.info({ surveyId, orgId: req.orgId, runId, mode, cost }, 'insights:runs:started');
+      res.status(202).json({ run_id: runId, status: 'started' });
+    } catch (err: unknown) {
+      logger.error({ err: (err as Error).message, surveyId }, 'insights:runs:error');
+      serverError(res, err instanceof Error ? err : new Error(String(err)));
+    }
+  },
+);
+
+// ── POST /:surveyId/runs/preview — cost / corpus preview (no debit) ────────────
+
+router.post(
+  '/:surveyId/runs/preview',
+  validate(runPreviewSchema),
+  async (req: Request, res: Response): Promise<void> => {
+    const { surveyId } = req.params;
+    const { mode, window_start, window_end } = req.body as {
+      mode: RunMode; window_start?: string; window_end?: string;
+    };
+
+    try {
+      const survey = await getSurvey(surveyId, req.orgId);
+      if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+      // Rate limiting — max 5 previews per 10 seconds per org (COUNT query protection).
+      const redis = getRedisClient();
+      if (redis) {
+        const key = `rate:runs-preview:${req.orgId}`;
+        const count = await redis.incr(key);
+        if (count === 1) await redis.expire(key, 10); // 10-second window
+        if (count > 5) { // max 5 previews per 10 seconds per org
+          clientError(res, 429, 'Preview rate limit — wait a moment before previewing again.');
+          return;
+        }
+      }
+
+      const settings = await resolveEffectiveSettings(surveyId, req.orgId);
+      const cost = resolveRunCost(mode, settings);
+
+      // Resolve the time window. Manual modes use the provided window (or the mode's
+      // default-days fallback); refresh uses refresh_lookback_days. We count responses
+      // by submitted_at within the window.
+      const params: unknown[] = [surveyId, req.orgId];
+      const clauses: string[] = ['survey_id = $1', 'org_id = $2'];
+
+      const resolvedStart: string | null = window_start ?? null;
+      const resolvedEnd: string | null = window_end ?? null;
+
+      if (!resolvedStart) {
+        const defaultDays = mode === 'refresh'
+          ? (Number(settings.refresh_lookback_days) || 30)
+          : mode === 'quick'
+            ? (Number(settings.manual_quick_default_window_days) || 14)
+            : 90; // expert default window = 90d when unspecified
+        params.push(defaultDays);
+        clauses.push(`submitted_at >= NOW() - ($${params.length} * INTERVAL '1 day')`);
+      } else {
+        params.push(resolvedStart);
+        clauses.push(`submitted_at >= $${params.length}::timestamptz`);
+      }
+      if (resolvedEnd) {
+        params.push(resolvedEnd);
+        clauses.push(`submitted_at <= $${params.length}::timestamptz`);
+      }
+
+      const { rows: [countRow] } = await query<{ corpus_size: number }>(
+        `SELECT COUNT(*)::int AS corpus_size FROM responses WHERE ${clauses.join(' AND ')}`,
+        params,
+      ).catch(() => ({ rows: [{ corpus_size: 0 }] }));
+      const corpusSize = countRow?.corpus_size ?? 0;
+
+      // Apply the sampling cap from settings: sample_size = min(corpus, cap).
+      const sampleCap = resolveSampleCap(mode, settings);
+      const sampleSize = Math.min(corpusSize, sampleCap);
+
+      // Coarse duration label by mode + corpus size.
+      const estimatedDurationLabel = mode === 'quick'
+        ? '~60–90s'
+        : mode === 'refresh'
+          ? '~1–2 min'
+          : corpusSize > 1000 ? '~3–5 min' : '~2–3 min';
+
+      res.json({
+        estimated_cost:           cost,
+        corpus_size:              corpusSize,
+        estimated_duration_label: estimatedDurationLabel,
+        sample_size:              sampleSize,
+        mode,
+        window_start:             resolvedStart,
+        window_end:               resolvedEnd,
+      });
+    } catch (err: unknown) {
+      logger.error({ err: (err as Error).message, surveyId }, 'insights:runs:preview:error');
+      serverError(res, err instanceof Error ? err : new Error(String(err)));
+    }
+  },
+);
+
+// ── GET /:surveyId/reports/:reportId — manual report document (Phase 3) ────────
+
+router.get('/:surveyId/reports/:reportId', async (req: Request, res: Response): Promise<void> => {
+  const { surveyId, reportId } = req.params;
+  try {
+    const survey = await getSurvey(surveyId, req.orgId);
+    if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+    const { rows } = await query(
+      `SELECT id, survey_id, org_id, run_id, run_mode, label,
+              window_start, window_end, created_by, created_at,
+              status, blob_ref, citations_manifest_ref,
+              summary_headline, trust_score_avg, checkpoint_id
+       FROM insight_reports
+       WHERE id = $1 AND survey_id = $2 AND org_id = $3`,
+      [reportId, surveyId, req.orgId],
+    ).catch((e: unknown) => {
+      logger.warn({ err: (e as Error).message, reportId }, 'insights:reports:table_unavailable');
+      return { rows: [] };
+    });
+
+    if (!rows.length) { res.status(404).json({ error: 'Report not found' }); return; }
+    const report = rows[0] as Record<string, unknown>;
+    if (report.trust_score_avg != null) report.trust_score_avg = parseFloat(String(report.trust_score_avg));
+
+    // Load the report blob document when a ref is present. Mirror the checkpoint-report
+    // pattern: signed read URL in prod, inline blob otherwise. Best-effort — on failure
+    // return the row + the blob_ref so the frontend/Crystal can fetch it directly.
+    let document: unknown = undefined;
+    let blobUrl: string | null = null;
+    const blobRef = report.blob_ref as string | null;
+    if (blobRef) {
+      const isProduction = process.env.NODE_ENV === 'production' || process.env.AGENTS_ENV === 'staging';
+      try {
+        if (isProduction) {
+          blobUrl = await agentsClient.getCheckpointReadUrl(blobRef);
+        } else {
+          document = await agentsClient.getCheckpointBlob(blobRef);
+        }
+      } catch (e: unknown) {
+        logger.warn({ err: (e as Error).message, reportId, blobRef }, 'insights:reports:blob_load_failed');
+        blobUrl = blobRef; // let the caller resolve it
+      }
+    }
+
+    res.json({ report, document, blob_url: blobUrl });
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message, surveyId, reportId }, 'insights:reports:error');
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
+// ── Trail helpers (Phase 4) ───────────────────────────────────────────────────
+
+const NUM = (v: unknown): number | null => (v != null ? parseFloat(String(v)) : null);
+
+const TIER_THRESHOLDS = [
+  { min: 100, label: 'full_report'     as const },
+  { min: 70,  label: 'growing_picture' as const },
+  { min: 40,  label: 'early_signals'   as const },
+  { min: 10,  label: 'first_voices'    as const },
+];
+
+function computeTierLabel(count: unknown): 'first_voices' | 'early_signals' | 'growing_picture' | 'full_report' | null {
+  const n = count != null ? Number(count) : NaN;
+  if (Number.isNaN(n) || n < 10) return null;
+  for (const tier of TIER_THRESHOLDS) {
+    if (n >= tier.min) return tier.label;
+  }
+  return null;
+}
+
+/** Shape a v2 checkpoint row into the trail item contract. */
+function shapeV2Checkpoint(r: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id:           r.id ?? null,
+    number:       r.checkpoint_number != null ? Number(r.checkpoint_number) : null,
+    lane:         r.lane ?? null,
+    run_mode:     r.run_mode ?? null,
+    trigger:      r.trigger ?? null,
+    nps:          NUM(r.nps_at_checkpoint),
+    csat:         NUM(r.csat_at_checkpoint),
+    ces:          NUM(r.ces_at_checkpoint),
+    delta:        r.delta_from_prior ?? null,
+    meaningful:   r.meaningful_delta === true,
+    report_id:    r.report_id ?? null,
+    created_at:   r.created_at ?? null,
+    created_by:   r.created_by ?? null,
+    report_label:   r.report_label ?? null,
+    window_start:   r.window_start ?? null,
+    window_end:     r.window_end ?? null,
+    response_count: r.response_count_at_checkpoint != null ? Number(r.response_count_at_checkpoint) : null,
+    tier_label:     computeTierLabel(r.response_count_at_checkpoint),
+  };
+}
+
+/** Shape a legacy survey_insight_checkpoints row into the same trail item contract. */
+function shapeLegacyCheckpoint(r: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id:           r.id ?? null,
+    number:       r.checkpoint_number != null ? Number(r.checkpoint_number) : null,
+    lane:         'automated',
+    run_mode:     'automated_incremental',
+    trigger:      r.trigger ?? null,
+    nps:          NUM(r.nps_at_checkpoint),
+    csat:         NUM(r.csat_at_checkpoint),
+    ces:          NUM(r.ces_at_checkpoint),
+    delta:        r.delta_from_prior ?? null,
+    meaningful:   r.meaningful_delta === true,
+    created_at:   r.created_at ?? null,
+    created_by:   r.created_by ?? null,
+    report_label:   null,
+    window_start:   null,
+    window_end:     null,
+    response_count: r.response_count_at_checkpoint != null ? Number(r.response_count_at_checkpoint) : null,
+    tier_label:     computeTierLabel(r.response_count_at_checkpoint),
+  };
+}
+
+// ── GET /:surveyId/trail — linked checkpoint list + manual reports (Phase 4) ───
+
+router.get('/:surveyId/trail', async (req: Request, res: Response): Promise<void> => {
+  const { surveyId } = req.params;
+
+  const VALID_LANES = new Set(['automated', 'manual', 'all']);
+  const lane  = VALID_LANES.has(req.query.lane as string) ? (req.query.lane as string) : 'all';
+  const limit = Math.min(Math.max(parseInt(req.query.limit as string, 10) || 20, 1), 100);
+  // cursor = checkpoint_number to page before (descending). null/invalid → newest.
+  const cursorNum = req.query.cursor != null && !Number.isNaN(parseInt(req.query.cursor as string, 10))
+    ? parseInt(req.query.cursor as string, 10)
+    : null;
+
+  try {
+    const survey = await getSurvey(surveyId, req.orgId);
+    if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+    let checkpoints: Record<string, unknown>[] = [];
+    let usedV2 = false;
+
+    // Prefer insight_checkpoints_v2; fall back to legacy survey_insight_checkpoints
+    // when v2 is empty/missing (tolerates pre-backfill state).
+    try {
+      const params: unknown[] = [surveyId, req.orgId];
+      const conds = ['survey_id = $1', 'org_id = $2'];
+      if (lane !== 'all') { params.push(lane); conds.push(`lane = $${params.length}`); }
+      if (cursorNum != null) { params.push(cursorNum); conds.push(`checkpoint_number < $${params.length}`); }
+      params.push(limit);
+      const { rows } = await query(
+        `SELECT icv2.id, icv2.checkpoint_number, icv2.lane, icv2.run_mode, icv2.trigger,
+                icv2.nps_at_checkpoint, icv2.csat_at_checkpoint, icv2.ces_at_checkpoint,
+                icv2.delta_from_prior, icv2.meaningful_delta, icv2.created_at, icv2.created_by,
+                icv2.report_label, icv2.window_start, icv2.window_end, icv2.response_count_at_checkpoint,
+                (SELECT ir.id FROM insight_reports ir WHERE ir.checkpoint_id = icv2.id LIMIT 1) AS report_id
+         FROM insight_checkpoints_v2 icv2
+         WHERE ${conds.map((c) => `icv2.${c}`).join(' AND ')}
+         ORDER BY icv2.checkpoint_number DESC
+         LIMIT $${params.length}`,
+        params,
+      );
+      if (rows.length) {
+        checkpoints = (rows as Record<string, unknown>[]).map(shapeV2Checkpoint);
+        usedV2 = true;
+      }
+    } catch (e: unknown) {
+      logger.warn({ err: (e as Error).message, surveyId }, 'insights:trail:v2_unavailable');
+    }
+
+    // Legacy fallback (only automated lane exists there).
+    if (!usedV2 && lane !== 'manual') {
+      try {
+        const params: unknown[] = [surveyId, req.orgId];
+        const conds = ['survey_id = $1', 'org_id = $2'];
+        if (cursorNum != null) { params.push(cursorNum); conds.push(`checkpoint_number < $${params.length}`); }
+        params.push(limit);
+        const { rows } = await query(
+          `SELECT id, checkpoint_number, trigger,
+                  nps_at_checkpoint, csat_at_checkpoint, ces_at_checkpoint,
+                  delta_from_prior, meaningful_delta, created_at, created_by,
+                  response_count_at_checkpoint
+           FROM survey_insight_checkpoints
+           WHERE ${conds.join(' AND ')}
+           ORDER BY checkpoint_number DESC
+           LIMIT $${params.length}`,
+          params,
+        );
+        checkpoints = (rows as Record<string, unknown>[]).map(shapeLegacyCheckpoint);
+      } catch (e: unknown) {
+        logger.warn({ err: (e as Error).message, surveyId }, 'insights:trail:legacy_unavailable');
+        checkpoints = [];
+      }
+    }
+
+    // Manual reports for the manual lane (or 'all'). Tolerate the table not existing.
+    let reports: Record<string, unknown>[] = [];
+    if (lane === 'manual' || lane === 'all') {
+      try {
+        const { rows } = await query(
+          `SELECT id, run_id, run_mode, label, window_start, window_end,
+                  created_by, created_at, status, summary_headline,
+                  trust_score_avg, checkpoint_id
+           FROM insight_reports
+           WHERE survey_id = $1 AND org_id = $2
+           ORDER BY created_at DESC
+           LIMIT $3`,
+          [surveyId, req.orgId, limit],
+        );
+        reports = (rows as Record<string, unknown>[]).map(r => ({
+          ...r,
+          trust_score_avg: NUM(r.trust_score_avg),
+        }));
+      } catch (e: unknown) {
+        logger.warn({ err: (e as Error).message, surveyId }, 'insights:trail:reports_unavailable');
+        reports = [];
+      }
+    }
+
+    // Custom analysis reports. Tolerate the table not existing yet.
+    let customReports: Record<string, unknown>[] = [];
+    if (lane !== 'automated') {
+      try {
+        const { rows: crRows } = await query(
+          `SELECT id, name, filter_spec, status, run_id,
+                  corpus_coverage_pct, sample_size, trust_score_avg,
+                  slug, created_by, created_at, completed_at
+           FROM custom_reports
+           WHERE survey_id = $1 AND org_id = $2 AND status = 'ready'
+           ORDER BY created_at DESC
+           LIMIT $3`,
+          [surveyId, req.orgId, limit],
+        );
+        customReports = (crRows as Record<string, unknown>[]).map(r => ({
+          id:                  r.id ?? null,
+          label:               r.name ?? null,
+          name:                r.name ?? null,
+          mode:                null,
+          report_type:         'custom',
+          created_at:          r.created_at ?? null,
+          created_by:          r.created_by ?? null,
+          window_start:        null,
+          window_end:          null,
+          trust_score_avg:     NUM(r.trust_score_avg),
+          corpus_coverage_pct: r.corpus_coverage_pct != null ? Number(r.corpus_coverage_pct) : null,
+          sample_size:         r.sample_size != null ? Number(r.sample_size) : null,
+          slug:                r.slug ?? null,
+        }));
+      } catch (e: unknown) {
+        logger.warn({ err: (e as Error).message, surveyId }, 'insights:trail:custom_reports_unavailable');
+      }
+    }
+
+    // Cursor for the next (older) page: the lowest checkpoint_number returned, if a full page.
+    const nextCursor = checkpoints.length === limit
+      ? (checkpoints[checkpoints.length - 1].number as number | null)
+      : null;
+
+    res.json({
+      checkpoints,
+      reports: [
+        ...reports.map(r => ({ ...r, report_type: 'manual' as const })),
+        ...customReports,
+      ],
+      next_cursor: nextCursor,
+    });
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message, surveyId }, 'insights:trail:error');
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
+/**
+ * Load a single checkpoint by id from v2 (preferred) or legacy. Returns the raw row +
+ * a `source` tag, or null if not found in either. Ownership-scoped.
+ */
+async function loadCheckpointRow(
+  checkpointId: string, surveyId: string, orgId: string,
+): Promise<{ row: Record<string, unknown>; source: 'v2' | 'legacy' } | null> {
+  try {
+    const { rows } = await query(
+      `SELECT * FROM insight_checkpoints_v2
+       WHERE id = $1 AND survey_id = $2 AND org_id = $3`,
+      [checkpointId, surveyId, orgId],
+    );
+    if (rows.length) return { row: rows[0] as Record<string, unknown>, source: 'v2' };
+  } catch (e: unknown) {
+    logger.warn({ err: (e as Error).message, checkpointId }, 'insights:trail:detail:v2_unavailable');
+  }
+  try {
+    const { rows } = await query(
+      `SELECT * FROM survey_insight_checkpoints
+       WHERE id = $1 AND survey_id = $2 AND org_id = $3`,
+      [checkpointId, surveyId, orgId],
+    );
+    if (rows.length) return { row: rows[0] as Record<string, unknown>, source: 'legacy' };
+  } catch (e: unknown) {
+    logger.warn({ err: (e as Error).message, checkpointId }, 'insights:trail:detail:legacy_unavailable');
+  }
+  return null;
+}
+
+// ── GET /:surveyId/trail/:checkpointId — node + lineage + delta + blob ─────────
+
+router.get('/:surveyId/trail/:checkpointId', async (req: Request, res: Response): Promise<void> => {
+  const { surveyId, checkpointId } = req.params;
+  try {
+    const survey = await getSurvey(surveyId, req.orgId);
+    if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+    const found = await loadCheckpointRow(checkpointId, surveyId, req.orgId);
+    if (!found) { res.status(404).json({ error: 'Checkpoint not found' }); return; }
+
+    const { row, source } = found;
+    const node = source === 'v2' ? shapeV2Checkpoint(row) : shapeLegacyCheckpoint(row);
+    const blobRef = (row.report_blob_ref as string | null) ?? (row.report_url as string | null) ?? null;
+
+    // Best-effort blob load (same pattern as checkpoint report endpoint).
+    let document: unknown = undefined;
+    let blobUrl: string | null = null;
+    if (blobRef) {
+      const isProduction = process.env.NODE_ENV === 'production' || process.env.AGENTS_ENV === 'staging';
+      try {
+        if (isProduction) blobUrl = await agentsClient.getCheckpointReadUrl(blobRef);
+        else document = await agentsClient.getCheckpointBlob(blobRef);
+      } catch (e: unknown) {
+        logger.warn({ err: (e as Error).message, checkpointId, blobRef }, 'insights:trail:detail:blob_load_failed');
+        blobUrl = blobRef;
+      }
+    }
+
+    res.json({
+      checkpoint:       node,
+      lineage_json:     row.lineage_json ?? null,
+      delta_from_prior: row.delta_from_prior ?? null,
+      report_blob_ref:  blobRef,
+      document,
+      blob_url:         blobUrl,
+      source,
+    });
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message, surveyId, checkpointId }, 'insights:trail:detail:error');
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
+// ── GET /:surveyId/trail/:checkpointId/compare/:otherId — side-by-side ─────────
+
+router.get('/:surveyId/trail/:checkpointId/compare/:otherId', async (req: Request, res: Response): Promise<void> => {
+  const { surveyId, checkpointId, otherId } = req.params;
+  try {
+    const survey = await getSurvey(surveyId, req.orgId);
+    if (!survey) { res.status(404).json({ error: 'Survey not found' }); return; }
+
+    const [aFound, bFound] = await Promise.all([
+      loadCheckpointRow(checkpointId, surveyId, req.orgId),
+      loadCheckpointRow(otherId, surveyId, req.orgId),
+    ]);
+    if (!aFound) { res.status(404).json({ error: 'Checkpoint not found', missing: checkpointId }); return; }
+    if (!bFound) { res.status(404).json({ error: 'Checkpoint not found', missing: otherId }); return; }
+
+    const a = aFound.source === 'v2' ? shapeV2Checkpoint(aFound.row) : shapeLegacyCheckpoint(aFound.row);
+    const b = bFound.source === 'v2' ? shapeV2Checkpoint(bFound.row) : shapeLegacyCheckpoint(bFound.row);
+
+    const metricDelta = (x: number | null, y: number | null): number | null =>
+      (x != null && y != null) ? Math.round((y - x) * 10) / 10 : null;
+
+    // Topic diff from each node's topic_fingerprint or delta topic name-sets, if present.
+    const topicNames = (row: Record<string, unknown>): Set<string> => {
+      const delta = row.delta_from_prior as Record<string, unknown> | null;
+      const changes = (delta?.topic_changes as Record<string, unknown>) || {};
+      const names = new Set<string>();
+      for (const key of ['emerged', 'persisted', 'growing'] as const) {
+        const arr = changes[key];
+        if (Array.isArray(arr)) {
+          for (const t of arr) names.add(typeof t === 'string' ? t : String((t as Record<string, unknown>)?.name ?? ''));
+        }
+      }
+      names.delete('');
+      return names;
+    };
+    const aTopics = topicNames(aFound.row);
+    const bTopics = topicNames(bFound.row);
+    const added   = [...bTopics].filter(t => !aTopics.has(t));
+    const removed = [...aTopics].filter(t => !bTopics.has(t));
+
+    res.json({
+      a,
+      b,
+      metric_deltas: {
+        nps:  metricDelta(a.nps  as number | null, b.nps  as number | null),
+        csat: metricDelta(a.csat as number | null, b.csat as number | null),
+        ces:  metricDelta(a.ces  as number | null, b.ces  as number | null),
+      },
+      topic_diff: { added, removed },
+    });
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message, surveyId, checkpointId, otherId }, 'insights:trail:compare:error');
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
+// ── GET /api/insights/:insightId/audit — per-insight LLM run audit trail ──────
+// Requires brand_admin (org:admin) role. Returns the 10 most-recent audit log
+// entries for the given insight. Enables GDPR right-to-explanation and SOC2
+// audit compliance (see insight_audit_log migration 20260626000001).
+
+router.get('/:insightId/audit', requireAuth, async (req: Request, res: Response): Promise<void> => {
+  const { insightId } = req.params;
+  try {
+    // Role gate: only org:admin (brand_admin) may access the raw audit trail.
+    const orgRole = await resolveOrgRole(req);
+    if (orgRole !== 'org:admin') {
+      res.status(403).json({
+        error:    'Only org admins can access the insight audit trail.',
+        required: 'org:admin',
+        current:  orgRole,
+      });
+      return;
+    }
+
+    // Verify the insight belongs to the requesting org.
+    const { rows: insightRows } = await query(
+      `SELECT id, survey_id FROM insights WHERE id = $1 AND org_id = $2`,
+      [insightId, req.orgId],
+    );
+    if (!insightRows.length) {
+      res.status(404).json({ error: 'Insight not found' });
+      return;
+    }
+
+    const { rows: auditRows } = await query(
+      `SELECT * FROM insight_audit_log
+       WHERE insight_id = $1
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [insightId],
+    ).catch((e: unknown) => {
+      logger.warn({ err: (e as Error).message, insightId }, 'insights:audit:table_unavailable');
+      return { rows: [] };
+    });
+
+    res.json({ audit: auditRows });
+  } catch (err: unknown) {
+    logger.error({ err: (err as Error).message, insightId }, 'insights:audit:error');
+    serverError(res, err instanceof Error ? err : new Error(String(err)));
+  }
+});
+
 // ── Legacy: GET /api/surveys/:surveyId/insights ───────────────────────────────
+// Backward compat — clients should migrate to GET /api/insights/:surveyId/list
 
 router.get('/:surveyId/insights', async (req: Request, res: Response): Promise<void> => {
+  // Phase 7: deprecation headers — clients should migrate to GET /api/insights/:surveyId/list
+  res.set('Deprecation', 'true');
+  res.set('Sunset', new Date(Date.now() + 90 * 86400000).toUTCString()); // 90 days from now
+  res.set('Link', '</api/insights/:surveyId/list>; rel="successor-version"');
   try {
     const { rows } = await query(
       `SELECT * FROM insights

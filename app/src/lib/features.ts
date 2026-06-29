@@ -29,9 +29,33 @@ export interface FeatureFlags {
   whiteLabel: boolean;
   customDomain: boolean;
   scim: boolean;
+  // Phase 0.5 — Insight Pipeline v2 investigation trajectory (Enhanced Header
+  // Band + Investigation Drawer + Topic Change Bar). Off only when explicitly
+  // disabled via VITE_INSIGHTS_TRAJECTORY_V1='false'; on for all tiers otherwise.
+  insightsTrajectoryV1: boolean;
+  // Phase 4 — Insight Trail page. Off by default until the Trail ships to
+  // production. Set VITE_SHOW_INSIGHT_TRAIL='true' to preview in dev.
+  showInsightTrail: boolean;
   // Derived
   isEnterprisePlan: boolean;
   plan: PlanTier;
+}
+
+// Resolve the trajectory flag from env. Defaults ON (dev + all tiers); set
+// VITE_INSIGHTS_TRAJECTORY_V1='false' to disable. The Phase 4 Trail UI flag is
+// separate and stays OFF until that work ships.
+function resolveTrajectoryFlag(): boolean {
+  const v = import.meta.env.VITE_INSIGHTS_TRAJECTORY_V1;
+  if (v == null) return true;
+  return String(v).toLowerCase() !== 'false';
+}
+
+// Resolve the Trail flag from env. Defaults OFF; set VITE_SHOW_INSIGHT_TRAIL='true'
+// to enable in development before the full Phase 4 ship.
+function resolveTrailFlag(): boolean {
+  const v = import.meta.env.VITE_SHOW_INSIGHT_TRAIL;
+  if (v == null) return false;
+  return String(v).toLowerCase() === 'true';
 }
 
 export function getFeatureFlags(plan: PlanTier = 'free'): FeatureFlags {
@@ -51,6 +75,8 @@ export function getFeatureFlags(plan: PlanTier = 'free'): FeatureFlags {
     whiteLabel:        rank >= PLAN_RANK.enterprise,
     customDomain:      rank >= PLAN_RANK.enterprise,
     scim:              rank >= PLAN_RANK.enterprise,
+    insightsTrajectoryV1: resolveTrajectoryFlag(),
+    showInsightTrail: resolveTrailFlag(),
     isEnterprisePlan:  rank >= PLAN_RANK.enterprise,
     plan,
   };

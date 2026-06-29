@@ -67,10 +67,12 @@ class TestDebugModeEmitsRoutingEvents:
                 yield ("result", [])
             mock_plan.return_value = _plan_gen()
 
-            mock_run.return_value = MagicMock(answer="ans", citations=[], suggestions=[])
+            mock_run.return_value = MagicMock(answer="ans", citations=[], suggestions=[], insight_refs=[])
 
             mock_registry = MagicMock()
             mock_registry.find_with_scores.return_value = mock_routing
+            mock_registry.find = AsyncMock(return_value=[])
+            mock_registry.initialize = AsyncMock()
             mock_reg.return_value = mock_registry
 
             events = await _collect_events(
@@ -103,10 +105,12 @@ class TestDebugModeEmitsTimingEvents:
                 yield ("result", [])
             mock_plan.return_value = _plan_gen()
 
-            mock_run.return_value = MagicMock(answer="ans", citations=[], suggestions=[])
+            mock_run.return_value = MagicMock(answer="ans", citations=[], suggestions=[], insight_refs=[])
 
             mock_registry = MagicMock()
             mock_registry.find_with_scores.return_value = []
+            mock_registry.find = AsyncMock(return_value=[])
+            mock_registry.initialize = AsyncMock()
             mock_reg.return_value = mock_registry
 
             events = await _collect_events(
@@ -141,10 +145,12 @@ class TestDebugModeBlockedForViewerRole:
                 yield ("result", [])
             mock_plan.return_value = _plan_gen()
 
-            mock_run.return_value = MagicMock(answer="viewer answer", citations=[], suggestions=[])
+            mock_run.return_value = MagicMock(answer="viewer answer", citations=[], suggestions=[], insight_refs=[])
 
             mock_registry = MagicMock()
             mock_registry.find_with_scores.return_value = []
+            mock_registry.find = AsyncMock(return_value=[])
+            mock_registry.initialize = AsyncMock()
             mock_reg.return_value = mock_registry
 
             # debug=False (viewer role doesn't enable debug)
@@ -190,10 +196,12 @@ class TestDebugTraceStoredWhenStoreTraceTrue:
                 yield ("result", [])
             mock_plan.return_value = _plan_gen()
 
-            mock_run.return_value = MagicMock(answer="ans", citations=[], suggestions=[])
+            mock_run.return_value = MagicMock(answer="ans", citations=[], suggestions=[], insight_refs=[])
 
             mock_registry = MagicMock()
             mock_registry.find_with_scores.return_value = []
+            mock_registry.find = AsyncMock(return_value=[])
+            mock_registry.initialize = AsyncMock()
             mock_reg.return_value = mock_registry
 
             # Need to let create_task run — collect all events

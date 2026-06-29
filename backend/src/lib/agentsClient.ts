@@ -393,6 +393,97 @@ export async function triggerInsightGeneration({
 
 
 /**
+ * CrystalOS internal endpoint for Insight Pipeline v2 manual / refresh runs.
+ * Held as a const so the path is easy to fix if CrystalOS lands on a different route.
+ * (Assumed per 02_ARCHITECTURE.md §6/§8 — `run_insight_generation(profile)` queue.)
+ */
+export const MANUAL_INSIGHT_RUN_PATH = '/insights/runs';
+
+/**
+ * Fire a manual / refresh insight run. Best-effort kick-off — the caller should not
+ * await the full pipeline. CrystalOS resolves the run profile from `mode`:
+ *   refresh → refresh · quick → manual_quick · expert → manual_expert
+ *
+ * The agents service is built in parallel; if the endpoint does not exist yet the
+ * call rejects with a clear AgentsError (status 404) that the caller logs + tolerates.
+ *
+ * @param params - { surveyId, orgId, runId, mode, windowStart?, windowEnd?, label?, actor }
+ */
+export async function triggerManualInsightRun({
+  surveyId, orgId, runId, mode, windowStart, windowEnd, label, actor, sample_cap,
+}: {
+  surveyId: string;
+  orgId: string;
+  runId: string;
+  mode: 'expert' | 'quick' | 'refresh';
+  windowStart?: string | null;
+  windowEnd?: string | null;
+  label?: string | null;
+  actor: string;
+  sample_cap?: number;
+}): Promise<unknown> {
+  logger.info({ surveyId, orgId, runId, mode }, 'agents:triggerManualInsightRun');
+  return _fetch(MANUAL_INSIGHT_RUN_PATH, {
+    method: 'POST',
+    body: JSON.stringify({
+      survey_id:    surveyId,
+      org_id:       orgId,
+      run_id:       runId,
+      mode,
+      window_start: windowStart ?? null,
+      window_end:   windowEnd   ?? null,
+      label:        label       ?? null,
+      actor,
+      sample_cap:   sample_cap  ?? null,
+    }),
+  }, 15_000);
+}
+
+
+/**
+ * CrystalOS internal endpoint for Custom Analysis runs (Insight Pipeline v2 — Phase 6).
+ * Custom Analysis has its own queue and writes to custom_reports / custom_report_insights —
+ * it NEVER touches the insights table (02_ARCHITECTURE.md §6, 03_DATA_MODEL.md §10/§11).
+ * Held as a const so the path is easy to fix if CrystalOS lands on a different route.
+ */
+export const CUSTOM_ANALYSIS_RUN_PATH = '/reports/custom/run';
+
+/**
+ * Fire a Custom Analysis run. Best-effort kick-off — the caller should not await the full
+ * pipeline. CrystalOS resolves the corpus from `filterSpec` (date range / segments / topics /
+ * metric types / narrative depth) and writes results to custom_reports + custom_report_insights.
+ *
+ * The agents service is built in parallel; if the endpoint does not exist yet the call rejects
+ * with a clear AgentsError (status 404) that the caller logs + tolerates (marks the run failed).
+ *
+ * @param params - { surveyId, orgId, runId, reportId, filterSpec, actor }
+ */
+export async function triggerCustomAnalysis({
+  surveyId, orgId, runId, reportId, filterSpec, actor,
+}: {
+  surveyId: string;
+  orgId: string;
+  runId: string;
+  reportId: string;
+  filterSpec: Record<string, unknown>;
+  actor: string;
+}): Promise<unknown> {
+  logger.info({ surveyId, orgId, runId, reportId }, 'agents:triggerCustomAnalysis');
+  return _fetch(CUSTOM_ANALYSIS_RUN_PATH, {
+    method: 'POST',
+    body: JSON.stringify({
+      survey_id:   surveyId,
+      org_id:      orgId,
+      run_id:      runId,
+      report_id:   reportId,
+      filter_spec: filterSpec,
+      actor,
+    }),
+  }, 15_000);
+}
+
+
+/**
  * Alias for triggerInsightGeneration — convenience wrapper for manual run triggers.
  * @param surveyId
  * @param orgId

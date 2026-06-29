@@ -499,7 +499,7 @@ async def execute_get_segment_breakdown(ctx: CrystalContext, params: dict) -> di
                         }
 
                 await cur.execute(
-                    "SELECT answers, ai_sentiment, ai_sentiment_score, nps_score FROM responses WHERE survey_id = %s AND org_id = %s",
+                    "SELECT answers, ai_sentiment, ai_sentiment_score, nps_score FROM responses WHERE survey_id = %s AND org_id = %s ORDER BY submitted_at DESC LIMIT 500",
                     (survey_id, ctx.org_id),
                 )
                 rows = await cur.fetchall()
@@ -578,6 +578,53 @@ async def execute_get_checkpoint_history(ctx: CrystalContext, params: dict) -> d
         return {"checkpoints": checkpoints, "count": len(checkpoints)}
     except Exception as exc:
         logger.error("tool_get_checkpoint_history_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_recent_checkpoints(ctx: CrystalContext, params: dict) -> dict:
+    """Return the most recent insight checkpoints with delta_from_prior + meaningful_delta.
+
+    Phase 0.5 (Insight Pipeline v2) read tool — surfaces the code-computed delta so
+    Crystal can narrate "what changed since the last checkpoint".
+    """
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        limit = min(int(params.get("limit", 5)), 20)
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT checkpoint_number, nps_at_checkpoint,
+                              delta_from_prior, meaningful_delta, created_at
+                       FROM survey_insight_checkpoints
+                       WHERE survey_id = %s AND org_id = %s
+                       ORDER BY checkpoint_number DESC
+                       LIMIT %s""",
+                    (survey_id, ctx.org_id, limit),
+                )
+                rows = await cur.fetchall()
+                cols = [d[0] for d in cur.description]
+
+        checkpoints = []
+        for row in rows:
+            cp = dict(zip(cols, row))
+            if cp.get("created_at"):
+                cp["created_at"] = str(cp["created_at"])
+            if cp.get("nps_at_checkpoint") is not None:
+                cp["nps_at_checkpoint"] = float(cp["nps_at_checkpoint"])
+            delta = cp.get("delta_from_prior")
+            if isinstance(delta, str):
+                try:
+                    cp["delta_from_prior"] = json.loads(delta)
+                except Exception:
+                    cp["delta_from_prior"] = None
+            checkpoints.append(cp)
+
+        return {"checkpoints": checkpoints, "count": len(checkpoints)}
+    except Exception as exc:
+        logger.error("tool_get_recent_checkpoints_failed", error=str(exc), traceback=traceback.format_exc())
         return {"error": str(exc)}
 
 
@@ -2552,6 +2599,566 @@ async def execute_get_changelog_recent(ctx: CrystalContext, params: dict) -> dic
         return {"error": str(exc)}
 
 
+# ── Insight Pipeline v2 — checkpoint chain / trail / report tools (Phase 6) ───
+# All org-scoped; read insight_checkpoints_v2 / insight_reports / settings. Each
+# returns {"error": ...} on failure rather than raising. Per 07_CRYSTAL_INTEGRATION.
+
+_REPORT_URL = "/experience/surveys/{sid}/intelligence/reports/{rid}"
+_TRAIL_URL = "/experience/surveys/{sid}/intelligence/trail/{cid}"
+
+
+def _ckpt_summary(nps, nps_delta, emerged_count: int | None = None) -> str:
+    """One-line checkpoint summary, e.g. 'NPS 41 (−3.2) · 2 emerged themes'."""
+    parts: list[str] = []
+    if nps is not None:
+        if nps_delta is not None:
+            sign = "+" if nps_delta >= 0 else "−"
+            parts.append(f"NPS {nps:g} ({sign}{abs(nps_delta):g})")
+        else:
+            parts.append(f"NPS {nps:g}")
+    if emerged_count:
+        parts.append(f"{emerged_count} emerged theme{'s' if emerged_count != 1 else ''}")
+    return " · ".join(parts) or "Checkpoint"
+
+
+def _coerce_delta(raw) -> dict | None:
+    if isinstance(raw, str):
+        try:
+            return json.loads(raw)
+        except Exception:
+            return None
+    return raw if isinstance(raw, dict) else None
+
+
+async def execute_get_checkpoint_chain(ctx: CrystalContext, params: dict) -> dict:
+    """Walk the verified automated checkpoint chain via parent_checkpoint_id (v2).
+
+    Falls back to legacy survey_insight_checkpoints (checkpoint_number order) when v2
+    is empty/absent. Returns checkpoints newest-first with summary + trail URL.
+    """
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        lookback = min(int(params.get("lookback", 5)), 20)
+        lane = params.get("lane", "automated")
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        rows: list[dict] = []
+        try:
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    lane_clause = "" if lane == "all" else "AND lane = %s"
+                    args: list = [survey_id, ctx.org_id]
+                    if lane != "all":
+                        args.append(lane)
+                    args.append(lookback)
+                    await cur.execute(
+                        f"""SELECT id, checkpoint_number, parent_checkpoint_id, lane, created_at,
+                                   nps_at_checkpoint, new_response_count, delta_from_prior,
+                                   meaningful_delta
+                            FROM insight_checkpoints_v2
+                            WHERE survey_id = %s AND org_id = %s {lane_clause}
+                            ORDER BY checkpoint_number DESC
+                            LIMIT %s""",
+                        args,
+                    )
+                    fetched = await cur.fetchall()
+                    if fetched:
+                        cols = [d[0] for d in cur.description]
+                        rows = [dict(zip(cols, r)) for r in fetched]
+        except Exception as exc:
+            logger.debug("get_checkpoint_chain_v2_unavailable", error=str(exc))
+            rows = []
+
+        # ── Verified walk: order by parent linkage when ids/parents present ────
+        if rows and any(r.get("parent_checkpoint_id") for r in rows):
+            by_id = {str(r["id"]): r for r in rows}
+            parent_ids = {str(r["parent_checkpoint_id"]) for r in rows if r.get("parent_checkpoint_id")}
+            head = next(
+                (r for r in rows if str(r["id"]) not in parent_ids),
+                rows[0],
+            )
+            ordered: list[dict] = []
+            seen: set[str] = set()
+            cur_node = head
+            while cur_node is not None and str(cur_node["id"]) not in seen:
+                ordered.append(cur_node)
+                seen.add(str(cur_node["id"]))
+                pid = cur_node.get("parent_checkpoint_id")
+                cur_node = by_id.get(str(pid)) if pid else None
+            # Any rows not reachable via the chain (gaps) appended in number order.
+            for r in rows:
+                if str(r["id"]) not in seen:
+                    ordered.append(r)
+            rows = ordered[:lookback]
+
+        # ── Legacy fallback ───────────────────────────────────────────────────
+        if not rows:
+            try:
+                async with db._pool_conn().connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """SELECT id, checkpoint_number, NULL AS parent_checkpoint_id,
+                                      'automated' AS lane, created_at,
+                                      nps_at_checkpoint, NULL AS new_response_count,
+                                      delta_from_prior, meaningful_delta
+                               FROM survey_insight_checkpoints
+                               WHERE survey_id = %s AND org_id = %s
+                               ORDER BY checkpoint_number DESC
+                               LIMIT %s""",
+                            (survey_id, ctx.org_id, lookback),
+                        )
+                        fetched = await cur.fetchall()
+                        cols = [d[0] for d in cur.description]
+                        rows = [dict(zip(cols, r)) for r in fetched]
+            except Exception as exc:
+                logger.warning("get_checkpoint_chain_legacy_failed", error=str(exc))
+                return {"error": str(exc)}
+
+        checkpoints = []
+        for r in rows:
+            delta = _coerce_delta(r.get("delta_from_prior")) or {}
+            nps = float(r["nps_at_checkpoint"]) if r.get("nps_at_checkpoint") is not None else None
+            nps_delta = delta.get("nps_delta")
+            emerged = ((delta.get("topic_changes") or {}).get("emerged")) or []
+            cid = str(r["id"])
+            checkpoints.append({
+                "id": cid,
+                "checkpoint_number": r.get("checkpoint_number"),
+                "lane": r.get("lane"),
+                "created_at": str(r["created_at"]) if r.get("created_at") else None,
+                "nps": nps,
+                "nps_delta": nps_delta,
+                "new_response_count": r.get("new_response_count"),
+                "meaningful_delta": r.get("meaningful_delta"),
+                "summary": _ckpt_summary(nps, nps_delta, len(emerged)),
+                "url": _TRAIL_URL.format(sid=survey_id, cid=cid),
+            })
+        return {"checkpoints": checkpoints, "total_returned": len(checkpoints)}
+    except Exception as exc:
+        logger.error("tool_get_checkpoint_chain_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_insight_settings(ctx: CrystalContext, params: dict) -> dict:
+    """Return the effective merged insight settings (reuses lib/insight_settings)."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        if not survey_id:
+            return {"error": "survey_id required"}
+        from crystalos.lib.insight_settings import load_insight_settings
+        settings = await load_insight_settings(survey_id, ctx.org_id)
+        # Stringify any non-JSON-native values defensively.
+        clean = {k: (str(v) if hasattr(v, "isoformat") else v) for k, v in settings.items()}
+        return {"survey_id": survey_id, "settings": clean}
+    except Exception as exc:
+        logger.error("tool_get_insight_settings_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_insight_report(ctx: CrystalContext, params: dict) -> dict:
+    """Fetch an insight_reports row + blob document summary + report URL.
+
+    Output carries render_hint='document' so the frontend renders an
+    InsightDocumentCard. report_id / checkpoint_id are optional filters; if neither
+    is given, the latest ready report for the survey is returned.
+    """
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        report_id = params.get("report_id")
+        checkpoint_id = params.get("checkpoint_id")
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        conditions = ["survey_id = %s", "org_id = %s"]
+        args: list = [survey_id, ctx.org_id]
+        if report_id:
+            conditions.append("id = %s")
+            args.append(report_id)
+        elif checkpoint_id:
+            conditions.append("checkpoint_id = %s")
+            args.append(checkpoint_id)
+
+        row = None
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    f"""SELECT id, run_mode, label, status, created_by, created_at,
+                               blob_ref, summary_headline, trust_score_avg, checkpoint_id,
+                               window_start, window_end
+                        FROM insight_reports
+                        WHERE {' AND '.join(conditions)}
+                        ORDER BY created_at DESC LIMIT 1""",
+                    args,
+                )
+                r = await cur.fetchone()
+                if r:
+                    cols = [d[0] for d in cur.description]
+                    row = dict(zip(cols, r))
+
+        if not row:
+            return {"report": None, "render_hint": "document",
+                    "message": "No insight report found for this survey."}
+
+        rid = str(row["id"])
+        # Load the blob document (executive summary, themes, insights) — best-effort.
+        blob: dict = {}
+        if row.get("blob_ref"):
+            try:
+                from crystalos.lib.checkpoint_store import read_checkpoint_blob
+                blob = await read_checkpoint_blob(row["blob_ref"]) or {}
+            except Exception as exc:
+                logger.debug("get_insight_report_blob_read_failed", ref=row.get("blob_ref"), error=str(exc))
+                blob = {}
+
+        blob_insights = blob.get("insights") or []
+        citations_count = 0
+        for ins in blob_insights:
+            citations_count += len(ins.get("citations_json") or [])
+        manifest = blob.get("citations_manifest") or {}
+        if manifest.get("total_citations"):
+            citations_count = manifest["total_citations"]
+
+        report_url = _REPORT_URL.format(sid=survey_id, rid=rid)
+        ckpt_id = str(row["checkpoint_id"]) if row.get("checkpoint_id") else None
+        document_url = (
+            _TRAIL_URL.format(sid=survey_id, cid=ckpt_id) if ckpt_id else report_url
+        )
+        return {
+            "report_id": rid,
+            "title": row.get("summary_headline") or f"Insight Report · {row.get('run_mode', '')}",
+            "run_mode": row.get("run_mode"),
+            "status": row.get("status"),
+            "label": row.get("label"),
+            "created_at": str(row["created_at"]) if row.get("created_at") else None,
+            "created_by": row.get("created_by"),
+            "executive_summary": blob.get("executive_summary", ""),
+            "themes": blob.get("themes", [])[:20],
+            "insights": [
+                {"headline": i.get("headline"), "layer": i.get("layer"),
+                 "category": i.get("category"), "trust_score": i.get("trust_score")}
+                for i in blob_insights[:20]
+            ],
+            "nps": blob.get("nps"),
+            "csat": blob.get("csat"),
+            "ces": blob.get("ces"),
+            "trust_score_avg": float(row["trust_score_avg"]) if row.get("trust_score_avg") is not None else None,
+            "citations_count": citations_count,
+            "checkpoint_id": ckpt_id,
+            "report_url": report_url,
+            "document_url": document_url,
+            "render_hint": "document",
+        }
+    except Exception as exc:
+        logger.error("tool_get_insight_report_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_get_insight_trail(ctx: CrystalContext, params: dict) -> dict:
+    """List checkpoint/report nodes for a survey (Insight Trail). v2 with legacy fallback."""
+    try:
+        survey_id = params.get("survey_id") or ctx.survey_id
+        lane = params.get("lane", "all")
+        limit = min(int(params.get("limit", 10)), 50)
+        if not survey_id:
+            return {"error": "survey_id required"}
+
+        nodes: list[dict] = []
+        try:
+            async with db._pool_conn().connection() as conn:
+                async with conn.cursor() as cur:
+                    lane_clause = "" if lane == "all" else "AND lane = %s"
+                    args: list = [survey_id, ctx.org_id]
+                    if lane != "all":
+                        args.append(lane)
+                    args.append(limit)
+                    await cur.execute(
+                        f"""SELECT id, checkpoint_number, lane, created_at, created_by,
+                                   nps_at_checkpoint, delta_from_prior, meaningful_delta,
+                                   report_label, run_mode
+                            FROM insight_checkpoints_v2
+                            WHERE survey_id = %s AND org_id = %s {lane_clause}
+                            ORDER BY created_at DESC
+                            LIMIT %s""",
+                        args,
+                    )
+                    fetched = await cur.fetchall()
+                    cols = [d[0] for d in cur.description] if fetched else []
+                    for r in fetched:
+                        row = dict(zip(cols, r))
+                        delta = _coerce_delta(row.get("delta_from_prior")) or {}
+                        nps = float(row["nps_at_checkpoint"]) if row.get("nps_at_checkpoint") is not None else None
+                        emerged = ((delta.get("topic_changes") or {}).get("emerged")) or []
+                        cid = str(row["id"])
+                        nodes.append({
+                            "id": cid,
+                            "type": "report" if row.get("lane") == "manual" else "checkpoint",
+                            "lane": row.get("lane"),
+                            "checkpoint_number": row.get("checkpoint_number"),
+                            "created_at": str(row["created_at"]) if row.get("created_at") else None,
+                            "created_by": row.get("created_by"),
+                            "summary": row.get("report_label") or _ckpt_summary(nps, delta.get("nps_delta"), len(emerged)),
+                            "url": _TRAIL_URL.format(sid=survey_id, cid=cid),
+                            "meaningful_delta": row.get("meaningful_delta"),
+                        })
+        except Exception as exc:
+            logger.debug("get_insight_trail_v2_unavailable", error=str(exc))
+            nodes = []
+
+        if not nodes:
+            try:
+                async with db._pool_conn().connection() as conn:
+                    async with conn.cursor() as cur:
+                        await cur.execute(
+                            """SELECT id, checkpoint_number, created_at, created_by,
+                                      nps_at_checkpoint, delta_from_prior, meaningful_delta
+                               FROM survey_insight_checkpoints
+                               WHERE survey_id = %s AND org_id = %s
+                               ORDER BY created_at DESC LIMIT %s""",
+                            (survey_id, ctx.org_id, limit),
+                        )
+                        fetched = await cur.fetchall()
+                        cols = [d[0] for d in cur.description] if fetched else []
+                        for r in fetched:
+                            row = dict(zip(cols, r))
+                            delta = _coerce_delta(row.get("delta_from_prior")) or {}
+                            nps = float(row["nps_at_checkpoint"]) if row.get("nps_at_checkpoint") is not None else None
+                            cid = str(row["id"])
+                            nodes.append({
+                                "id": cid,
+                                "type": "checkpoint",
+                                "lane": "automated",
+                                "checkpoint_number": row.get("checkpoint_number"),
+                                "created_at": str(row["created_at"]) if row.get("created_at") else None,
+                                "created_by": row.get("created_by"),
+                                "summary": _ckpt_summary(nps, delta.get("nps_delta")),
+                                "url": _TRAIL_URL.format(sid=survey_id, cid=cid),
+                                "meaningful_delta": row.get("meaningful_delta"),
+                            })
+            except Exception as exc:
+                logger.warning("get_insight_trail_legacy_failed", error=str(exc))
+                return {"error": str(exc)}
+
+        return {"nodes": nodes, "count": len(nodes)}
+    except Exception as exc:
+        logger.error("tool_get_insight_trail_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def _load_checkpoint_row(ctx: CrystalContext, checkpoint_id: str) -> dict | None:
+    """Load a single checkpoint row (v2 first, then legacy). Org-scoped. None if absent."""
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT id, checkpoint_number, parent_checkpoint_id, lane, created_at,
+                              nps_at_checkpoint, csat_at_checkpoint, ces_at_checkpoint,
+                              new_response_count, response_count_at_checkpoint,
+                              delta_from_prior, meaningful_delta, lineage_json
+                       FROM insight_checkpoints_v2
+                       WHERE id = %s AND org_id = %s LIMIT 1""",
+                    (checkpoint_id, ctx.org_id),
+                )
+                r = await cur.fetchone()
+                if r:
+                    return dict(zip([d[0] for d in cur.description], r))
+    except Exception as exc:
+        logger.debug("load_checkpoint_v2_failed", error=str(exc))
+    try:
+        async with db._pool_conn().connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """SELECT id, checkpoint_number,
+                              NULL AS parent_checkpoint_id, 'automated' AS lane, created_at,
+                              nps_at_checkpoint, csat_at_checkpoint, ces_at_checkpoint,
+                              NULL AS new_response_count, response_count_at_checkpoint,
+                              delta_from_prior, meaningful_delta, NULL AS lineage_json
+                       FROM survey_insight_checkpoints
+                       WHERE id = %s AND org_id = %s LIMIT 1""",
+                    (checkpoint_id, ctx.org_id),
+                )
+                r = await cur.fetchone()
+                if r:
+                    return dict(zip([d[0] for d in cur.description], r))
+    except Exception as exc:
+        logger.debug("load_checkpoint_legacy_failed", error=str(exc))
+    return None
+
+
+async def execute_get_checkpoint_detail(ctx: CrystalContext, params: dict) -> dict:
+    """Single checkpoint node + delta + lineage."""
+    try:
+        checkpoint_id = params.get("checkpoint_id")
+        if not checkpoint_id:
+            return {"error": "checkpoint_id required"}
+        row = await _load_checkpoint_row(ctx, checkpoint_id)
+        if not row:
+            return {"error": "checkpoint not found"}
+        delta = _coerce_delta(row.get("delta_from_prior"))
+        lineage = _coerce_delta(row.get("lineage_json")) or {}
+        prior_refs = lineage.get("prior_checkpoint_refs", [])
+        return {
+            "id": str(row["id"]),
+            "checkpoint_number": row.get("checkpoint_number"),
+            "lane": row.get("lane"),
+            "created_at": str(row["created_at"]) if row.get("created_at") else None,
+            "nps": float(row["nps_at_checkpoint"]) if row.get("nps_at_checkpoint") is not None else None,
+            "csat": float(row["csat_at_checkpoint"]) if row.get("csat_at_checkpoint") is not None else None,
+            "ces": float(row["ces_at_checkpoint"]) if row.get("ces_at_checkpoint") is not None else None,
+            "new_response_count": row.get("new_response_count"),
+            "response_count": row.get("response_count_at_checkpoint"),
+            "meaningful_delta": row.get("meaningful_delta"),
+            "delta_from_prior": delta,
+            "parent_checkpoint_id": str(row["parent_checkpoint_id"]) if row.get("parent_checkpoint_id") else None,
+            "prior_checkpoint_refs": prior_refs,
+            "citations_count": len(lineage.get("new_response_ids", [])) or None,
+        }
+    except Exception as exc:
+        logger.error("tool_get_checkpoint_detail_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+async def execute_compare_checkpoints(ctx: CrystalContext, params: dict) -> dict:
+    """Side-by-side metric + topic diff between two checkpoints."""
+    try:
+        id_a = params.get("checkpoint_id_a")
+        id_b = params.get("checkpoint_id_b")
+        if not id_a or not id_b:
+            return {"error": "checkpoint_id_a and checkpoint_id_b required"}
+        row_a = await _load_checkpoint_row(ctx, id_a)
+        row_b = await _load_checkpoint_row(ctx, id_b)
+        if not row_a or not row_b:
+            return {"error": "one or both checkpoints not found"}
+
+        def _node(row: dict) -> dict:
+            return {
+                "id": str(row["id"]),
+                "checkpoint_number": row.get("checkpoint_number"),
+                "nps": float(row["nps_at_checkpoint"]) if row.get("nps_at_checkpoint") is not None else None,
+                "csat": float(row["csat_at_checkpoint"]) if row.get("csat_at_checkpoint") is not None else None,
+                "ces": float(row["ces_at_checkpoint"]) if row.get("ces_at_checkpoint") is not None else None,
+                "created_at": str(row["created_at"]) if row.get("created_at") else None,
+            }
+
+        a, b = _node(row_a), _node(row_b)
+        metric_delta = {}
+        for m in ("nps", "csat", "ces"):
+            if a[m] is not None and b[m] is not None:
+                metric_delta[m] = round(b[m] - a[m], 2)
+
+        def _topic_names(row: dict) -> set[str]:
+            delta = _coerce_delta(row.get("delta_from_prior")) or {}
+            tc = delta.get("topic_changes") or {}
+            names: set[str] = set()
+            for key in ("emerged", "persisted", "growing"):
+                for t in tc.get(key, []) or []:
+                    names.add(t["name"] if isinstance(t, dict) else str(t))
+            return names
+
+        topics_a, topics_b = _topic_names(row_a), _topic_names(row_b)
+        topic_diff = {
+            "only_in_a": sorted(topics_a - topics_b),
+            "only_in_b": sorted(topics_b - topics_a),
+            "shared": sorted(topics_a & topics_b),
+        }
+        return {
+            "checkpoint_a": a,
+            "checkpoint_b": b,
+            "metric_delta": metric_delta,
+            "topic_diff": topic_diff,
+        }
+    except Exception as exc:
+        logger.error("tool_compare_checkpoints_failed", error=str(exc), traceback=traceback.format_exc())
+        return {"error": str(exc)}
+
+
+# ── Insight Pipeline v2 — report action proposals (Phase 6) ───────────────────
+# proposal_type aliases (agents/crystal.py::_PROPOSAL_TYPE_ALIASES):
+#   manual_insight_run   → trigger_manual_insight_run
+#   view_report          → view_report (pass-through)
+#   generate_intelligence_report → generate_intelligence_report (pass-through)
+
+async def execute_propose_manual_insight_run(ctx: CrystalContext, params: dict) -> dict:
+    """Propose a manual Expert/Quick insight run (frontend → POST /api/insights/:id/runs)."""
+    survey_id = params.get("survey_id") or ctx.survey_id
+    mode = params.get("mode") or "manual_expert"
+    if mode not in ("manual_expert", "manual_quick"):
+        mode = "manual_expert"
+    label = params.get("label") or ("Expert report" if mode == "manual_expert" else "Quick report")
+    return {
+        "proposal_type": "manual_insight_run",
+        "title": f"Generate {('Expert' if mode == 'manual_expert' else 'Quick')} report"[:60],
+        "description": f"Run a {('deep-dive Expert' if mode == 'manual_expert' else 'quick')} insight analysis for this survey.",
+        "requires_confirmation": True,
+        "params": {
+            "survey_id":    survey_id,
+            "mode":         "expert" if mode == "manual_expert" else "quick",
+            "window_start": params.get("window_start"),
+            "window_end":   params.get("window_end"),
+            "label":        label,
+        },
+        "cta_label": "Generate Report",
+        "business_rationale": (
+            "Produces a grounded, citation-backed report so the team can act on the "
+            "latest experience signals with confidence."
+        )[:159],
+    }
+
+
+async def execute_propose_view_report(ctx: CrystalContext, params: dict) -> dict:
+    """Propose opening an existing report (read-only navigation — no API call)."""
+    survey_id = params.get("survey_id") or ctx.survey_id
+    report_id = params.get("report_id")
+    checkpoint_id = params.get("checkpoint_id")
+    url = params.get("url")
+    if not url:
+        if checkpoint_id:
+            url = _TRAIL_URL.format(sid=survey_id, cid=checkpoint_id)
+        elif report_id:
+            url = _REPORT_URL.format(sid=survey_id, rid=report_id)
+        else:
+            url = f"/experience/surveys/{survey_id}/intelligence"
+    return {
+        "proposal_type": "view_report",
+        "title": "Open insight report"[:60],
+        "description": params.get("summary") or "Open the existing insight report.",
+        "requires_confirmation": True,
+        "params": {
+            "report_id":     report_id,
+            "checkpoint_id": checkpoint_id,
+            "url":           url,
+            "summary":       params.get("summary", ""),
+        },
+        "cta_label": "Open Report",
+    }
+
+
+async def execute_propose_generate_intelligence_report(ctx: CrystalContext, params: dict) -> dict:
+    """Propose generating a fresh report (frontend → trigger endpoint, shows credits)."""
+    survey_id = params.get("survey_id") or ctx.survey_id
+    estimated_credits = params.get("estimated_credits")
+    if estimated_credits is None:
+        # Resolve from settings so the confirm dialog shows a real number.
+        try:
+            from crystalos.lib.insight_settings import load_insight_settings, resolve_credit_cost
+            settings = await load_insight_settings(survey_id, ctx.org_id)
+            estimated_credits = resolve_credit_cost("automated_incremental", settings, include_report=True)
+        except Exception:
+            estimated_credits = 20
+    return {
+        "proposal_type": "generate_intelligence_report",
+        "title": "Generate intelligence report"[:60],
+        "description": f"Generate a fresh intelligence report (~{estimated_credits} credits).",
+        "requires_confirmation": True,
+        "params": {
+            "survey_id":         survey_id,
+            "estimated_credits": int(estimated_credits),
+        },
+        "estimated_credits": int(estimated_credits),
+        "cta_label": "Generate Report",
+    }
+
+
 # ── Tool dispatch table ───────────────────────────────────────────────────────
 
 TOOL_EXECUTORS: dict[str, Any] = {
@@ -2566,6 +3173,14 @@ TOOL_EXECUTORS: dict[str, Any] = {
     "get_segment_breakdown":    execute_get_segment_breakdown,
     "list_segmentable_questions": execute_list_segmentable_questions,
     "get_checkpoint_history":   execute_get_checkpoint_history,
+    "get_recent_checkpoints":   execute_get_recent_checkpoints,
+    # Insight Pipeline v2 — checkpoint chain / trail / report tools
+    "get_checkpoint_chain":     execute_get_checkpoint_chain,
+    "get_insight_settings":     execute_get_insight_settings,
+    "get_insight_report":       execute_get_insight_report,
+    "get_insight_trail":        execute_get_insight_trail,
+    "get_checkpoint_detail":    execute_get_checkpoint_detail,
+    "compare_checkpoints":      execute_compare_checkpoints,
     "compare_surveys":          execute_compare_surveys,
     "get_org_portfolio":        execute_get_org_portfolio,
     "get_cross_survey_themes":  execute_get_cross_survey_themes,
@@ -2584,6 +3199,10 @@ TOOL_EXECUTORS: dict[str, Any] = {
     "propose_distribution":     execute_propose_distribution,
     "propose_workflow":         execute_propose_workflow,
     "propose_alert":            execute_propose_alert,
+    # Insight Pipeline v2 — report action proposals
+    "propose_manual_insight_run":            execute_propose_manual_insight_run,
+    "propose_view_report":                   execute_propose_view_report,
+    "propose_generate_intelligence_report":  execute_propose_generate_intelligence_report,
     "list_relevant_templates":  execute_list_relevant_templates,
     # User-directory segmentation tools
     **USER_DIRECTORY_EXECUTORS,
