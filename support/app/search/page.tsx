@@ -5,7 +5,7 @@ import { SearchResults } from '@/components/search/SearchResults'
 
 export const metadata: Metadata = {
   title: 'Search',
-  description: 'Search Experient documentation and get AI-powered answers from Crystal.',
+  description: 'Search Xperiq documentation and get AI-powered answers from Crystal.',
   robots: { index: false },
 }
 

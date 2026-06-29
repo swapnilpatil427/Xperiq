@@ -1,4 +1,4 @@
-# Experient Feedback Intelligence Data Model
+# Xperiq Feedback Intelligence Data Model
 
 **Version:** 2.0  
 **Date:** 2026-05-11  

@@ -4,7 +4,7 @@ import { EscalationCard } from '@/components/escalation/EscalationCard'
 export const metadata: Metadata = {
   title: 'Escalation Confirmed',
   description:
-    'Your support request has been escalated to the Experient human intelligence team.',
+    'Your support request has been escalated to the Xperiq human intelligence team.',
   robots: { index: false },
 }
 
@@ -74,7 +74,7 @@ export default function EscalationPage({ searchParams }: EscalationPageProps) {
       {/* Footer */}
       <footer className="absolute bottom-6 w-full text-center z-10 pointer-events-none">
         <p className="text-on-surface-variant text-sm font-label opacity-60 tracking-wide">
-          Experient Support Engine · Encrypted Transfer
+          Xperiq Support Engine · Encrypted Transfer
         </p>
       </footer>
     </div>

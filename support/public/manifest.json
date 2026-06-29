@@ -1,7 +1,7 @@
 {
-  "name": "Experient Support",
-  "short_name": "Experient",
-  "description": "AI-powered support for the Experient experience management platform",
+  "name": "Xperiq Support",
+  "short_name": "Xperiq",
+  "description": "AI-powered support for the Xperiq experience management platform",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f5f7f9",

@@ -1,5 +1,5 @@
 /**
- * HTTP client for the Experient Copilot Agents microservice (Python/FastAPI).
+ * HTTP client for the Xperiq Copilot Agents microservice (Python/FastAPI).
  *
  * The agents service runs on AGENTS_URL (default: http://localhost:8001).
  * All requests include the shared internal key for service-to-service auth.

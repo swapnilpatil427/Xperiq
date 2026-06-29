@@ -1,6 +1,6 @@
 {
-  "name": "experient-api",
-  "description": "Experient API — BACKEND=local (postgres) or BACKEND=firebase (Cloud Functions)",
+  "name": "xperiq-api",
+  "description": "Xperiq API — BACKEND=local (postgres) or BACKEND=firebase (Cloud Functions)",
   "version": "2.0.0",
   "engines": {
     "node": ">=20"

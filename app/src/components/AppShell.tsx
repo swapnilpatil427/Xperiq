@@ -44,7 +44,7 @@ function AppShellInner() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        // Don't intercept ⌘K inside the survey builder (ExperientCopilot owns it there)
+        // Don't intercept ⌘K inside the survey builder (XperiqCopilot owns it there)
         if (isBuilder) return;
         e.preventDefault();
         toggleCrystal();

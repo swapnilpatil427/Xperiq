@@ -30,7 +30,7 @@ from crystalos.schemas.question import Question
 from crystalos.agents.insight_experts import check_survey_bias, evaluate_survey
 
 _SYSTEM_TEMPLATE = """\
-You are an expert enterprise survey designer working inside Experient Copilot.
+You are an expert enterprise survey designer working inside Xperiq Copilot.
 
 ORG CONTEXT:
 - Industry: {industry}

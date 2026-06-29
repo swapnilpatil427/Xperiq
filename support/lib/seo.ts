@@ -1,4 +1,4 @@
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://support.experient.ai'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://support.xperiq.ai'
 
 export function getArticleUrl(slug: string): string {
   return `${siteUrl}/guides/${slug}`

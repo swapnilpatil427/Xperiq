@@ -1,13 +1,13 @@
 # Images bake config/migrations at build time so bind mounts from the host are not
 # required (avoids Docker Desktop "operation not permitted" on some paths).
 #
-# Platform: npm scripts use scripts/docker-compose.mjs to set DOCKER_DEFAULT_PLATFORM
-# to the host CPU (linux/arm64 on Apple Silicon, linux/amd64 on Intel). This avoids
-# mismatches when ~/.zshrc sets DOCKER_DEFAULT_PLATFORM=linux/amd64 globally.
-# Override for amd64 local builds: EXPERIENT_DOCKER_PLATFORM=linux/amd64 npm run infra:reset
+# Platform: npm scripts use scripts/docker-compose.mjs to set XPERIQ_DOCKER_PLATFORM
+# for custom-built images only (linux/arm64 on Apple Silicon, linux/amd64 on Intel).
+# Pre-built images (redis, cadvisor, …) are not pinned — avoids cache/platform clashes.
+# Override for amd64 local builds: XPERIQ_DOCKER_PLATFORM=linux/amd64 npm run infra:reset
 
 x-built-platform: &built-platform
-  platform: ${DOCKER_DEFAULT_PLATFORM:-linux/arm64}
+  platform: ${XPERIQ_DOCKER_PLATFORM:-linux/arm64}
 
 services:
   postgres:
@@ -15,18 +15,18 @@ services:
     build:
       context: .
       dockerfile: docker/postgres/Dockerfile
-    image: experient-postgres:local
-    container_name: experient-db
+    image: xperiq-postgres:local
+    container_name: xperiq-db
     environment:
       POSTGRES_USER:     postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB:       experient
+      POSTGRES_DB:       xperiq
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d experient"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d xperiq"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -37,8 +37,8 @@ services:
     build:
       context: .
       dockerfile: docker/prometheus/Dockerfile
-    image: experient-prometheus:local
-    container_name: experient-prometheus
+    image: xperiq-prometheus:local
+    container_name: xperiq-prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=7d"
@@ -54,8 +54,8 @@ services:
     build:
       context: .
       dockerfile: docker/alertmanager/Dockerfile
-    image: experient-alertmanager:local
-    container_name: experient-alertmanager
+    image: xperiq-alertmanager:local
+    container_name: xperiq-alertmanager
     ports:
       - "9093:9093"
     extra_hosts:
@@ -67,8 +67,8 @@ services:
     build:
       context: .
       dockerfile: docker/loki/Dockerfile
-    image: experient-loki:local
-    container_name: experient-loki
+    image: xperiq-loki:local
+    container_name: xperiq-loki
     volumes:
       - loki_data:/loki
     ports:
@@ -80,8 +80,8 @@ services:
     build:
       context: .
       dockerfile: docker/grafana/Dockerfile
-    image: experient-grafana:local
-    container_name: experient-grafana
+    image: xperiq-grafana:local
+    container_name: xperiq-grafana
     volumes:
       - grafana_data:/var/lib/grafana
     ports:
@@ -99,7 +99,7 @@ services:
   # (macOS/Windows): "path / is mounted on / but it is not a shared or slave mount".
   node-exporter:
     image: prom/node-exporter:v1.8.1
-    container_name: experient-node-exporter
+    container_name: xperiq-node-exporter
     command:
       - "--path.rootfs=/host"
     pid: host
@@ -110,7 +110,7 @@ services:
   # Per-container resource usage (cpu/mem/io per service). Scraped internally (cadvisor:8080).
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
-    container_name: experient-cadvisor
+    container_name: xperiq-cadvisor
     privileged: true
     volumes:
       - "/:/rootfs:ro"
@@ -121,7 +121,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: experient-redis
+    container_name: xperiq-redis
     ports:
       - "6379:6379"
     volumes:
@@ -141,15 +141,15 @@ services:
     build:
       context: .
       dockerfile: crystalos/Dockerfile
-    image: experient-agents:local
-    container_name: experient-agents
+    image: xperiq-agents:local
+    container_name: xperiq-agents
     env_file:
       - path: crystalos/.env
         required: false          # allows startup without an .env file
     environment:
       AGENTS_ENV: ${AGENTS_ENV:-dev}
       LOG_PRETTY: ${LOG_PRETTY:-0}
-      AGENTS_DB_DSN: postgresql://postgres:postgres@postgres:5432/experient
+      AGENTS_DB_DSN: postgresql://postgres:postgres@postgres:5432/xperiq
       AGENTS_INTERNAL_KEY: ${AGENTS_INTERNAL_KEY:-dev-internal-key-change-in-prod}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -181,11 +181,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: experient-backend:local
-    container_name: experient-event-engine
+    image: xperiq-backend:local
+    container_name: xperiq-event-engine
     command: ["node", "src/eventEngine/index.js"]
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/experient
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/xperiq
       REDIS_URL: redis://redis:6379
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
     depends_on:
@@ -206,11 +206,11 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: experient-backend:local
-    container_name: experient-scheduler
+    image: xperiq-backend:local
+    container_name: xperiq-scheduler
     command: ["node", "src/scheduler/index.js"]
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/experient
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/xperiq
       REDIS_URL: redis://redis:6379
       SCHEDULER_PORT: "8090"
     ports:

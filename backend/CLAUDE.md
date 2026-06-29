@@ -1,4 +1,4 @@
-# Experient — Backend (Express API, TypeScript)
+# Xperiq — Backend (Express API, TypeScript)
 
 ## What this is
 Express API written in **TypeScript**, run directly via `tsx` (no build step) under

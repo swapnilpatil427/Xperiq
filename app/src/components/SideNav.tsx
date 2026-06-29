@@ -132,7 +132,7 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
             );
           })}
 
-          {/* ◆ Crystal — Experient Copilot */}
+          {/* ◆ Crystal — Xperiq Copilot */}
           {isExpanded ? (
             <button
               onClick={() => {
@@ -164,7 +164,7 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
                     openCrystal();
                   }}
                   className={`sidenav-item-collapsed${crystalOpen ? ' active' : ''}`}
-                  aria-label="Crystal — Experient Copilot (⌘K)"
+                  aria-label="Crystal — Xperiq Copilot (⌘K)"
                 >
                   <span
                     className="w-6 h-6 rounded-lg flex items-center justify-center text-white text-[11px] font-bold"
@@ -178,12 +178,12 @@ export function SideNav({ isExpanded, onToggle }: SideNavProps) {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="right" className="font-semibold text-xs">
-                Crystal · Experient Copilot
+                Crystal · Xperiq Copilot
               </TooltipContent>
             </Tooltip>
           )}
 
-          {/* Experient Support — opens the support docs site */}
+          {/* Xperiq Support — opens the support docs site */}
           {(() => {
             const href = supportUrl('/guides');
             const label = t('nav.support');

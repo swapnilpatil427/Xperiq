@@ -2,7 +2,7 @@ import { Pool, QueryResult, QueryResultRow } from 'pg';
 import { dbDuration } from './metrics';
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/experient',
+  connectionString: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/xperiq',
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,

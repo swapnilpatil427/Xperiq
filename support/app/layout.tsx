@@ -24,41 +24,41 @@ const jetbrainsMono = JetBrains_Mono({
   weight: ['400', '500'],
 })
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://support.experient.ai'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://support.xperiq.ai'
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: 'Experient Support — AI-Powered Help Center',
-    template: '%s | Experient Support',
+    default: 'Xperiq Support — AI-Powered Help Center',
+    template: '%s | Xperiq Support',
   },
   description:
-    'Get answers instantly with Crystal AI, browse documentation, track known issues, and connect with the Experient enterprise support team.',
+    'Get answers instantly with Crystal AI, browse documentation, track known issues, and connect with the Xperiq enterprise support team.',
   keywords: [
     'experience management',
     'XM platform',
     'enterprise survey',
     'NPS automation',
     'AI insights',
-    'Experient support',
+    'Xperiq support',
     'CX analytics',
     'customer experience platform',
   ],
-  authors: [{ name: 'Experient' }],
-  creator: 'Experient',
-  publisher: 'Experient, Inc.',
+  authors: [{ name: 'Xperiq' }],
+  creator: 'Xperiq',
+  publisher: 'Xperiq, Inc.',
   robots: { index: true, follow: true, googleBot: { index: true, follow: true } },
   openGraph: {
     type: 'website',
     locale: 'en_US',
     url: siteUrl,
-    siteName: 'Experient Support',
-    images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'Experient Support' }],
+    siteName: 'Xperiq Support',
+    images: [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'Xperiq Support' }],
   },
   twitter: {
     card: 'summary_large_image',
-    site: '@experient',
-    creator: '@experient',
+    site: '@xperiq',
+    creator: '@xperiq',
   },
   manifest: '/manifest.json',
 }

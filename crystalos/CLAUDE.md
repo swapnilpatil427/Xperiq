@@ -1,4 +1,4 @@
-# Experient — Agents Service
+# Xperiq — Agents Service (CrystalOS)
 
 ## What this is
 Python FastAPI service that powers all AI pipelines and Crystal Intelligence.

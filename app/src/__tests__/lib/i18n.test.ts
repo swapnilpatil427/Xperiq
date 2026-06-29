@@ -9,7 +9,7 @@ afterEach(() => {
 
 describe('t() — key resolution', () => {
   it('resolves a top-level dotted key', () => {
-    expect(t('brand.name')).toBe('Experient');
+    expect(t('brand.name')).toBe('Xperiq');
   });
 
   it('resolves a two-level nested key', () => {
@@ -73,7 +73,7 @@ describe('t() — variable interpolation', () => {
 
   it('does not mutate extra vars that are not in the template', () => {
     const result = t('brand.name', { extra: 'ignored' });
-    expect(result).toBe('Experient');
+    expect(result).toBe('Xperiq');
   });
 
   it('interpolates string values as well as numbers', () => {
@@ -110,7 +110,7 @@ describe('setLocale()', () => {
 
   it('keeps English translations after an invalid locale is set', () => {
     setLocale('zz');
-    expect(t('brand.name')).toBe('Experient');
+    expect(t('brand.name')).toBe('Xperiq');
   });
 });
 
@@ -124,7 +124,7 @@ describe('useTranslation()', () => {
 
   it('returned t() resolves keys correctly', () => {
     const { t: translate } = useTranslation();
-    expect(translate('brand.name')).toBe('Experient');
+    expect(translate('brand.name')).toBe('Xperiq');
   });
 
   it('returned t() supports interpolation', () => {
@@ -150,7 +150,7 @@ describe('t() — edge cases', () => {
   });
 
   it('resolves brand.tagline correctly', () => {
-    expect(t('brand.tagline')).toBe('Dimensional Intelligence');
+    expect(t('brand.tagline')).toBe('Intelligence for Every Experience');
   });
 
   it('handles fill.progress with multiple numeric variables', () => {

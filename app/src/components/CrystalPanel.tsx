@@ -1012,7 +1012,7 @@ export function CrystalPanel({
                     className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                     style={{ background: 'rgba(42,75,217,0.08)', color: '#2a4bd9' }}
                   >
-                    Experient Copilot
+                    Xperiq Copilot
                   </span>
                   {isSupportMode && (
                     <span
@@ -1365,7 +1365,7 @@ function EmptyState({
     <div className="h-full flex flex-col items-center justify-center text-center px-6 py-10">
       <MiniCrystal />
       <div className="text-[10px] font-black uppercase tracking-[0.2em] text-tertiary mb-2 mt-5">
-        Crystal · Experient Copilot
+        Crystal · Xperiq Copilot
       </div>
       <p className="font-black text-sm text-on-surface mb-1">
         {isAll ? 'Ask anything across your surveys' : 'Ask anything about this survey'}

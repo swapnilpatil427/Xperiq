@@ -30,7 +30,7 @@ const BENTO_ITEMS = [
   {
     key: 'api-integrations',
     title: 'API & Integrations',
-    description: 'Connect Experient to your entire tech stack.',
+    description: 'Connect Xperiq to your entire tech stack.',
     icon: 'api',
     iconBg: 'bg-surface-container-high',
     iconColor: 'text-on-surface',

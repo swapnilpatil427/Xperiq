@@ -1,4 +1,4 @@
--- Experient Agentic Framework — Sprint 7A
+-- Xperiq Agentic Framework — Sprint 7A
 -- Tables: agent_runs, notifications
 -- Compatible with: Postgres 14+, pgcrypto (already loaded by initial migration)
 

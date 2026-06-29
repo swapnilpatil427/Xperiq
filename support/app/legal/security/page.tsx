@@ -3,7 +3,7 @@ import { PageShell } from '@/components/layout/PageShell'
 
 export const metadata: Metadata = {
   title: 'Security',
-  description: "Experient's security posture, certifications, and vulnerability disclosure policy.",
+  description: "Xperiq's security posture, certifications, and vulnerability disclosure policy.",
   alternates: { canonical: '/legal/security' },
 }
 
@@ -22,7 +22,7 @@ export default function SecurityPage() {
           <div className="flex items-center gap-3 mb-4">
             <span className="px-3 py-1 bg-surface-container text-on-surface-variant text-xs font-label font-bold rounded-full uppercase tracking-wider">Security</span>
           </div>
-          <h1 className="font-display text-4xl font-extrabold text-on-background tracking-tight mb-4">Security at Experient</h1>
+          <h1 className="font-display text-4xl font-extrabold text-on-background tracking-tight mb-4">Security at Xperiq</h1>
           <p className="font-body text-lg text-on-surface-variant">
             Enterprise-grade security is foundational to how we build. Here&apos;s what we do to protect your data.
           </p>
@@ -98,7 +98,7 @@ export default function SecurityPage() {
             We welcome responsible disclosure of security vulnerabilities. If you discover a security issue, please report it to us before making it public.
           </p>
           <div className="font-mono text-sm bg-surface-container px-4 py-3 rounded">
-            security@experient.ai (PGP key available on request)
+            security@xperiq.ai (PGP key available on request)
           </div>
           <p className="font-body text-sm text-on-surface-variant mt-3">
             We commit to: acknowledging reports within 48 hours, providing updates within 7 days, and not pursuing legal action against good-faith reporters.

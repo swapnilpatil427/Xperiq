@@ -1,4 +1,4 @@
-app = "experient-api"
+app = "xperiq-api"
 primary_region = "ord"   # Chicago — change to your closest: lax, iad, lhr, fra, sin, nrt
 
 [build]

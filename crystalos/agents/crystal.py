@@ -668,8 +668,8 @@ def _build_brand_identity(ctx) -> str:
     if brand and brand.brand_persona:
         return brand.brand_persona
     elif brand:
-        return f"Crystal, the AI intelligence layer for {brand.brand_name} — powered by Experient"
-    return "Crystal — the Experient Intelligence Platform"
+        return f"Crystal, the AI intelligence layer for {brand.brand_name} — powered by Xperiq"
+    return "Crystal — the Xperiq Intelligence Platform"
 
 
 def _build_custom_instructions(ctx) -> str:

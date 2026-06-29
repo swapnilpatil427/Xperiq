@@ -30,9 +30,9 @@ vi.mock('../../lib/i18n', () => ({
 vi.mock('../../contexts/pageTitle', () => ({
   useSetPageTitle: vi.fn(),
 }));
-// ExperientCopilot makes fetch calls — stub it out entirely
+// XperiqCopilot makes fetch calls — stub it out entirely
 vi.mock('../../components/ExperientCopilot', () => ({
-  ExperientCopilot: () => null,
+  XperiqCopilot: () => null,
 }));
 // PageHeader — render just the actions slot so settings button is accessible
 vi.mock('../../components/PageHeader', () => ({

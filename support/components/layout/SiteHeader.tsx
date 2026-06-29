@@ -96,7 +96,7 @@ export function SiteHeader() {
           </div>
           <div>
             <span className="font-headline font-extrabold text-on-background text-lg tracking-tight group-hover:text-primary transition-colors">
-              Experient
+              Xperiq
             </span>
             <span className="hidden sm:block text-xs text-on-surface-variant font-label">
               Support
