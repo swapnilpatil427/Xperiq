@@ -16,6 +16,7 @@
     "hooks:install": "node scripts/install-git-hooks.mjs",
     "prepare":     "node scripts/install-git-hooks.mjs",
     "test":        "npm --prefix backend test && npm --prefix app test",
+    "build":       "npm --prefix backend run build && npm --prefix app run typecheck",
     "dev:dev-paid": "AGENTS_ENV=dev-paid npm run dev",
     "migrate":     "node scripts/migrate.js",
     "infra":       "node scripts/docker-compose.mjs up -d --build",

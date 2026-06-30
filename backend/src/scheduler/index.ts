@@ -20,7 +20,7 @@ import '../env';
 import express from 'express';
 import type { Request, Response } from 'express';
 import { register } from '../lib/metrics';
-import { query } from '../lib/db';
+import { query, waitForDb } from '../lib/db';
 import logger from '../lib/logger';
 import { start as startRunner, stop as stopRunner } from './runner';
 import { releaseLeadership } from './leader';
@@ -53,13 +53,27 @@ app.get('/metrics', async (_req: Request, res: Response) => {
 });
 
 const server = app.listen(PORT, () => logger.info({ port: PORT }, 'scheduler: http listening'));
-const handle = startRunner();
+
+let runnerHandle: NodeJS.Timeout | undefined;
+
+void (async () => {
+  try {
+    await waitForDb();
+    logger.info({}, 'scheduler: postgres ready');
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'scheduler: postgres not ready at startup — jobs will retry on next tick',
+    );
+  }
+  runnerHandle = startRunner();
+})();
 
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     logger.info({}, 'scheduler: shutting down');
     stopRunner();
-    clearInterval(handle);
+    if (runnerHandle) clearInterval(runnerHandle);
     void releaseLeadership();   // let a standby take over immediately
     server.close();
     setTimeout(() => process.exit(0), 500);

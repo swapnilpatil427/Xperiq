@@ -39,7 +39,10 @@
     "./report-composer",
     "./gap-analyst",
     "./case-advisor",
-    "./xo-fusion-advisor"
+    "./xo-fusion-advisor",
+    "./schema-mapper",
+    "./taxonomy-mapper",
+    "./metric-parity"
   ],
   "tools": {
     "get_survey_overview": "crystalos.crystal.tools:execute_get_survey_overview",
@@ -75,7 +78,9 @@
     "get_case_history": "crystalos.crystal.tools:execute_get_case_history",
     "propose_create_case": "crystalos.crystal.tools:execute_propose_create_case",
     "propose_assign_owner": "crystalos.crystal.tools:execute_get_ownership_route",
-    "propose_slack_alert": "crystalos.crystal.tools:execute_propose_slack_alert"
+    "propose_slack_alert": "crystalos.crystal.tools:execute_propose_slack_alert",
+    "get_unified_feedback": "crystalos.tools.prism_feedback:get_unified_feedback",
+    "get_insight_sources": "crystalos.tools.prism_feedback:get_insight_sources"
   },
   "mcp_servers": {}
 }

@@ -16,6 +16,7 @@ Legend: **[req]** required to run · **[opt]** optional (feature/integration) ·
 | Var | Status | Default | Purpose |
 |---|---|---|---|
 | `DATABASE_URL` | [req] | `postgresql://postgres:postgres@localhost:5432/xperiq` | Postgres connection |
+| `DB_CONNECTION_TIMEOUT_MS` | [opt] | `10000` | Max wait (ms) when opening a new Postgres pool connection |
 | `REDIS_URL` | [req prod / opt dev] | `redis://localhost:6379` | Rate limits, caches, streams, credit balance cache |
 | `OPENROUTER_API_KEY` | [req] | — | LLM gateway |
 | `AGENTS_INTERNAL_KEY` | [req] | `dev-internal-key-change-in-prod` | Shared secret: backend ↔ CrystalOS ↔ internal metering API. **Change in prod.** |
@@ -24,7 +25,8 @@ Legend: **[req]** required to run · **[opt]** optional (feature/integration) ·
 | `NODE_ENV` | [def] | — | `production` gates startup validation + `/api/metrics` IP allow |
 | `PORT` | [def] | `3001` | Backend port |
 | `LOG_LEVEL` / `LOG_PRETTY` | [opt] | — | Log verbosity / pretty output |
-| `ALLOWED_ORIGIN` / `FRONTEND_URL` | [opt] | — | CORS origin |
+| `ALLOWED_ORIGIN` / `FRONTEND_URL` | [opt] | — | CORS origin. `FRONTEND_URL` is also the base for Prism OAuth callback → FE redirects (`/app/prism/connect/:platform`); falls back to `ALLOWED_ORIGIN` then `http://localhost:5173`. |
+| `PUBLIC_API_URL` | [def] | `http://localhost:3001` | Publicly-reachable backend base URL — used to build the Prism OAuth `redirect_uri` (`${PUBLIC_API_URL}/api/prism/oauth/:platform/callback`). Must be the externally-resolvable origin in prod. |
 
 ## Auth (Clerk) — optional; absent ⇒ dev mode (dev-user/dev-org)
 | Var | Status | File | Purpose |
@@ -75,6 +77,59 @@ Legend: **[req]** required to run · **[opt]** optional (feature/integration) ·
 | `INSIGHT_INTERVAL_FREE_MIN` / `INSIGHT_INTERVAL_PAID_MIN` | 120 / 15 | Auto insight cadence |
 | `JOB_{EXPIRE_BROADCASTS,RECONCILIATION,COST_DOWN_DIVIDEND,CREDIT_LEDGER_MAINTENANCE,CREDENTIAL_HEALTH}` (+ `_SEC`) | enabled / per-job | Scheduler job toggles + intervals (`JOB_CREDENTIAL_HEALTH_SEC` default 21600 = 6h) |
 | `CREDENTIAL_EXPIRY_WARN_DAYS` | 14 | `credential-health` warns + alerts when a key's days-to-expiry drops below this |
+
+## Prism — data ingestion / migration engine (backend)
+
+Prism is wired **per environment** via `APP_ENV` (resolved in `backend/src/lib/prism/config.ts`).
+`getPrismConfig()` applies env-specific defaults; `validatePrismProductionConfig()` runs at boot
+in `index.ts` and, in **staging/production**, refuses to start on any fatal misconfig (mirrors the
+`AGENTS_INTERNAL_KEY` prod-validation precedent). See
+`docs/otherplatforms/migration/production-readiness.md` for the full topology + env matrix.
+
+### Environment selector
+| Var | Status | Default | Purpose |
+|---|---|---|---|
+| `APP_ENV` | [def] | `development` (falls back to `NODE_ENV`: `production` ⇒ production, else development) | `development` \| `staging` \| `production`. Drives every Prism default below; the two prod-like tiers (staging/prod) enable the boot-time production-readiness gate. |
+
+### Per-var matrix (Dev / Staging / Prod = **recommended** values; blank = unset)
+| Var | Status | Default | Dev | Staging | Prod | Purpose |
+|---|---|---|---|---|---|---|
+| `PRISM_UPLOAD_BACKEND` | [def] | `local` dev / `s3` prod-like | `local` | `s3` | `s3` | Uploaded-file store for `prism-upload://` refs. `local` = filesystem; `s3` = object storage (requires **`@aws-sdk/client-s3`** installed). **Fatal in staging/prod if still `local`** (Fly.io disks are ephemeral/non-shared). |
+| `PRISM_UPLOAD_DIR` | [def] | `<os.tmpdir()>/prism-uploads` | (default) | — | — | Root dir for the `local` backend (org-namespaced subdirs). Local-only. |
+| `PRISM_UPLOAD_MAX_MB` | [def] | `60` | `60` | `60` | `60` | Max upload size (MB) for `POST /api/prism/uploads` (also the `express.raw` limit). |
+| `PRISM_UPLOAD_S3_BUCKET` | [req if s3] | — | — | set | set | s3 bucket for uploads. **Fatal if `s3` and unset.** |
+| `PRISM_UPLOAD_S3_REGION` | [req if s3] | — | — | set | set | s3 region. **Fatal if `s3` and unset.** |
+| `PRISM_UPLOAD_S3_ENDPOINT` | [opt] | — (AWS default) | — | opt | opt | Custom S3-compatible endpoint (MinIO / Cloudflare R2 / Tigris on Fly). |
+| `PRISM_UPLOAD_S3_FORCE_PATH_STYLE` | [def] | `false` | — | per-provider | per-provider | `true` for path-style addressing (MinIO / some S3-compatibles). |
+| `PRISM_UPLOAD_S3_ACCESS_KEY_ID` | [opt] | — (falls back to instance IAM role) | — | opt | opt | s3 access key. Prefer instance IAM/role creds in prod; set only for static keys. |
+| `PRISM_UPLOAD_S3_SECRET_ACCESS_KEY` | [opt] | — (falls back to instance IAM role) | — | opt | opt | s3 secret key. Treat as a secret; never commit. |
+| `PRISM_SECRETS_BACKEND` | [def] | `local` dev / `gcp` prod-like | `local` | `gcp` | `gcp` | Credential store: `local` (envelope-encrypted file/in-mem, dev) \| `gcp` (GCP Secret Manager + Cloud KMS; `gcp_secret_manager` also accepted). **Fatal in staging/prod if `local`.** |
+| `PRISM_RAW_RETENTION` | [def] | `purge_after_reconcile` | `purge_after_reconcile` | `purge_after_reconcile` | `purge_after_reconcile` | Raw-staging retention: `keep` (debug/replay) \| `purge_after_reconcile` (PII-minimizing default). |
+| `PRISM_WORKER_ENABLED` | [def] | `true` | `true` (in-process) | `true` on worker group / `false` on web | `true` on worker group / `false` on web | Toggles the EXTRACT/LOAD engine worker loop (`startPrismWorker()`). Dev runs it in-process; prod runs it as a dedicated Fly `worker` process group. |
+| `PRISM_MAX_CONCURRENT_EXTRACT` | [def] | `4` dev / `8` prod-like | `4` | `8` | `8` | Global EXTRACT worker concurrency cap. |
+| `PRISM_SYNC_ENABLED` | [def] | `true` | `true` (in-process) | `true` on worker group / `false` on web | `true` on worker group / `false` on web | Toggles the continuous-sync (CDC) scheduler (`startPrismSyncScheduler()`). Same in-process-vs-worker-group split as the worker. |
+| `PRISM_SYNC_POLL_INTERVAL_S` | [def] | `300` dev / `3600` prod-like | `300` | `3600` | `3600` | Trust-but-verify poll cadence (s) for the sync scheduler's reconciling backstop. |
+| `PUBLIC_API_URL` | [def] / [req prod-like] | `http://localhost:3001` | `http://localhost:3001` | `https://api.staging…` | `https://api…` | Externally-reachable backend base — builds the Prism OAuth `redirect_uri` (`${PUBLIC_API_URL}/api/prism/oauth/:platform/callback`). **Fatal in staging/prod if unset** (OAuth breaks). |
+| `FRONTEND_URL` | [opt] / [req prod-like] | falls back to `ALLOWED_ORIGIN` → `http://localhost:5173` | `http://localhost:5173` | `https://app.staging…` | `https://app…` | FE base for the post-OAuth callback redirect (`/app/prism/connect/:platform`); also the CORS-related origin. **Fatal in staging/prod if unset** (OAuth callback breaks). |
+| `REDIS_URL` | [req prod-like] | `redis://localhost:6379` | optional (in-memory fallback) | set | set | Shared rate-limit token buckets, job queues, run-registry. **Fatal in staging/prod if unset** (multi-instance Prism is incorrect without it). |
+| `AGENTS_INTERNAL_KEY` | [req] | `dev-internal-key-change-in-prod` | (dev default ok) | non-default | non-default | Backend ↔ CrystalOS shared secret. **Fatal in staging/prod if missing or still the dev default.** |
+| `QUALTRICS_OAUTH_CLIENT_ID` / `QUALTRICS_OAUTH_CLIENT_SECRET` | [opt] | — | — | per-connector | per-connector | Qualtrics OAuth app (per-deploy creds; per-org tokens live in Secret Manager). |
+| `TYPEFORM_OAUTH_CLIENT_ID` / `TYPEFORM_OAUTH_CLIENT_SECRET` | [opt] | — | — | per-connector | per-connector | Typeform OAuth app (one-click connect via `/api/prism/oauth/typeform`). |
+| `SURVEYMONKEY_OAUTH_CLIENT_ID` / `SURVEYMONKEY_OAUTH_CLIENT_SECRET` | [opt] | — | — | per-connector | per-connector | SurveyMonkey OAuth app (`/api/prism/oauth/surveymonkey`). |
+| `GOOGLE_OAUTH_CLIENT_ID` / `GOOGLE_OAUTH_CLIENT_SECRET` | [opt] | — | — | per-connector | per-connector | Google OAuth app (Forms + Business Profile share it, scoped) — `/api/prism/oauth/google` (aliases `google_forms`/`google_business`/`gbp`/`forms`). |
+| `TRUSTPILOT_OAUTH_CLIENT_ID` / `TRUSTPILOT_OAUTH_CLIENT_SECRET` | [opt] | — | — | per-connector | per-connector | Trustpilot OAuth app (`/api/prism/oauth/trustpilot`). |
+| `APPLE_ASC_ISSUER_ID` / `APPLE_ASC_KEY_ID` | [opt] | — | — | per-connector | per-connector | App Store Connect JWT identifiers (per-org `.p8` key in Secret Manager, **not** env). |
+
+> **s3 dependency:** the `s3` upload backend requires `@aws-sdk/client-s3` to be installed
+> (`cd backend && npm i @aws-sdk/client-s3`). Owned by the storage agent — not a dependency of
+> `config.ts`/`index.ts`, which only validate the *intent*.
+>
+> **Fatal-in-prod recap** (staging/production refuse boot): `REDIS_URL` unset · `PRISM_UPLOAD_BACKEND=local`
+> (or `s3` without bucket/region) · `PRISM_SECRETS_BACKEND=local` · `AGENTS_INTERNAL_KEY` missing/default ·
+> `PUBLIC_API_URL` unset · `FRONTEND_URL` unset.
+>
+> Per-org / per-connection credentials live in **Secret Manager** (referenced by `credential_ref`),
+> never in env or Postgres. See `docs/otherplatforms/migration/security-compliance.md` §2.
 
 ## Integrations — optional
 | Var(s) | Purpose |
@@ -165,6 +220,41 @@ ENABLE_STREAM_CONSUMER=true
 # CREDENTIAL_EXPIRY_WARN_DAYS=14    # warn/alert when a key is <14d from expiry
 # INSIGHT_INTERVAL_FREE_MIN=120
 # INSIGHT_INTERVAL_PAID_MIN=15
+
+# ── Prism — data ingestion / migration engine ─────────────────────────────
+APP_ENV=development                   # development | staging | production (falls back to NODE_ENV)
+PRISM_SECRETS_BACKEND=local           # dev: local | staging/prod: gcp (Secret Manager + KMS)
+PRISM_RAW_RETENTION=purge_after_reconcile   # keep | purge_after_reconcile
+PRISM_UPLOAD_BACKEND=local            # dev: local | staging/prod: s3 (needs @aws-sdk/client-s3)
+# PRISM_UPLOAD_DIR=                   # local backend root; default: <os.tmpdir()>/prism-uploads
+# PRISM_UPLOAD_MAX_MB=60
+# ── s3 upload backend (staging/prod) — `npm i @aws-sdk/client-s3` ──
+# PRISM_UPLOAD_S3_BUCKET=
+# PRISM_UPLOAD_S3_REGION=
+# PRISM_UPLOAD_S3_ENDPOINT=            # custom S3-compatible endpoint (R2/MinIO/Tigris)
+# PRISM_UPLOAD_S3_FORCE_PATH_STYLE=false
+# PRISM_UPLOAD_S3_ACCESS_KEY_ID=       # prefer instance IAM role in prod
+# PRISM_UPLOAD_S3_SECRET_ACCESS_KEY=
+# ── Workers (dev: in-process; prod: dedicated Fly `worker` process group) ──
+PRISM_WORKER_ENABLED=true             # EXTRACT/LOAD engine worker loop
+# PRISM_MAX_CONCURRENT_EXTRACT=4       # dev default 4; staging/prod 8
+PRISM_SYNC_ENABLED=true               # continuous-sync (CDC) scheduler
+# PRISM_SYNC_POLL_INTERVAL_S=300       # dev default 300; staging/prod 3600
+# ── OAuth URLs — REQUIRED in staging/prod (boot refuses without them) ──
+# PUBLIC_API_URL=http://localhost:3001   # externally-reachable backend base for OAuth redirect_uri
+# FRONTEND_URL=http://localhost:5173     # FE base for OAuth callback redirects
+# QUALTRICS_OAUTH_CLIENT_ID=
+# QUALTRICS_OAUTH_CLIENT_SECRET=
+# TYPEFORM_OAUTH_CLIENT_ID=
+# TYPEFORM_OAUTH_CLIENT_SECRET=
+# SURVEYMONKEY_OAUTH_CLIENT_ID=
+# SURVEYMONKEY_OAUTH_CLIENT_SECRET=
+# GOOGLE_OAUTH_CLIENT_ID=
+# GOOGLE_OAUTH_CLIENT_SECRET=
+# TRUSTPILOT_OAUTH_CLIENT_ID=
+# TRUSTPILOT_OAUTH_CLIENT_SECRET=
+# APPLE_ASC_ISSUER_ID=
+# APPLE_ASC_KEY_ID=
 
 # ── Notifications / Novu (optional) ────────────────────────────────────────
 # NOVU_API_KEY=

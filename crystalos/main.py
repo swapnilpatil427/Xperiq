@@ -11,6 +11,9 @@ Endpoints:
   PATCH /orchestrate/{run_id}/questions/{q_id}         — Update specific fields on a question
   POST /orchestrate/{run_id}/reorder                   — Reorder questions
   POST /orchestrate/{run_id}/apply-recommendation/{action_id} — Execute a recommendation action
+  POST /prism/map                                      — Prism schema-mapper (field mapping proposals)
+  POST /prism/taxonomy                                 — Prism taxonomy-mapper (topic-label reconciliation)
+  POST /prism/parity                                   — Prism metric-parity (metric-gap explainer)
   GET  /agents/registry                                — List all agent manifests
   GET  /health
   GET  /metrics
@@ -1240,6 +1243,138 @@ async def generate_sample_responses(
 
     responses, _ = await response_generator_agent.run(inp)
     return {"responses": responses, "count": len(responses)}
+
+
+# ── Prism: import-mapping skills (schema-mapper / taxonomy-mapper / metric-parity) ─
+# The Node backend's Prism resolver calls these via agentsClient (X-Internal-Key).
+# Each is org_id-scoped, structured-JSON (not SSE), and runs a single skill via the
+# skill registry — mirroring the compliance-scanner dispatch in _dispatch_recommendation.
+# CrystalOS PROPOSES; the backend persists on confirm. These never mutate state.
+
+async def _run_prism_skill(skill_name: str, org_id: str, skill_input: dict) -> dict:
+    """Run a single Prism skill via the skill registry and return its raw output dict.
+
+    Mirrors the registry.execute() pattern used by check_compliance above:
+    `result = await registry.execute(name, input_data, ctx)` → result["output"].
+    Raises HTTPException on missing org_id / uninitialised registry / skill error.
+    """
+    if not org_id:
+        raise HTTPException(status_code=400, detail="org_id required")
+
+    from crystalos.lib.skill_registry import get_registry as _get_skill_reg
+    reg = _get_skill_reg()
+    if not reg.is_initialized() or reg.get_skill_meta(skill_name) is None:
+        raise HTTPException(status_code=503, detail=f"Skill {skill_name!r} unavailable")
+
+    try:
+        # ctx carries org_id so the example-bank writer is org-scoped.
+        result = await reg.execute(skill_name, skill_input, {"org_id": org_id})
+    except Exception as exc:
+        logger.warning("prism_skill_failed", skill=skill_name, org_id=org_id, error=str(exc))
+        raise HTTPException(status_code=502, detail=f"{skill_name} failed: {str(exc)[:160]}")
+
+    output = result.get("output") or {}
+    if not output or ("error" in output and len(output) == 1):
+        raise HTTPException(status_code=502, detail=f"{skill_name} returned no usable output")
+    return output
+
+
+@app.post("/prism/map", summary="Prism schema-mapper — propose field mappings for the residual")
+async def prism_map(request: Request, _: None = Depends(require_internal_key)) -> dict:
+    """Run the schema-mapper skill on the ambiguous residual fields.
+
+    Body: { org_id, connection_id, platform, fields: [...], samples? }
+    `fields` are the residual source fields the deterministic L1/L2 layers could not
+    resolve; passed through as the skill's `source_fields`. Returns { mappings: [...] }.
+    """
+    body          = await request.json()
+    org_id        = body.get("org_id", "")
+    connection_id = body.get("connection_id", "")
+    platform      = body.get("platform", "")
+    fields        = body.get("fields") or []
+    samples       = body.get("samples") or {}
+
+    # Map the endpoint body → schema-mapper input schema (see skills/schema-mapper/SKILL.md).
+    # TODO(verify): the resolver currently sends only {name, type}; richer fields
+    # (label/sample_values/option_labels) flow through when the connector profile carries them.
+    skill_input = {
+        "source_platform": platform,
+        "source_fields":   fields,
+        "target_questions": body.get("target_questions") or [],
+        "known_metrics":   body.get("known_metrics") or [],
+        "samples":         samples,
+    }
+    output = await _run_prism_skill("schema-mapper", org_id, skill_input)
+    logger.info("prism_map", org_id=org_id, connection_id=connection_id,
+                field_count=len(fields), mapping_count=len(output.get("mappings") or []))
+    return {"mappings": output.get("mappings") or [],
+            "unmapped": output.get("unmapped") or [],
+            "scale_changes": output.get("scale_changes") or [],
+            "summary": output.get("summary", "")}
+
+
+@app.post("/prism/taxonomy", summary="Prism taxonomy-mapper — reconcile imported topic labels")
+async def prism_taxonomy(request: Request, _: None = Depends(require_internal_key)) -> dict:
+    """Run the taxonomy-mapper skill to reconcile imported labels against the registry.
+
+    Body: { org_id, survey_id, imported_labels: [...], existing_topics: [...] }
+    Returns { resolutions: [...] } (+ conflicts / registry_additions).
+    """
+    body            = await request.json()
+    org_id          = body.get("org_id", "")
+    survey_id       = body.get("survey_id", "")
+    imported_labels = body.get("imported_labels") or []
+    existing_topics = body.get("existing_topics") or []
+
+    # Map the endpoint body → taxonomy-mapper input schema (skills/taxonomy-mapper/SKILL.md).
+    skill_input = {
+        "source_platform": body.get("platform", ""),
+        "imported_labels": imported_labels,
+        "registry_topics": existing_topics,
+    }
+    output = await _run_prism_skill("taxonomy-mapper", org_id, skill_input)
+    logger.info("prism_taxonomy", org_id=org_id, survey_id=survey_id,
+                label_count=len(imported_labels),
+                resolution_count=len(output.get("resolutions") or []))
+    return {"resolutions": output.get("resolutions") or [],
+            "conflicts": output.get("conflicts") or [],
+            "registry_additions": output.get("registry_additions") or [],
+            "summary": output.get("summary", "")}
+
+
+@app.post("/prism/parity", summary="Prism metric-parity — explain a metric gap + recommend a method")
+async def prism_parity(request: Request, _: None = Depends(require_internal_key)) -> dict:
+    """Run the metric-parity skill to explain a source-vs-Prism metric delta.
+
+    Body: { org_id, survey_id, metric, source_value, responses_summary }
+    Returns { explanation, recommended_method, parity_ledger }.
+    """
+    body               = await request.json()
+    org_id             = body.get("org_id", "")
+    survey_id          = body.get("survey_id", "")
+    metric             = body.get("metric", "")
+    source_value       = body.get("source_value")
+    responses_summary  = body.get("responses_summary") or {}
+
+    # Map the endpoint body → metric-parity input schema (skills/metric-parity/SKILL.md).
+    # `responses_summary` carries the response evidence + prism_computed + method context.
+    skill_input = {
+        "survey_id":         survey_id,
+        "metric":            metric,
+        "source_reported":   source_value,
+        "prism_computed":    responses_summary.get("prism_computed"),
+        "response_window":   responses_summary.get("response_window") or {},
+        "method_context":    responses_summary.get("method_context") or {},
+        "response_evidence": responses_summary.get("response_evidence") or responses_summary,
+    }
+    output = await _run_prism_skill("metric-parity", org_id, skill_input)
+    logger.info("prism_parity", org_id=org_id, survey_id=survey_id, metric=metric)
+    return {"explanation": output.get("explanation", ""),
+            "hypothesis": output.get("hypothesis") or {},
+            "recommended_method": output.get("recommended_method", "match_source"),
+            "recommendation_rationale": output.get("recommendation_rationale", ""),
+            "parity_ledger": output.get("parity_ledger") or {},
+            "citations": output.get("citations") or []}
 
 
 # ── Crystal: stateful conversational analyst ─────────────────────────────────────
