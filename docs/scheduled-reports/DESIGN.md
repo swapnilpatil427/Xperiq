@@ -45,15 +45,15 @@ Intelligence Briefings are created through the standard Automation Hub flow at `
 
 ### Creation Flow
 
-1. User navigates to `/workflows` → clicks `+ New Workflow`
-2. Builder opens in Crystal Builder mode (default for new workflows)
+1. User navigates to `/app/workflows` → clicks `+ New Automation`
+2. Builder opens — user selects `✦ Intelligence Briefing` type in the New Automation sheet, or types a description in the Crystal Builder bar
 3. User either:
-   - **Types a description** in the NL input: _"Send me a weekly NPS digest every Monday morning"_ → Crystal fills the builder with a `schedule` trigger and a `generate_briefing` action card
-   - **Browses templates** → selects one of the 6 Intelligence Briefing templates from the Template Gallery (templates 2, 10, and the 4 briefing-specific templates in the gallery)
-   - **Builds manually** → switches to Visual Builder, adds a `Schedule` trigger, then adds a `✦ Intelligence Briefing` action card from the Actions left panel
-4. The `✦ Intelligence Briefing` action card is selected → right panel shows briefing-specific configuration (Section 3 below)
-5. User configures template, tone, time range, scope, and sections in the right panel
-6. User clicks `Enable` — briefing automation is active
+   - **Types a description** in the Crystal Builder NL input: _"Send me a weekly NPS digest every Monday morning"_ → Crystal fills the canvas with a `schedule` trigger and a `Generate Briefing` action card
+   - **Browses templates** → selects one of the 6 Intelligence Briefing templates from the Template Gallery
+   - **Builds manually** → uses Visual Builder, adds a `Schedule` trigger, then adds a `✦ Generate Briefing` action card from the canvas palette
+4. The `✦ Generate Briefing` card is selected → right panel shows briefing-specific configuration (Section 3 below)
+5. User configures template, audience, time range, scope, and sections in the right panel
+6. User clicks `Enable →` — briefing automation is active
 
 ### The Action Card (Center Canvas)
 
@@ -136,10 +136,10 @@ The output destination depends on the briefing's scope (Field 4):
 
 **Org-scoped or tag-scoped** (Scope ≠ single survey):
 - There is no per-survey trail to write to
-- Full reports for org/tag scope are stored in the `org_briefing_archive` (new — see TASK-046)
-- Accessible from: Command Center → "Briefing Archive" tab, and from the automation's run history
-- Route: `/app/briefings/:reportId` — uses the same `InsightReportPage` component with org-scoped data adapter
-- Email CTA: `View full report in Xperiq →` links to this route
+- Full reports for org/tag scope are stored in an `org_briefing_archive` table (deferred — will be specified as part of the Command Center feature, not this document)
+- The `/app/briefings/:reportId` route and the "Briefing Archive" tab in Command Center are both **deferred to Command Center**. Do not build them as part of this feature.
+- For now, org/tag briefings complete with `data_status: 'pending_feature'` (see Org-Scoped section below)
+- When Command Center ships, the org_briefing_archive table, /app/briefings/ route, and InsightReportPage org-scoped adapter will be specced in that document.
 
 ---
 
@@ -161,22 +161,38 @@ The output destination depends on the briefing's scope (Field 4):
 
 **On change:** Mini email preview thumbnail (Field 8) updates immediately with new template structure skeleton.
 
-### Field 2: Tone Selector
+### Field 2: Audience Selector
 
-**Label:** `Tone` in same style as Field 1 label. `mt-4 mb-1.5`
+Replaces the old Tone selector. Uses the `AudienceSelector` component (defined in `docs/workflows/DESIGN.md` Gap Fix v2.1 Fix 4).
 
-**Control:** Three-button segmented control. Total width: 100% of panel minus 32px horizontal padding. Buttons equal width.
+**Label:** `Audience` in same style as Field 1 label. `mt-4 mb-1.5`
+
+**Control:** Three radio cards, stacked vertically.
 
 ```
-[ Formal ]  [ Professional ]  [ Conversational ]
+┌───────────────────────────────────────────────────┐
+│  ○  Executive                                     │
+│     Focused. Fewer sections, stronger headline.   │
+├───────────────────────────────────────────────────┤
+│  ●  Team                                          │
+│     Balanced. All key sections, curated verbatims.│
+├───────────────────────────────────────────────────┤
+│  ○  Analyst                                       │
+│     Full depth. All sections + velocity chart.    │
+└───────────────────────────────────────────────────┘
 ```
 
-- Container: `flex rounded-lg border border-gray-200 overflow-hidden h-[34px]`
-- Inactive button: `flex-1 text-[12px] font-medium text-gray-600 bg-white hover:bg-gray-50 transition-colors`
-- Active button: `flex-1 text-[12px] font-medium text-indigo-700 bg-indigo-50 border-x border-indigo-200`
-- Default: `Professional`
+- Container: `flex flex-col gap-1.5 mt-1`
+- Unselected card: `rounded-lg border border-gray-200 px-3 py-2 cursor-pointer hover:bg-gray-50 transition-colors`
+- Selected card: `rounded-lg border-2 border-indigo-500 bg-indigo-50 px-3 py-2`
+- Label: `text-[13px] font-medium text-gray-900`
+- Description: `text-[11px] text-gray-500 mt-0.5`
+- Default: `Team`
+- On switch: show confirmation `"Switching audience will reset your section order. Continue?"` (shadcn `AlertDialog`)
 
-**Effect:** Tone affects only Crystal's narrative writing style. It does not change which sections are included. The mini preview does not reflect tone visually.
+**Effect:** Audience controls both which sections are included AND Crystal's narrative depth/style. Switching to `Executive` collapses low-priority sections; `Analyst` adds the velocity chart section. The mini preview thumbnail updates to reflect the section count change.
+
+**See also:** `AudienceSelector` component at `app/src/components/automations/builder/config/AudienceSelector.tsx`.
 
 ### Field 3: Time Range
 
@@ -298,7 +314,9 @@ Clicking triggers the live preview flow (Section 6: Micro-Interactions).
 
 ## 4. Surface: Briefing Delivery View
 
-**Route:** `/app/automations/:id/runs/:runId`
+**Route:** `/app/workflows/:id/runs/:runId`
+
+<!-- ENT-028 applied -->
 
 This is where users view, share, and download a generated briefing. It is the primary visual surface for the Intelligence Briefings feature — the equivalent of opening an email in an email client, but richer.
 
@@ -757,14 +775,22 @@ The footer CTA changes based on `output_mode` (Field 0):
 ```
 Unsubscribe from this report &middot; Generated by Crystal AI &middot; Xperiq
 ```
-Each word/phrase separated by `·`. "Unsubscribe from this report" is an `<a>` linking to `/api/reports/unsubscribe/{token}` — the unsubscribe token is per-recipient, generated at delivery time, never expires.
+Each word/phrase separated by `·`. "Unsubscribe from this report" is an `<a>` linking to `/api/reports/unsubscribe/{token}` — the unsubscribe token is per-recipient, generated at delivery time.
+
+#### Unsubscribe Tokens
+
+Unsubscribe tokens use deterministic HMAC-SHA256: `token = HMAC-SHA256(UNSUBSCRIBE_SECRET, email + ':' + automation_id)`. The token never expires (deterministic — no state needed to verify), but cannot be brute-forced without the server secret. Unsubscribes are stored in `briefing_unsubscribes(org_id, automation_id, email, unsubscribed_at)`. The scheduler checks this table before each delivery and omits unsubscribed emails. Unsubscribe requests are processed immediately (no 10-day delay). A confirmation page shows: "You have unsubscribed from \"{automation name}\" briefings. [Resubscribe]". The resubscribe link removes the `briefing_unsubscribes` row.
+
+<!-- ENT-020 applied -->
 
 ---
 
-### Right Sidebar Spec (280px)
+### Right Sidebar Spec (320px)
 
-**Container:** `w-[280px] shrink-0 bg-white border-l border-gray-200 overflow-y-auto`
+**Container:** `w-[320px] shrink-0 bg-white border-l border-gray-200 overflow-y-auto`
 **Padding:** `px-5 py-6`
+
+> **Canonical reference:** The sidebar layout, button set, and share block are **fully specified in `docs/workflows/DESIGN.md` §4.2 (Briefing Delivery Sidebar)**. This section documents only the briefing-specific metadata fields that differ from the generic sidebar. In case of conflict, `workflows/DESIGN.md` takes precedence.
 
 #### Sidebar Section 1: Report Identity
 
@@ -780,12 +806,12 @@ Value style: `text-[13px] text-gray-700`
 | Label | Value |
 |---|---|
 | Generated | `Jun 30, 2026 at 6:02am PT` |
-| Generation Time | `8.4s` |
-| Data Range | `Jun 23 – Jun 29, 2026` |
-| Responses Analyzed | `412` |
+| Duration | `8.4s` |
+| Data range | `Jun 23 – Jun 29, 2026` |
 | Recipients | `4 recipients` |
-| Open Rate | `3 of 4 opened (75%)` |
 | Run ID | `run_a8f3b2c1` in `text-[11px] font-mono text-gray-400` |
+
+> Open Rate (`3 of 4 opened`) is shown inline within the Recipients row expansion (clicking "4 recipients" expands per-recipient status), not as a separate metadata row. This matches `workflows/DESIGN.md` §4.2 which shows 5 fields.
 
 **Recipients value:** Clicking `"4 recipients"` expands an inline list of recipient names/emails with per-recipient open status (checkmark or dash). Expansion: `AnimatePresence` height animation 200ms.
 
@@ -793,19 +819,27 @@ Value style: `text-[13px] text-gray-700`
 
 Three buttons stacked, `mt-5 flex flex-col gap-2`:
 
-**1. Resend to me** (primary button)
+**1. Resend** (primary button)
 `w-full h-[36px] rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700 active:bg-indigo-800 transition-colors`
-- On click: `POST /api/reports/{reportId}/runs/{runId}/resend-to-me` — delivers the existing artifact (no re-generation). Button shows loading spinner during request. On success: `"Sent to {userEmail}"` toast (3s).
+- On click: `POST /api/automations/{automationId}/runs/{runId}/resend` — resends to all original recipients (no re-generation). Button shows loading spinner during request. On success: `"Resent to 4 recipients"` toast (3s). Matches `workflows/DESIGN.md` §4.2.
+
+#### Resend Validation
+
+Resend delivers to the original captured recipient list (not the current configuration). If any original recipient's email is no longer associated with an active org member, a warning is shown in the resend confirm sheet: "2 recipients are no longer active org members — they will still receive this email." Maximum 3 resends per run; the Resend button is disabled after the 3rd resend with tooltip "Maximum resends reached for this run."
+
+<!-- ENT-018 applied -->
 
 **2. Edit automation →** (outlined button)
 `w-full h-[36px] rounded-lg border border-gray-200 text-gray-700 text-[13px] font-medium hover:bg-gray-50 transition-colors`
-- Navigates to `/workflows/{automationId}/edit`
+- Navigates to `/app/workflows/build?id={automationId}` (matches `ROUTES.WORKFLOW_BUILD` in `app/src/constants/routes.ts`)
 
 **3. Download PDF** (outlined button)
 `w-full h-[36px] rounded-lg border border-gray-200 text-gray-700 text-[13px] font-medium hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5`
 - Lucide `Download` icon (14px) + `"Download PDF"` text
-- On click: `GET /api/reports/{reportId}/runs/{runId}/artifact/pdf` — triggers browser download
+- On click: `GET /api/automations/:id/runs/:runId/export?format=pdf` — triggers browser download
 - If `pdf_storage_key` is null: button is disabled with tooltip `"PDF not available for this run"`
+
+<!-- ENT-025 applied (scheduled-reports/DESIGN.md half) -->
 
 #### Sidebar Section 4: Share
 
@@ -828,6 +862,18 @@ Three buttons stacked, `mt-5 flex flex-col gap-2`:
 - The shared route renders the email container only (no sidebar, no app chrome) with a minimal header: Xperiq logo + `"Shared Intelligence Briefing"` + expiry notice
 - Link is valid for exactly 30 days from creation, not from the run date
 - Multiple clicks generate the same token (idempotent); the expiry is reset on each POST call
+
+#### Share Link Security
+
+The shared view omits all verbatim respondent quotes — the "Moments That Mattered" section shows only theme summaries and counts (e.g., "7 responses mentioned billing complexity"), never raw verbatim text.
+
+Each access to a share link is logged: `share_link_accesses(share_token, accessed_at, ip_hash)`. Logs are retained for 90 days.
+
+Org admins can revoke any active share link before expiry via `DELETE /api/automations/:id/runs/:runId/share`. Revoked links return HTTP 410.
+
+Share link expiry defaults to 30 days but org admins can configure 7 / 14 / 30 / 90 days in org settings.
+
+<!-- ENT-003 applied -->
 
 ---
 
@@ -1133,6 +1179,10 @@ This automation hasn't run. Enable it or trigger a manual run.
 
 The CrystalOS `report_generation_graph` skill always produces an `InsightReport` document as its canonical output. Email HTML, Slack messages, and PDFs are all renderings derived from that report. There is no separate "format for trail" conversion node — the report is the output, and delivery formats are secondary.
 
+Briefing artifacts containing verbatim quotes are subject to GDPR erasure. See `docs/automation-hub/ARCHITECTURE.md §Data Erasure` for the full erasure procedure.
+
+<!-- ENT-005 applied (scheduled-reports/DESIGN.md half) -->
+
 ```
 Scheduled automation fires
          ↓
@@ -1182,12 +1232,30 @@ Generate a fresh InsightReport → write new trail checkpoint → deduct credit 
 
 **Case B — Insufficient new data, prior report exists:**
 1. Load the most recent InsightReport for this survey
-2. Clone it as a new InsightReport row with today's run timestamp — no banner, no indicator, no `data_note`
-3. Write a new trail checkpoint stamped with today's date — indistinguishable from a freshly generated checkpoint
-4. Deduct credit
-5. Deliver to recipients exactly as if the report were freshly generated — same email, same content, same "View Full Report →" link pointing to the cloned report
+2. Clone it as a new InsightReport row with today's run timestamp; set `data_status: 'cloned_prior'` on the cloned row
+3. Write a new trail checkpoint stamped with today's date; set `tier_label: 'cloned_prior'`
+4. Deduct 0.25 credits (not a full credit) — only delivery occurs, no new analysis is generated. The credits/usage page shows a separate row type "Cloned delivery (no new data)" for Case B runs, distinguishing them from "Generated briefing" rows. Enterprise customers can view a monthly breakdown of generated vs. cloned runs in their billing portal. If an org has more than 50% of their monthly runs as Case B (indicating a configuration issue or low survey volume), the org admin receives a monthly digest notification.
 
-The recipient experience is identical to a fresh report week. Cadence is maintained without surfacing data gaps to end users.
+<!-- ENT-024 applied -->
+5. Deliver to recipients with the cloned content PLUS a subtle disclosure notice at the top of the email, inside the header section:
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  Weekly NPS Digest — Jun 30, 2026                           │
+│                                                             │
+│  ↻ Showing last week's report — not enough new responses   │
+│    this week to generate a fresh briefing.                  │
+│    (11px, text-gray-400, italic, below the date line)       │
+└────────────────────────────────────────────────────────────┘
+```
+
+- Disclosure text: `"↻ Showing last week's report — not enough new responses this week to generate a fresh briefing."`
+- Style: `font-size: 11px; color: #9CA3AF; font-style: italic; margin: 4px 0 16px;`
+- This disclosure is **email-only** (not shown in the web delivery view sidebar, which already shows the data range)
+
+6. Notify the survey admin (in-app notification, same pattern as Case C): `"Weekly NPS Digest: not enough new responses this week — last week's report was delivered."`
+
+The cadence is maintained without silently misleading recipients — the disclosure is subtle (11px italic) so it doesn't alarm subscribers, but it is present and honest.
 
 ---
 
@@ -1298,8 +1366,9 @@ Org-wide and tag-group scope are supported in the **Automation Hub builder** (th
 
 When a user configures an org/tag-scoped briefing and it fires:
 - Backend detects `scope !== 'survey'`
-- Run completes with `status: 'pending_feature'`
-- Automation card shows a pill: `"Org-scope — coming soon"` in amber
+- Run completes with `status: 'completed'` and `data_status: 'pending_feature'` in the run payload (not as a `workflow_runs.status` value — the valid status values are `pending`, `running`, `completed`, `failed`, `partial_failure`, `dry_run`)
+- Automation card footer shows `"Org-scope — coming soon"` in amber (`bg-amber-50 text-amber-600 text-xs rounded-full px-2 py-0.5`) alongside the normal status pill
+- In-app notification to the admin: `"Org-wide briefings are coming soon. Your briefing ran but no report was generated yet."`
 - No report is generated, no email sent
 
 This gives the builder the correct structure for when org/tag generation ships (likely tied to Command Center), without silently failing or blocking the survey-scoped work.
@@ -1372,10 +1441,14 @@ briefings: {
   panelTitle: '✦ Intelligence Briefing',
   panelSubtitle: 'Configure what Crystal will generate and send.',
   templateLabel: 'Template',
-  toneLabel: 'Tone',
-  toneFormal: 'Formal',
-  toneProfessional: 'Professional',
-  toneConversational: 'Conversational',
+  audienceLabel: 'Audience',
+  audienceExecutive: 'Executive',
+  audienceExecutiveDesc: 'Focused. Fewer sections, stronger headline.',
+  audienceTeam: 'Team',
+  audienceTeamDesc: 'Balanced. All key sections, curated verbatims.',
+  audienceAnalyst: 'Analyst',
+  audienceAnalystDesc: 'Full depth. All sections + velocity chart.',
+  audienceSwitchWarning: 'Switching audience will reset your section order. Continue?',
   timeRangeLabel: 'Time Range',
   timeRangeLast7: 'Last 7 days',
   timeRangeLast30: 'Last 30 days',
@@ -1445,13 +1518,13 @@ briefings: {
   // Delivery view sidebar
   sidebarSubtitle: 'Intelligence Briefing',
   metaGeneratedLabel: 'Generated',
-  metaDurationLabel: 'Generation Time',
-  metaDataRangeLabel: 'Data Range',
-  metaResponsesLabel: 'Responses Analyzed',
+  metaDurationLabel: 'Duration',
+  metaDataRangeLabel: 'Data range',
   metaRecipientsLabel: 'Recipients',
-  metaOpenRateLabel: 'Open Rate',
   metaRunIdLabel: 'Run ID',
-  resendToMeButton: 'Resend to me',
+  // Open Rate is shown inside the recipients expansion row, not as a top-level field
+  metaOpenRateInline: '{opened} of {total} opened ({pct}%)',
+  resendButton: '↻ Resend',  // resends to all original recipients
   editAutomationButton: 'Edit automation →',
   downloadPdfButton: 'Download PDF',
   pdfUnavailableTooltip: 'PDF not available for this run',
@@ -1508,26 +1581,27 @@ briefings: {
 
 ## Component Inventory (Briefings-Specific)
 
-All briefing-specific components live in `app/src/components/workflows/briefings/` (subfolder of the existing workflows component tree):
+Briefing-specific components use the canonical paths from `docs/workflows/DESIGN.md`. The old `app/src/components/workflows/briefings/` path is **deprecated** — do not create files there.
 
-| Component | File | Description |
+| Component | Canonical path | Description |
 |---|---|---|
-| `BriefingConfigPanel` | `BriefingConfigPanel.tsx` | Right panel when briefing action is selected |
-| `TemplateSelectorDropdown` | `TemplateSelectorDropdown.tsx` | Template picker with icons |
-| `ToneSegmentedControl` | `ToneSegmentedControl.tsx` | Formal / Professional / Conversational |
-| `SectionsListEditor` | `SectionsListEditor.tsx` | Drag-to-reorder sections with @dnd-kit |
-| `BriefingMiniPreview` | `BriefingMiniPreview.tsx` | SVG skeleton thumbnail |
-| `BriefingDeliveryView` | `BriefingDeliveryView.tsx` | Full delivery view page layout |
-| `BriefingEmailContainer` | `BriefingEmailContainer.tsx` | 600px email container web rendering |
-| `BriefingKPIRow` | `BriefingKPIRow.tsx` | KPI row with count-up animation |
-| `BriefingTopicsSection` | `BriefingTopicsSection.tsx` | Topic chips (interactive in web view) |
-| `BriefingNPSTrendChart` | `BriefingNPSTrendChart.tsx` | Interactive Recharts NPS chart |
-| `BriefingSidebar` | `BriefingSidebar.tsx` | Right sidebar with metadata + actions |
-| `BriefingShareButton` | `BriefingShareButton.tsx` | Copy-link button with clipboard logic |
-| `BriefingProgressDots` | `BriefingProgressDots.tsx` | Animated stage progress indicator |
-| `BriefingInsufficientDataBanner` | `BriefingInsufficientDataBanner.tsx` | Low-data warning banner |
-| `BriefingErrorState` | `BriefingErrorState.tsx` | Generation-failed empty state |
-| `SharedBriefingPage` | `SharedBriefingPage.tsx` | Unauthenticated shared briefing route |
+| `GenerateBriefingConfigPanel` | `app/src/components/automations/builder/config/GenerateBriefingConfigPanel.tsx` | Right panel when Generate Briefing action is selected |
+| `TemplateSelectorDropdown` | `app/src/components/automations/builder/config/TemplateSelectorDropdown.tsx` | Template picker with icons |
+| `AudienceSelector` | `app/src/components/automations/builder/config/AudienceSelector.tsx` | Executive / Team / Analyst audience radio cards |
+| `SectionsReorderList` | `app/src/components/automations/builder/config/SectionsReorderList.tsx` | Drag-to-reorder sections with @dnd-kit |
+| `MiniEmailPreview` | `app/src/components/automations/builder/MiniEmailPreview.tsx` | SVG skeleton thumbnail |
+| `BriefingDeliveryPage` | `app/src/pages/automations/BriefingDeliveryPage.tsx` | Full delivery view page layout |
+| `BriefingEmailRenderer` | `app/src/components/automations/delivery/BriefingEmailRenderer.tsx` | 600px email container web rendering |
+| `BriefingKPIRow` | `app/src/components/automations/delivery/BriefingKPIRow.tsx` | KPI row with count-up animation |
+| `BriefingTopicsSection` | `app/src/components/automations/delivery/BriefingTopicsSection.tsx` | Topic chips (interactive in web view) |
+| `BriefingNPSTrendChart` | `app/src/components/automations/delivery/BriefingNPSTrendChart.tsx` | Interactive Recharts NPS chart |
+| `BriefingDeliverySidebar` | `app/src/components/automations/delivery/BriefingDeliverySidebar.tsx` | Right sidebar with metadata + actions |
+| `BriefingShareButton` | `app/src/components/automations/delivery/BriefingShareButton.tsx` | Copy-link button with clipboard logic |
+| `BriefingProgressDots` | `app/src/components/automations/delivery/BriefingProgressDots.tsx` | Animated stage progress indicator |
+| `BriefingInsufficientDataBanner` | `app/src/components/automations/delivery/BriefingInsufficientDataBanner.tsx` | Low-data warning banner (Case A) |
+| `BriefingCaseB` | `app/src/components/automations/delivery/BriefingCaseB.tsx` | "Showing last week's report" email disclosure (Case B) |
+| `BriefingErrorState` | `app/src/components/automations/delivery/BriefingErrorState.tsx` | Generation-failed empty state |
+| `SharedBriefingPage` | `app/src/pages/SharedBriefingPage.tsx` | Unauthenticated shared briefing route |
 
 ---
 
