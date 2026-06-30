@@ -498,6 +498,119 @@ export async function triggerRun(
 }
 
 
+// ── Prism: import-mapping skills (schema-mapper / taxonomy-mapper / metric-parity) ─
+// These power the L3 residual of the Prism deterministic-first resolver. CrystalOS
+// PROPOSES; the backend persists on confirm. Each is org_id-scoped and structured-JSON.
+
+import type { FieldMapping, ParityEntry } from '../types/prism';
+
+/**
+ * Propose Xperiq field mappings for the ambiguous residual source fields via the
+ * CrystalOS `schema-mapper` skill (Prism resolver Layer 3). The deterministic L1/L2
+ * layers resolve ~80-90% of fields; only the residual reaches here.
+ *
+ * @param args.orgId
+ * @param args.connectionId
+ * @param args.platform        - source platform ('qualtrics' | 'typeform' | 'csv' | ...)
+ * @param args.fields          - residual source fields (name/type [+ label/samples])
+ * @param args.samples         - optional per-field sample values
+ * @returns Promise<{ mappings: FieldMapping[] }>
+ */
+export async function proposeMapping({
+  orgId, connectionId, platform, fields, samples,
+}: {
+  orgId: string;
+  connectionId: string;
+  platform: string;
+  fields: unknown[];
+  samples?: Record<string, unknown>;
+}): Promise<{ mappings: FieldMapping[] }> {
+  logger.info({ orgId, connectionId, platform, fieldCount: fields.length }, 'agents:proposeMapping');
+  return _fetch('/prism/map', {
+    method: 'POST',
+    body: JSON.stringify({
+      org_id:        orgId,
+      connection_id: connectionId,
+      platform,
+      fields,
+      samples:       samples ?? null,
+    }),
+  }, LLM_TIMEOUT_MS) as Promise<{ mappings: FieldMapping[] }>;
+}
+
+/**
+ * Reconcile imported topic/theme labels against the existing Xperiq topic registry
+ * via the CrystalOS `taxonomy-mapper` skill. CrystalOS proposes resolutions
+ * (merge | new | conflict); the backend persists on confirm.
+ *
+ * @param args.orgId
+ * @param args.surveyId
+ * @param args.importedLabels  - labels carried by the import
+ * @param args.existingTopics  - the live survey_topics registry to reconcile against
+ * @returns Promise<{ resolutions: unknown[] }>
+ */
+export async function reconcileTaxonomy({
+  orgId, surveyId, importedLabels, existingTopics,
+}: {
+  orgId: string;
+  surveyId: string;
+  importedLabels: unknown[];
+  existingTopics: unknown[];
+}): Promise<{ resolutions: unknown[] }> {
+  logger.info({ orgId, surveyId, labelCount: importedLabels.length }, 'agents:reconcileTaxonomy');
+  return _fetch('/prism/taxonomy', {
+    method: 'POST',
+    body: JSON.stringify({
+      org_id:          orgId,
+      survey_id:       surveyId,
+      imported_labels: importedLabels,
+      existing_topics: existingTopics,
+    }),
+  }, LLM_TIMEOUT_MS) as Promise<{ resolutions: unknown[] }>;
+}
+
+/**
+ * Explain a source-vs-Prism metric gap and recommend a remediation method
+ * (match_source | rebaseline) via the CrystalOS `metric-parity` skill (Tier-2 parity).
+ *
+ * @param args.orgId
+ * @param args.surveyId
+ * @param args.metric            - 'nps' | 'csat' | 'ces'
+ * @param args.sourceValue       - the incumbent platform's reported value
+ * @param args.responsesSummary  - response evidence + prism_computed + method context
+ * @returns Promise<{ explanation: string; recommended_method: string; parity_ledger: ParityEntry | Record<string, unknown> }>
+ */
+export async function explainParity({
+  orgId, surveyId, metric, sourceValue, responsesSummary,
+}: {
+  orgId: string;
+  surveyId: string;
+  metric: string;
+  sourceValue: number | null;
+  responsesSummary: Record<string, unknown>;
+}): Promise<{
+  explanation: string;
+  recommended_method: string;
+  parity_ledger: ParityEntry | Record<string, unknown>;
+}> {
+  logger.info({ orgId, surveyId, metric }, 'agents:explainParity');
+  return _fetch('/prism/parity', {
+    method: 'POST',
+    body: JSON.stringify({
+      org_id:            orgId,
+      survey_id:         surveyId,
+      metric,
+      source_value:      sourceValue,
+      responses_summary: responsesSummary,
+    }),
+  }, LLM_TIMEOUT_MS) as Promise<{
+    explanation: string;
+    recommended_method: string;
+    parity_ledger: ParityEntry | Record<string, unknown>;
+  }>;
+}
+
+
 // ── Checkpoint blobs ───────────────────────────────────────────────────────────
 
 /**

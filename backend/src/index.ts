@@ -10,7 +10,7 @@ import cors from 'cors';
 import logger from './lib/logger';
 import { resolveClerkSecretKey } from './lib/clerkKeys';
 import { register } from './lib/metrics';
-import { query as dbQuery } from './lib/db';
+import { query as dbQuery, waitForDb } from './lib/db';
 import { getRedisClient } from './lib/redis';
 import requestId from './middleware/requestId';
 import httpLogger from './middleware/httpLogger';
@@ -19,6 +19,7 @@ import { apiLimiter, aiLimiter } from './middleware/rateLimiter';
 // Webhooks (raw body — must mount before express.json())
 import clerkWebhookRouter from './routes/webhooks/clerk';
 import stripeWebhookRouter from './routes/webhooks/stripe';
+import prismWebhooksRouter from './routes/prismWebhooks';
 
 // Novu Framework workflows — served to Novu Cloud for orchestration
 import { serve } from '@novu/framework/express';
@@ -72,10 +73,17 @@ import billingRouter from './routes/billing';
 import internalMeteringRouter from './routes/internal-metering';
 import supportRouter from './routes/support';
 import adminSupportRouter from './routes/admin-support';
+import prismRouter from './routes/prism';
+import prismUploadsRouter from './routes/prismUploads';
+import prismOauthRouter from './routes/prismOauth';
 
 import { validateStartupConfig } from './lib/validateEnv';
 // Startup config validation runs in start() below — presence + format/consistency + live
 // connectivity (Postgres/Redis) — and fails fast before the server accepts traffic.
+import { getPrismConfig, validatePrismProductionConfig } from './lib/prism/config';
+// Prism per-environment config + production-readiness gate (see lib/prism/config.ts). Validated
+// in start() below; in staging/production a fatal misconfig refuses boot (AGENTS_INTERNAL_KEY
+// precedent). The worker + sync scheduler are started behind flags after the server is up.
 
 // ── App setup ─────────────────────────────────────────────────────────────────
 const app = express();
@@ -93,6 +101,11 @@ app.use(cors({ origin: corsOrigin, credentials: true, exposedHeaders: ['X-Export
 app.use('/webhooks/clerk', express.raw({ type: '*/*' }), clerkWebhookRouter);
 // Stripe webhook — raw body for signature verification, before express.json().
 app.use('/webhooks/stripe', express.raw({ type: '*/*' }), stripeWebhookRouter);
+// Prism CDC webhooks — raw body for HMAC verification (per-connection), before express.json().
+app.use('/webhooks/prism', express.raw({ type: '*/*' }), prismWebhooksRouter);
+// Prism file UPLOAD — RAW file bytes (req.body = Buffer); must mount BEFORE express.json()
+// so the JSON parser doesn't consume the stream. requireAuth is applied inside the router.
+app.use('/api/prism/uploads', express.raw({ type: '*/*', limit: '60mb' }), prismUploadsRouter);
 
 // Novu Framework Bridge — serves workflow definitions to Novu Cloud.
 // Must be mounted before express.json() as it handles its own body parsing.
@@ -237,6 +250,11 @@ app.use('/api/outreach',                apiLimiter, outreachRouter);
 // Support system — public docs + Crystal support + admin pipeline
 app.use('/api/support',       apiLimiter, supportRouter);
 app.use('/api/admin-support', apiLimiter, adminSupportRouter);
+// Prism one-click OAuth — start (authed, inside router) + callback (PUBLIC, validated by
+// `state`). Mounted BEFORE /api/prism so the more-specific /api/prism/oauth path matches first.
+app.use('/api/prism/oauth',   apiLimiter, prismOauthRouter);
+// Prism — data ingestion / migration engine API (connections, jobs, mapping, dry-run, recon)
+app.use('/api/prism',         apiLimiter, prismRouter);
 
 // ── Observability ─────────────────────────────────────────────────────────────
 // Readiness: can this instance serve traffic? Postgres is the only hard dependency;
@@ -305,7 +323,18 @@ let server: ReturnType<typeof app.listen> | undefined;
 async function start(): Promise<void> {
   // Fail fast: required keys present + well-formed, and Postgres/Redis actually reachable —
   // before we accept a single request.
+  await waitForDb();
   await validateStartupConfig({ connectivity: true });
+
+  // Prism production-readiness gate. In staging/production a fatal misconfig (local upload/secrets
+  // in prod, missing Redis/OAuth URLs, default AGENTS_INTERNAL_KEY) refuses boot — mirrors the
+  // AGENTS_INTERNAL_KEY prod-validation precedent. In development this is always [] (never crashes dev).
+  const prismCfg = getPrismConfig();
+  const prismFatal = validatePrismProductionConfig(prismCfg);
+  if (prismFatal.length) {
+    for (const item of prismFatal) logger.error({}, `prism config: ${item}`);
+    throw new Error(`Prism is not production-ready (APP_ENV=${prismCfg.appEnv}):\n  - ${prismFatal.join('\n  - ')}`);
+  }
 
   server = app.listen(PORT, () => {
     const clerkKey = resolveClerkSecretKey();
@@ -332,6 +361,34 @@ async function start(): Promise<void> {
         .catch((err: unknown) => {
           const error = err instanceof Error ? err : new Error(String(err));
           logger.error({ err: error.message }, 'Event Engine failed to start');
+        });
+    }
+
+    // ── Prism ingestion engine ──────────────────────────────────────────────
+    // In dev the worker + sync scheduler run in-process (default on). In prod they run as a
+    // dedicated Fly.io `worker` process group — there, the web instances set PRISM_WORKER_ENABLED
+    // /PRISM_SYNC_ENABLED=false and only the worker process leaves them on. Dynamic imports so a
+    // missing module / disabled flag never blocks the API from serving traffic.
+    logger.info(
+      { backend: prismCfg.upload.backend, secrets: prismCfg.secretsBackend, worker: prismCfg.worker.enabled, sync: prismCfg.worker.syncEnabled },
+      `Prism → APP_ENV=${prismCfg.appEnv}`,
+    );
+    if (prismCfg.worker.enabled) {
+      import('./lib/prism/worker')
+        .then((mod) => mod.startPrismWorker())
+        .then(() => logger.info(`Prism worker → running (max concurrent extract: ${prismCfg.worker.maxConcurrentExtract})`))
+        .catch((err: unknown) => {
+          const error = err instanceof Error ? err : new Error(String(err));
+          logger.error({ err: error.message }, 'Prism worker failed to start');
+        });
+    }
+    if (prismCfg.worker.syncEnabled) {
+      import('./lib/prism/sync/scheduler')
+        .then((mod) => mod.startPrismSyncScheduler())
+        .then(() => logger.info(`Prism sync scheduler → running (poll interval: ${prismCfg.worker.syncPollIntervalS}s)`))
+        .catch((err: unknown) => {
+          const error = err instanceof Error ? err : new Error(String(err));
+          logger.error({ err: error.message }, 'Prism sync scheduler failed to start');
         });
     }
   });

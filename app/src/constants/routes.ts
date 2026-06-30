@@ -46,6 +46,12 @@ export const ROUTES = {
   SETTINGS_AUDIT:        '/app/settings/users/audit',
   SETTINGS_TAGS:         '/app/settings/tags',
   DATA:               '/app/data',
+
+  // Prism — data ingestion / migration wizard
+  PRISM:              '/app/prism',
+  PRISM_CONNECT:      '/app/prism/connect/:platform',
+  PRISM_JOB:          '/app/prism/jobs/:jobId',
+  PRISM_JOBS:         '/app/prism/jobs',
   EXPERIENCE:                  '/app/experience',
   EXPERIENCE_ORG_TRENDS:       '/app/experience/org/trends',
   EXPERIENCE_SURVEY:           '/app/experience/survey/:surveyId',

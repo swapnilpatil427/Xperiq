@@ -15,6 +15,70 @@ import type {
   CustomReportPreview, CustomReport, CustomReportDetail,
 } from '../types';
 import type { SavedDashboardConfig, WidgetConfig, DashboardFilters } from '../types/dashboard';
+import type {
+  PrismConnection, PrismJob, ConnectorMeta as PrismConnectorMeta,
+  DiscoveredResource as PrismDiscoveredResource, ResourceRef as PrismResourceRef,
+  RecordType as PrismRecordType, FieldMapping as PrismFieldMapping,
+  DryRunReport as PrismDryRunReport, ReconReport as PrismReconReport,
+  ParityEntry as PrismParityEntry, CreateConnectionRequest as PrismCreateConnectionRequest,
+  CreateJobRequest as PrismCreateJobRequest, ConfirmMappingRequest as PrismConfirmMappingRequest,
+  ApproveRequest as PrismApproveRequest, PrismMode,
+} from '../types/prism';
+
+// ── Prism response-shape guards ──────────────────────────────────────────────
+// Small defensive helpers so a FE↔BE response-shape mismatch throws ONE clear,
+// named error at the API boundary instead of crashing later on `.id`/`.map`.
+
+/** List the top-level keys of a response body for error messages. */
+function describeKeys(obj: unknown): string {
+  if (obj == null || typeof obj !== 'object') return String(obj);
+  const keys = Object.keys(obj as Record<string, unknown>);
+  return keys.length ? keys.join(', ') : '(empty object)';
+}
+
+/**
+ * Normalize a single-entity response to `{ [key]: entity }` where `entity[idKey]`
+ * is present. Tolerates the two historical wrapper shapes:
+ *   - canonical: `{ connection: {...} }` / `{ job: {...} }`
+ *   - legacy id-only: `{ connectionId: 'x' }` / `{ jobId: 'x' }` → `{ id: 'x' }`
+ *   - bare entity: `{ id: 'x', ... }` (no wrapper)
+ * Throws a clear, named error if no usable id can be found.
+ */
+function expectEntity<T>(body: unknown, key: string, idKey: string, method: string): T {
+  const obj = (body ?? {}) as Record<string, unknown>;
+
+  // 1) canonical wrapper { [key]: { ...idKey } }
+  const wrapped = obj[key];
+  if (wrapped && typeof wrapped === 'object' && (wrapped as Record<string, unknown>)[idKey] != null) {
+    return wrapped as T;
+  }
+
+  // 2) legacy id-only sibling, e.g. { connectionId } / { jobId }
+  const legacyIdKey = `${key}Id`;
+  if (typeof obj[legacyIdKey] === 'string' || typeof obj[legacyIdKey] === 'number') {
+    return { [idKey]: obj[legacyIdKey] } as unknown as T;
+  }
+
+  // 3) bare entity at the top level, e.g. { id, ... }
+  if (obj[idKey] != null) {
+    return obj as unknown as T;
+  }
+
+  throw new Error(
+    `${method}: backend returned no ${key}.${idKey} (got keys: ${describeKeys(body)})`,
+  );
+}
+
+/** Normalize a list response to `T[]` under `key`; throws if the value isn't an array (when present). */
+function expectArray<T>(body: unknown, key: string, method: string): T[] {
+  const obj = (body ?? {}) as Record<string, unknown>;
+  const v = obj[key];
+  if (v == null) return [];
+  if (!Array.isArray(v)) {
+    throw new Error(`${method}: expected ${key} to be an array (got keys: ${describeKeys(body)})`);
+  }
+  return v as T[];
+}
 
 // ── Copilot types ──────────────────────────────────────────────────────────────
 export interface OrgContext {
@@ -2712,6 +2776,239 @@ export function createApiClient(getToken: GetToken) {
     adminSupportGetStats: async (): Promise<PipelineStats> => {
       const res = await http.get<Record<string, unknown>>('/api/admin-support/stats');
       return mapPipelineStats(res.data);
+    },
+
+    // ── Prism — ingestion / migration ──────────────────────────────────────────
+    // Postgres NUMERIC columns (confidence, counts, metric deltas) arrive as
+    // strings — coerce so .toFixed()/arithmetic in the dry-run diff never crash.
+    //
+    // Response-shape safety: every Prism method routes its raw response through the
+    // local `expectEntity`/`expectArray` helpers (defined just below) so an
+    // unexpected backend shape throws ONE clear, named error here instead of a
+    // downstream `Cannot read properties of undefined (reading 'id')` crash. The
+    // helpers also tolerate the two historical wrappers ({ connection } | { connectionId },
+    // { job } | { jobId }) and normalize to the canonical DTO in types/prism.ts.
+
+    listPrismConnectors: async (): Promise<{ connectors: PrismConnectorMeta[] }> => {
+      const res = await http.get<{ connectors?: PrismConnectorMeta[] }>('/api/prism/connectors');
+      return { connectors: expectArray<PrismConnectorMeta>(res.data, 'connectors', 'listPrismConnectors') };
+    },
+
+    createPrismConnection: async (data: PrismCreateConnectionRequest): Promise<{ connection: PrismConnection }> => {
+      const res = await http.post<Record<string, unknown>>('/api/prism/connections', data);
+      // Canonical CreateConnectionResponse = { connection }. Tolerate the legacy
+      // { connectionId } shape and normalize so callers always get `connection.id`.
+      return { connection: expectEntity<PrismConnection>(res.data, 'connection', 'id', 'createPrismConnection') };
+    },
+
+    listPrismConnections: async (): Promise<{ connections: PrismConnection[] }> => {
+      const res = await http.get<{ connections?: PrismConnection[] }>('/api/prism/connections');
+      return { connections: expectArray<PrismConnection>(res.data, 'connections', 'listPrismConnections') };
+    },
+
+    deletePrismConnection: async (id: string): Promise<{ success: boolean }> => {
+      const res = await http.delete<{ success?: boolean }>(`/api/prism/connections/${id}`);
+      return { success: Boolean(res.data?.success ?? true) };
+    },
+
+    discoverPrismResources: async (connectionId: string): Promise<{ resources: PrismDiscoveredResource[] }> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      // Backend route is `/connections/:id/resources` (NOT `/discover`).
+      const res = await http.get<{ resources?: Array<Record<string, unknown>> }>(
+        `/api/prism/connections/${connectionId}/resources`,
+      );
+      const rawList = expectArray<Record<string, unknown>>(res.data, 'resources', 'discoverPrismResources');
+      const resources: PrismDiscoveredResource[] = rawList.map((r) => ({
+        resourceRef: (r.resourceRef ?? r.resource_ref) as PrismResourceRef,
+        label:       String(r.label ?? ''),
+        recordType:  (r.recordType ?? r.record_type) as PrismRecordType,
+        counts:      coerce(r.counts) ?? undefined,
+        dateRange:   (r.dateRange ?? r.date_range) as { start: string; end: string } | undefined,
+        metric:      (r.metric ?? null) as PrismDiscoveredResource['metric'],
+      }));
+      return { resources };
+    },
+
+    createPrismJob: async (data: PrismCreateJobRequest): Promise<{ job: PrismJob }> => {
+      const res = await http.post<Record<string, unknown>>('/api/prism/jobs', data);
+      // Canonical CreateJobResponse = { job }. Tolerate legacy { jobId } and normalize.
+      return { job: expectEntity<PrismJob>(res.data, 'job', 'id', 'createPrismJob') };
+    },
+
+    listPrismJobs: async (): Promise<{ jobs: PrismJob[] }> => {
+      const res = await http.get<{ jobs?: PrismJob[] }>('/api/prism/jobs');
+      return { jobs: expectArray<PrismJob>(res.data, 'jobs', 'listPrismJobs') };
+    },
+
+    getPrismJob: async (jobId: string): Promise<{ job: PrismJob }> => {
+      const res = await http.get<Record<string, unknown>>(`/api/prism/jobs/${jobId}`);
+      return { job: expectEntity<PrismJob>(res.data, 'job', 'id', 'getPrismJob') };
+    },
+
+    pausePrismJob: async (jobId: string): Promise<{ job: PrismJob }> => {
+      const res = await http.post<Record<string, unknown>>(`/api/prism/jobs/${jobId}/pause`, {});
+      return { job: expectEntity<PrismJob>(res.data, 'job', 'id', 'pausePrismJob') };
+    },
+
+    resumePrismJob: async (jobId: string): Promise<{ job: PrismJob }> => {
+      const res = await http.post<Record<string, unknown>>(`/api/prism/jobs/${jobId}/resume`, {});
+      return { job: expectEntity<PrismJob>(res.data, 'job', 'id', 'resumePrismJob') };
+    },
+
+    cancelPrismJob: async (jobId: string): Promise<{ job: PrismJob }> => {
+      const res = await http.post<Record<string, unknown>>(`/api/prism/jobs/${jobId}/cancel`, {});
+      return { job: expectEntity<PrismJob>(res.data, 'job', 'id', 'cancelPrismJob') };
+    },
+
+    getPrismMapping: async (jobId: string): Promise<{ mappings: PrismFieldMapping[]; schema_shape_hash?: string }> => {
+      const coerce = (v: unknown) => (v == null ? 0 : Number(v));
+      const res = await http.get<{ mappings?: Array<Record<string, unknown>>; suggestions?: Array<Record<string, unknown>>; schema_shape_hash?: string }>(
+        `/api/prism/jobs/${jobId}/mapping`,
+      );
+      // Canonical key is `mappings`; tolerate the engine's legacy `suggestions` key.
+      const rawMappings = (res.data?.mappings ?? res.data?.suggestions ?? []) as Array<Record<string, unknown>>;
+      const mappings: PrismFieldMapping[] = rawMappings.map((m) => ({
+        source_field: String(m.source_field ?? ''),
+        source_type:  m.source_type ? String(m.source_type) : undefined,
+        target:       String(m.target ?? 'embedded_data'),
+        metric:       (m.metric ?? null) as PrismFieldMapping['metric'],
+        value_rules:  (m.value_rules as PrismFieldMapping['value_rules']) ?? undefined,
+        confidence:   coerce(m.confidence),
+        origin:       (m.origin ?? 'llm') as PrismFieldMapping['origin'],
+        rationale:    m.rationale ? String(m.rationale) : undefined,
+      }));
+      return { mappings, schema_shape_hash: res.data.schema_shape_hash };
+    },
+
+    putPrismMapping: async (jobId: string, body: PrismConfirmMappingRequest): Promise<{ success: boolean }> => {
+      const res = await http.put<{ success?: boolean }>(`/api/prism/jobs/${jobId}/mapping`, body);
+      return { success: Boolean(res.data?.success ?? true) };
+    },
+
+    getPrismDryRun: async (jobId: string): Promise<PrismDryRunReport> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      // Backend route is `/jobs/:id/dryrun` (NOT `/dry-run`) and returns the report
+      // UNWRAPPED. Tolerate a legacy `{ report }` wrapper just in case.
+      const raw = await http.get<Record<string, unknown>>(`/api/prism/jobs/${jobId}/dryrun`);
+      const d = ((raw.data && (raw.data as Record<string, unknown>).report) ?? raw.data ?? {}) as Record<string, unknown>;
+      const summaryRaw = (d.summary ?? {}) as Record<string, unknown>;
+      const parity = ((d.metric_parity as Array<Record<string, unknown>>) ?? []).map((p) => ({
+        metric:         String(p.metric ?? ''),
+        source_value:   coerce(p.source_value),
+        prism_computed: coerce(p.prism_computed),
+        match:          Boolean(p.match),
+        delta:          coerce(p.delta) ?? undefined,
+        explanation:    p.explanation ? String(p.explanation) : undefined,
+        method:         (p.method ?? undefined) as PrismParityEntry['method'],
+      }));
+      return {
+        summary: {
+          create:         Number(summaryRaw.create ?? 0),
+          update:         Number(summaryRaw.update ?? 0),
+          skip_duplicate: Number(summaryRaw.skip_duplicate ?? 0),
+          conflict:       Number(summaryRaw.conflict ?? 0),
+        },
+        metric_parity:        parity,
+        unmapped_fields:      (d.unmapped_fields as PrismDryRunReport['unmapped_fields']) ?? [],
+        timestamp_continuity: (d.timestamp_continuity as PrismDryRunReport['timestamp_continuity'])
+          ?? { earliest: '', latest: '', gaps: [] },
+        conflicts:            (d.conflicts as PrismDryRunReport['conflicts']) ?? [],
+        sample:               (d.sample as PrismDryRunReport['sample']) ?? undefined,
+      };
+    },
+
+    approvePrismJob: async (jobId: string, body: PrismApproveRequest = {}): Promise<{ job: PrismJob }> => {
+      const res = await http.post<Record<string, unknown>>(`/api/prism/jobs/${jobId}/approve`, body);
+      // Canonical ApproveResponse = { job }. Tolerate legacy { jobId, status } and normalize.
+      return { job: expectEntity<PrismJob>(res.data, 'job', 'id', 'approvePrismJob') };
+    },
+
+    getPrismReconciliation: async (jobId: string): Promise<PrismReconReport> => {
+      const coerce = (v: unknown) => (v == null ? null : Number(v));
+      // Returns the report UNWRAPPED. Tolerate a legacy `{ report }` wrapper.
+      const raw = await http.get<Record<string, unknown>>(`/api/prism/jobs/${jobId}/reconciliation`);
+      const d = ((raw.data && (raw.data as Record<string, unknown>).report) ?? raw.data ?? {}) as Record<string, unknown>;
+      const countsRaw = (d.counts ?? {}) as Record<string, unknown>;
+      const checksumRaw = (d.checksum ?? {}) as Record<string, unknown>;
+      const parity = ((d.metric_parity as Array<Record<string, unknown>>) ?? []).map((p) => ({
+        metric:         String(p.metric ?? ''),
+        source_value:   coerce(p.source_value),
+        prism_computed: coerce(p.prism_computed),
+        match:          Boolean(p.match),
+        delta:          coerce(p.delta) ?? undefined,
+        explanation:    p.explanation ? String(p.explanation) : undefined,
+        method:         (p.method ?? undefined) as PrismParityEntry['method'],
+      }));
+      return {
+        tier1_pass: Boolean(d.tier1_pass),
+        counts: {
+          source: Number(countsRaw.source ?? 0),
+          prism:  Number(countsRaw.prism ?? 0),
+          match:  Boolean(countsRaw.match),
+        },
+        checksum: {
+          source: String(checksumRaw.source ?? ''),
+          prism:  String(checksumRaw.prism ?? ''),
+          match:  Boolean(checksumRaw.match),
+        },
+        metric_parity: parity,
+        generated_at:  String(d.generated_at ?? ''),
+        report_url:    (d.report_url ?? null) as string | null,
+      };
+    },
+
+    /**
+     * Upload a raw file (CSV / Excel / SPSS / JSON / service-account key) to Prism.
+     * Posts the raw bytes as the request body — NOT multipart — with the filename
+     * passed as a query param, matching POST /api/prism/uploads?filename=.
+     */
+    uploadPrismFile: async (
+      file: File,
+      onProgress?: (pct: number) => void,
+    ): Promise<{ fileRef: string; filename: string; sizeBytes: number; detectedFormat: string; detectedPlatform?: string }> => {
+      const res = await http.post<{ fileRef: string; filename: string; sizeBytes: number; detectedFormat: string; detectedPlatform?: string }>(
+        '/api/prism/uploads',
+        file,
+        {
+          params: { filename: file.name },
+          headers: { 'Content-Type': file.type || 'application/octet-stream' },
+          onUploadProgress: (e) => {
+            if (onProgress && e.total) onProgress(Math.round((e.loaded / e.total) * 100));
+          },
+        },
+      );
+      const d = (res.data ?? {}) as Record<string, unknown>;
+      const fileRef = d.fileRef;
+      if (typeof fileRef !== 'string' || !fileRef) {
+        throw new Error(`uploadPrismFile: backend returned no fileRef (got keys: ${describeKeys(res.data)})`);
+      }
+      return {
+        fileRef,
+        filename:         String(d.filename ?? file.name),
+        sizeBytes:        Number(d.sizeBytes ?? file.size),
+        detectedFormat:   String(d.detectedFormat ?? ''),
+        detectedPlatform: d.detectedPlatform != null ? String(d.detectedPlatform) : undefined,
+      };
+    },
+
+    /**
+     * Begin an OAuth2 connect flow. Returns the provider authorize URL; the caller
+     * navigates the browser there. The provider redirects back to
+     * /app/prism/connect/:platform?connected={connectionId}.
+     */
+    startPrismOAuth: async (
+      platform: string,
+      opts: { mode: PrismMode; history_window: number; returnUrl: string },
+    ): Promise<{ authorizeUrl: string }> => {
+      const res = await http.post<{ authorizeUrl?: string }>(
+        `/api/prism/oauth/${platform}/start`,
+        opts,
+      );
+      const url = res.data?.authorizeUrl;
+      if (typeof url !== 'string' || !url) {
+        throw new Error(`startPrismOAuth: backend returned no authorizeUrl (got keys: ${describeKeys(res.data)})`);
+      }
+      return { authorizeUrl: url };
     },
 
   };

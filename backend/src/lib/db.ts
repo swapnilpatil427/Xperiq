@@ -1,11 +1,17 @@
 import { Pool, QueryResult, QueryResultRow } from 'pg';
 import { dbDuration } from './metrics';
 
+const DEFAULT_URL = 'postgresql://postgres:postgres@localhost:5432/xperiq';
+const connectionTimeoutMillis = (() => {
+  const n = Number(process.env.DB_CONNECTION_TIMEOUT_MS);
+  return Number.isFinite(n) && n > 0 ? n : 10_000;
+})();
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL ?? 'postgresql://postgres:postgres@localhost:5432/xperiq',
+  connectionString: process.env.DATABASE_URL ?? DEFAULT_URL,
   max: 10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
+  idleTimeoutMillis: 30_000,
+  connectionTimeoutMillis,
 });
 
 pool.on('error', (err: Error) => {
@@ -44,7 +50,26 @@ async function query<T extends QueryResultRow = QueryResultRow>(
   }
 }
 
+/** Block until Postgres accepts a connection (startup / docker-compose race guard). */
+async function waitForDb(opts: { attempts?: number; delayMs?: number } = {}): Promise<void> {
+  const attempts = opts.attempts ?? 15;
+  const delayMs = opts.delayMs ?? 1_000;
+  let lastErr: Error | undefined;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await pool.query('SELECT 1');
+      return;
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+    }
+  }
+  throw lastErr ?? new Error('Postgres unavailable');
+}
+
 // export= matches legacy `module.exports = { query, pool }` so every import style works:
 //   import db from './db'  |  import { query } from './db'  |  import * as db from './db'
-const db = { query, pool };
+const db = { query, pool, waitForDb };
 export = db;

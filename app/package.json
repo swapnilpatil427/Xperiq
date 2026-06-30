@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc --noEmit",
     "build": "vitest run --coverage && vite build",
     "build:app": "vite build",
     "lint": "eslint .",

@@ -12,7 +12,7 @@
 
 import { useEffect } from 'react';
 
-export type DataResource = 'workflows' | 'alerts' | 'insights' | 'surveys' | 'cases' | 'contacts' | 'ontology' | 'broadcasts' | 'credits';
+export type DataResource = 'workflows' | 'alerts' | 'insights' | 'surveys' | 'cases' | 'contacts' | 'ontology' | 'broadcasts' | 'credits' | 'prism';
 
 const EVENT = 'crystal:data-changed';
 

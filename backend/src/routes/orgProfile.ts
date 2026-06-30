@@ -5,9 +5,15 @@ import { validate } from '../lib/validate';
 import { updateOrgProfileSchema } from '../schemas/orgProfile';
 import { query } from '../lib/db';
 import { serverError } from '../lib/httpError';
-import logger from '../lib/logger';
 
 const router = express.Router();
+
+let tableReady: Promise<void> | null = null;
+
+function readyTable(): Promise<void> {
+  if (!tableReady) tableReady = ensureTable();
+  return tableReady;
+}
 
 async function ensureTable(): Promise<void> {
   await query(`
@@ -42,10 +48,10 @@ async function ensureTable(): Promise<void> {
     await query(sql).catch(() => {});
   }
 }
-ensureTable().catch((err: unknown) => logger.error({ err: err instanceof Error ? err.message : String(err) }, 'orgProfile:ensureTable failed'));
 
 router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> => {
   try {
+    await readyTable();
     const { rows } = await query('SELECT * FROM org_profiles WHERE org_id = $1', [req.orgId]);
     res.json({ profile: rows[0] || null });
   } catch (err: unknown) {
@@ -55,6 +61,7 @@ router.get('/', requireAuth, async (req: Request, res: Response): Promise<void> 
 
 router.put('/', requireAuth, validate(updateOrgProfileSchema), async (req: Request, res: Response): Promise<void> => {
   try {
+    await readyTable();
     const {
       industry, sub_vertical, company_size, use_case, primary_use_case,
       target_audience, website, brand_description, brand_name, product_name,

@@ -28,6 +28,10 @@ import { TemplateLibraryPage } from './pages/TemplateLibraryPage';
 import { TemplateEditorPage } from './pages/TemplateEditorPage';
 import { WorkflowsPage } from './pages/WorkflowsPage';
 import { DataPage } from './pages/DataPage';
+import { PrismHomePage } from './pages/prism/PrismHomePage';
+import { PrismConnectPage } from './pages/prism/PrismConnectPage';
+import { PrismJobPage } from './pages/prism/PrismJobPage';
+import { PrismJobsPage } from './pages/prism/PrismJobsPage';
 import { ExperienceHubPage } from './pages/experience/ExperienceHubPage';
 import { SurveyIntelligencePage } from './pages/experience/SurveyIntelligencePage';
 import { SurveyReportPage } from './pages/experience/SurveyReportPage';
@@ -128,6 +132,12 @@ export default function App() {
             <Route path={ROUTES.WORKFLOWS}          element={<ErrorBoundary inline><WorkflowsPage /></ErrorBoundary>} />
             <Route path={ROUTES.SETTINGS}           element={<ErrorBoundary inline><BrandSettingsPage /></ErrorBoundary>} />
             <Route path={ROUTES.DATA}               element={<ErrorBoundary inline><DataPage /></ErrorBoundary>} />
+
+            {/* Prism — ingestion / migration wizard */}
+            <Route path={ROUTES.PRISM}         element={<ErrorBoundary inline><PrismHomePage /></ErrorBoundary>} />
+            <Route path={ROUTES.PRISM_CONNECT} element={<ErrorBoundary inline><PrismConnectPage /></ErrorBoundary>} />
+            <Route path={ROUTES.PRISM_JOBS}    element={<ErrorBoundary inline><PrismJobsPage /></ErrorBoundary>} />
+            <Route path={ROUTES.PRISM_JOB}     element={<ErrorBoundary inline><PrismJobPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE}              element={<ErrorBoundary inline><ExperienceHubPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE_ORG_TRENDS}   element={<ErrorBoundary inline><OrgTrendsPage /></ErrorBoundary>} />
             <Route path={ROUTES.EXPERIENCE_SURVEY}       element={<ErrorBoundary inline><SurveyIntelligencePage /></ErrorBoundary>} />
