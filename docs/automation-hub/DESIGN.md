@@ -30,7 +30,7 @@ The old design forced a false choice: "is this a workflow or a scheduled report?
 3. **Briefings are automations.** They live in the same grid, share the same builder, share the same run history. No separate /reports page, no separate nav item.
 4. **Zero empty-state anxiety.** The page never feels empty. The Crystal command bar is always present, with rotating placeholder examples that make it obvious what's possible.
 5. **Fault resilience visible.** Error states are clear, immediately actionable, and show retry paths directly on the card — not buried in logs.
-6. **The email IS the product.** The briefing delivery view (`/app/automations/:id/runs/:runId`) is a first-class page. It is the artifact a CX director forwards to their VP. It must be beautiful enough to feel worth forwarding.
+6. **The email IS the product.** The briefing delivery view (`/app/workflows/:id/runs/:runId`) is a first-class page. It is the artifact a CX director forwards to their VP. It must be beautiful enough to feel worth forwarding.
 
 ---
 
@@ -240,7 +240,7 @@ const rise = {
 │  When NPS drops below 30 on CSAT Q3                            │  ← trigger summary (14px muted)
 │  → [📧] [Slack] [Jira]                                         │  ← action icons
 │                                                                 │
-│  Last fired: 2 hours ago · 14 runs total                       │  ← footer stats (12px)
+│  ✓ 100% success · 14 runs          Last fired: 2 hours ago     │  ← footer stats (12px)
 │  ─────────────────────────────────────────────────────────────  │
 │  [Survey: CSAT Q3 2026]                                         │  ← scope tag
 └─────────────────────────────────────────────────────────────────┘
@@ -255,7 +255,11 @@ const rise = {
 **Action icons row:** `flex items-center gap-1.5 mt-2`
   - Each icon: 20×20px colored icon + integration logo, max 4 shown
   - If more: `+N` badge `text-xs text-gray-400 bg-gray-100 rounded-full px-1.5`
-**Footer stats:** `text-xs text-gray-400 mt-3`
+**Footer stats:** `text-xs text-gray-400 mt-3` — format: `{healthIcon} {healthText} · {runCount} runs` + right-aligned `Last fired: {relativeTime}`. Health state logic:
+  - `✓ 100% success` — all runs succeeded in last 7 days (`text-green-600`)
+  - `⚠ {N} error{s} last 7 days` — partial failures (`text-amber-600`)
+  - `✕ Last run failed` — most recent run failed (`text-red-600`)
+  - No runs yet: footer shows `No runs yet`
 **Scope tag:** `text-xs rounded-full bg-gray-100 text-gray-600 px-2 py-0.5 inline-flex items-center mt-3`
 
 #### Briefing Card Anatomy
@@ -373,43 +377,152 @@ Clicking `+ New Automation` opens a bottom sheet (mobile) or a centered modal (d
 Full-screen modal overlay (Framer Motion `opacity: 0→1, scale: 0.98→1, 250ms`).
 
 ```
-Automation Templates                              [×]
-──────────────────────────────────────────────────
-[ All ]  [ Workflows ]  [ Briefings ]  [ Popular ]
-
-┌─────────────┐ ┌─────────────┐ ┌─────────────┐
-│ ⚡ WORKFLOW  │ │ ✦ BRIEFING  │ │ ⚡ WORKFLOW  │
-│             │ │             │ │             │
-│ NPS Drop    │ │ Weekly NPS  │ │ Close at    │
-│ Alert       │ │ Digest      │ │ 500 Resp.   │
-│             │ │             │ │             │
-│ When NPS    │ │ Mon 9AM,    │ │ auto-close  │
-│ drops < 30  │ │ Crystal     │ │ when quota  │
-│             │ │ summary     │ │ reached     │
-│ [Use this→] │ │ [Use this→] │ │ [Use this→] │
-└─────────────┘ └─────────────┘ └─────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│  Automation Templates                                           [×]  │
+│  ────────────────────────────────────────────────────────────────    │
+│  [ 🔍 Search templates...                                       ]    │
+│                                                                      │
+│  [ All ] [ Alert & Notify ] [ Close the Loop ] [ Briefings ]         │
+│          [ Lifecycle ] [ Escalation ] [ ⭐ Featured ]                 │
+│                                                                      │
+│  ── ⭐ FEATURED ──────────────────────────────────────────────────   │
+│                                                                      │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
+│  │  ✦ BRIEFING      │  │  ⚡ WORKFLOW      │  │  ⚡ WORKFLOW      │   │
+│  │  ⭐ Featured      │  │  ⭐ Featured      │  │  ⭐ Featured      │   │
+│  │                  │  │                  │  │                  │   │
+│  │  Timely          │  │  NPS Drop Alert  │  │  Detractor       │   │
+│  │                  │  │                  │  │  Instant Ticket  │   │
+│  │  Crystal writes  │  │  Fires when NPS  │  │  Every detractor │   │
+│  │  your weekly CX  │  │  drops below     │  │  response opens  │   │
+│  │  brief every     │  │  your threshold. │  │  a Zendesk       │   │
+│  │  Monday.         │  │  Alerts Slack    │  │  ticket.         │   │
+│  │                  │  │  immediately.    │  │                  │   │
+│  │  940+ orgs ★4.9  │  │  1,200+ ★4.9    │  │  680+ orgs ★4.8  │   │
+│  │  [Use this →]    │  │  [Use this →]    │  │  [Use this →]    │   │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘   │
+│                                                                      │
+│  ── BRIEFINGS ────────────────────────────────────────────────────   │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │  Timely  │ │Executive │ │  QBR     │ │ Closeout │ │  Churn   │  │
+│  │  ★4.9    │ │ Monthly  │ │  Pack    │ │  Brief   │ │  Watch   │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │
+│  │Onboarding│ │ Release  │ │  Theme   │ │ Cross-   │ │Detractor │  │
+│  │  Pulse   │ │ Debrief  │ │ Tracker  │ │ Survey   │ │  Brief   │  │
+│  │          │ │          │ │          │ │ Digest🔒 │ │          │  │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-**16 templates total (12 workflow, 4 briefing):**
+**`🔒` = tier-gated (Growth+ or Enterprise+).** Locked templates show a tooltip on hover: `"Requires Growth plan — upgrade to unlock"`. They are always visible (not hidden) — seeing them drives upgrade intent.
 
-| # | Type | Name | Trigger | Key Actions |
-|---|------|------|---------|-------------|
-| 1 | Workflow | NPS Drop Alert | `nps_threshold < 30` | Slack + email |
-| 2 | Workflow | Close at 500 Responses | `response_count >= 500` | close_survey |
-| 3 | Workflow | New Complaint Theme | `new_theme_detected` | Slack + Jira |
-| 4 | Workflow | Sentiment Spike Alert | `sentiment_spike (negative)` | Slack + crystal_analysis |
-| 5 | Workflow | Survey Published Notify | `survey_lifecycle: published` | notify_in_app + email |
-| 6 | Workflow | Low Response Rate Alert | `response_rate_drop > 50%` | email |
-| 7 | Workflow | Promoter Thank-You Flag | `response_submitted, score >= 9` | notify_in_app |
-| 8 | Workflow | Statistical Anomaly Alert | `anomaly_detected (NPS)` | Slack + email |
-| 9 | Workflow | Survey Closing Warning | `response_count >= 450` | notify_in_app |
-| 10 | Workflow | Jira Backlog from Themes | `new_theme_detected` | crystal_analysis + Jira |
-| 11 | Workflow | Response Quota Hit | `response_count >= N` | email + close_survey |
-| 12 | Workflow | Competitor Theme Spike | `new_theme_detected` | Slack + crystal_analysis |
-| 13 | Briefing | Weekly NPS Digest | Schedule: Mon 9AM | generate + email |
-| 14 | Briefing | Monthly Executive Summary | Schedule: 1st of month | generate + email |
-| 15 | Briefing | Survey Closeout Report | survey_lifecycle: closed | generate + email |
-| 16 | Briefing | Tag Group Weekly | Schedule: Mon 9AM + tag scope | generate + email |
+---
+
+#### Template Card Anatomy
+
+```
+┌──────────────────────────────────────────┐
+│  ⭐ FEATURED       [✦ BRIEFING]  [Growth] │  ← row 1: badges
+│                                          │
+│  Timely                                  │  ← name (16px semibold)
+│                                          │
+│  Crystal writes your weekly CX brief     │  ← description (13px muted)
+│  every Monday — NPS, themes, what        │
+│  changed, and recommended actions.       │
+│                                          │
+│  Trigger:  📅 Schedule (weekly)          │  ← trigger summary
+│  Actions:  ✦ Generate · 📧 Email · 🔔   │  ← action icons
+│                                          │
+│  940+ orgs installed   ★★★★★  4.9       │  ← social proof
+│                                          │
+│  [Use this template →]                   │  ← CTA
+└──────────────────────────────────────────┘
+```
+
+- **`⭐ FEATURED` badge:** `bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded-full`
+- **Type badge:** `⚡ WORKFLOW` or `✦ BRIEFING` (same style as hub cards)
+- **Tier badge:** `[Starter]` `[Growth]` `[Enterprise]` — `text-[10px] font-medium rounded-full px-1.5 py-0.5`. Starter = gray, Growth = indigo, Enterprise = purple. Only shown for Growth+ tiers.
+- **Rating stars:** `text-amber-400 text-[11px]`; count: `text-[11px] text-gray-400`
+- **CTA button:** `w-full h-[34px] rounded-lg bg-indigo-600 text-white text-[13px] font-medium hover:bg-indigo-700`. If tier-gated: `bg-gray-100 text-gray-400 cursor-not-allowed` + lock icon.
+
+---
+
+#### Full Template Catalog — 25 templates
+
+**BRIEFINGS (Intelligence Briefings) — 10 templates**
+
+| ID | Name | Schedule / Trigger | Audience | Tier | Featured |
+|----|----|----|----|----|----|
+| `timely` | **Timely** | Weekly, Mon 9AM | Team | Starter | ⭐ |
+| `executive_monthly` | Executive Monthly | Monthly, 1st | Executive | Starter | |
+| `qbr_pack` | QBR Pack | Quarterly, Jan/Apr/Jul/Oct | Executive | Growth | |
+| `survey_closeout` | Survey Closeout Brief | On survey close | Team | Starter | |
+| `churn_watch` | Churn Watch | Weekly, Mon | Analyst | Growth | |
+| `onboarding_pulse` | Onboarding Pulse | Weekly, Mon | Team | Growth | |
+| `release_debrief` | Release Debrief | 7 days post-launch | Team | Growth | |
+| `theme_tracker` | Theme Tracker | Weekly, Mon | Team | Starter | |
+| `cross_survey_digest` | Cross-Survey Digest | Monthly, 1st | Executive | Enterprise | |
+| `detractor_brief` | Detractor Brief | Daily (when detractors exist) | Team | Growth | |
+
+**ALERT & NOTIFY — 5 templates**
+
+| ID | Name | Trigger | Actions | Tier | Featured |
+|----|----|----|----|----|---|
+| `nps_drop_alert` | **NPS Drop Alert** | `nps_threshold` | Slack + email | Starter | ⭐ |
+| `sentiment_spike` | Sentiment Spike | `sentiment_spike` | Slack + Jira | Growth | |
+| `new_theme_alert` | New Theme Emerged | `new_theme_detected` | Slack + Crystal analysis | Growth | |
+| `anomaly_alert` | Statistical Anomaly | `anomaly_detected` | Slack + Zendesk | Growth | |
+| `response_rate_drop` | Response Rate Drop | `response_rate_drop` | Email to owner | Starter | |
+
+**CLOSE THE LOOP — 3 templates**
+
+| ID | Name | Trigger | Actions | Tier | Featured |
+|----|----|----|----|----|---|
+| `detractor_ticket` | **Detractor Instant Ticket** | `response_submitted` (NPS 0–6) | Zendesk ticket | Growth | ⭐ |
+| `promoter_thankyou` | Promoter Thank-You | `response_submitted` (NPS 9–10) | Send email | Starter | |
+| `passive_nurture` | Passive Nurture | `response_submitted` (NPS 7–8) | Email + Crystal analysis | Growth | |
+
+**SURVEY LIFECYCLE — 5 templates**
+
+| ID | Name | Trigger | Actions | Tier |
+|----|----|----|----|---|
+| `survey_launched` | Survey Launched → Notify | `survey_lifecycle: published` | Slack + email | Starter |
+| `goal_close` | Goal Reached → Close | `response_count >= N` | `close_survey` | Starter |
+| `goal_alert` | Goal Reached → Alert | `response_count >= N` | Slack | Starter |
+| `survey_autoclose` | Survey Auto-Close | `schedule` | `close_survey` | Starter |
+| `low_response_warning` | Low Response Warning | `response_rate_drop` | Email to admin | Starter |
+
+**ESCALATION CHAINS — 2 templates**
+
+| ID | Name | Trigger | Actions | Tier | Featured |
+|----|----|----|----|----|---|
+| `full_cx_escalation` | Full CX Escalation | `nps_threshold` + `sentiment_spike` | Slack + Jira + Zendesk + Crystal | Enterprise | |
+| `exec_alert` | Exec Alert | `nps_threshold` (critical) | Slack exec channel + email to VP | Growth | |
+
+---
+
+#### Install Count Display Rules
+
+Show exact count for 0–9 installs (e.g., "3 orgs"). Show rounded threshold for 10+ (e.g., "10+ orgs", "50+ orgs", "100+ orgs", "500+ orgs"). Do NOT show "0 orgs" — omit the count entirely for new templates with zero installs. The "Featured" row in the gallery is curated by the Xperiq team (not algorithmic); featured templates are seeded at launch from internal usage and design-partner beta installs. No placeholder counts are pre-populated — launch counts reflect real installs only.
+
+<!-- ENT-016 applied -->
+
+#### Template Search & Filter
+
+**Search** (`GET /api/automations/templates?q=&category=&tier=`) — full-text search across `name`, `description`, `tags`. Returns ranked results; exact name match ranks first.
+
+**Category filter tabs** — driven by `TemplateDefinition.category` field (see Template Authoring section below). Adding a new template to a new category automatically creates a new tab with no frontend code change.
+
+**"Use this template" flow:**
+1. User clicks `[Use this template →]`
+2. If tier-gated: show upgrade modal instead
+3. If available: open the builder pre-populated from the template spec
+   - Trigger card and all action cards drop in with the stagger animation
+   - Crystal annotation card appears: `"✦ This automation was built from the [Template Name] template. Review each card and customize for your survey."`
+   - Right panel auto-opens to the first card that needs user input (e.g., Slack channel, recipient email)
+4. Template `installed_count` incremented (via `POST /api/automations/templates/:id/install`)
+5. User is in the builder — they can modify, test, and enable
 
 ### 1.9 Empty State
 
@@ -742,28 +855,95 @@ Each config panel uses shadcn form components. All changes are immediately refle
 
 #### Schedule Trigger Config Panel
 
+**Design principle:** Cron is an implementation detail. Users express intent (when, how often, at what time). The system converts to cron internally. The cron string is never displayed unless explicitly requested via a deep developer toggle.
+
+**shadcn components:** `ToggleGroup` + `ToggleGroupItem` (frequency, days, AM/PM), `Select` (hour, minute, month ordinal, weekday name, interval unit, timezone), `RadioGroup` (monthly type), `Input` type=number (interval count), `Collapsible` (developer mode), `Badge` (preview).
+
 ```
-Frequency
-  [ Daily ▾ ]
-
-Time
-  [ 09:00 AM ▾ ]
-
-Day of week (Weekly only)
-  [Mo] [Tu] [We] [Th] [Fr] [Sa] [Su]
-
-Timezone
-  [ America/Los_Angeles ▾ ]
-
-Cron (Advanced)
-  [ 0 9 * * 1             ]
-  Preview: "Runs every Monday at 9:00 AM PT"
-
-─────────────────────────────────────
-Next delivery
-  📅 Mon Jun 30, 2026 at 9:00 AM PT
-     (3 days from now)
+┌─────────────────────────────────────────────────────────────────────┐
+│  SCHEDULE TRIGGER                                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  How often?                                                         │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  [ Daily ]  [ Weekly ]  [ Monthly ]  [ Custom interval ]     │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│  (ToggleGroup, single-select, default: Daily)                        │
+│                                                                     │
+│  ── WEEKLY VARIANT ───────────────────────────────────────────────  │
+│  On which days?                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  [Mon]  [Tue]  [Wed]  [Thu]  [Fri]  [Sat]  [Sun]            │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│  (ToggleGroup multiple, min 1 required)                              │
+│                                                                     │
+│  ── MONTHLY VARIANT ──────────────────────────────────────────────  │
+│  On                                                                 │
+│  ○  The  [ 1st ▾ ]  day of the month                               │
+│     (Select: 1st–28th — values ≥ 29 show skip warning below)        │
+│     ⚠ Months with fewer than 29 days will be skipped.               │
+│  ○  The  [ First ▾ ]  [ Monday ▾ ]  of the month                   │
+│     (Select: First/Second/Third/Fourth/Last × Monday–Sunday)         │
+│  ○  The last day of the month                                       │
+│  (RadioGroup, default: 1st day)                                     │
+│                                                                     │
+│  ── CUSTOM INTERVAL VARIANT ──────────────────────────────────────  │
+│  Every                                                              │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  [ 2     ]  [ Weeks ▾ ]                                      │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│  (Input type=number min=1 max=365 + Select: Hours/Days/Weeks/Months) │
+│  Starting from next  [ Monday ▾ ]                                   │
+│                                                                     │
+│  ── ALL VARIANTS ─────────────────────────────────────────────────  │
+│  At what time?                                                      │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  [ 09 ▾ ] : [ 00 ▾ ]  [ AM ▾ ]                              │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│  (Select 1–12 × Select 00/15/30/45 × ToggleGroup AM/PM)             │
+│  [ ↕ Pick exact minute ]  ← ghost link reveals full 00–59 Select    │
+│                                                                     │
+│  Time zone                                                          │
+│  [ America / Los_Angeles  —  Pacific Time (UTC−7)  ▾ ]             │
+│  (Command inside Popover — searchable IANA timezone list)           │
+│  ○ Use my browser's timezone  ○ Choose a timezone                  │
+│                                                                     │
+│  ─────────────────────────────────────────────────────────────────  │
+│  📅 Runs every Monday at 9:00 AM Pacific Time                       │
+│     Next run: Mon, Jun 30 · 3 days from now                         │
+│  (Updates in real-time on every field change. Primary feedback       │
+│   mechanism — replaces cron display entirely.)                       │
+│                                                                     │
+│  ─────────────────────────────────────────────────────────────────  │
+│  ⚙ Developer mode (cron expression)             [ show ▾ ]          │
+│                                                                     │
+│  ── DEVELOPER MODE (Collapsible, closed by default) ──────────────  │
+│  Cron expression    [ 0 9 * * 1                                   ] │
+│  Validates as: "every Monday at 9:00 AM"                            │
+│  ⚠ Changing this field overrides the visual picker above.           │
+│  (If cron is not representable in the picker, preview shows:         │
+│   "Custom expression (not representable in picker)")                 │
+└─────────────────────────────────────────────────────────────────────┘
 ```
+
+**Preview line computation:**
+```tsx
+const humanDescription = useMemo(() =>
+  buildScheduleDescription(frequency, days, monthlyConfig, customInterval, time, timezone),
+  [frequency, days, monthlyConfig, customInterval, time, timezone]
+);
+// output examples:
+// "every Monday and Wednesday at 9:00 AM Pacific Time"
+// "the first Monday of each month at 6:00 AM UTC"
+// "every 3 months starting January at 6:00 AM Eastern Time"
+
+const nextRun = useMemo(() => {
+  const cron = buildCronFromConfig({ frequency, days, monthlyConfig, customInterval, time });
+  return getNextRunFromCron(cron, timezone); // returns Date
+}, [frequency, days, monthlyConfig, customInterval, time, timezone]);
+```
+
+**Cron is computed internally** — `buildCronFromConfig()` is a pure function that maps the picker state to a cron string. It is never displayed to the user by default. The developer mode toggle reveals it as an escape hatch only.
 
 #### NPS Threshold Trigger Config Panel
 
@@ -826,8 +1006,10 @@ Email preview (mini)
 ```
 
 - **Template selector:** Combobox showing the 6 built-in templates + any custom ones. Changing template resets sections list.
-- **Tone selector:** Select with 3 options.
+- **Audience selector** — see Fix 4 (AudienceSelector) for the full spec. The audience field replaces the deprecated Tone field.
 - **Time range:** Select with presets + "Custom range" (shows date range picker).
+
+<!-- ENT-029 applied -->
 - **Sections list:** Draggable with `@dnd-kit/core`. `DndContext` + `SortableContext`. Each section has a drag handle, toggle switch, and label. Required sections (`Crystal Summary`, `Recommendations`) have their toggle disabled and show a lock icon. Section reorder is persisted in the automation config.
 - **Mini email preview:** 320px wide, 160px height, non-interactive, refreshes when template or sections change (debounced 500ms). Shows a static layout approximation (not a live render).
 - **"✦ Generate live preview" button:** Crystal purple, triggers `POST /api/automations/:id/preview` which calls CrystalOS to render a full preview with sample data. Loading state: "Crystal is writing..." spinner. On success: opens the full Briefing Delivery View in a new tab.
@@ -1112,8 +1294,10 @@ The builder can still be saved in this state, but the Enable button shows a tool
 
 ## Surface 4: Briefing Delivery View
 
-**Route:** `/app/automations/:id/runs/:runId`
+**Route:** `/app/workflows/:id/runs/:runId`
 **URL params:** `:id` (automation ID), `:runId` (specific run ID)
+
+<!-- ENT-028 applied -->
 
 This is the first-class page that renders a completed Intelligence Briefing. It is what a CX director navigates to from the in-app notification and then forwards to their VP. Treat this as a product moment, not a debug view.
 
@@ -1219,7 +1403,7 @@ Visual: Full-width Indigo (`#4F46E5`) band, 24px top/bottom padding, 32px left/r
 ```html
 <tr>
   <td style="padding:24px 32px 16px;">
-    <table width="100%" style="border-left:4px solid #4F46E5;
+    <table width="100%" style="border-left:4px solid #7C3AED; /* Crystal purple — matches --color-crystal token; do not use workflow indigo here */
                                 background:#F8F9FF; border-radius:0 8px 8px 0;">
       <tr>
         <td style="padding:16px 20px;">
@@ -1242,7 +1426,9 @@ Visual: Full-width Indigo (`#4F46E5`) band, 24px top/bottom padding, 32px left/r
 The narrative must be specific, not generic. Example:
 > Your NPS rose 12 points this week, driven by a surge of promoter responses citing the new onboarding flow. Detractor themes centered on response time and billing clarity. This week's signal suggests a strong opportunity to reduce detractor volume by addressing the billing FAQ gap.
 
-Left border: 4px solid Indigo (`#4F46E5`). Background: `#F8F9FF`. `border-radius: 0 8px 8px 0`.
+Left border: 4px solid Crystal purple (`#7C3AED`) — matches `--color-crystal` token; do not use workflow indigo here. Background: `#F8F9FF`. `border-radius: 0 8px 8px 0`.
+
+<!-- ENT-026 applied -->
 
 #### KPI Row
 
@@ -2089,13 +2275,28 @@ automations: {
       audienceSwitchWarning: 'Switching audience will reset your section order. Continue?',
     },
     schedule: {
-      frequency: 'Frequency',
-      time: 'Time',
-      dayOfWeek: 'Day of week',
-      timezone: 'Timezone',
-      cron: 'Cron (Advanced)',
-      cronPreview: 'Runs: {cronHuman}',
-      nextDelivery: 'Next delivery',
+      howOften: 'How often?',
+      daily: 'Daily',
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+      customInterval: 'Custom interval',
+      onWhichDays: 'On which days?',
+      theNthDay: 'The {ordinal} day of the month',
+      theNthWeekday: 'The {ordinal} {weekday} of the month',
+      theLastDay: 'The last day of the month',
+      monthlySkipWarning: 'Months with fewer than {day} days will be skipped.',
+      every: 'Every',
+      startingFrom: 'Starting from next',
+      atWhatTime: 'At what time?',
+      exactMinuteToggle: '↕ Pick exact minute',
+      timezone: 'Time zone',
+      useBrowserTimezone: "Use my browser's timezone",
+      chooseTimezone: 'Choose a timezone',
+      nextRun: 'Next run: {date} · {relative}',
+      developerModeLabel: '⚙ Developer mode (cron expression)',
+      cronLabel: 'Cron expression',
+      cronOverrideWarning: 'Changing this field overrides the visual picker above.',
+      cronNotRepresentable: 'Custom expression (not representable in picker)',
     },
     npsThreshold: {
       survey: 'Survey',
@@ -2793,6 +2994,1072 @@ outcomes: {
   outcomeViewRemaining: 'View the {count} remaining responses',
 },
 ```
+
+---
+
+---
+
+## Gap Fixes — v2.2
+
+**Version:** 2.2
+**Addresses:** Fourteen UX gaps identified in the full 41-issue audit (2026-06-29). These complete the design coverage of all customer-experience and cross-review issues from `ISSUES_AND_FIXES.md`.
+**Status:** Approved — applies retroactively to all phases.
+
+---
+
+### Fix 6 — Trigger Picker User-Language Groupings (ISS-025)
+
+**Problem:** The `CanvasPalette` lists triggers as a flat list of technical names. A user building their first automation doesn't think "I need an `nps_threshold` trigger" — they think "I want something to happen when my score looks bad."
+
+**Fix:** Group triggers in the palette under plain-English category headers, ordered by frequency of use.
+
+```
+ADD TO CANVAS — TRIGGERS
+
+  WHEN SOMETHING LOOKS WRONG
+  ┌──────────────────────────────────────────────────────────┐
+  │  [📉]  NPS Drop or Rise                                  │
+  │  [😞]  Sentiment Spike                                   │
+  │  [📊]  Statistical Anomaly       [✦ Crystal]             │
+  └──────────────────────────────────────────────────────────┘
+
+  WHEN A NUMBER IS REACHED
+  ┌──────────────────────────────────────────────────────────┐
+  │  [#]   Response Count Reached                            │
+  │  [📉]  Response Rate Drop                                │
+  └──────────────────────────────────────────────────────────┘
+
+  CRYSTAL DETECTS AUTOMATICALLY
+  ┌──────────────────────────────────────────────────────────┐
+  │  [✦]   New Theme Detected        [✦ Crystal]             │
+  └──────────────────────────────────────────────────────────┘
+
+  ON A SCHEDULE
+  ┌──────────────────────────────────────────────────────────┐
+  │  [🗓]  Schedule                                           │
+  │  [▷]   Manual (run now)                                  │
+  └──────────────────────────────────────────────────────────┘
+
+  WHEN SOMETHING HAPPENS
+  ┌──────────────────────────────────────────────────────────┐
+  │  [📝]  Response Submitted                                │
+  │  [⚙]   Survey Lifecycle                                  │
+  └──────────────────────────────────────────────────────────┘
+```
+
+`[✦ Crystal]` badge — violet-100 bg, violet-700 text — marks Crystal Signal triggers. These are plan-gated: on Starter, they are shown but disabled with a tooltip `"Crystal Signals require Growth plan or above."` **Not hidden** — showing them upsells the tier.
+
+The category headers and groupings are driven by `TriggerGroup` in the registry (see `docs/workflows/EXTENSIBILITY.md`). Adding a new trigger with a `group` field automatically places it in the correct section with no code change.
+
+---
+
+### Fix 7 — Cooldown UI in the Builder (ISS-026)
+
+**Problem:** Every trigger has an invisible 60-minute cooldown (the system won't re-fire the same workflow within 60 minutes of the previous fire). Users have no way to see or change this, leading to "why didn't it fire again?" tickets.
+
+**Fix:** Add a **Cooldown** field to every trigger config panel, below the trigger-specific fields.
+
+```
+── ALL TRIGGER PANELS (below trigger-specific config) ──────────────────
+
+Cooldown (min time between fires)
+  [ 60 min  ▾ ]
+  (Select: 5 min / 15 min / 30 min / 60 min / 2h / 4h / 24h / None)
+
+  ⓘ After firing, this workflow won't fire again for 60 minutes.
+     Prevents alert fatigue during data spikes.
+```
+
+The default is `60 min`. Users who want real-time alerting on every response can set `None` (no cooldown). The info tooltip explains the purpose in plain language so users don't mistake it for a bug.
+
+**State stored in:** `workflows.trigger_config.cooldown_minutes` — `null` = no cooldown, number = minutes. Zero is treated as `null`.
+
+---
+
+### Fix 8 — Crystal Builder Degradation Tiers (ISS-028)
+
+**Problem:** Fix 3 (v2.1) only covers the "ambiguous input" tier — where Crystal can parse the request but needs clarification. Two other degradation cases have no UI: **partial parse** (Crystal built most of it but couldn't fill one field) and **total parse failure** (the request can't be built at all with current trigger/action types).
+
+**Fix:** Define the full 3-tier degradation spec.
+
+#### Tier 1 — Ambiguous (already in Fix 3)
+Crystal parsed everything but found multiple matches for a named entity (e.g., two surveys named "CSAT"). Shows `CrystalDisambiguationCard`. Covered by v2.1 Fix 3.
+
+#### Crystal Builder API Contract Extension (Tiers 2 + 3)
+
+The existing `POST /api/automations/crystal-build` response (from v2.1 Fix 3) is extended:
+
+```typescript
+// POST /api/automations/crystal-build response (v2.2 extension)
+{
+  spec?: WorkflowSpec;         // Tier 1+2: full or partial spec
+  ambiguities?: AmbiguityItem[];          // Tier 1 only (from v2.1 Fix 3)
+
+  // NEW: Tier 2 — partial parse
+  unfilled_fields?: Array<{
+    field: string;          // e.g. "recipients"
+    reason: string;         // e.g. "I don't know who should receive this."
+    card_index: number;     // which canvas card (0-indexed) has the gap
+    card_type: string;      // e.g. "send_email"
+  }>;
+
+  // NEW: Tier 3 — no parse
+  no_parse_reason?: string;   // e.g. "Trigger on Zendesk ticket creation is not available."
+  alternatives?: Array<{
+    trigger_type: string;
+    display_name: string;
+    description: string;    // e.g. "Alert when sentiment spikes (similar pattern)"
+  }>;
+
+  parse_tier: 1 | 2 | 3;   // always present — tells the frontend which card to render
+}
+```
+
+**Frontend card selection:**
+- `parse_tier: 1` + `ambiguities` → render `CrystalDisambiguationCard` (v2.1 Fix 3)
+- `parse_tier: 2` + `unfilled_fields` → render `CrystalPartialParseCard`
+- `parse_tier: 3` + `no_parse_reason` + `alternatives` → render `CrystalNoParseCard`, canvas stays empty
+
+**Component props:**
+```typescript
+interface CrystalPartialParseCardProps {
+  unfilledFields: UnfilledField[];
+  onDismiss: () => void;       // collapses to CrystalAnnotationCard
+  onJumpToField: (cardIndex: number) => void; // selects card + focuses field
+}
+
+interface CrystalNoParseCardProps {
+  reason: string;
+  alternatives: AlternativeSuggestion[];
+  onSelectAlternative: (triggerType: string) => void; // populates canvas
+  onBuildManually: () => void; // switches to Visual Builder
+}
+```
+
+#### Tier 2 — Partial Parse
+
+Crystal built the workflow but left one or more fields as placeholders because it couldn't determine the value from the description.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ✦ Crystal built this, but needs a little more                  │
+│                                                                 │
+│  I've set up most of this automation, but couldn't fill in:     │
+│                                                                 │
+│  • Email recipients — I don't know who should receive this.     │
+│    [→ Jump to Email action]                                     │
+│                                                                 │
+│  • Slack channel — I wasn't sure which channel to use.          │
+│    [→ Jump to Slack action]                                     │
+│                                                                 │
+│  The canvas is ready — just complete the highlighted fields.   │
+│                                  [Got it, I'll complete it →]  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Behavior:** Canvas cards with unfilled fields show a `⚠` amber indicator on the card. The right panel highlights the empty field with `ring-2 ring-amber-400`. The automation cannot be enabled until all `⚠` fields are filled. "Got it" dismisses the Crystal card (it becomes a collapsed `CrystalAnnotationCard`), leaving the canvas-level warnings visible.
+
+#### Tier 3 — No Parse
+
+Crystal cannot map the request to any available trigger or action type.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ✦ I can't build this one yet                                   │
+│                                                                 │
+│  I understood your request, but it requires capabilities        │
+│  that aren't available yet:                                     │
+│                                                                 │
+│  • Trigger on Zendesk ticket creation (not yet connected)       │
+│                                                                 │
+│  What I CAN do instead:                                         │
+│  → Alert when sentiment spikes (similar pattern)                │
+│  → Trigger on response submitted                                │
+│                                                                 │
+│  [Try one of these →]   [Build manually instead →]             │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Behavior:** Canvas stays empty. Crystal explains what it understood and why it can't build it, then surfaces 2 "What I CAN do instead" alternatives drawn from the capability registry. The user can accept an alternative (auto-populates the canvas with the closest match) or switch to Visual Builder.
+
+---
+
+### Fix 9 — Workflow Detail Page + Analytics Tab (ISS-030)
+
+**Problem:** Run history exists (`/app/workflows/:id/runs`) but there is no workflow detail page — no single URL that shows the automation's overview, run history, and analytics in one place. The analytics view doesn't exist either.
+
+**Fix:** Define the **workflow detail page** at `/app/workflows/:id` as a 3-tab container, and add the **Analytics** tab.
+
+#### Workflow Detail Page Shell
+
+Route: `/app/workflows/:id` (add as `AUTOMATION_DETAIL: '/app/workflows/:id'` to `routes.ts`)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  ← Back to Hub                                                     │
+├────────────────────────────────────────────────────────────────────┤
+│  NPS Drop Alert                [● Active]    [Edit]  [···]         │
+│  When NPS drops below 30 on CSAT Q3                                │
+│  Created by Aisha Malone · Last fired 2h ago                       │
+├────────────────────────────────────────────────────────────────────┤
+│  [ Overview ]  [ Runs ]  [ Analytics ]                             │
+├────────────────────────────────────────────────────────────────────┤
+│  (tab content below)                                               │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+- **Overview tab:** Shows the automation canvas in read-only mode + the Live Preview Strip + the Signal Evidence Panel (if Crystal Signal). Edit button opens the builder.
+- **Runs tab:** The existing `RunHistoryPage` content, embedded here.
+- **Analytics tab:** See below.
+
+`[Edit]` button: navigates to `/app/workflows/build?id=:id`. `[···]` menu: Enable/Disable, Pause, Pause Until…, Duplicate, Delete.
+
+**Add to `WorkflowAnalyticsTab` props:**
+```typescript
+interface WorkflowAnalyticsTabProps {
+  automationId: string;
+  days?: number; // default 30
+}
+```
+
+**Fix:** Add an **Analytics** tab to the workflow detail page.
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  NPS Drop Alert                [● Active]    [Edit]  [···]         │
+│  When NPS drops below 30 on CSAT Q3                                │
+├────────────────────────────────────────────────────────────────────┤
+│  [ Overview ]  [ Runs ]  [ Analytics ]                             │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  LAST 30 DAYS                                                       │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌─────────────┐   │
+│  │ 14 fires   │  │ 100%       │  │ 14 actions │  │ 0 errors    │   │
+│  │ total      │  │ success    │  │ delivered  │  │             │   │
+│  └────────────┘  └────────────┘  └────────────┘  └─────────────┘   │
+│                                                                     │
+│  FIRE FREQUENCY                                                     │
+│  [Sparkline bar chart — fires per day, last 30 days]                │
+│  │ ▄ ░ ░ ▄ ░ ░ ▄ ░ ▄ ▄ ░ ░ ░ ▄ ▄ ░ ░ ░ ▄ ░ ░ ▄ ▄ ░ ░ ▄ ░ ░ ░ │   │
+│                                                                     │
+│  DELIVERY BY ACTION                                                  │
+│  Slack #cx-alerts      14 / 14 sent    100%  ████████████████████   │
+│  Jira ticket (CX)      14 / 14 created 100%  ████████████████████   │
+│  Crystal Analysis      14 / 14 done    100%  ████████████████████   │
+│                                                                     │
+│  SLOWEST RUNS                                                        │
+│  Jun 27 10:32 AM — 12,480ms   [View run]                           │
+│  Jun 24  9:15 AM —  8,320ms   [View run]                           │
+│                                                                     │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**Endpoint:** `GET /api/automations/:id/analytics?days=30` — returns fire count, success rate, per-action delivery stats, fires-per-day timeseries, and slowest runs.
+
+---
+
+### Fix 10 — Creator Attribution + RBAC (ISS-031)
+
+**Problem:** No creator is shown on workflow cards. Any org member can edit any workflow. There is no way to filter "automations I own."
+
+**Fix:** Add three things:
+
+**1. Creator avatar on cards:**
+```
+│  [⚡ WORKFLOW badge]    [A.M. ⚬] [● Active]              │
+```
+`[A.M. ⚬]` — 20px avatar (initials or photo) of the creator. Tooltip: "Created by Aisha Malone". On hover, shows a `···` menu that includes "Transfer ownership."
+
+**2. Three RBAC roles (defined in `docs/workflows/ARCHITECTURE.md`):**
+- **Creator** — full edit + delete + enable/disable
+- **Editor** — full edit, no delete, no transfer
+- **Viewer** — read-only (can view runs and briefings, cannot edit)
+
+Role is set per-automation. Default: org admins are Creator. The user who creates an automation is its Creator.
+
+**3. "Created by me" filter:**
+Add to the hub tab bar:
+```
+[ All ]  [ Active ]  [ Briefings ]  [ Workflows ]  [ Error ]  [ Mine ]
+```
+`Mine` tab filters to `created_by = current_user_id OR editor_of = current_user_id`.
+
+---
+
+### Fix 11 — Test with Real Historical Events (ISS-032)
+
+**Problem:** TestModePanel only accepts manually typed values. For complex triggers (e.g., `sentiment_spike`), the user has no idea what realistic values to enter.
+
+**Fix:** Add a "Load from last real fire" dropdown to the test panel.
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  Test Run                                             [×]  │
+│  ──────────────────────────────────────────────────────    │
+│                                                            │
+│  SIMULATE TRIGGER CONTEXT                                  │
+│                                                            │
+│  Load from:  [ Enter values manually  ▾ ]                  │
+│              ┌──────────────────────────────────────────┐  │
+│              │ Enter values manually                    │  │
+│              │ ─────────────────────────────────────    │  │
+│              │ ✓ Jun 27 10:32 AM (NPS: 27.4, n=412)    │  │
+│              │   Jun 24  9:15 AM (NPS: 29.1, n=388)    │  │
+│              │   Jun 20 11:00 AM (NPS: 31.0, n=401)    │  │
+│              └──────────────────────────────────────────┘  │
+│                                                            │
+│  NPS score:      [ 27.4          ]  (pre-filled)           │
+│  Response count: [ 412           ]  (pre-filled)           │
+│  Window:         [ 24h ▾         ]  (pre-filled)           │
+│                                                            │
+```
+
+When a historical event is selected, all form fields pre-fill with the actual values from that run. This lets the user re-run with identical conditions to reproduce a past fire and verify the actions behave correctly.
+
+**Endpoint:** `GET /api/automations/:id/runs?status=success&limit=3` — the same runs endpoint, filtered to successful runs, used to populate the dropdown.
+
+---
+
+### Fix 12 — Bulk Operations (ISS-033)
+
+**Problem:** The card grid only supports individual card actions. Org admins managing 50+ automations need to bulk-enable, bulk-pause, or bulk-delete.
+
+**Fix:** Multi-select mode activated by hovering over any card and clicking a new checkbox, or via a `Select all` control.
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│  Automation Hub              ☐ Select all   3 selected             │
+│  ─────────────────────────────────────────────────────────────     │
+│  ╔══════════════════════╗  ┌──────────────────────┐                │
+│  ║ ☑ NPS Drop Alert     ║  │ ☑ Weekly NPS Digest  │                │
+│  ║ [⚡ WORKFLOW badge]  ║  │ [✦ BRIEFING badge]   │                │
+│  ║ ...                  ║  │ ...                  │                │
+│  ╚══════════════════════╝  └──────────────────────┘                │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │  [▶ Enable]  [⏸ Pause]  [⋯ Duplicate]  [🗑 Delete (3)]       │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│  ↑ Bulk action bar — fixed at bottom of page when ≥1 selected       │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Selected cards show a `2px indigo ring` (`ring-2 ring-indigo-500`). Bulk action bar slides up from the bottom of the viewport (`position: fixed, bottom: 0`). Delete shows a confirmation: `"Delete 3 automations? This cannot be undone."` with explicit `Delete 3` CTA.
+
+---
+
+### Fix 13 — "Check Trigger Now" Button (ISS-034)
+
+**Problem:** After configuring a trigger, the user has no way to know if it would fire right now with current data, without waiting for the scheduler. The test mode requires entering values manually; it doesn't check live data.
+
+**Fix:** Add a `"Would this fire right now?"` button to each trigger config panel.
+
+```
+── NPS THRESHOLD CONFIG PANEL (bottom) ──────────────────────────────
+
+[  ▷ Would this fire right now?  ]    ← secondary button, full width
+
+(on click, calls GET /api/automations/:id/trigger-check — evaluates
+ the trigger against current live data, returns within ~2s)
+
+─── RESULT ──────────────────────────────────────────────────────────
+
+✓  YES — would fire now
+   Current NPS: 27.4 (threshold: 30, direction: below ✓)
+   Response count in window: 412 ✓
+
+OR:
+
+✕  NO — would not fire now
+   Current NPS: 34.2 (threshold: 30, direction: below ✗)
+   NPS needs to drop 4.2 more points to trigger.
+   (Checked at 10:47 AM just now)
+```
+
+The result auto-dismisses after 60 seconds (shown with a progress bar). The user can click `Recheck` to run again with the latest data.
+
+---
+
+### Fix 14 — Template Usage Stats (ISS-035)
+
+**Problem:** The `TemplateGallery` shows 16 templates with name + description only. Users have no signal to distinguish proven templates from ones no one uses.
+
+**Fix:** Add social proof signals to each `TemplateCard`.
+
+```
+┌──────────────────────────────────────────┐
+│  ⭐ FEATURED                              │
+│                                          │
+│  Weekly NPS Digest                       │
+│  Delivered every Monday at 9 AM to       │
+│  the whole CX team.                      │
+│                                          │
+│  Installed by 240+ orgs   ★★★★★ (4.8)   │
+│  [Use this template →]                   │
+└──────────────────────────────────────────┘
+```
+
+**Fields added to template data:**
+- `installed_count` — aggregated install count (fetched from marketplace endpoint)
+- `avg_rating` — float 0–5, from outcome loop feedback signals
+- `featured` — boolean, manually curated, shown as `⭐ FEATURED` badge at top of card
+
+The `TemplateGallery` sorts by `featured DESC, installed_count DESC` by default. A search/filter bar at the top allows filtering by trigger type or action category.
+
+---
+
+### Fix 15 — Integration Dependency Warning (ISS-037)
+
+**Problem:** If a user disconnects Slack from their integrations page, all automations that use Slack silently fail at runtime. There is no pre-deletion warning and no recovery UX.
+
+**Fix:** Two changes:
+
+**1. Integration deletion warning:**
+When the user attempts to delete an integration, before confirming, show:
+```
+⚠ Deleting this integration will affect 3 automations:
+  • NPS Drop Alert (Slack Message action)
+  • Weekly NPS Digest (Deliver via Slack action)
+  • Theme Spike Alert (Slack Message action)
+
+These automations will error on their next run.
+
+[ Cancel ]   [ Delete anyway + pause affected automations ]
+```
+
+The "Delete anyway" option pauses all affected automations immediately rather than letting them fail at runtime.
+
+**2. Missing integration badge on canvas cards:**
+If a canvas action card references an integration that is not connected for this org, the card shows:
+```
+┌────────────────────────────────────────┐
+│  ⚠ SLACK MESSAGE             [● Error] │
+│  Integration not connected             │
+│  [Connect Slack ↗]                     │
+└────────────────────────────────────────┘
+```
+
+This is a persistent warning (not dismissable) that appears in the builder and in the hub card's action icons row (the Slack icon gets an amber `⚠` overlay).
+
+---
+
+### Fix 16 — Keyboard Shortcuts (ISS-039)
+
+**Problem:** The accessibility section covers focus and ARIA but not keyboard shortcuts for power users in the builder.
+
+**Fix:** Define the keyboard shortcut set for the builder.
+
+| Shortcut | Action |
+|----------|--------|
+| `A` | Open "Add action/condition" dropdown (when canvas focused) |
+| `Delete` / `Backspace` | Delete selected canvas card (shows confirm dialog) |
+| `Cmd/Ctrl + S` | Save automation |
+| `Cmd/Ctrl + Enter` | Enable automation (if saved and valid) |
+| `Cmd/Ctrl + Z` | Undo last canvas change |
+| `Cmd/Ctrl + Shift + Z` | Redo |
+| `Cmd/Ctrl + D` | Duplicate selected canvas card |
+| `Escape` | Deselect / close right panel |
+| `?` | Show keyboard shortcut cheatsheet overlay |
+
+Keyboard shortcut cheatsheet (`?` key):
+```
+┌───────────────────────────────────────────┐
+│  Keyboard shortcuts                  [×]  │
+│                                           │
+│  A           Add action/condition         │
+│  Delete      Remove selected card         │
+│  ⌘S          Save                        │
+│  ⌘↵          Enable automation           │
+│  ⌘Z / ⌘⇧Z   Undo / Redo                 │
+│  ⌘D          Duplicate card              │
+│  Esc         Deselect                    │
+│  ?           Show this panel             │
+└───────────────────────────────────────────┘
+```
+
+The cheatsheet is a `Dialog` (shadcn) with `role="dialog"` and `aria-label="Keyboard shortcuts"`.
+
+---
+
+### Fix 17 — Pause Until Date (ISS-040)
+
+**Problem:** The status pills include `Paused` but the `···` card menu only has "Pause" as a toggle. There is no "Pause until [date]" option, so users who want to pause for a vacation or planned maintenance must remember to manually re-enable.
+
+**Fix:** Add "Pause until…" option to the card `···` menu.
+
+```
+Card ··· menu:
+  ┌─────────────────────────────────────┐
+  │  Edit                               │
+  │  ─────────────────────────────────  │
+  │  ▶ Enable now                       │
+  │  ⏸ Pause now                        │
+  │  ⏸ Pause until…              [new]  │
+  │  ─────────────────────────────────  │
+  │  ⋯ Duplicate                        │
+  │  ─────────────────────────────────  │
+  │  🗑 Delete                           │
+  └─────────────────────────────────────┘
+```
+
+"Pause until…" opens a `Popover` date picker (shadcn `Calendar`):
+```
+Pause until
+[ June 2026 calendar — date picker ]
+
+[ Cancel ]  [ Pause until Jul 7 ]
+```
+
+When a scheduled resume is active, the card status pill changes to:
+```
+[ ⏸ Paused until Jul 7 ]
+```
+
+with amber background (`bg-amber-50 text-amber-700`). The system resumes the automation automatically at midnight of the selected date in the automation's configured timezone.
+
+**State stored in:** `workflows.paused_until TIMESTAMPTZ NULL` — `NULL` = not scheduled to resume. The scheduler checks this field each tick and re-enables automations past their `paused_until` timestamp.
+
+**Timezone for resume calculation:** For `schedule` trigger automations, midnight is computed in `trigger_config.timezone`. For all other trigger types (NPS threshold, sentiment spike, etc.) that have no configured timezone, midnight is computed in the org's default timezone (`organizations.default_timezone`, defaulting to `'UTC'` if not set). This ensures a consistent, predictable resume time regardless of trigger type.
+
+---
+
+## Updated Component Inventory (v2.2 additions)
+
+| Component | File path | Gap fix |
+|---|---|---|
+| `TriggerGroupHeader` | `components/automations/builder/TriggerGroupHeader.tsx` | Fix 6 |
+| `CooldownSelect` | `components/automations/builder/config/CooldownSelect.tsx` | Fix 7 |
+| `CrystalPartialParseCard` | `components/automations/builder/CrystalPartialParseCard.tsx` | Fix 8 Tier 2 |
+| `CrystalNoParseCard` | `components/automations/builder/CrystalNoParseCard.tsx` | Fix 8 Tier 3 |
+| `WorkflowAnalyticsTab` | `pages/automations/WorkflowAnalyticsTab.tsx` | Fix 9 |
+| `BulkActionBar` | `components/automations/BulkActionBar.tsx` | Fix 12 |
+| `SelectableCard` | `components/automations/SelectableCard.tsx` | Fix 12 |
+| `TriggerCheckButton` | `components/automations/builder/config/TriggerCheckButton.tsx` | Fix 13 |
+| `KeyboardShortcutsDialog` | `components/automations/builder/KeyboardShortcutsDialog.tsx` | Fix 16 |
+| `PauseUntilPopover` | `components/automations/PauseUntilPopover.tsx` | Fix 17 |
+
+---
+
+## Updated Localization (v2.2 additions)
+
+Add to `app/src/locales/en.ts` under the `automations` namespace:
+
+```typescript
+// Fix 6 — Trigger groups
+triggerGroups: {
+  alerts: 'When something looks wrong',
+  thresholds: 'When a number is reached',
+  aiSignals: 'Crystal detects automatically',
+  scheduled: 'On a schedule',
+  events: 'When something happens',
+  crystalBadge: 'Crystal',
+  tierGate: 'Crystal Signals require Growth plan or above.',
+},
+
+// Fix 7 — Cooldown
+cooldown: {
+  label: 'Cooldown (min time between fires)',
+  none: 'None',
+  hint: 'After firing, this workflow won\'t fire again for {duration}. Prevents alert fatigue during data spikes.',
+},
+
+// Fix 8 — Degradation tiers
+crystalDegrade: {
+  partialTitle: '✦ Crystal built this, but needs a little more',
+  partialBody: "I've set up most of this automation, but couldn't fill in:",
+  partialCta: 'Got it, I\'ll complete it →',
+  noParseTile: '✦ I can\'t build this one yet',
+  noParseBody: 'I understood your request, but it requires capabilities that aren\'t available yet:',
+  canDoInstead: 'What I CAN do instead:',
+  tryAlternative: 'Try one of these →',
+  buildManually: 'Build manually instead →',
+},
+
+// Fix 9 — Analytics tab
+analytics: {
+  tabLabel: 'Analytics',
+  last30Days: 'Last 30 days',
+  fires: '{count} fires',
+  successRate: '{pct}% success',
+  actionsDelivered: '{count} actions delivered',
+  errors: '{count} errors',
+  fireFrequency: 'Fire frequency',
+  deliveryByAction: 'Delivery by action',
+  slowestRuns: 'Slowest runs',
+},
+
+// Fix 10 — RBAC
+rbac: {
+  createdBy: 'Created by {name}',
+  transferOwnership: 'Transfer ownership',
+  mineTab: 'Mine',
+  roles: {
+    creator: 'Creator',
+    editor: 'Editor',
+    viewer: 'Viewer',
+  },
+},
+
+// Fix 12 — Bulk operations
+bulk: {
+  selectAll: 'Select all',
+  nSelected: '{count} selected',
+  selectCardAriaLabel: 'Select {name}',
+  enable: '▶ Enable',
+  pause: '⏸ Pause',
+  duplicate: '⋯ Duplicate',
+  delete: '🗑 Delete ({count})',
+  deleteConfirmTitle: 'Delete {count} automations?',
+  deleteConfirmBody: 'These automations will be removed. They are soft-deleted and can be restored within 30 days from Settings → Deleted automations.',
+  deleteConfirmCta: 'Delete {count}',
+},
+
+// Fix 11 — Test with history
+testMode: {
+  loadFromLabel: 'Load from:',
+  loadManually: 'Enter values manually',
+  prefilledNote: '(pre-filled)',
+},
+
+// Fix 13 — Trigger check
+triggerCheck: {
+  cta: '▷ Would this fire right now?',
+  loading: 'Checking against live data…',
+  yesTitle: '✓  YES — would fire now',
+  noTitle: '✕  NO — would not fire now',
+  checkedAt: 'Checked at {time} just now',
+  recheck: 'Recheck',
+},
+
+// Fix 15 — Integration dependency warning
+integrationWarning: {
+  deletionTitle: 'This integration is used by automations',
+  deletionBody: 'Deleting this integration will affect {count} automation{s}:',
+  deleteAnyway: 'Delete anyway + pause affected automations',
+  cancelDelete: 'Cancel',
+  missingBadge: 'Integration not connected',
+  connectCta: 'Connect {integrationName} ↗',
+},
+
+// Fix 16 — Keyboard shortcuts
+shortcuts: {
+  title: 'Keyboard shortcuts',
+  add: 'Add action/condition',
+  delete: 'Remove selected card',
+  save: 'Save',
+  enable: 'Enable automation',
+  undo: 'Undo',
+  redo: 'Redo',
+  duplicate: 'Duplicate card',
+  deselect: 'Deselect',
+  showShortcuts: 'Show this panel',
+},
+
+// Fix 17 — Pause until
+pauseUntil: {
+  menuItem: 'Pause until…',
+  popoverTitle: 'Pause until',
+  cancelBtn: 'Cancel',
+  confirmBtn: 'Pause until {date}',
+  pillLabel: '⏸ Paused until {date}',
+},
+```
+
+---
+
+---
+
+## Template Authoring Framework
+
+**Design goal:** Adding a new template should require creating **one file**. No frontend code, no migration, no registration call. Drop a `.template.ts` file in the right folder and it appears in the gallery on next deploy.
+
+This mirrors the Automation Capability Registry pattern from `docs/workflows/EXTENSIBILITY.md`.
+
+---
+
+### Template Definition File
+
+```typescript
+// backend/src/registry/templates/timely.template.ts
+import { TemplateDefinition, TemplateCategory } from '../types';
+
+export const timelyTemplate: TemplateDefinition = {
+  id: 'timely',                          // stable, used in DB + URL params
+  name: 'Timely',
+  description: 'Crystal writes your weekly CX brief every Monday — NPS, themes, what changed, and recommended actions.',
+  category: TemplateCategory.BRIEFINGS,
+  automationType: 'briefing',            // 'workflow' | 'briefing'
+  featured: true,
+  minTier: 'starter',
+  tags: ['nps', 'weekly', 'briefing', 'cx', 'team'],
+
+  // Pre-filled spec — identical shape to WorkflowSpec from crystal-build
+  spec: {
+    trigger: {
+      type: 'schedule',
+      config: {
+        frequency: 'weekly',
+        days: ['monday'],
+        hour: 9,
+        minute: 0,
+        ampm: 'AM',
+        timezone: '__ORG_DEFAULT__',     // placeholder — replaced with org's default timezone on install
+      }
+    },
+    actions: [
+      {
+        type: 'generate_report',
+        config: {
+          template_id: 'weekly_nps_digest',
+          audience: 'team',
+          time_range: 'last_7_days',
+        }
+      },
+      {
+        type: 'send_email',
+        config: {
+          recipients: '__INSTALL_PROMPT__',  // empty — user prompted in builder after install
+          subject: 'Weekly CX Briefing — {{survey.name}}',
+        }
+      },
+      {
+        type: 'notify_in_app',
+        config: { always_on: true }
+      }
+    ]
+  },
+
+  // Fields that require user input after installing — builder highlights these
+  requiredOnInstall: [
+    { field: 'actions[1].config.recipients', label: 'Who should receive this briefing?', card: 1 }
+  ],
+};
+
+export default timelyTemplate;
+```
+
+---
+
+### Placeholder Values
+
+Two special placeholder strings are used in template specs:
+
+| Placeholder | Replaced with |
+|---|---|
+| `'__ORG_DEFAULT__'` | The org's default timezone (`organizations.default_timezone`), set at install time |
+| `'__INSTALL_PROMPT__'` | Leaves the field empty; builder shows amber `⚠` on the card and lists it in the Crystal annotation card |
+| `'__SURVEY_SCOPE__'` | The survey selected in the builder's scope block |
+
+---
+
+### Template Versioning Policy
+
+Installed automations are pinned to the template spec at install time. Template updates do NOT auto-update installed automations. The `TemplateDefinition` has a `version: string` field (semver). When a template is updated and the new version has breaking changes (removed required field, changed trigger type), the template registry increments the major version. The `GET /api/automations/templates/:id` response includes `latest_version` and the installed automation's `installed_at_version`. A non-blocking in-app notification is shown to the creator: "A newer version of the \"Timely\" template is available. [Review changes]" — the creator can choose to re-install the new version (creates a new draft) or dismiss.
+
+<!-- ENT-021 applied -->
+
+### Template Registry Auto-Loader
+
+```typescript
+// backend/src/registry/templates/index.ts
+const modules = import.meta.glob('./*.template.ts', { eager: true });
+export const templateRegistry: TemplateDefinition[] = Object.values(modules)
+  .map((mod: any) => mod.default ?? Object.values(mod)[0])
+  .filter(Boolean)
+  .sort((a, b) => {
+    if (a.featured && !b.featured) return -1;
+    if (!a.featured && b.featured) return 1;
+    return (b.installed_count ?? 0) - (a.installed_count ?? 0);
+  });
+```
+
+**CommonJS fallback for Node.js runtime:** The `import.meta.glob` loader above is for Vite/ESBuild only and does NOT work in the Node.js production backend or test runner. The backend uses a CommonJS-compatible loader at runtime:
+
+```typescript
+// backend/src/registry/templates/index.cjs.ts
+// CommonJS fallback for Node.js (non-Vite environments, e.g., tests, prod server)
+import * as fs from 'fs';
+import * as path from 'path';
+
+const templateDir = path.join(__dirname);
+export const templateRegistry: TemplateDefinition[] = fs
+  .readdirSync(templateDir)
+  .filter(f => f.endsWith('.template.ts') || f.endsWith('.template.js'))
+  .map(f => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const mod = require(path.join(templateDir, f));
+    return mod.default ?? Object.values(mod)[0];
+  })
+  .filter(Boolean);
+```
+
+The production entry point at `backend/src/registry/templates/index.ts` re-exports from the CommonJS loader. The `import.meta.glob` version is for frontend tooling only (if templates are ever surfaced client-side).
+
+<!-- ENT-022 applied -->
+
+**Adding a new template — complete checklist:**
+
+```
+□  Create backend/src/registry/templates/{id}.template.ts
+□  Fill in: id, name, description, category, spec, requiredOnInstall
+□  Set minTier (starter / growth / enterprise)
+□  Set featured: true if it should appear in the featured row
+□  Run: npm run generate-template-preview {id}  ← generates the thumbnail
+□  Deploy — template appears in gallery automatically
+```
+
+No frontend code, no migration, no registration call. The gallery renders from `GET /api/automations/templates` which returns the full registry.
+
+---
+
+### Template API Endpoints
+
+```
+GET  /api/automations/templates              — full catalog (filtered by org tier)
+GET  /api/automations/templates/:id         — single template spec
+POST /api/automations/templates/:id/install — increments installed_count, returns pre-filled WorkflowSpec
+```
+
+`POST /api/automations/templates/:id/install` response:
+```typescript
+{
+  spec: WorkflowSpec;              // pre-filled, placeholders resolved
+  automation_id: string;           // draft automation created in DB (status: 'draft')
+  required_on_install: Array<{ field, label, card_index }>;
+  builder_url: string;             // '/app/workflows/build?id={automation_id}'
+}
+```
+
+The builder opens at `builder_url` with the draft pre-populated. The user configures the `required_on_install` fields and clicks Enable.
+
+---
+
+### Template Preview Thumbnail Generator
+
+```bash
+# Generates a 320×200px SVG skeleton for the template card preview
+npm run generate-template-preview timely
+
+# Output: backend/src/registry/templates/previews/timely.svg
+# The SVG shows: section count, audience badge, trigger label — no real data
+```
+
+The thumbnail is served as a static asset and shown in the template card. It updates automatically when the template spec changes (section count, audience, etc.).
+
+---
+
+## Simplified Workflow Creation, Testing, and Productionizing
+
+**Design goal:** A new user should be able to go from zero to a live, tested automation in under 5 minutes. An existing user should be able to clone, modify, and re-enable in under 2 minutes.
+
+---
+
+### Builder Status Model
+
+Automations have three states in the builder lifecycle:
+
+```
+[Draft] ──────► [Validated] ──────► [Active]
+   ↑                 ↑                  │
+   └── edit ─────────┘                  │
+                                        └── Disable → [Paused]
+                                        └── Error  → [Error]
+```
+
+| State | What it means | UI indicator |
+|---|---|---|
+| **Draft** | Not yet tested or enabled. Can have empty required fields. | `○ Draft` gray pill in builder header |
+| **Validated** | At least one successful test run. No `⚠` unfilled fields. | `✓ Validated` green pill |
+| **Active** | Enabled — running live. | `● Active` green pill |
+| **Paused** | Manually paused or paused-until date. | `⏸ Paused` amber pill |
+| **Error** | Last run failed. Requires attention. | `✕ Error` red pill |
+
+---
+
+### Pre-Flight Checklist (Before First Enable)
+
+When the user clicks `Enable →` for the first time (state = Draft), instead of enabling immediately, show a **pre-flight modal**:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Before going live                                          [×]  │
+│  ────────────────────────────────────────────────────────────    │
+│                                                                  │
+│  ✓  Trigger configured                                           │
+│     NPS drops below 28 on CSAT Q3 · 24h window                  │
+│                                                                  │
+│  ✓  Actions configured                                           │
+│     Slack #cx-alerts · Jira CX project                          │
+│                                                                  │
+│  ✓  Integrations connected                                       │
+│     Slack ✓  ·  Jira ✓                                          │
+│                                                                  │
+│  ⚠  Not yet tested                                               │
+│     You haven't run a test yet. We recommend testing             │
+│     before going live so you can see exactly what fires.         │
+│     [▷ Run a test now]   [Skip and enable anyway]               │
+│                                                                  │
+│  ─────────────────────────────────────────────────────────────   │
+│                                                                  │
+│  ✓  Cooldown: 60 minutes                                         │
+│  ✓  No missing required fields                                   │
+│                                                                  │
+│              [ ✓ Enable automation → ]                           │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**Checklist items (auto-evaluated):**
+
+| Check | Pass condition | Failure behaviour |
+|---|---|---|
+| Trigger configured | All required fields non-empty | Blocks enable, deep-links to trigger card |
+| Actions configured | All action cards have no `⚠` fields | Blocks enable, lists which cards need input |
+| Integrations connected | All `requiresIntegration` checks pass | Blocks enable with `[Connect {name} →]` link |
+| Tested | At least one `dry_run` run exists for this automation | Warning only — can skip |
+| Cooldown set | `cooldown_minutes` is non-null | Informational — shown for awareness |
+
+**First-time automation checklist** passes when all blocking items are green. The `Enable automation →` button is disabled (grayed out) until all blocking checks pass.
+
+If the user clicks `Enable →` on a **previously-active** automation (re-enabling after a pause), skip the pre-flight modal — they've already validated it.
+
+---
+
+### Guided Quick-Start Sidebar (New Builder Only)
+
+For brand-new automations (never saved before), a collapsible quick-start panel appears at the bottom of the left panel:
+
+```
+┌─────────────────────────────────────────────────────┐
+│  ✦ Quick start guide           [collapse ▲]          │
+│  ─────────────────────────────────────────────────   │
+│  1  ✓  Choose automation type                        │
+│  2  →  Set your trigger                              │  ← current step (indigo)
+│  3  ○  Add actions                                   │
+│  4  ○  Test it                                       │
+│  5  ○  Enable                                        │
+│  ─────────────────────────────────────────────────   │
+│  Tip: Click a trigger card on the canvas to          │
+│  configure it in the right panel.                    │
+└─────────────────────────────────────────────────────┘
+```
+
+Steps advance automatically as the user completes them (trigger configured → step 2 checked, action added → step 3 checked, test run → step 4 checked). The panel collapses automatically after step 5 (first enable). It never reappears for that automation.
+
+Closing it manually removes it permanently for the session. It does NOT reappear on subsequent visits to the same automation.
+
+---
+
+### One-Click Clone and Modify
+
+Any automation in the hub can be duplicated from the card `···` menu → **`⋯ Duplicate`**.
+
+Duplicating creates a new Draft automation with:
+- All trigger + action config copied
+- Name suffixed with ` (copy)`
+- `status: 'draft'` — must be re-enabled explicitly
+- `installed_count` reset to 0 (it's a new automation, not an install)
+
+The builder opens immediately on the duplicate, in the same state as if the user just installed a template. This is the fastest path for "I want the same automation but for a different survey."
+
+---
+
+### Staged Rollout (Dry Run → Live)
+
+For high-impact automations (webhook, Jira, Zendesk, close_survey actions), the pre-flight checklist adds a **staged rollout** option:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  ⚠  This automation has high-impact actions                     │
+│     (Zendesk ticket creation, close_survey)                     │
+│                                                                 │
+│  Recommended: start with a 24-hour observation period.          │
+│  Your automation will evaluate conditions but not execute        │
+│  actions — you'll see exactly what would have fired and what    │
+│  it would have done.                                            │
+│                                                                 │
+│  ○  [⦿ Start with 24h observation]   (recommended)             │
+│  ○  [  Enable fully now]                                        │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**24h observation mode:** `status = 'observing'`. The scheduler evaluates all conditions on the normal schedule and writes `dry_run` run records with full rendered action payloads — but does NOT execute any actions. After 24 hours, status automatically transitions to `enabled`. The user receives an in-app notification: `"NPS Drop Alert observed 3 fires overnight — no actions were taken. Review the runs and enable fully if you're satisfied."`.
+
+This is particularly important for `close_survey` and `create_zendesk_ticket` — actions that are hard to reverse.
+
+---
+
+### Localization (New Strings)
+
+Add to `app/src/locales/en.ts` under the `automations` namespace:
+
+```typescript
+// Pre-flight checklist
+preflight: {
+  title: 'Before going live',
+  checkTrigger: 'Trigger configured',
+  checkActions: 'Actions configured',
+  checkIntegrations: 'Integrations connected',
+  checkTested: 'Not yet tested',
+  checkTestedPass: 'Test run completed',
+  checkTestedWarning: 'You haven\'t run a test yet. We recommend testing before going live.',
+  runTestNow: '▷ Run a test now',
+  skipAndEnable: 'Skip and enable anyway',
+  checkCooldown: 'Cooldown: {duration}',
+  checkNoMissingFields: 'No missing required fields',
+  enableCta: '✓ Enable automation →',
+},
+
+// Builder status states
+builderStatus: {
+  draft: '○ Draft',
+  validated: '✓ Validated',
+  active: '● Active',
+  paused: '⏸ Paused',
+  error: '✕ Error',
+  observing: '◎ Observing',
+},
+
+// Quick-start guide
+quickStart: {
+  title: '✦ Quick start guide',
+  collapse: 'collapse',
+  step1: 'Choose automation type',
+  step2: 'Set your trigger',
+  step3: 'Add actions',
+  step4: 'Test it',
+  step5: 'Enable',
+},
+
+// Staged rollout
+stagedRollout: {
+  warning: 'This automation has high-impact actions',
+  body: 'Recommended: start with a 24-hour observation period.',
+  observeOption: 'Start with 24h observation',
+  observeRecommended: '(recommended)',
+  enableNow: 'Enable fully now',
+  observingNotification: '{name} observed {count} fires overnight — no actions were taken. Review the runs and enable fully if you\'re satisfied.',
+},
+
+// Duplicate
+duplicate: {
+  nameSuffix: ' (copy)',
+  toast: 'Automation duplicated — review and enable when ready.',
+},
+```
+
+---
+
+## Updated Component Inventory (Template + Productionizing additions)
+
+| Component | File path | Purpose |
+|---|---|---|
+| `TemplateCard` | `components/automations/TemplateCard.tsx` | Individual card in gallery — updated to show rating, tier badge, featured star |
+| `TemplateSearchBar` | `components/automations/TemplateSearchBar.tsx` | Search input inside gallery modal |
+| `TemplateCategoryTabs` | `components/automations/TemplateCategoryTabs.tsx` | Category filter tabs — driven by registry, no hardcoded list |
+| `PreflightModal` | `components/automations/PreflightModal.tsx` | Pre-enable checklist modal |
+| `PreflightCheckRow` | `components/automations/PreflightCheckRow.tsx` | Individual check row (pass/warn/fail state) |
+| `StagedRolloutChoice` | `components/automations/StagedRolloutChoice.tsx` | Observe vs enable-now choice inside pre-flight |
+| `QuickStartGuide` | `components/automations/builder/QuickStartGuide.tsx` | Collapsible step guide in left panel |
+| `BuilderStatusPill` | `components/automations/builder/BuilderStatusPill.tsx` | Draft/Validated/Active pill in builder header |
 
 ---
 

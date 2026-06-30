@@ -2,8 +2,9 @@
 
 **Feature:** Xperiq Actions (Workflow Automation System)
 **Priority:** 2 in build sequence
-**Team size:** 9
+**Team size:** 12
 **Kickoff:** Week 1 (Phase 1 start)
+**Last updated:** 2026-06-29 — added Director of QE, Security QE, Platform SRE; enterprise GA readiness pass
 
 ---
 

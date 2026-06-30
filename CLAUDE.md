@@ -75,3 +75,16 @@ cd crystalos && make run-dev  # Start CrystalOS agents service on :8001
 ```
 cd backend && firebase deploy  # Deploys hosting + functions + firestore rules
 ```
+
+## Team-driven Implementation Protocol
+
+**Every feature in `docs/` is owned by an AI team.** Before implementing anything from a docs folder, Claude MUST follow this protocol:
+
+1. **Check for `TEAM.md`** in the feature's folder (e.g. `docs/prism/TEAM.md`).
+2. **If TEAM.md exists** — read all members, then launch one parallel agent per member (using the Agent tool with `run_in_background`). Each agent receives: their role/owns/skills, the feature's design docs, and the relevant layer's CLAUDE.md. Agents run concurrently. Synthesize and present results when all finish.
+3. **If TEAM.md is missing** — STOP. Ask the user to define the team before proceeding. Offer a suggested TEAM.md draft based on the design doc.
+4. **After all agents finish** — present a per-member summary, flag cross-layer dependencies that need explicit wiring, and note any open items requiring user input.
+
+Full protocol spec, TEAM.md format, agent briefing template, and growth roadmap: **`docs/TEAM_PROTOCOL.md`**
+
+> Long-term goal: a fully autonomous AI engineering org where every team member is an agent — shipping, reviewing, deploying, and debugging Xperiq at enterprise scale with minimal human bottlenecks.

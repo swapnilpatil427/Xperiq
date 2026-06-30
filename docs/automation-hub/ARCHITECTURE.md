@@ -46,6 +46,12 @@ A `WorkflowRun` is created for every trigger evaluation that passes conditions. 
 
 Every `PUT /api/workflows/:id` creates a new version record. `WorkflowRun` rows are linked to the exact version that fired them via `workflow_version`. This enables forensic queries: "show me all runs on version 3 of this workflow before I updated the condition."
 
+#### Concurrent Edit and Execution Safety
+
+When `PUT /api/workflows/:id` is called while a run with `status = 'running'` exists for that workflow, the PUT succeeds (creating a new version) but the in-flight run continues executing against the action configs that were snapshotted at run start — the `rendered_config` in `workflow_run_steps` is the source of truth for in-flight execution, not the live `workflow_actions` rows. This is safe because: (1) `workflow_run_steps` rows are created for all steps before the first step executes, capturing the full config snapshot; (2) `workflow_actions` rows are never mutated by PUT — new rows are created for the new version and old rows have `deleted_at` set. Concurrent edit + execution is therefore safe without locking.
+
+<!-- ENT-019 applied -->
+
 ---
 
 ## Database Schema
@@ -72,6 +78,9 @@ CREATE TABLE workflows (
   scope_tag         TEXT,                              -- non-null when scope_type = 'tag_group'
   
   -- Trigger
+  -- NOTE: This CHECK constraint is removed by the ACR extensibility migration.
+  -- See docs/workflows/EXTENSIBILITY.md §DB Schema Change.
+  -- Validation after migration is handled by AutomationCapabilityRegistry.validateTriggerType().
   trigger_type      TEXT NOT NULL CHECK (trigger_type IN (
     'response_count',
     'response_rate_drop',
@@ -672,6 +681,10 @@ Writes a notification record to the `notifications` table and pushes a server-se
 
 ### Scheduler Architecture
 
+**Org-scope isolation in the scheduler:** The scheduler query MUST include `AND org_id = $orgId` when evaluating per-org; alternatively, the batch fetch includes `org_id` on each row and the evaluator MUST verify `workflow.org_id === survey.org_id` before querying any response data. A mismatch is treated as an authorization error and the run is immediately written as `failed` with `error: 'org_scope_mismatch'`. The `TriggerEvaluator.evaluate(workflow)` interface contract explicitly requires this check.
+
+<!-- ENT-001 applied -->
+
 ```
 Backend process (Node.js, runs alongside Express)
 │
@@ -752,6 +765,21 @@ const actionQueue = new Queue('workflow-actions', {
 // and writes to a dead_letter_items table + fires an alert if depth > 10.
 ```
 
+### Per-Org Action Rate Limits
+
+Soft limit: the `ActionWorker` emits a `rate_limit_warning` metric and continues. Hard limit: the action job is moved to DLQ with `error: 'org_rate_limit_exceeded'` and the run step is written as `failed`. The org admin receives an in-app notification when any action type reaches its hard limit. Limits are tracked per `(org_id, action_type)` in Redis using a sliding window counter (INCRBY + EXPIRE). Enterprise tier limits are 5× the values below and configurable on request.
+
+| Action type | Soft limit (warn) | Hard limit (queue/reject) | Window |
+|---|---|---|---|
+| send_email | 200 | 500 | 1 hour |
+| create_jira_ticket | 50 | 100 | 1 hour |
+| create_zendesk_ticket | 50 | 100 | 1 hour |
+| post_slack | 500 | 1000 | 1 hour |
+| fire_webhook | 200 | 500 | 1 hour |
+| close_survey | 10 | 20 | 1 hour |
+
+<!-- ENT-008 applied -->
+
 ### Idempotency
 
 Idempotency key format: `{workflow_id}:{trigger_type}:{event_fingerprint}`
@@ -765,9 +793,24 @@ Event fingerprint is computed deterministically:
 
 The `workflow_runs.idempotency_key` column has a UNIQUE constraint. Duplicate jobs that arrive via the queue simply fail on INSERT and are silently dropped (this is the correct behavior — the first execution won).
 
+#### Retry Idempotency
+
+Retry runs receive a new `idempotency_key` with suffix `:retry:{attempt_count}` (e.g., `wf_abc123:retry:2`). The original run is NOT modified. Retry execution begins from the first failed step — completed steps from the original run are skipped (their `rendered_config` is copied from the original). For external integration steps (Jira, Zendesk, email), the action executor checks for an existing output artifact before executing: if the step created a Jira ticket in the original run (ticket URL stored in `step.output_data`), the retry step is marked `skipped` with `reason: 'already_executed_in_prior_attempt'` to prevent duplicate creation.
+
+<!-- ENT-014 applied -->
+
 ---
 
 ## Natural Language Workflow Creation (Crystal Builder)
+
+### Crystal Builder API — Security and Rate Limits
+
+Rate limits on `POST /api/automations/crystal-build`: 10 requests/minute per user, 30 requests/hour per org. Exceeding the per-user limit returns HTTP 429 with `Retry-After` header. Exceeding the per-org limit returns HTTP 429 with `error: 'org_crystal_quota_exceeded'`. These are tracked in Redis using a sliding window. The org-level quota is separate from and additional to the general API rate limit.
+
+The `candidates[]` array returned by `POST /api/automations/crystal-build` is filtered to only surveys where the requesting user has at minimum `read` permission (checked against `survey_permissions` or `org_role = 'admin'`). The backend filters candidates before passing the context to CrystalOS — CrystalOS never receives a list of surveys the user cannot access. This filtering happens in the `buildCrystalContext(userId, orgId)` helper before the CrystalOS API call.
+
+<!-- ENT-010 applied -->
+<!-- ENT-023 applied -->
 
 ### Flow
 
@@ -848,6 +891,10 @@ class NlToWorkflowState(TypedDict):
 
 All endpoints require `Authorization: Bearer {clerk_jwt}`. All writes are org-scoped.
 
+**Auth & tenant isolation on every endpoint:** All routes that accept `:id` (automation, run, template) MUST validate `resource.org_id === req.auth.orgId` before any processing. Return HTTP 404 (not 403) when the resource exists but belongs to a different org — never leak existence. This check is enforced by the `requireOrgResource(table, idParam)` middleware and must not be skipped on any route, including internal admin routes.
+
+<!-- ENT-002 applied -->
+
 ### `GET /api/workflows`
 
 Query params:
@@ -915,6 +962,18 @@ Soft delete: sets `deleted_at`. Any in-flight runs complete normally. New runs w
 
 Transitions `status` to `enabled` or `disabled`. `enable` returns 400 if workflow has validation errors (e.g., referenced integration credential was deleted).
 
+#### Tier Limits — Max Active Automations
+
+`POST /api/workflows/:id/enable` returns HTTP 402 with `error: 'automation_limit_reached'` if the org is at its tier cap. The limit check is enforced at enable time, not at creation time (users can draft unlimited automations). The count query is `SELECT COUNT(*) FROM workflows WHERE org_id = $1 AND status = 'enabled'` — cached in Redis for 30 seconds.
+
+| Tier | Max active automations | Max active per survey |
+|---|---|---|
+| Starter | 25 | 3 |
+| Growth | 150 | 10 |
+| Enterprise | 500 | unlimited |
+
+<!-- ENT-007 applied -->
+
 ---
 
 ### `POST /api/workflows/:id/test`
@@ -954,7 +1013,95 @@ Retries a failed `WorkflowRun` from the first failed step. Creates a new `Workfl
 
 ---
 
-### `POST /api/workflows/:id/runs/:runId/recommendations/:recIndex/outcome`
+### `GET /api/automations/stats`
+
+Returns the stats row counters for the Automation Hub.
+
+Response:
+```typescript
+{
+  active_count: number;       // enabled automations
+  runs_today: number;         // workflow + briefing runs today (UTC)
+  briefings_delivered: number;// successful briefing runs, last 30 days
+  error_count: number;        // runs with status='failed' in last 7 days
+}
+```
+
+---
+
+### `GET /api/automations/capabilities`
+
+Returns the full Automation Capability Registry — all trigger definitions, action definitions, and condition definitions. Used by the frontend to render the `CanvasPalette` and `DynamicConfigPanel` without hardcoded lists. See `docs/workflows/EXTENSIBILITY.md` for the full schema.
+
+Response: `{ triggers: TriggerDefinition[], actions: ActionDefinition[], conditions: ConditionDefinition[] }`
+
+Each definition has internal fields (`evaluatorModule`, `executorModule`) stripped before serialization.
+
+---
+
+### `GET /api/automations/:id/analytics`
+
+Query params: `days` (default 30, max 90)
+
+Response:
+```typescript
+{
+  fires: number;
+  success_rate: number;        // 0–1
+  actions_delivered: number;
+  errors: number;
+  fires_per_day: Array<{ date: string; count: number }>;
+  delivery_by_action: Array<{
+    action_type: string;
+    display_name: string;
+    sent: number;
+    success: number;
+    success_rate: number;
+  }>;
+  slowest_runs: Array<{
+    run_id: string;
+    date: string;
+    duration_ms: number;
+  }>;
+}
+```
+
+---
+
+### `POST /api/automations/:id/trigger-check`
+
+Evaluates whether the workflow's trigger would fire right now, using current live data. Accepts an optional `config_override` to test against unsaved trigger config (allows "would this fire?" checks before saving).
+
+Body:
+```typescript
+{
+  config_override?: Record<string, unknown>; // optional: test with unsaved trigger config
+}
+```
+
+Response:
+```typescript
+{
+  would_fire: boolean;
+  reason: string;          // human-readable explanation e.g. "NPS is 27.4, below threshold 30"
+  current_values: Record<string, unknown>; // e.g. { nps_score: 27.4, response_count: 412 }
+  checked_at: string;      // ISO 8601
+}
+```
+
+Returns `404` if workflow does not exist or doesn't belong to the org. Returns `400` if the trigger type does not support live evaluation (e.g., `schedule` — use `GET /api/automations/:id/runs?limit=1` instead).
+
+---
+
+### `POST /api/automations/:id/runs/:runId/resend`
+
+Resends an existing briefing to all original recipients (no re-generation). Returns `409` if the run is not a briefing (`generate_briefing` action must exist in the workflow). Idempotent within 60 seconds (deduplication by `(run_id, resend_requested_at / 60s bucket)`).
+
+Response: `{ resent_to: number; queued_at: string }`
+
+---
+
+### `POST /api/automations/:id/runs/:runId/recommendations/:recIndex/outcome`
 
 Records a user's response to a recommendation (acted on, dismissed, snoozed).
 
@@ -971,7 +1118,57 @@ Response: `200 OK` with the `recommendation_outcomes` row. Returns `404` if the 
 
 ---
 
+### `GET /api/automations/:id/available-variables`
+
+Query params: `prior_actions` — comma-separated list of action types for steps preceding the current step (used by `VariableChipInput` to show step output variables).
+
+Response: `{ groups: Array<{ label: string; variables: OutputVariable[] }> }`
+
+See `EXTENSIBILITY.md §AutomationCapabilityRegistry.availableVariables()` for the assembly logic.
+
+---
+
+### `GET /api/automations/:id/permissions` / `POST /api/automations/:id/permissions`
+
+**GET** — returns all role assignments for an automation.
+Response: `{ permissions: Array<{ user_id, user_name, user_email, role, granted_by, created_at }> }`
+
+**POST** — grants or updates a role.
+Body: `{ user_id: string; role: 'creator' | 'editor' | 'viewer' }`
+Returns `403` if the caller is not the `creator`. Returns `400` if attempting to remove the last `creator`.
+
+**DELETE `/api/automations/:id/permissions/:userId`** — removes a role assignment. Same auth requirement.
+
+---
+
+### RBAC Permission Matrix
+
+The following table defines the minimum role required for each endpoint. All checks are enforced by the `requireWorkflowRole` middleware.
+
+| Endpoint | Minimum role | Org admin override |
+|---|---|---|
+| GET /api/workflows/:id | viewer | yes |
+| PUT /api/workflows/:id | editor | yes |
+| DELETE /api/workflows/:id | creator | yes |
+| POST /api/workflows/:id/enable | editor | yes |
+| POST /api/workflows/:id/disable | editor | yes |
+| POST /api/workflows/:id/test-run | editor | yes |
+| GET /api/automations/:id/runs | viewer | yes |
+| POST /api/automations/:id/runs/:runId/resend | editor | yes |
+| GET/POST/DELETE /api/automations/:id/permissions | creator | yes |
+| GET /api/automations/:id/audit-log | editor | yes |
+
+Org admin override: an authenticated user with `org_role = 'admin'` in the `org_members` table may perform any action on any automation in their org, regardless of `workflow_permissions` entries. This is enforced as a first-check bypass in the `requireWorkflowRole` middleware.
+
+<!-- ENT-006 applied -->
+
+---
+
 ### Internal API (CrystalOS → Backend)
+
+**Hardened internal authentication:** The `X-Internal-Key` static header is supplemented with HMAC-SHA256 request signing. Each request from CrystalOS includes: `X-Internal-Key: {key}`, `X-Timestamp: {unix_ms}`, `X-Signature: HMAC-SHA256(secret, method + path + timestamp + SHA256(body))`. The backend rejects requests where `|now - timestamp| > 30 seconds` (replay protection) or where the signature does not match. CrystalOS egress IPs are added to an allowlist in the backend's firewall config. Payload validation: before enqueuing any signal, the backend verifies `org_id` exists in `organizations`, `survey_id` exists and belongs to that `org_id`, and `status != 'deleted'`. A signal failing these checks is rejected with HTTP 422 and logged.
+
+<!-- ENT-011 applied -->
 
 ### `POST /api/internal/workflow-signals`
 
@@ -1005,24 +1202,96 @@ The backend finds all matching enabled workflows and enqueues trigger evaluation
 
 ---
 
-## Environment Variables
+## Schema Changes Summary (v2.2 Gap Fixes)
 
-New vars required (add to `backend/.env.example` and `docs/ENV_VARS.md`):
+```sql
+-- Fix 7: Cooldown UI — persist cooldown per workflow (was in trigger_config, now a first-class column)
+-- cooldown_minutes INTEGER NOT NULL DEFAULT 60 already present in original DDL (added in v1.0 schema). No migration needed.
+-- (ENT-027: the ALTER TABLE below is a no-op duplicate; kept as comment for migration history only)
+-- ALTER TABLE workflows ADD COLUMN cooldown_minutes INTEGER;
+CREATE INDEX idx_workflows_cooldown ON workflows(cooldown_minutes) WHERE cooldown_minutes IS NOT NULL;
 
-```bash
-# Workflow Action Delivery
-SENDGRID_API_KEY=             # or RESEND_API_KEY — for send_email action
-WORKFLOW_EMAIL_FROM=noreply@xperiq.com
+-- Fix 10: Creator RBAC
+CREATE TABLE workflow_permissions (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  user_id     TEXT NOT NULL,  -- Clerk user_id
+  role        TEXT NOT NULL CHECK (role IN ('creator', 'editor', 'viewer')),
+  granted_by  TEXT NOT NULL,  -- Clerk user_id of granter
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (workflow_id, user_id)
+);
+CREATE INDEX idx_workflow_permissions_user ON workflow_permissions(user_id, workflow_id);
 
-# Workflow Encryption
-INTEGRATION_SECRET_KEY=       # AES-256 key for encrypting stored integration credentials
+-- Fix 17: Pause Until Date
+ALTER TABLE workflows ADD COLUMN paused_until TIMESTAMPTZ;
+CREATE INDEX idx_workflows_paused_until ON workflows(paused_until) WHERE paused_until IS NOT NULL;
 
-# Internal API
-INTERNAL_API_KEY=             # shared secret between CrystalOS and backend for workflow signals
+-- Fix 9: Analytics — no new table needed; computed from existing workflow_runs + workflow_run_steps
+-- GET /api/automations/:id/analytics?days=30 aggregates over existing tables.
 
-# Queue
-REDIS_URL=redis://localhost:6379  # already present — workflows use same Redis
+-- Template social proof (Fix 14)
+-- NOTE (ENT-015): installed_count is superseded by the template_installs table below.
+-- The installed_count column on workflows is REMOVED; do not add it.
+ALTER TABLE workflows ADD COLUMN avg_rating NUMERIC(3,2);
+ALTER TABLE workflows ADD COLUMN featured BOOLEAN NOT NULL DEFAULT false;
+-- avg_rating is computed weekly from recommendation_outcomes feedback signals.
+
+-- Template install counts (ENT-015): cross-org aggregate, separate table
+CREATE TABLE template_installs (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  template_id TEXT NOT NULL,   -- matches TemplateDefinition.id
+  org_id      TEXT NOT NULL,
+  installed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(template_id, org_id)
+);
+-- GET /api/automations/templates returns installed_count as:
+-- SELECT COUNT(DISTINCT org_id) FROM template_installs WHERE template_id = $1
+-- The workflows.installed_count column from any prior migration is superseded by this table.
+
+-- Fix 8: Crystal Builder Tier 2/3 — no schema change; response field extension only (see API section below).
+
+-- Fix 3 extended (crystal-build response): add unfilled_fields + alternatives fields to the
+-- POST /api/automations/crystal-build response (backend only, no migration needed).
 ```
+
+| Change | What | Where |
+|---|---|---|
+| Fix 6 | Trigger group metadata added to `TriggerDefinition` type | `backend/src/registry/types.ts` (see EXTENSIBILITY.md) |
+| Fix 7 | `cooldown_minutes` column on `workflows` table | Migration |
+| Fix 8 | `crystal-build` response extended with `unfilled_fields[]` + `alternatives[]` | `backend/src/routes/automations.ts` |
+| Fix 9 | New `GET /api/automations/:id/analytics` endpoint | `backend/src/routes/automations.ts` |
+| Fix 10 | New `workflow_permissions` table + 3-role RBAC | Migration + new route |
+| Fix 12 | Bulk delete uses soft-delete (`deleted_at`) — same as single delete | No schema change |
+| Fix 13 | New `POST /api/automations/:id/trigger-check` endpoint | `backend/src/routes/automations.ts` |
+| Fix 14 | `installed_count`, `avg_rating`, `featured` columns on `workflows` (templates only) | Migration |
+| Fix 17 | `paused_until TIMESTAMPTZ` column on `workflows` table | Migration |
+
+---
+
+## Survey Soft-Delete Cascade
+
+When a survey is soft-deleted (`PATCH /api/surveys/:id` sets `deleted_at`), the backend MUST:
+
+1. Set `status = 'disabled'` on all enabled workflows where `scope_survey_id = $surveyId`.
+2. Write an `automation_audit_log` record with `action: 'disabled'`, `new_state: { reason: 'survey_deleted', survey_id: $surveyId }`.
+3. Send an in-app notification to each workflow's creator: "Your automation \"{name}\" was disabled because the survey it was scoped to was deleted."
+
+Tag-group scoped automations are not affected unless the deleted survey was the last active survey in the tag group, in which case the same disable cascade applies.
+
+When an org is deleted, `workflows` rows are soft-deleted (set `deleted_at`) rather than hard-deleted. `workflow_runs` records are retained for the configured retention period (90 days Starter, 1 year Growth, 3 years Enterprise) before being purged by a scheduled cleanup job. The `ON DELETE CASCADE` FK on `workflow_runs.workflow_id` is replaced with `ON DELETE SET NULL` — the run history remains accessible to compliance exports even after the parent automation is deleted.
+
+<!-- ENT-009 applied -->
+
+## Database Retention and FK Notes
+
+**Run history retention:** `workflow_runs` and `workflow_run_steps` records are retained per tier: Starter 90 days, Growth 1 year, Enterprise 3 years (configurable up to 7 years). A nightly archival job (`LIMIT 10000` per batch) moves records older than the retention threshold to a `workflow_runs_archive` table in cold storage. Archived runs are accessible via CSV export but not shown in the UI run history. The export endpoint `GET /api/automations/:id/runs?format=csv` includes archived runs.
+
+<!-- ENT-017 applied -->
+
+**FK on `scope_survey_id`:** The `scope_survey_id` FK is defined as `REFERENCES surveys(id) ON DELETE SET NULL` — not CASCADE. When a survey is deleted, the FK nulls out rather than cascading a hard delete of the workflow. The application-level cascade (disable + notify, see §Survey Soft-Delete Cascade) handles the user-visible behavior. This prevents accidental workflow deletion when a survey is temporarily archived.
+
+<!-- ENT-012 applied -->
 
 ---
 
@@ -1039,3 +1308,93 @@ Panels:
 - Workflow fire rate per org (detect runaway trigger loops)
 
 All metrics are emitted as Prometheus counters/histograms from the BullMQ workers and exposed on the backend's `/metrics` endpoint.
+
+**Redis resilience:** Redis is configured with AOF persistence (`appendonly yes`, `appendfsync everysec`). Failover uses Redis Sentinel with 2 replicas. If BullMQ workers go completely down, queued jobs persist in Redis and execute when workers recover — no jobs are lost. Maximum job age before DLQ: 48 hours (jobs older than this are moved to DLQ and the automation owner is notified). During a worker outage lasting >5 minutes, the Automation Hub shows an amber banner: "Some automations may be delayed. We're working on it." The banner resolves automatically when worker health is restored.
+
+**Alert SLAs:** DLQ depth > 10 → PagerDuty P2 within 5 minutes. Error rate > 5% → PagerDuty P1 within 2 minutes. Worker heartbeat absent > 2 minutes → PagerDuty P1. Automated remediation: the worker auto-restarts on crash (Fly.io `restart_policy = always`); if 3 restarts in 10 minutes fail, the alert escalates to P0.
+
+<!-- ENT-013 applied -->
+
+---
+
+## Export URL — Canonical Path
+
+`GET /api/automations/:id/runs/:runId/export?format=pdf` — generates and returns a PDF rendering of the briefing. Also supports `?format=csv` for run step details. The legacy path `POST /api/automations/:id/runs/:runId/export-pdf` is removed.
+
+<!-- ENT-025 applied (ARCHITECTURE.md half) -->
+
+---
+
+## Template Install Counts
+
+Template install counts are tracked in the `template_installs` table (see Schema Changes v2.2), not on the per-org workflow row. `GET /api/automations/templates` returns `installed_count` as `SELECT COUNT(DISTINCT org_id) FROM template_installs WHERE template_id = $1`. The `workflows` table `installed_count` column is removed from the schema (the v2.2 migration that added it is superseded by `template_installs`). The `avg_rating` and `featured` columns remain on the canonical `is_template = true` workflow row.
+
+<!-- ENT-015 applied -->
+
+---
+
+## Audit Log
+
+Every state-changing operation on automations is written to an append-only audit log before the endpoint returns 200. This log is the authoritative record for compliance and forensic queries.
+
+```sql
+CREATE TABLE automation_audit_log (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id        TEXT NOT NULL,
+  automation_id UUID REFERENCES workflows(id) ON DELETE SET NULL,
+  actor_user_id TEXT NOT NULL,
+  action        TEXT NOT NULL CHECK (action IN (
+    'created','enabled','disabled','edited','deleted',
+    'role_changed','resend_triggered','paused','resumed','test_run','erasure_applied'
+  )),
+  previous_state JSONB,
+  new_state      JSONB,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX automation_audit_log_org_idx ON automation_audit_log(org_id, created_at DESC);
+```
+
+Every state-changing endpoint writes to `automation_audit_log` before returning 200. The log is append-only — no update or delete. Retention: 7 years (configurable per org for Enterprise tier). Exposed via `GET /api/automations/:id/audit-log?limit=50&cursor=` (editor role minimum; see RBAC section).
+
+<!-- ENT-004 applied -->
+
+---
+
+## Data Erasure (GDPR)
+
+When a respondent submits a right-to-erasure request, the platform MUST:
+
+1. Replace all occurrences of their verbatim text in `workflow_runs.trigger_payload` and `workflow_run_steps.rendered_config` with `[redacted — erasure request YYYY-MM-DD]`.
+2. Regenerate any stored `report_artifacts` that contained the respondent's quote (mark artifact as `stale`, re-render on next view access).
+3. Invalidate active share links for affected runs (force re-render on next access).
+
+The `respondent_id_hash` SHA-256 stored in run records is treated as personal data under GDPR (re-identifiable from the source system) and is zeroed out as part of the erasure.
+
+The immutability principle for `workflow_runs` has a GDPR exception: the `trigger_payload` and `rendered_config` JSONB fields are mutable solely for erasure operations, logged in `automation_audit_log` with `action: 'erasure_applied'`.
+
+<!-- ENT-005 applied (ARCHITECTURE.md half) -->
+
+---
+
+## Environment Variables
+
+New vars required (add to `backend/.env.example` and `docs/ENV_VARS.md`):
+
+```bash
+# Workflow Action Delivery
+SENDGRID_API_KEY=             # or RESEND_API_KEY — for send_email action
+WORKFLOW_EMAIL_FROM=noreply@xperiq.com
+
+# Workflow Encryption
+INTEGRATION_SECRET_KEY=       # AES-256 key for encrypting stored integration credentials
+
+# Internal API
+INTERNAL_API_KEY=             # shared secret between CrystalOS and backend for workflow signals
+INTERNAL_HMAC_SECRET=         # HMAC-SHA256 secret for request signing (see §Hardened internal authentication)
+
+# Queue
+REDIS_URL=redis://localhost:6379  # already present — workflows use same Redis
+
+# Unsubscribe
+UNSUBSCRIBE_SECRET=           # HMAC-SHA256 secret for deterministic briefing unsubscribe tokens
+```
